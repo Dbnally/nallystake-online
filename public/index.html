@@ -1,80 +1,851 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>nallystake — Online (gold-only test client)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>nallystake — Online (gold-only)</title>
 <style>
- body{font-family:system-ui;background:#17130c;color:#f3e6c8;margin:0;padding:12px}
- h1{font-size:20px;color:#ffd75e;margin:4px 0}
- .row{display:flex;gap:12px;flex-wrap:wrap} .card{background:#241c10;border:1px solid #6b5320;border-radius:10px;padding:10px}
- button{background:#8a6d1f;color:#fff;border:0;border-radius:8px;padding:8px 12px;font-weight:700}
- input,select{background:#0f0c07;color:#f3e6c8;border:1px solid #6b5320;border-radius:6px;padding:7px}
- #log{height:150px;overflow:auto;font-size:13px;white-space:pre-wrap}
- canvas{background:#2e4a2a;border:2px solid #6b5320;border-radius:10px;max-width:100%}
- .hp{height:12px;background:#400;border-radius:6px;overflow:hidden}.hp>div{height:100%;background:#4caf50}
+ *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#17130c;color:#f3e6c8;font-family:system-ui,sans-serif}
+ #scene{position:fixed;inset:0;touch-action:none}
+ #scene canvas{display:block}
+ #labels,#splats{position:fixed;inset:0;pointer-events:none;overflow:hidden}
+ #labels{z-index:5}#splats{z-index:6}
+ .plabel{position:absolute;transform:translate(-50%,-100%);text-align:center;white-space:nowrap;font-size:12px;font-weight:700;color:#fff;text-shadow:0 1px 3px #000,0 0 6px #000}
+ .plabel .badge{font-size:13px}
+ .plabel .bubble{display:none;background:#fff;color:#111;border-radius:10px;padding:3px 8px;font-weight:600;font-size:12px;margin-bottom:3px;white-space:normal;max-width:170px;box-shadow:0 2px 6px rgba(0,0,0,.5)}
+ .splat{position:absolute;transform:translate(-50%,-50%);font-weight:900;font-size:19px;color:#ff3b30;text-shadow:0 0 4px #000,0 2px 2px #000;opacity:0}
+ .splat.zero{color:#7ec3ff}.splat.spec{color:#ffd75e;font-size:23px}
+ /* top HUD */
+ #topbar{position:fixed;top:0;left:0;right:0;z-index:30;display:flex;gap:10px;align-items:center;padding:6px 10px;background:rgba(23,19,12,.88);border-bottom:2px solid #6b5320;font-size:13px}
+ #topbar b{color:#ffd75e}
+ #topbar .grow{flex:1}
+ /* minimap + orbs */
+ #mapwrap{position:fixed;top:40px;right:8px;z-index:20;text-align:center}
+ #minimap{background:#2e4a2a;border:2px solid #6b5320;border-radius:8px}
+ #orbs{display:flex;gap:6px;justify-content:center;margin-top:5px}
+ .orb{width:52px;height:52px;border-radius:50%;border:2px solid #0c0a06;position:relative;overflow:hidden;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.6)}
+ .orb .fill{position:absolute;left:0;right:0;bottom:0}
+ .orb .txt{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;text-shadow:0 1px 2px #000;line-height:1.1;z-index:2}
+ .orb.hp .fill{background:#c1271b}.orb.hp{background:#3d0a06}
+ .orb.pr .fill{background:#2456c8}.orb.pr{background:#0a1740}
+ .orb.sp .fill{background:#c9a227}.orb.sp{background:#40340a}
+ .orb.sp.ready{box-shadow:0 0 12px 3px #ffd75e}
+ /* right rail */
+ #rail{position:fixed;right:6px;top:190px;z-index:30;display:flex;flex-direction:column;gap:6px}
+ .rbtn{width:46px;height:46px;border-radius:10px;background:rgba(36,28,16,.92);border:2px solid #6b5320;color:#f3e6c8;font-size:20px;cursor:pointer}
+ .rbtn.on{border-color:#ffd75e;background:#4a3a12}
+ /* drawer */
+ #drawer{position:fixed;top:40px;right:58px;z-index:40;width:min(330px,80vw);max-height:calc(100dvh - 210px);overflow-y:auto;background:rgba(30,23,13,.97);border:2px solid #6b5320;border-radius:12px;padding:10px;display:none}
+ #drawer.open{display:block}
+ #drawer h3{margin:2px 0 8px;color:#ffd75e;font-size:16px;display:flex;justify-content:space-between;align-items:center}
+ #drawer h3 .x{background:none;border:0;color:#f3e6c8;font-size:18px;cursor:pointer}
+ .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+ .cell{background:#171208;border:1px solid #54431d;border-radius:8px;min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:3px;position:relative}
+ .cell.sel{border-color:#ffd75e;background:#33270e}
+ .cell .ic{font-size:24px;line-height:1}
+ .cell .nm{font-size:9px;text-align:center;color:#d8c491;margin-top:2px;line-height:1.1}
+ .cell .q{position:absolute;top:2px;right:5px;font-size:11px;font-weight:800;color:#ffd75e;text-shadow:0 1px 2px #000}
+ .rowline{display:flex;align-items:center;gap:8px;background:#171208;border:1px solid #54431d;border-radius:8px;padding:6px 8px;margin-bottom:6px;font-size:13px}
+ .rowline .ic{font-size:22px}
+ .rowline .grow{flex:1}
+ .rowline .sub{font-size:11px;color:#b7a26e}
+ button.act{background:#8a6d1f;color:#fff;border:0;border-radius:7px;padding:6px 9px;font-weight:700;font-size:12px;cursor:pointer}
+ button.act:disabled{opacity:.45}
+ button.ghost{background:#33270e;color:#f3e6c8;border:1px solid #6b5320;border-radius:7px;padding:6px 9px;font-weight:700;font-size:12px;cursor:pointer}
+ .detail{background:#241a0b;border:1px solid #6b5320;border-radius:8px;padding:8px;margin-top:8px;font-size:13px}
+ .detail .btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+ .seg{display:flex;gap:4px;margin:6px 0}
+ .seg button{flex:1;background:#171208;color:#f3e6c8;border:1px solid #6b5320;border-radius:7px;padding:6px;font-weight:700;cursor:pointer}
+ .seg button.on{background:#8a6d1f;color:#fff;border-color:#ffd75e}
+ .tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
+ .tabs button{background:#171208;color:#f3e6c8;border:1px solid #6b5320;border-radius:7px;padding:5px 8px;font-weight:700;font-size:12px;cursor:pointer}
+ .tabs button.on{background:#8a6d1f;color:#fff;border-color:#ffd75e}
+ .praybtn{flex:1;background:#171208;border:2px solid #54431d;border-radius:10px;color:#f3e6c8;padding:10px 4px;font-size:13px;font-weight:800;cursor:pointer}
+ .praybtn.on{border-color:#ffd75e;background:#4a3a12;box-shadow:0 0 10px #ffd75e66}
+ .bar{height:12px;background:#0f0c07;border:1px solid #54431d;border-radius:6px;overflow:hidden}
+ .bar>div{height:100%}
+ input,select{background:#0f0c07;color:#f3e6c8;border:1px solid #6b5320;border-radius:6px;padding:7px;font-size:14px}
+ input[type=number]{width:76px}
+ /* joystick */
+ #joy{position:fixed;left:18px;bottom:86px;width:112px;height:112px;border-radius:50%;background:rgba(36,28,16,.55);border:2px solid rgba(107,83,32,.8);z-index:30;touch-action:none}
+ #knob{position:absolute;left:50%;top:50%;width:50px;height:50px;border-radius:50%;background:rgba(255,215,94,.75);border:2px solid #6b5320;transform:translate(-50%,-50%)}
+ /* chat */
+ #chatbox{position:fixed;right:6px;bottom:6px;z-index:30;width:min(370px,64vw);background:rgba(23,19,12,.9);border:2px solid #6b5320;border-radius:10px;overflow:hidden}
+ #chathead{padding:5px 9px;font-size:12px;font-weight:800;color:#ffd75e;cursor:pointer;display:flex;justify-content:space-between}
+ #chatbody{display:block}
+ #chatbox.closed #chatbody{display:none}
+ #log{height:104px;overflow-y:auto;font-size:12px;white-space:pre-wrap;padding:4px 8px}
+ #chatrow{display:flex;gap:5px;padding:5px}
+ #chatrow input{flex:1;min-width:0}
+ /* duel banner */
+ #duelbar{position:fixed;top:42px;left:50%;transform:translateX(-50%);z-index:45;width:min(440px,94vw);background:rgba(30,23,13,.96);border:2px solid #a33;border-radius:12px;padding:8px 10px;display:none}
+ #duelbar.open{display:block}
+ #duelbar .t{font-weight:900;color:#ffd75e;text-align:center;font-size:14px;margin-bottom:5px}
+ .hprow{display:flex;align-items:center;gap:7px;font-size:12px;margin:3px 0}
+ .hprow .nm{width:86px;text-align:right;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .hpbar{flex:1;height:13px;background:#400;border:1px solid #200;border-radius:6px;overflow:hidden}
+ .hpbar>div{height:100%;background:#4caf50;transition:width .25s}
+ #duelquick{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;align-items:center}
+ #specbtn.ready{box-shadow:0 0 12px 3px #ffd75e;background:#c9a227}
+ /* modals */
+ .modal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:14px}
+ .modal.open{display:flex}
+ .sheet{background:#241c10;border:2px solid #6b5320;border-radius:14px;padding:14px;width:min(430px,94vw);max-height:86dvh;overflow-y:auto}
+ .sheet h3{margin:0 0 8px;color:#ffd75e}
+ .sheet .btns{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+ .pickrow{display:flex;align-items:center;gap:7px;font-size:13px;padding:4px 0;border-bottom:1px solid #33270e}
+ .pickrow .grow{flex:1}
+ .pickrow input{width:58px;padding:4px}
+ /* auth + errors */
+ #auth{position:fixed;inset:0;z-index:60;background:#17130c;display:flex;align-items:center;justify-content:center;padding:16px}
+ #auth .card{background:#241c10;border:2px solid #6b5320;border-radius:14px;padding:18px;width:min(400px,94vw)}
+ #auth h1{font-size:21px;color:#ffd75e;margin:0 0 4px}
+ #auth input{display:block;width:100%;margin:7px 0}
+ #authmsg{color:#ff8a80;font-size:13px;min-height:18px}
+ #loaderror{position:fixed;inset:0;z-index:70;background:#17130c;display:none;align-items:center;justify-content:center;padding:20px;text-align:center}
+ #toast{position:fixed;top:44px;left:50%;transform:translateX(-50%);z-index:55;background:#33270e;border:2px solid #ffd75e;color:#ffe9a8;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:700;display:none;max-width:92vw;text-align:center}
+ .note{font-size:11px;color:#b7a26e}
 </style></head><body>
-<h1>⚔️ nallystake — Online test client</h1>
-<p>Gold only. No real money. This is the Phase 1 client to prove real players, real saving, and server-run duels. The full 3D plaza ports in Phase 2.</p>
-<div class="card" id="auth">
- <input id="name" placeholder="Player name"> <input id="pass" type="password" placeholder="Password (6+)">
- <button id="reg">Create account</button> <button id="login">Sign in</button> <span id="authmsg"></span>
-</div>
-<div class="row" style="margin-top:10px">
- <div class="card">
-  <canvas id="cv" width="800" height="450"></canvas>
-  <div>Move: WASD / arrows, or tap the grass. Click a player to select them.</div>
-  <div id="me"></div>
-  <div>Style: <select id="style"><option>accurate</option><option>aggressive</option><option>defensive</option><option>controlled</option></select></div>
- </div>
- <div class="card" style="flex:1;min-width:260px">
-  <b>Players online</b><div id="plist"></div>
-  <div style="margin-top:8px">Stake <input id="stake" type="number" value="10" min="1" style="width:70px"> g
-  <button id="challenge">Challenge selected</button></div>
-  <div id="incoming"></div>
-  <div id="duel" style="margin-top:8px"></div>
-  <b>Chat / game log</b><div id="log"></div>
-  <input id="chat" placeholder="Say something…" style="width:65%"> <button id="send">Send</button>
+<div id="scene"></div>
+<div id="labels"></div>
+<div id="splats"></div>
+
+<div id="topbar"><b>⚔️ nallystake</b><span id="hudname">—</span><span>🪙 <b id="hudgold">0</b>g</span><span>⭐ <b id="hudrating">1000</b></span><span id="hudwl">0W/0L</span><span class="grow"></span><span class="note">gold only · no real money</span></div>
+
+<div id="mapwrap">
+ <canvas id="minimap" width="128" height="72"></canvas>
+ <div id="orbs">
+  <div class="orb hp" id="orbhp"><div class="fill"></div><div class="txt"><span>HP</span><span id="orbhpv">99</span></div></div>
+  <div class="orb pr" id="orbpr" title="Prayers"><div class="fill"></div><div class="txt"><span>🙏</span><span id="orbprv">25</span></div></div>
+  <div class="orb sp" id="orbsp" title="Special attack"><div class="fill"></div><div class="txt"><span>⚡</span><span id="orbspv">0%</span></div></div>
  </div>
 </div>
+
+<div id="rail">
+ <button class="rbtn" data-panel="backpack" title="Backpack">🎒</button>
+ <button class="rbtn" data-panel="worn" title="Worn items">🗡️</button>
+ <button class="rbtn" data-panel="shop" title="Shops">🏪</button>
+ <button class="rbtn" data-panel="bank" title="Bank of Gielinor">🏦</button>
+ <button class="rbtn" data-panel="exchange" title="Gold Exchange">💱</button>
+ <button class="rbtn" data-panel="prayers" title="Prayers">🙏</button>
+ <button class="rbtn" data-panel="players" title="Players">👥</button>
+</div>
+
+<div id="drawer"><h3><span id="drawertitle">Panel</span><button class="x" id="drawerx">✕</button></h3><div id="drawerbody"></div></div>
+
+<div id="joy"><div id="knob"></div></div>
+
+<div id="duelbar">
+ <div class="t" id="dueltitle">⚔️ Duel</div>
+ <div class="hprow"><span class="nm">You</span><div class="hpbar"><div id="hpyou" style="width:100%"></div></div><span id="hpyouv">99</span></div>
+ <div class="hprow"><span class="nm" id="dueloppname">Opponent</span><div class="hpbar"><div id="hpopp" style="width:100%"></div></div><span id="hpoppv">99</span></div>
+ <div id="duellast" class="note" style="text-align:center"></div>
+ <div id="duelquick"></div>
+</div>
+
+<div id="chatbox">
+ <div id="chathead"><span>💬 Chat / game log</span><span id="chatchev">▾</span></div>
+ <div id="chatbody"><div id="log"></div><div id="chatrow"><input id="chat" placeholder="Say something…" maxlength="140"><button class="act" id="sendchat">Send</button></div></div>
+</div>
+
+<div class="modal" id="challengemodal"><div class="sheet" id="challengesheet"></div></div>
+<div class="modal" id="incomingmodal"><div class="sheet" id="incomingsheet"></div></div>
+<div class="modal" id="duelendmodal"><div class="sheet" id="duelendsheet"></div></div>
+
+<div id="toast"></div>
+
+<div id="auth"><div class="card">
+ <h1>⚔️ nallystake — Online</h1>
+ <p style="margin:2px 0 8px">Gold only. No real money. Real players, server-run duels, saving on the server.</p>
+ <input id="name" placeholder="Player name" maxlength="16" autocomplete="username">
+ <input id="pass" type="password" placeholder="Password (6+)" autocomplete="current-password">
+ <div style="display:flex;gap:8px;margin-top:6px"><button class="act" id="reg">Create account</button><button class="act" id="login">Sign in</button></div>
+ <div id="authmsg"></div>
+ <p class="note">Phase 2: 3D plaza, shops, bank, Gold Exchange, item staking, Protect prayers.</p>
+</div></div>
+
+<div id="loaderror"><div><h2 style="color:#ffd75e">Couldn't load 3D 😕</h2><p>The 3D library (Three.js) failed to load, so the plaza can't be drawn.<br>Check your connection and reload the page.</p></div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.158.0/three.min.js"></script>
 <script>
-let ws, token, me=null, players=[], selected=null, myPos={x:200,y:200}, keys={};
+'use strict';
+/* ================= helpers & state ================= */
 const $=id=>document.getElementById(id);
-function log(t){$('log').textContent+=t+'\n';$('log').scrollTop=1e6}
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+let ws=null, token=null, me=null, players=[];
+let catalog={}, catalogArr=[], shopNames=[];
+let goods={}; // id -> {id,name,price}
+const ICONS={restore_potion:'🍷',prayer_potion:'🌟',ration:'🍗',bronze_sword:'🗡️',iron_sword:'🗡️',steel_sword:'⚔️',mithril_sword:'⚔️',dragon_sword:'🐉',
+ bronze_helm:'⛑️',steel_helm:'⛑️',dragon_helm:'⛑️',bronze_platebody:'🦺',steel_platebody:'🦺',dragon_platebody:'🦺',
+ bronze_platelegs:'👖',steel_platelegs:'👖',dragon_platelegs:'👖',bronze_shield:'🛡️',steel_shield:'🛡️',dragon_shield:'🛡️',
+ bones:'🦴',herbs:'🌿',gems:'💎',bars:'🟨',runes:'🔮',charms:'🧿'};
+const KIND_ICON={potion:'🧪',food:'🍗',weapon:'⚔️',armour:'🛡️',good:'📦'};
+function iconOf(id){ if(ICONS[id])return ICONS[id]; const d=catalog[id]; return d? (KIND_ICON[d.kind]||'📦') : '📦'; }
+function nameOf(id){ if(catalog[id])return catalog[id].name; if(goods[id])return goods[id].name; return id; }
+function stackQtyOf(stacks,id){ const s=(stacks||[]).find(x=>x.item===id); return s?s.qty:0; }
+function myQty(id){ return me? stackQtyOf(me.backpack,id):0; }
+function send(o){ if(ws&&ws.readyState===1) ws.send(JSON.stringify(o)); }
+let toastTimer=null;
+function toast(t){ const el=$('toast'); el.textContent=t; el.style.display='block'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.style.display='none',2600); }
+function logLine(t){ const el=$('log'); el.textContent+=t+'\n'; while(el.textContent.split('\n').length>60) el.textContent=el.textContent.split('\n').slice(1).join('\n'); el.scrollTop=1e6; }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ================= auth & websocket ================= */
 async function auth(path){
  const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('name').value,password:$('pass').value})});
- const d=await r.json(); if(!r.ok){$('authmsg').textContent=d.error;return}
- token=d.token; me=d.profile; $('auth').style.display='none'; $('me').textContent=`${me.username} — ${me.gold}g · rating ${me.rating} · ${me.wins}W/${me.losses}L`;
+ const d=await r.json(); if(!r.ok){ $('authmsg').textContent=d.error||'Sign-in failed.'; return; }
+ token=d.token; me=d.profile;
+ $('auth').style.display='none';
+ renderAll();
  connect();
 }
-$('reg').onclick=()=>auth('/api/register'); $('login').onclick=()=>auth('/api/login');
+$('reg').onclick=()=>auth('/api/register');
+$('login').onclick=()=>auth('/api/login');
+$('pass').addEventListener('keydown',e=>{ if(e.key==='Enter') auth('/api/login'); });
+
 function connect(){
  ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws?token=${token}`);
- ws.onmessage=e=>{const m=JSON.parse(e.data);
-  if(m.type==='state'){players=m.players;draw();renderList()}
-  if(m.type==='welcome'){players=m.players;draw();renderList()}
-  if(m.type==='chat')log(`${m.from}: ${m.text}`);
-  if(m.type==='error')log('⚠️ '+m.message);
-  if(m.type==='profile'){me=m.profile;$('me').textContent=`${me.username} — ${me.gold}g · rating ${me.rating} · ${me.wins}W/${me.losses}L`}
-  if(m.type==='challenge_incoming'){$('incoming').innerHTML=`<div class="card">⚔️ ${m.from} challenges you for ${m.stake}g <button onclick="respond('${m.challengeId}',true)">Accept</button> <button onclick="respond('${m.challengeId}',false)">Decline</button></div>`}
-  if(m.type==='duel_start'){log(`Duel started vs ${m.opponent} — pot ${m.pot}g (your stake is in escrow)`);$('incoming').innerHTML='';$('duel').innerHTML=duelHtml(99,99)}
-  if(m.type==='duel_tick'){$('duel').innerHTML=duelHtml(m.hpYou,m.hpOpponent)+`<div>You hit ${m.youHit} · they hit ${m.oppHit}</div>`}
-  if(m.type==='duel_end'){log(`🏆 ${m.winner} won ${m.pot}g (${m.reason})`);me=m.profile;$('me').textContent=`${me.username} — ${me.gold}g · rating ${me.rating} · ${me.wins}W/${me.losses}L`;$('duel').innerHTML=''}
- };
+ ws.onmessage=e=>{ let m; try{ m=JSON.parse(e.data); }catch{ return; } onMsg(m); };
+ ws.onclose=()=>{ logLine('⚠️ Connection closed. Reload the page to reconnect.'); };
+ ws.onerror=()=>{ logLine('⚠️ Connection problem.'); };
 }
-function duelHtml(y,o){return `You <div class="hp"><div style="width:${y}%"></div></div> Opponent <div class="hp"><div style="width:${o}%"></div></div>`}
-window.respond=(id,accept)=>{ws.send(JSON.stringify({type:'challenge_response',challengeId:id,accept}));$('incoming').innerHTML=''};
-$('challenge').onclick=()=>{if(!selected)return log('Select a player first');ws.send(JSON.stringify({type:'challenge',target:selected,stake:+$('stake').value}))};
-$('send').onclick=()=>{ws.send(JSON.stringify({type:'chat',text:$('chat').value}));$('chat').value=''};
-$('style').onchange=()=>ws&&ws.send(JSON.stringify({type:'style',style:$('style').value}));
-function renderList(){$('plist').innerHTML=players.map(p=>`<div onclick="selected='${p.username}';renderList()" style="cursor:pointer;${selected===p.username?'color:#ffd75e':''}">• ${p.username}${p.inDuel?' (in duel)':''}</div>`).join('')||'Just you so far'}
-const cv=$('cv'),ctx=cv.getContext('2d');
-function draw(){ctx.clearRect(0,0,800,450);ctx.fillStyle='#8a6d1f';ctx.fillRect(360,10,80,30);ctx.fillStyle='#fff';ctx.fillText('PLAZA',385,30);
- for(const p of players){ctx.beginPath();ctx.arc(p.x,p.y,16,0,7);ctx.fillStyle=p.username===(me&&me.username)?'#ffd75e':'#c33';ctx.fill();ctx.fillStyle='#fff';ctx.font='12px system-ui';ctx.fillText(p.username,p.x-20,p.y-22)}}
-cv.onclick=e=>{const r=cv.getBoundingClientRect();myPos={x:(e.clientX-r.left)*800/r.width,y:(e.clientY-r.top)*450/r.height};
- for(const p of players){if(Math.hypot(p.x-myPos.x,p.y-myPos.y)<24){selected=p.username;renderList();return}}
- ws&&ws.send(JSON.stringify({type:'move',x:myPos.x,y:myPos.y}))};
-addEventListener('keydown',e=>keys[e.key.toLowerCase()]=1);addEventListener('keyup',e=>keys[e.key.toLowerCase()]=0);
-setInterval(()=>{if(!ws||ws.readyState!==1)return;let moved=false;
- if(keys.w||keys.arrowup){myPos.y-=8;moved=true} if(keys.s||keys.arrowdown){myPos.y+=8;moved=true}
- if(keys.a||keys.arrowleft){myPos.x-=8;moved=true} if(keys.d||keys.arrowright){myPos.x+=8;moved=true}
- if(moved)ws.send(JSON.stringify({type:'move',x:myPos.x,y:myPos.y}))},100);
-</script></body></html>
+function onMsg(m){
+ if(m.type==='welcome'){ me=m.profile; players=m.players||[]; initMyPos(); renderAll(); syncAvatars(); }
+ if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(drawerPanel==='shop') renderDrawer(); }
+ if(m.type==='exchange_prices'){ goods={}; for(const g of (m.goods||[])) goods[g.id]=g; if(drawerPanel==='exchange') renderDrawer(); drawMinimap(); }
+ if(m.type==='state'){ players=m.players||[]; initMyPos(); syncAvatars(); if(drawerPanel==='players') renderDrawer(); drawMinimap(); }
+ if(m.type==='profile'){ me=m.profile; renderAll(); }
+ if(m.type==='chat'){ logLine(`${m.from}: ${m.text}`); showBubble(m.from,m.text); }
+ if(m.type==='error'){ toast('⚠️ '+m.message); logLine('⚠️ '+m.message); }
+ if(m.type==='shop'){ const d=catalog[m.item]; toast(`${m.action==='buy'?'Bought':'Sold'} ${nameOf(m.item)} x${m.qty} for ${m.total}g (${m.shop})`); }
+ if(m.type==='exchange'){ toast(`${m.action==='buy'?'Bought':'Sold'} ${nameOf(m.good)} x${m.qty} @ ${m.price}g = ${m.total}g`); }
+ if(m.type==='challenge_incoming'){ openIncoming(m); }
+ if(m.type==='duel_start'){ startDuelUI(m); }
+ if(m.type==='duel_tick'){ duelTickUI(m); }
+ if(m.type==='duel_end'){ endDuelUI(m); }
+}
+
+/* ================= HUD / orbs ================= */
+function renderAll(){ renderHUD(); renderOrbs(); if(drawerPanel) renderDrawer(); drawMinimap(); }
+function renderHUD(){
+ if(!me) return;
+ $('hudname').textContent=me.username;
+ $('hudgold').textContent=me.gold;
+ $('hudrating').textContent=me.rating;
+ $('hudwl').textContent=`${me.wins}W/${me.losses}L`;
+}
+function renderOrbs(){
+ if(!me) return;
+ const hp = duel? duel.hpYou : 99;
+ $('orbhpv').textContent=hp;
+ $('orbhp').querySelector('.fill').style.height=clamp(hp/99*100,0,100)+'%';
+ $('orbprv').textContent=`${Math.floor(me.prayerPoints)}/${me.prayerMax}`;
+ $('orbpr').querySelector('.fill').style.height=clamp(me.prayerPoints/me.prayerMax*100,0,100)+'%';
+ const en = duel? duel.energyYou : Math.floor(me.specialEnergy||0);
+ $('orbspv').textContent=en+'%';
+ $('orbsp').querySelector('.fill').style.height=clamp(en,0,100)+'%';
+ $('orbsp').classList.toggle('ready', en>=50);
+}
+$('orbpr').onclick=()=>togglePanel('prayers');
+$('orbsp').onclick=()=>{ if(duel) send({type:'special'}); else toast('Special attack is for duels — it charges as you land hits.'); };
+$('orbhp').onclick=()=>{ if(duel) toast('Eat food or drink a restore potion from your backpack to heal mid-duel.'); };
+
+/* ================= 3D world ================= */
+const W2S=10; // world units -> server coords
+const sx2w=x=>x/W2S-40, sy2w=y=>y/W2S-22.5; // server -> world
+const wx2s=x=>(x+40)*W2S, wz2s=z=>(z+22.5)*W2S; // world -> server
+const BANK_POS={x:400,y:225};
+const SHOP_SPOTS=[ // server coords
+ {shop:'Potion',x:170,y:110,color:0x7a4fd0},
+ {shop:'Weapon',x:630,y:110,color:0xb03a2e},
+ {shop:'Armour',x:630,y:340,color:0x2e6db0},
+ {shop:'Food & Supplies',x:170,y:340,color:0x3f9e4d},
+];
+const BOARD_POS={x:492,y:225};
+let renderer, scene, camera, raycaster;
+let avatars={}; // username -> {group,label,bubbleEl,badgeEl,nameEl,x,z,tx,tz,prayer,bubbleUntil,bob}
+let interactives=[]; // meshes with userData.act
+let myPos=null; // server coords, authoritative-local
+let myInit=false;
+function initMyPos(){
+ if(myInit||!me) return;
+ const s=players.find(p=>p.username===me.username);
+ if(s){ myPos={x:s.x,y:s.y}; myInit=true; }
+}
+function textSprite(text,fg,bg){
+ const c=document.createElement('canvas'); c.width=256; c.height=64;
+ const g=c.getContext('2d');
+ g.fillStyle=bg; g.beginPath(); g.roundRect(6,8,244,48,10); g.fill();
+ g.font='bold 26px system-ui'; g.textAlign='center'; g.textBaseline='middle'; g.fillStyle=fg; g.fillText(text,128,33);
+ const tex=new THREE.CanvasTexture(c);
+ const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true}));
+ sp.scale.set(7,1.75,1);
+ return sp;
+}
+function stoneTexture(){
+ const c=document.createElement('canvas'); c.width=c.height=256; const g=c.getContext('2d');
+ g.fillStyle='#8d8577'; g.fillRect(0,0,256,256);
+ for(let i=0;i<4;i++) for(let j=0;j<4;j++){
+   g.fillStyle=['#948c7c','#867e6e','#9a927f'][((i+j)%3)];
+   g.fillRect(i*64+2,j*64+2,60,60);
+ }
+ g.strokeStyle='#5d574c'; g.lineWidth=3;
+ for(let i=0;i<=4;i++){ g.beginPath(); g.moveTo(i*64,0); g.lineTo(i*64,256); g.stroke(); g.beginPath(); g.moveTo(0,i*64); g.lineTo(256,i*64); g.stroke(); }
+ const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(6,4); return t;
+}
+function box(w,h,d,color,x,y,z,parent,act){
+ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshLambertMaterial({color}));
+ m.position.set(x,y,z); (parent||scene).add(m);
+ if(act){ m.userData.act=act; interactives.push(m); }
+ return m;
+}
+function buildPlaza(){
+ // ground: grass
+ const grass=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({color:0x3e7d33}));
+ grass.rotation.x=-Math.PI/2; scene.add(grass);
+ // stone-paved centre
+ const stone=new THREE.Mesh(new THREE.PlaneGeometry(42,27),new THREE.MeshLambertMaterial({map:stoneTexture()}));
+ stone.rotation.x=-Math.PI/2; stone.position.y=0.02; scene.add(stone);
+ // bank chest on a stone dais (centre)
+ const dais=new THREE.Mesh(new THREE.CylinderGeometry(3.4,3.8,0.5,8),new THREE.MeshLambertMaterial({color:0x7c7565}));
+ dais.position.set(sx2w(BANK_POS.x),0.25,sy2w(BANK_POS.y)); scene.add(dais);
+ const bankG=new THREE.Group(); bankG.position.set(sx2w(BANK_POS.x),0.5,sy2w(BANK_POS.y)); scene.add(bankG);
+ box(2.4,1.3,1.6,0x6e4a1f,0,0.65,0,bankG,{type:'bank'});
+ box(2.6,0.5,1.8,0x59390f,0,1.5,0,bankG,{type:'bank'});
+ box(2.65,0.22,1.85,0xd4af37,0,1.18,0,bankG,{type:'bank'}); // gold band
+ box(0.5,0.5,0.15,0xffd75e,0,0.75,0.85,bankG,{type:'bank'}); // gold clasp
+ const bl=textSprite('🏦 BANK','#ffd75e','rgba(23,19,12,0.85)'); bl.position.set(0,3.1,0); bankG.add(bl);
+ // shop stalls
+ for(const s of SHOP_SPOTS){
+   const g=new THREE.Group(); g.position.set(sx2w(s.x),0,sy2w(s.y)); scene.add(g);
+   const act={type:'shop',shop:s.shop};
+   box(0.18,2.2,0.18,0x5a4020,-1.4,1.1,-0.9,g,act); box(0.18,2.2,0.18,0x5a4020,1.4,1.1,-0.9,g,act);
+   box(0.18,2.2,0.18,0x5a4020,-1.4,1.1,0.9,g,act); box(0.18,2.2,0.18,0x5a4020,1.4,1.1,0.9,g,act);
+   box(3.4,0.18,2.4,s.color,0,2.35,0,g,act); // awning
+   box(3.0,0.8,1.4,0x74552a,0,0.4,0.3,g,act); // counter
+   box(0.7,0.7,0.7,0xd4af37,-0.8,1.15,0.3,g,act); box(0.6,0.6,0.6,0xb03a2e,0.7,1.1,0.3,g,act); // goods on counter
+   const lb=textSprite(s.shop,'#ffffff','rgba(23,19,12,0.85)'); lb.position.set(0,3.6,0); g.add(lb);
+ }
+ // duel board
+ const bg=new THREE.Group(); bg.position.set(sx2w(BOARD_POS.x),0,sy2w(BOARD_POS.y)); scene.add(bg);
+ box(0.18,2.4,0.18,0x5a4020,-1.1,1.2,0,bg); box(0.18,2.4,0.18,0x5a4020,1.1,1.2,0,bg);
+ box(2.8,1.7,0.12,0x8a6d1f,0,1.7,0,bg);
+ const dbl=textSprite('⚔️ DUEL BOARD','#ffd75e','rgba(23,19,12,0.85)'); dbl.position.set(0,3.2,0); bg.add(dbl);
+ // perimeter fences with gaps at the four gates
+ const fenceMat=0x6b4e26;
+ function fenceRun(x1,z1,x2,z2){
+   const len=Math.hypot(x2-x1,z2-z1), n=Math.max(2,Math.round(len/4));
+   for(let i=0;i<=n;i++){ const t=i/n; box(0.16,1.1,0.16,fenceMat,x1+(x2-x1)*t,0.55,z1+(z2-z1)*t,scene); }
+   const midx=(x1+x2)/2, midz=(z1+z2)/2, ang=Math.atan2(x2-x1,z2-z1);
+   const rail=box(0.08,0.12,len,fenceMat,midx,0.85,midz,scene); rail.rotation.y=ang;
+   const rail2=box(0.08,0.12,len,fenceMat,midx,0.45,midz,scene); rail2.rotation.y=ang;
+ }
+ fenceRun(-40,-22.5,-3.5,-22.5); fenceRun(3.5,-22.5,40,-22.5); // north, gap at gate
+ fenceRun(-40,22.5,-3.5,22.5); fenceRun(3.5,22.5,40,22.5); // south
+ fenceRun(-40,-22.5,-40,-3.5); fenceRun(-40,3.5,-40,22.5); // west
+ fenceRun(40,-22.5,40,-3.5); fenceRun(40,3.5,40,22.5); // east
+ // gate posts N/E/S/W (visual only — Phase 3 areas later)
+ for(const [gx,gz] of [[0,-22.5],[0,22.5],[-40,0],[40,0]]){
+   const horiz=Math.abs(gz)>Math.abs(gx);
+   const dx=horiz?2.6:0, dz=horiz?0:2.6;
+   box(0.5,3.4,0.5,0x7c7565,gx-dx,1.7,gz-dz,scene); box(0.5,3.4,0.5,0x7c7565,gx+dx,1.7,gz+dz,scene);
+   box(horiz?5.7:0.6,0.4,horiz?0.6:5.7,0xd4af37,gx,3.3,gz,scene);
+ }
+ // trees scattered away from the centre
+ const treeSpots=[[-34,-17],[-26,16],[-14,-19],[14,19],[26,-17],[34,16],[36,-6],[-36,5],[20,-20],[-20,20],[30,4],[-30,-5],[8,20],[-8,-20]];
+ for(const [tx,tz] of treeSpots){
+   box(0.35,1.4,0.35,0x5a4020,tx,0.7,tz,scene);
+   const cone=new THREE.Mesh(new THREE.ConeGeometry(1.7,3.4,7),new THREE.MeshLambertMaterial({color:0x2c5e26}));
+   cone.position.set(tx,3.1,tz); scene.add(cone);
+ }
+ // a few rocks / bushes for feel
+ for(const [rx,rz] of [[-18,8],[18,-9],[24,12],[-24,-12],[6,-18],[-6,17]]){
+   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.7),new THREE.MeshLambertMaterial({color:0x8a8578}));
+   rock.position.set(rx,0.4,rz); scene.add(rock);
+ }
+}
+function makeKnight(isMe,name){
+ const g=new THREE.Group();
+ const main=isMe?0xd4af37:0x77808e, dark=isMe?0x8a6d1f:0x4a4f58;
+ box(0.26,0.75,0.26,dark,-0.18,0.38,0,g); box(0.26,0.75,0.26,dark,0.18,0.38,0,g); // legs
+ box(0.78,0.85,0.45,main,0,1.18,0,g); // body
+ box(0.24,0.7,0.24,main,-0.52,1.2,0,g); box(0.24,0.7,0.24,main,0.52,1.2,0,g); // arms
+ box(0.46,0.46,0.46,0xd9a066,0,1.85,0,g); // head
+ box(0.52,0.2,0.52,main,0,2.12,0,g); // helm rim
+ const sword=new THREE.Group(); sword.position.set(0.62,1.35,0); g.add(sword);
+ box(0.07,0.85,0.14,0xd9dee6,0,0.35,0,sword); box(0.3,0.08,0.2,0xd4af37,0,-0.1,0,sword);
+ const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.28}));
+ sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
+ const label=document.createElement('div'); label.className='plabel';
+ label.innerHTML=`<div class="bubble"></div><span class="badge"></span> <span class="nm">${esc(name)}</span>`;
+ $('labels').appendChild(label);
+ return {group:g,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),
+   x:0,z:0,tx:0,tz:0,prayer:null,bubbleUntil:0,bob:Math.random()*6,isMe};
+}
+const PRAYER_BADGE={melee:'🛡️',missiles:'🏹',magic:'🔮'};
+function syncAvatars(){
+ if(!scene||!me) return;
+ const seen=new Set();
+ for(const p of players){
+   seen.add(p.username);
+   let a=avatars[p.username];
+   if(!a){
+     a=makeKnight(p.username===me.username,p.username);
+     a.x=a.tx=sx2w(p.x); a.z=a.tz=sy2w(p.y);
+     avatars[p.username]=a; scene.add(a.group);
+   }
+   if(p.username!==me.username){ a.tx=sx2w(p.x); a.tz=sy2w(p.y); }
+   a.prayer=p.activePrayer||null;
+   a.badgeEl.textContent=a.prayer?PRAYER_BADGE[a.prayer]:'';
+ }
+ for(const name of Object.keys(avatars)){
+   if(!seen.has(name)){ scene.remove(avatars[name].group); avatars[name].label.remove(); delete avatars[name]; }
+ }
+}
+function showBubble(name,text){
+ const a=avatars[name]; if(!a) return;
+ a.bubbleEl.textContent=text; a.bubbleEl.style.display='block'; a.bubbleUntil=Date.now()+3000;
+}
+/* hitsplats */
+let splats=[];
+function spawnSplat(name,dmg,special){
+ const a=avatars[name]; if(!a) return;
+ const el=document.createElement('div');
+ el.className='splat'+(dmg===0?' zero':'')+(special?' spec':'');
+ el.textContent=special?`⚔️ ${dmg}`:String(dmg);
+ $('splats').appendChild(el);
+ splats.push({el,av:a,born:performance.now()});
+}
+const _v=new THREE.Vector3();
+function projectTo(x,y,z){
+ _v.set(x,y,z).project(camera);
+ if(_v.z>1) return null;
+ return {x:(_v.x*0.5+0.5)*innerWidth, y:(-_v.y*0.5+0.5)*innerHeight};
+}
+function updateLabels(now){
+ for(const a of Object.values(avatars)){
+   const s=projectTo(a.group.position.x,2.75,a.group.position.z);
+   if(!s){ a.label.style.display='none'; continue; }
+   a.label.style.display='block';
+   a.label.style.left=s.x+'px'; a.label.style.top=s.y+'px';
+   if(a.bubbleUntil && now>a.bubbleUntil){ a.bubbleEl.style.display='none'; a.bubbleUntil=0; }
+ }
+ splats=splats.filter(sp=>{
+   const age=now-sp.born;
+   if(age>950){ sp.el.remove(); return false; }
+   const s=projectTo(sp.av.group.position.x,2.3-age/950*0.9,sp.av.group.position.z);
+   if(!s){ sp.el.style.opacity='0'; return true; }
+   sp.el.style.left=s.x+'px'; sp.el.style.top=s.y+'px';
+   sp.el.style.opacity=age<80? String(age/80) : String(1-(age-80)/870);
+   return true;
+ });
+}
+
+/* ================= controls & movement ================= */
+let camYaw=0.7, camDist=21;
+const CAM_PITCH=0.92;
+let tapTarget=null; // server coords
+let joyVec={x:0,y:0};
+const keys={};
+addEventListener('keydown',e=>{ keys[e.key.toLowerCase()]=1; });
+addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
+/* joystick */
+(function(){
+ const joy=$('joy'), knob=$('knob'); let pid=null;
+ function setKnob(dx,dy){ knob.style.transform=`translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`; }
+ joy.addEventListener('pointerdown',e=>{ pid=e.pointerId; joy.setPointerCapture(pid); move(e); });
+ joy.addEventListener('pointermove',e=>{ if(e.pointerId===pid) move(e); });
+ function end(e){ if(e.pointerId===pid){ pid=null; joyVec={x:0,y:0}; setKnob(0,0); } }
+ joy.addEventListener('pointerup',end); joy.addEventListener('pointercancel',end);
+ function move(e){
+   const r=joy.getBoundingClientRect(), cx=r.left+r.width/2, cy=r.top+r.height/2;
+   let dx=e.clientX-cx, dy=e.clientY-cy; const len=Math.hypot(dx,dy), max=38;
+   if(len>max){ dx*=max/len; dy*=max/len; }
+   joyVec={x:dx/max,y:dy/max}; setKnob(dx,dy);
+ }
+})();
+/* pointer on the 3D view: tap = interact/move, drag = rotate, pinch/wheel = zoom */
+(function(){
+ const el=$('scene'); const pts=new Map();
+ let downAt=0, downX=0, downY=0, dragged=false, pinchD=0;
+ el.addEventListener('pointerdown',e=>{ pts.set(e.pointerId,{x:e.clientX,y:e.clientY}); downAt=Date.now(); downX=e.clientX; downY=e.clientY; dragged=false;
+   if(pts.size===2){ const [a,b]=[...pts.values()]; pinchD=Math.hypot(a.x-b.x,a.y-b.y); } });
+ el.addEventListener('pointermove',e=>{
+   if(!pts.has(e.pointerId)) return;
+   const prev=pts.get(e.pointerId); pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+   if(pts.size===2){ const [a,b]=[...pts.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y);
+     if(pinchD>0) camDist=clamp(camDist*pinchD/d,10,42); pinchD=d; dragged=true; return; }
+   const dx=e.clientX-prev.x, dy=e.clientY-prev.y;
+   if(Math.hypot(e.clientX-downX,e.clientY-downY)>9) dragged=true;
+   if(dragged && (e.pointerType==='mouse' ? e.buttons===1 : true)) camYaw-=dx*0.006;
+ });
+ function up(e){
+   pts.delete(e.pointerId);
+   if(!dragged && Date.now()-downAt<400) handleTap(e.clientX,e.clientY);
+ }
+ el.addEventListener('pointerup',up); el.addEventListener('pointercancel',up);
+ el.addEventListener('wheel',e=>{ e.preventDefault(); camDist=clamp(camDist+e.deltaY*0.02,10,42); },{passive:false});
+})();
+function handleTap(cx,cy){
+ const mouse=new THREE.Vector2((cx/innerWidth)*2-1,-(cy/innerHeight)*2+1);
+ raycaster.setFromCamera(mouse,camera);
+ // interactive props first
+ const ih=raycaster.intersectObjects(interactives,false)[0];
+ if(ih && ih.object.userData.act){
+   const act=ih.object.userData.act;
+   if(act.type==='bank'){ openPanel('bank'); return; }
+   if(act.type==='shop'){ shopTab=act.shop; openPanel('shop'); return; }
+ }
+ // players
+ let best=null,bestD=1e9;
+ for(const [name,a] of Object.entries(avatars)){
+   const s=projectTo(a.group.position.x,1.4,a.group.position.z);
+   if(!s) continue;
+   const d=Math.hypot(s.x-cx,s.y-cy);
+   if(d<44 && d<bestD){ best=name; bestD=d; }
+ }
+ if(best){ if(best!==me.username) openChallenge(best); return; }
+ // ground -> walk there
+ const gh=raycaster.intersectObjects(scene.children.filter(o=>o.geometry&&o.geometry.type==='PlaneGeometry'),false)[0];
+ if(gh) tapTarget={x:clamp(wx2s(gh.point.x),0,800), y:clamp(wz2s(gh.point.z),0,450)};
+}
+let lastSend=0, lastSentPos=null;
+function stepMovement(dt){
+ if(!myPos||!me) return;
+ let vx=0, vz=0; // world units / s
+ const sYaw=Math.sin(camYaw), cYaw=Math.cos(camYaw);
+ // camera forward on the ground (world): (-sinYaw, -cosYaw); right: (cosYaw, -sinYaw)
+ let f=0, r=0;
+ if(keys.w||keys.arrowup) f+=1; if(keys.s||keys.arrowdown) f-=1;
+ if(keys.d||keys.arrowright) r+=1; if(keys.a||keys.arrowleft) r-=1;
+ f+=-joyVec.y; r+=joyVec.x;
+ if(f||r){ tapTarget=null; const l=Math.hypot(f,r); f/=l; r/=l;
+   vx=(-sYaw*f + cYaw*r); vz=(-cYaw*f - sYaw*r); }
+ else if(tapTarget){
+   const dx=tapTarget.x-myPos.x, dy=tapTarget.y-myPos.y, d=Math.hypot(dx,dy);
+   if(d<6){ tapTarget=null; }
+   else { const sp=150*dt; // server units per step
+          myPos.x+=(dx/d)*sp; myPos.y+=(dy/d)*sp;
+          finishStep(true); return; }
+ }
+ if(vx||vz){
+   const sp=15*dt; // world units/s
+   myPos.x=clamp(myPos.x+vx*sp*W2S,0,800);
+   myPos.y=clamp(myPos.y+vz*sp*W2S,0,450);
+   finishStep(true);
+ } else finishStep(false);
+}
+function finishStep(moved){
+ const a=avatars[me.username]; if(!a) return;
+ a.x=sx2w(myPos.x); a.z=sy2w(myPos.y);
+ if(moved){ a.bob+=0.35; }
+ const now=performance.now();
+ if(moved && now-lastSend>100){
+   const rx=Math.round(myPos.x), ry=Math.round(myPos.y);
+   if(!lastSentPos || lastSentPos.x!==rx || lastSentPos.y!==ry){
+     send({type:'move',x:rx,y:ry}); lastSentPos={x:rx,y:ry};
+   }
+   lastSend=now;
+ }
+}
+/* ================= minimap ================= */
+function drawMinimap(){
+ const c=$('minimap'); if(!c) return; const g=c.getContext('2d');
+ const X=v=>v/800*128, Y=v=>v/450*72;
+ g.fillStyle='#2e4a2a'; g.fillRect(0,0,128,72);
+ g.fillStyle='#6e675a'; g.fillRect(X(400-210),Y(225-135),X(420),Y(270)); // stone centre (server 420x270)
+ g.fillStyle='#ffd75e'; g.fillRect(X(400)-2,Y(225)-2,4,4); // bank
+ for(const s of SHOP_SPOTS){ g.fillStyle='#'+s.color.toString(16).padStart(6,'0'); g.fillRect(X(s.x)-2,Y(s.y)-2,4,4); }
+ g.fillStyle='#fff'; g.fillRect(X(BOARD_POS.x)-1,Y(BOARD_POS.y)-1,3,3);
+ for(const p of players){
+   g.fillStyle=(me&&p.username===me.username)?'#ffd75e':'#ffffff';
+   g.beginPath(); g.arc(X(p.x),Y(p.y),2,0,7); g.fill();
+ }
+}
+/* ================= main loop / init ================= */
+let lastT=performance.now();
+function animate(){
+ requestAnimationFrame(animate);
+ const now=performance.now(); const dt=Math.min(0.05,(now-lastT)/1000); lastT=now;
+ if(!scene) return;
+ stepMovement(dt);
+ // remote avatars ease toward snapshot targets; local follows myPos
+ for(const [name,a] of Object.entries(avatars)){
+   if(me && name===me.username){ a.group.position.set(a.x,Math.abs(Math.sin(a.bob))*0.09,a.z); }
+   else {
+     const k=1-Math.exp(-9*dt);
+     const moving=Math.hypot(a.tx-a.x,a.tz-a.z)>0.05;
+     a.x+=(a.tx-a.x)*k; a.z+=(a.tz-a.z)*k;
+     if(moving) a.bob+=dt*9;
+     a.group.position.set(a.x,moving?Math.abs(Math.sin(a.bob))*0.09:0,a.z);
+   }
+   // face movement direction roughly (toward target)
+   const dx=(me&&name===me.username)?0:(a.tx-a.x), dz=(me&&name===me.username)?0:(a.tz-a.z);
+   if(Math.hypot(dx,dz)>0.05) a.group.rotation.y=Math.atan2(dx,dz);
+ }
+ // camera follows local player
+ const a=me?avatars[me.username]:null;
+ const fx=a?a.group.position.x:0, fz=a?a.group.position.z:0;
+ const cx=fx+Math.sin(camYaw)*Math.cos(CAM_PITCH)*camDist;
+ const cz=fz+Math.cos(camYaw)*Math.cos(CAM_PITCH)*camDist;
+ const cy=Math.sin(CAM_PITCH)*camDist;
+ camera.position.set(cx,cy,cz);
+ camera.lookAt(fx,1.1,fz);
+ updateLabels(now);
+ renderer.render(scene,camera);
+}
+function initThree(){
+ if(typeof THREE==='undefined'){ $('loaderror').style.display='flex'; $('auth').style.display='none'; return false; }
+ try{
+   renderer=new THREE.WebGLRenderer({antialias:true});
+ }catch(e){ $('loaderror').style.display='flex'; $('auth').style.display='none'; return false; }
+ renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+ renderer.setSize(innerWidth,innerHeight);
+ $('scene').appendChild(renderer.domElement);
+ scene=new THREE.Scene();
+ scene.background=new THREE.Color(0x87b5d9);
+ scene.fog=new THREE.Fog(0x87b5d9,55,110);
+ camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.1,300);
+ raycaster=new THREE.Raycaster();
+ scene.add(new THREE.AmbientLight(0xffffff,0.75));
+ const sun=new THREE.DirectionalLight(0xfff2cc,0.9); sun.position.set(30,50,20); scene.add(sun);
+ buildPlaza();
+ addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+ animate();
+ return true;
+}
+initThree();
+
+/* ================= drawer panels ================= */
+let drawerPanel=null, shopTab='Potion', shopMode='buy', bankQty='1', selStack=null;
+const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',players:'👥 Players online'};
+function togglePanel(name){ drawerPanel===(name)? closeDrawer() : openPanel(name); }
+function openPanel(name){ drawerPanel=name; selStack=null; $('drawer').classList.add('open'); renderDrawer();
+ document.querySelectorAll('.rbtn').forEach(b=>b.classList.toggle('on',b.dataset.panel===name)); }
+function closeDrawer(){ drawerPanel=null; $('drawer').classList.remove('open');
+ document.querySelectorAll('.rbtn').forEach(b=>b.classList.remove('on')); }
+document.querySelectorAll('.rbtn').forEach(b=>b.onclick=()=>togglePanel(b.dataset.panel));
+$('drawerx').onclick=closeDrawer;
+function itemCell(s,onclick,extra){
+ return `<div class="cell ${extra||''}" onclick="${onclick}"><span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${iconOf(s.item)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
+}
+function renderDrawer(){
+ if(!drawerPanel||!me) return;
+ $('drawertitle').textContent=PANEL_TITLES[drawerPanel]||'Panel';
+ const b=$('drawerbody');
+ if(drawerPanel==='backpack') b.innerHTML=pBackpack();
+ if(drawerPanel==='worn') b.innerHTML=pWorn();
+ if(drawerPanel==='shop') b.innerHTML=pShop();
+ if(drawerPanel==='bank') b.innerHTML=pBank();
+ if(drawerPanel==='exchange') b.innerHTML=pExchange();
+ if(drawerPanel==='prayers') b.innerHTML=pPrayers();
+ if(drawerPanel==='players') b.innerHTML=pPlayers();
+}
+/* ---- Backpack ---- */
+window.selBp=function(item){ selStack=selStack===item?null:item; renderDrawer(); };
+function pBackpack(){
+ if(!me.backpack.length) return `<p>Your backpack is empty.<br><span class="note">Buy food, potions and gear from the shop stalls around the plaza.</span></p>`;
+ let h=`<div class="grid">${me.backpack.map(s=>itemCell(s,`selBp('${s.item}')`,selStack===s.item?'sel':'')).join('')}</div>`;
+ h+=`<div class="note" style="margin-top:6px">${me.backpack.length} / 28 stacks</div>`;
+ if(selStack){
+   const s=me.backpack.find(x=>x.item===selStack), d=catalog[selStack];
+   if(s){
+     h+=`<div class="detail"><b>${iconOf(s.item)} ${esc(nameOf(s.item))}</b> x${s.qty}`;
+     if(d) h+=`<div class="note">${d.kind}${d.slot?` · worn: ${d.slot}`:''}${d.heal?` · heals ${d.heal} HP`:''}${d.prayerRestore?` · restores ${d.prayerRestore} prayer`:''}${d.maxBonus?` · +${d.maxBonus} max hit`:''}${d.reduction?` · −${Math.round(d.reduction*100)}% damage taken`:''}</div>`;
+     h+=`<div class="btns">`;
+     if(d&&(d.kind==='food'||d.kind==='potion')) h+=`<button class="act" onclick="send({type:'use',item:'${s.item}'})">Use</button>`;
+     if(d&&d.slot) h+=`<button class="act" onclick="send({type:'equip',item:'${s.item}'})">Equip</button>`;
+     h+=`<button class="ghost" onclick="openPanel('bank')">Deposit in bank →</button>`;
+     h+=`</div></div>`;
+   }
+ }
+ return h;
+}
+/* ---- Worn ---- */
+const SLOTS=['weapon','shield','head','body','legs'];
+function pWorn(){
+ let h='';
+ for(const slot of SLOTS){
+   const it=me.worn[slot];
+   h+=`<div class="rowline"><span class="ic">${it?iconOf(it):'▫️'}</span><span class="grow"><b>${slot}</b><br><span class="sub">${it?esc(nameOf(it)):'Empty'}</span></span>${it?`<button class="act" onclick="send({type:'unequip',slot:'${slot}'})">Unequip</button>`:''}</div>`;
+ }
+ h+=`<p class="note">Worn gear boosts your duels: weapons raise accuracy / max hit, armour cuts damage taken (full set +5% extra, capped at 45%).</p>`;
+ return h;
+}
+/* ---- Shops ---- */
+window.setShopTab=function(t){ shopTab=t; renderDrawer(); };
+window.setShopMode=function(m){ shopMode=m; renderDrawer(); };
+function pShop(){
+ let h=`<div class="tabs">${shopNames.map(s=>`<button class="${s===shopTab?'on':''}" onclick="setShopTab('${s}')">${esc(s)}</button>`).join('')}</div>`;
+ h+=`<div class="seg"><button class="${shopMode==='buy'?'on':''}" onclick="setShopMode('buy')">Buy</button><button class="${shopMode==='sell'?'on':''}" onclick="setShopMode('sell')">Sell (60% back)</button></div>`;
+ h+=`<div class="note" style="margin-bottom:6px">Your gold: <b style="color:#ffd75e">${me.gold}g</b></div>`;
+ if(shopMode==='buy'){
+   const items=catalogArr.filter(i=>i.shop===shopTab);
+   if(!items.length) h+=`<p class="note">Nothing here yet.</p>`;
+   for(const d of items){
+     h+=`<div class="rowline"><span class="ic">${iconOf(d.id)}</span><span class="grow"><b>${esc(d.name)}</b>${myQty(d.id)?` <span class="sub">(have ${myQty(d.id)})</span>`:''}<br><span class="sub">${d.heal?`heals ${d.heal} HP · `:''}${d.prayerRestore?`restores ${d.prayerRestore} prayer · `:''}${d.maxBonus?`+${d.maxBonus} max hit · `:''}${d.reduction?`−${Math.round(d.reduction*100)}% dmg · `:''}${d.buy}g</span></span>
+     <button class="act" onclick="send({type:'shop_buy',item:'${d.id}',qty:1})">Buy 1</button><button class="ghost" onclick="send({type:'shop_buy',item:'${d.id}',qty:5})">Buy 5</button></div>`;
+   }
+ } else {
+   const sellable=me.backpack.filter(s=>catalog[s.item]&&catalog[s.item].sell>0);
+   if(!sellable.length) h+=`<p class="note">Nothing in your backpack the shops will buy. (Exchange goods sell on the Gold Exchange.)</p>`;
+   for(const s of sellable){
+     const d=catalog[s.item];
+     h+=`<div class="rowline"><span class="ic">${iconOf(s.item)}</span><span class="grow"><b>${esc(d.name)}</b> x${s.qty}<br><span class="sub">shops pay ${d.sell}g each</span></span>
+     <button class="act" onclick="send({type:'shop_sell',item:'${s.item}',qty:1})">Sell 1</button><button class="ghost" onclick="send({type:'shop_sell',item:'${s.item}',qty:5})">Sell 5</button></div>`;
+   }
+ }
+ return h;
+}
+/* ---- Bank ---- */
+window.setBankQty=function(q){ bankQty=q; renderDrawer(); };
+function bankValue(){ return (me?me.bank:[]).reduce((t,s)=>{ const d=catalog[s.item]; const v=d? d.buy : (goods[s.item]? goods[s.item].price : 0); return t+v*s.qty; },0); }
+function qtyFor(owned){ return bankQty==='all'? owned : Math.min(owned, bankQty==='5'?5:1); }
+function pBank(){
+ let h=`<div class="note">Quantity:</div><div class="seg">${['1','5','all'].map(q=>`<button class="${bankQty===q?'on':''}" onclick="setBankQty('${q}')">${q==='all'?'All':q}</button>`).join('')}</div>`;
+ h+=`<div class="note" style="margin:4px 0">Bank value: <b style="color:#ffd75e">${bankValue()}g</b> · items only — gold stays in your purse.</div>`;
+ h+=`<h4 style="margin:8px 0 5px;color:#ffd75e">Backpack — tap to deposit</h4>`;
+ h+= me.backpack.length? `<div class="grid">${me.backpack.map(s=>itemCell(s,`send({type:'bank_deposit',item:'${s.item}',qty:${qtyFor(s.qty)}})`)).join('')}</div>` : `<p class="note">Backpack is empty.</p>`;
+ h+=`<h4 style="margin:10px 0 5px;color:#ffd75e">Bank — tap to withdraw</h4>`;
+ h+= me.bank.length? `<div class="grid">${me.bank.map(s=>itemCell(s,`send({type:'bank_withdraw',item:'${s.item}',qty:${qtyFor(s.qty)}})`)).join('')}</div>` : `<p class="note">Bank is empty.</p>`;
+ return h;
+}
+/* ---- Gold Exchange ---- */
+function pExchange(){
+ let h=`<div class="note" style="margin-bottom:6px">Prices drift over time. The Exchange buys back at 97%. Your gold: <b style="color:#ffd75e">${me.gold}g</b></div>`;
+ const list=Object.values(goods);
+ if(!list.length) h+=`<p class="note">Waiting for prices…</p>`;
+ for(const g of list){
+   const owned=myQty(g.id);
+   h+=`<div class="rowline"><span class="ic">${iconOf(g.id)}</span><span class="grow"><b>${esc(g.name)}</b><br><span class="sub">${g.price}g each · you have ${owned}</span></span>
+   <button class="act" onclick="send({type:'exchange_buy',good:'${g.id}',qty:1})">Buy 1</button><button class="ghost" onclick="send({type:'exchange_buy',good:'${g.id}',qty:5})">5</button>
+   <button class="act" onclick="send({type:'exchange_sell',good:'${g.id}',qty:1})">Sell 1</button><button class="ghost" onclick="send({type:'exchange_sell',good:'${g.id}',qty:5})">5</button></div>`;
+ }
+ return h;
+}
+/* ---- Prayers ---- */
+function pPrayers(){
+ const pct=clamp(me.prayerPoints/me.prayerMax*100,0,100);
+ let h=`<div class="note">Prayer points: <b style="color:#ffd75e">${Math.floor(me.prayerPoints)} / ${me.prayerMax}</b> — an active prayer drains slowly and switches off at 0.</div>
+ <div class="bar" style="margin:6px 0 10px"><div style="width:${pct}%;background:#2456c8"></div></div>
+ <div style="display:flex;gap:6px">
+  <button class="praybtn ${me.activePrayer==='melee'?'on':''}" onclick="send({type:'prayer',prayer:'melee'})">🛡️<br>Protect<br>Melee</button>
+  <button class="praybtn ${me.activePrayer==='missiles'?'on':''}" onclick="send({type:'prayer',prayer:'missiles'})">🏹<br>Protect<br>Missiles</button>
+  <button class="praybtn ${me.activePrayer==='magic'?'on':''}" onclick="send({type:'prayer',prayer:'magic'})">🔮<br>Protect<br>Magic</button>
+ </div>
+ <p class="note" style="margin-top:8px">One at a time — tapping the lit one turns it off. Your active prayer shows as a badge over your knight.</p>`;
+ if(myQty('prayer_potion')>0) h+=`<button class="act" onclick="send({type:'use',item:'prayer_potion'})">🌟 Drink prayer potion (have ${myQty('prayer_potion')})</button>`;
+ return h;
+}
+/* ---- Players ---- */
+function pPlayers(){
+ const others=players.filter(p=>p.username!==me.username);
+ if(!others.length) return `<p>Just you in the plaza so far.<br><span class="note">Share the link — when a friend signs in, they'll appear here and in the plaza. Tap their knight (or their name here) to challenge them.</span></p>`;
+ return others.map(p=>`<div class="rowline"><span class="ic">🧍</span><span class="grow"><b>${esc(p.username)}</b> ${p.activePrayer?PRAYER_BADGE[p.activePrayer]:''}<br><span class="sub">${p.inDuel?'in a duel':'in the plaza'}</span></span>${p.inDuel?'':`<button class="act" onclick="openChallenge('${esc(p.username)}')">Challenge</button>`}</div>`).join('');
+}
+/* ================= challenge cards ================= */
+function pickerHTML(prefix){
+ if(!me||!me.backpack.length) return `<p class="note">Your backpack is empty — gold-only stake.</p>`;
+ return me.backpack.map((s,i)=>`<div class="pickrow"><span>${iconOf(s.item)}</span><span class="grow">${esc(nameOf(s.item))} <span class="sub">(have ${s.qty})</span></span><input type="number" id="${prefix}${i}" min="0" max="${s.qty}" value="0" data-item="${s.item}"></div>`).join('');
+}
+function readPicker(prefix){
+ const out=[];
+ if(!me) return out;
+ me.backpack.forEach((s,i)=>{ const el=$(prefix+i); if(el){ const q=clamp(Math.floor(+el.value||0),0,s.qty); if(q>0) out.push({item:s.item,qty:q}); } });
+ return out;
+}
+const STYLES_LIST=['accurate','aggressive','defensive','controlled'];
+window.openChallenge=function(name){
+ const sh=$('challengesheet');
+ sh.innerHTML=`<h3>⚔️ Challenge ${esc(name)}</h3>
+ <div class="rowline"><span class="grow">Gold stake (g)</span><input type="number" id="chstake" value="10" min="0"></div>
+ <div class="rowline"><span class="grow">Your fighting style</span><select id="chstyle">${STYLES_LIST.map(s=>`<option ${me&&me.style===s?'selected':''}>${s}</option>`).join('')}</select></div>
+ <p class="note">Add items from your backpack to your stake (winner takes everything staked):</p>
+ ${pickerHTML('chp')}
+ <div class="btns"><button class="act" id="chsend">Send challenge</button><button class="ghost" onclick="closeModal('challengemodal')">Cancel</button></div>
+ <p class="note">Stakes are held by the server in escrow. If they decline, nothing is taken.</p>`;
+ $('challengemodal').classList.add('open');
+ $('chsend').onclick=()=>{
+   const style=$('chstyle').value;
+   if(me.style!==style) send({type:'style',style});
+   send({type:'challenge',target:name,stake:Math.max(0,Math.floor(+$('chstake').value||0)),items:readPicker('chp')});
+   closeModal('challengemodal');
+ };
+};
+window.closeModal=function(id){ $(id).classList.remove('open'); if(id==='incomingmodal') stopIncomingTimer(); };
+let incomingCh=null, incomingTimer=null;
+function stopIncomingTimer(){ if(incomingTimer){ clearInterval(incomingTimer); incomingTimer=null; } }
+function openIncoming(m){
+ incomingCh=m;
+ const itemsTxt=(m.items&&m.items.length)? m.items.map(s=>`${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}`).join(', ') : 'no items';
+ $('incomingsheet').innerHTML=`<h3>⚔️ ${esc(m.from)} challenges you!</h3>
+ <p>Gold stake: <b style="color:#ffd75e">${m.stake}g</b> each<br>Their items: ${itemsTxt}</p>
+ <p class="note">Add your own items to match (winner takes all):</p>
+ ${pickerHTML('inp')}
+ <p class="note" id="incount"></p>
+ <div class="btns"><button class="act" id="inaccept">Accept — fight!</button><button class="ghost" id="indecline">Decline</button></div>
+ <p class="note">Declining takes nothing from anyone.</p>`;
+ $('incomingmodal').classList.add('open');
+ let left=m.seconds||30;
+ const upd=()=>{ const el=$('incount'); if(el) el.textContent=`⏱ ${left}s to answer`; };
+ upd();
+ stopIncomingTimer();
+ incomingTimer=setInterval(()=>{ left--; if(left<=0){ stopIncomingTimer(); closeModal('incomingmodal'); toast('Challenge expired.'); } else upd(); },1000);
+ $('inaccept').onclick=()=>{ send({type:'challenge_response',challengeId:m.challengeId,accept:true,items:readPicker('inp')}); stopIncomingTimer(); closeModal('incomingmodal'); };
+ $('indecline').onclick=()=>{ send({type:'challenge_response',challengeId:m.challengeId,accept:false,items:[]}); stopIncomingTimer(); closeModal('incomingmodal'); };
+}
+/* ================= duel UI ================= */
+let duel=null;
+function startDuelUI(m){
+ duel={id:m.duelId,opponent:m.opponent,pot:m.pot,hpYou:99,hpOpponent:99,energyYou:Math.floor(me?me.specialEnergy||0:0),escrow:m.escrowItems||[]};
+ me=m.profile;
+ $('duelbar').classList.add('open');
+ $('dueloppname').textContent=m.opponent;
+ const itemsTxt=duel.escrow.length? ` + ${duel.escrow.reduce((t,s)=>t+s.qty,0)} items in escrow` : '';
+ $('dueltitle').textContent=`⚔️ You vs ${m.opponent} — pot ${m.pot}g${itemsTxt}`;
+ $('duellast').textContent='Fight! Land hits to charge your Dragon Slash (50%).';
+ renderDuelBar(); renderAll();
+}
+function renderDuelBar(){
+ if(!duel) return;
+ $('hpyou').style.width=clamp(duel.hpYou/99*100,0,100)+'%'; $('hpyouv').textContent=duel.hpYou;
+ $('hpopp').style.width=clamp(duel.hpOpponent/99*100,0,100)+'%'; $('hpoppv').textContent=duel.hpOpponent;
+ const consum=(me?me.backpack:[]).filter(s=>catalog[s.item]&&(catalog[s.item].kind==='food'||catalog[s.item].kind==='potion'));
+ let h=`<button class="act" id="specbtn">⚡ Dragon Slash (${duel.energyYou}%)</button>`;
+ for(const s of consum) h+=`<button class="ghost" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}</button>`;
+ $('duelquick').innerHTML=h;
+ const sb=$('specbtn');
+ sb.classList.toggle('ready',duel.energyYou>=50);
+ sb.onclick=()=>send({type:'special'});
+}
+function duelTickUI(m){
+ if(!duel) return;
+ duel.hpYou=m.hpYou; duel.hpOpponent=m.hpOpponent; duel.energyYou=m.energyYou;
+ if(me) me.specialEnergy=m.energyYou;
+ if(m.youHit!==undefined && (m.youHit>0||m.oppHit>0||m.note)) { /* splats below */ }
+ spawnSplat(duel.opponent,m.youHit,m.youSpecial);
+ spawnSplat(me.username,m.oppHit,m.oppSpecial);
+ let last=`You hit ${m.youHit}${m.youSpecial?' (DRAGON SLASH!)':''} · they hit ${m.oppHit}${m.oppSpecial?' (special!)':''}`;
+ if(m.note) last=m.note;
+ $('duellast').textContent=last;
+ renderDuelBar(); renderOrbs();
+}
+function endDuelUI(m){
+ const wasDuel=duel; duel=null;
+ $('duelbar').classList.remove('open');
+ me=m.profile;
+ const won=m.winner===me.username;
+ const itemsTxt=(m.itemsWon&&m.itemsWon.length)? `<br>Items in the pot: ${m.itemsWon.map(s=>`${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}`).join(', ')}` : '';
+ $('duelendsheet').innerHTML=`<h3>${won?'🏆 You won!':'💀 You lost'}</h3>
+ <p><b>${esc(m.winner)}</b> won the duel (${esc(m.reason)}) and took the <b style="color:#ffd75e">${m.pot}g</b> pot.${itemsTxt}</p>
+ <p class="note">Your gold: ${me.gold}g · Record: ${me.wins}W/${me.losses}L · Rating ${me.rating}</p>
+ <div class="btns"><button class="act" onclick="closeModal('duelendmodal')">Back to the plaza</button></div>`;
+ $('duelendmodal').classList.add('open');
+ renderAll();
+}
+/* ================= chat ================= */
+$('sendchat').onclick=()=>{ const v=$('chat').value.trim(); if(v){ send({type:'chat',text:v}); $('chat').value=''; } };
+$('chat').addEventListener('keydown',e=>{ if(e.key==='Enter') $('sendchat').click(); });
+$('chathead').onclick=()=>{ const b=$('chatbox'); b.classList.toggle('closed'); $('chatchev').textContent=b.classList.contains('closed')?'▸':'▾'; };
+logLine('Welcome to nallystake online. Create an account or sign in to enter the plaza.');
+</script>
+</body></html>
