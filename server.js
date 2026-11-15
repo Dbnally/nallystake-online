@@ -8,10 +8,15 @@
 // bank item state, an item catalog with 4 shops, tap-to-wear equipping,
 // consumables, Dragon Slash specials, item staking, the Bank of Gielinor
 // (items only — gold stays a profile number), a drifting Gold Exchange,
-// and OSRS Protect prayers (toggle/drain/badge). NOTE: prayers do NOT
-// block damage in PvP duels yet — every duel attack is melee-type, so a
-// full Protect-from-Melee block would stalemate every fight. NPC
-// full-block arrives with Phase 3 areas, per Derek's spec.
+// and OSRS Protect prayers (toggle/drain/badge).
+//
+// Stage 1 (catch-up) adds: the skills foundation (13 skills on the real
+// OSRS XP curve, total level + OSRS combat level, saved per player), the
+// areas framework (plaza + Goblin Camp, per-area player snapshots), and
+// server-run NPC combat vs goblins (drops: gold, ranarr herbs, prayer
+// potions). Prayer rule per Derek's spec: Protect prayers FULLY block
+// matching NPC hits; they still do NOT block in PvP duels — every duel
+// attack is melee-type, so a full block would stalemate every fight.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -105,6 +110,50 @@ function goodsList() {
   return GOODS.map((g) => ({ id: g.id, name: g.name, price: exchangePrices[g.id] }));
 }
 
+// ---------- Skills (Stage 1): real OSRS XP curve ----------
+// XP_TABLE[L] = total XP needed for level L, generated with the standard
+// OSRS formula: floor( sum_{x=1}^{L-1} floor(x + 300 * 2^(x/7)) / 4 ).
+// (Level 2 = 83, level 10 = 1154, level 99 = 13,034,431.)
+const SKILLS = ['attack', 'strength', 'defence', 'hitpoints', 'ranged', 'magic', 'prayer',
+  'mining', 'smithing', 'woodcutting', 'firemaking', 'fishing', 'cooking'];
+const XP_TABLE = [0, 0]; // index by level 1..99
+{
+  let points = 0;
+  for (let lvl = 2; lvl <= 99; lvl++) {
+    const x = lvl - 1;
+    points += Math.floor(x + 300 * Math.pow(2, x / 7));
+    XP_TABLE[lvl] = Math.floor(points / 4);
+  }
+}
+function levelForXp(xp) {
+  let lvl = 1;
+  for (let l = 2; l <= 99; l++) { if (xp >= XP_TABLE[l]) lvl = l; else break; }
+  return lvl;
+}
+// New players: Hitpoints starts at level 10 (1154 XP, the OSRS default);
+// every other skill starts at level 1 (0 XP).
+function defaultXp() {
+  const xp = {};
+  for (const s of SKILLS) xp[s] = 0;
+  xp.hitpoints = 1154;
+  return xp;
+}
+function levelsOf(p) {
+  const lv = {};
+  for (const s of SKILLS) lv[s] = levelForXp((p.xp && p.xp[s]) || 0);
+  return lv;
+}
+// OSRS combat level (float; clients floor it for display):
+// base = 0.25*(Defence + Hitpoints + floor(Prayer/2)); combat = base +
+// max(0.325*(Attack+Strength), 0.325*floor(Ranged*1.5), 0.325*floor(Magic*1.5)).
+function combatLevelOf(levels) {
+  const base = 0.25 * (levels.defence + levels.hitpoints + Math.floor(levels.prayer / 2));
+  const melee = 0.325 * (levels.attack + levels.strength);
+  const ranged = 0.325 * Math.floor(levels.ranged * 1.5);
+  const magic = 0.325 * Math.floor(levels.magic * 1.5);
+  return base + Math.max(melee, ranged, magic);
+}
+
 // ---------- player state v2 ----------
 function newProfile(username) {
   return {
@@ -115,6 +164,7 @@ function newProfile(username) {
     bank: [], // [{item, qty}] stacks — items only, gold stays a number
     prayerPoints: PRAYER_MAX, prayerMax: PRAYER_MAX, activePrayer: null,
     specialEnergy: 0,
+    xp: defaultXp(), // Stage 1 skills — see SKILLS / XP_TABLE above
   };
 }
 // Migration: Phase 1 accounts gain the v2 fields with defaults. Existing
@@ -129,10 +179,19 @@ function ensureV2(p) {
   if (typeof p.prayerPoints !== 'number') { p.prayerPoints = p.prayerMax; changed = true; }
   if (!('activePrayer' in p)) { p.activePrayer = null; changed = true; }
   if (typeof p.specialEnergy !== 'number') { p.specialEnergy = 0; changed = true; }
+  // Stage 1 migration: existing accounts gain the skills map with the
+  // standard defaults (Hitpoints 1154, everything else 0). Nothing else
+  // about the profile is touched.
+  if (!p.xp || typeof p.xp !== 'object') { p.xp = defaultXp(); changed = true; }
+  else {
+    const d = defaultXp();
+    for (const s of SKILLS) if (typeof p.xp[s] !== 'number' || p.xp[s] < 0) { p.xp[s] = d[s]; changed = true; }
+  }
   return changed;
 }
 function publicProfile(p) {
   ensureV2(p);
+  const levels = levelsOf(p);
   return {
     username: p.username, gold: p.gold, rating: p.rating, wins: p.wins, losses: p.losses, style: p.style,
     backpack: p.backpack.map((s) => ({ item: s.item, qty: s.qty })),
@@ -140,10 +199,34 @@ function publicProfile(p) {
     bank: p.bank.map((s) => ({ item: s.item, qty: s.qty })),
     prayerPoints: Math.round(p.prayerPoints * 10) / 10, prayerMax: p.prayerMax,
     activePrayer: p.activePrayer, specialEnergy: p.specialEnergy,
+    // Stage 1 skills: raw XP per skill, computed levels, total, combat.
+    xp: { ...p.xp },
+    levels,
+    totalLevel: SKILLS.reduce((t, s) => t + levels[s], 0),
+    combatLevel: Math.round(combatLevelOf(levels) * 100) / 100,
   };
 }
 function leaderboardProfile(p) {
   return { username: p.username, gold: p.gold, rating: p.rating, wins: p.wins, losses: p.losses, style: p.style };
+}
+// Grant XP in one or more skills: applies the gains, sends one
+// {type:'xp'} notice per skill (the client turns these into XP drops),
+// and saves once. `online`/`send` are defined in the real-time section —
+// this only runs while a player is connected and playing.
+function addXp(key, gains) {
+  const u = db.users[key];
+  if (!u) return;
+  const p = u.profile;
+  ensureV2(p);
+  let changed = false;
+  for (const [skill, amt] of Object.entries(gains)) {
+    if (!amt || !(skill in p.xp)) continue;
+    p.xp[skill] += amt;
+    changed = true;
+    const sess = online.get(key);
+    if (sess) send(sess.ws, { type: 'xp', skill, xp: p.xp[skill], level: levelForXp(p.xp[skill]) });
+  }
+  if (changed) save(key);
 }
 
 // ---------- backpack / bank stack helpers ----------
@@ -237,21 +320,63 @@ const server = http.createServer(async (req, res) => {
 
 // ---------- Real-time play ----------
 const wss = new WebSocketServer({ server, path: '/ws' });
-const online = new Map(); // usernameKey -> { ws, profile, x, y, duelId }
+const online = new Map(); // usernameKey -> { ws, profile, x, y, area, duelId, npcFightId }
 const challenges = new Map(); // id -> { from, to, stake, items, expires }
 const duels = new Map(); // id -> duel
+
+// ---------- Areas (Stage 1) ----------
+// Each area has its own 0..800 x 0..450 coordinate space. A player's area
+// is SESSION-ONLY state (not saved): everyone logs back into the plaza.
+// Movement, snapshots and NPCs are per-area; chat stays global.
+const AREAS = {
+  plaza: { name: 'Plaza', spawn: { x: 400, y: 225 } },
+  goblins: { name: 'Goblin Camp', spawn: { x: 100, y: 225 } },
+};
+const NPC_RANGE = 150; // server units — attack / stay-in-combat range (15 tiles at 10 units/tile)
+
+// ---------- NPCs (Stage 1): Goblin Camp ----------
+// Goblins are stationary at their spawn points this stage (no wandering).
+const GOBLIN_DEF = { kind: 'goblin', name: 'Goblin', combatLevel: 5, maxHp: 12, maxHit: 2, acc: 0.55, attackType: 'melee', respawnMs: 10000 };
+const GOBLIN_SPAWNS = [[200, 225], [320, 160], [420, 260], [520, 180], [380, 340], [600, 300]];
+const npcs = new Map(); // id -> live NPC instance (all in the goblins area)
+GOBLIN_SPAWNS.forEach(([x, y], i) => {
+  const id = 'goblin' + (i + 1);
+  npcs.set(id, { id, ...GOBLIN_DEF, area: 'goblins', x, y, spawnX: x, spawnY: y, hp: GOBLIN_DEF.maxHp, alive: true, respawnAt: 0, fightId: null });
+});
+const npcFights = new Map(); // id -> { id, playerKey, npcId, hpYou, maxHpYou, specialQueued, done, timer }
+// Pseudo-profile so goblins can be the defender in the duel rollHit():
+// no style block, no worn gear, no armour reduction.
+const NPC_DEFENDER = { style: 'accurate', worn: { weapon: null, shield: null, head: null, body: null, legs: null } };
+
+function npcStateMsg() {
+  return {
+    type: 'npc_state', area: 'goblins',
+    npcs: [...npcs.values()].filter((n) => n.alive).map((n) => ({ id: n.id, kind: n.kind, x: n.x, y: n.y, hp: n.hp, maxHp: n.maxHp })),
+  };
+}
+function broadcastNpcState() {
+  const msg = npcStateMsg();
+  for (const p of online.values()) if (p.area === 'goblins') send(p.ws, msg);
+}
 
 function send(ws, obj) { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 function broadcast(obj, exceptKey) {
   for (const [k, p] of online) if (k !== exceptKey) send(p.ws, obj);
 }
-function playersSnapshot() {
-  return [...online.values()].map((p) => ({
-    username: p.profile.username, x: Math.round(p.x), y: Math.round(p.y),
+function playersSnapshot(area) {
+  return [...online.values()].filter((p) => !area || p.area === area).map((p) => ({
+    username: p.profile.username, x: Math.round(p.x), y: Math.round(p.y), area: p.area,
     inDuel: !!p.duelId, activePrayer: p.profile.activePrayer || null,
   }));
 }
-function broadcastState() { broadcast({ type: 'state', players: playersSnapshot() }); }
+// State is per-area: players only see (and are seen by) their own area.
+function broadcastState() {
+  const areasPresent = new Set([...online.values()].map((p) => p.area));
+  for (const area of areasPresent) {
+    const msg = { type: 'state', area, players: playersSnapshot(area) };
+    for (const p of online.values()) if (p.area === area) send(p.ws, msg);
+  }
+}
 function sendProfile(key) {
   const p = online.get(key);
   if (p) send(p.ws, { type: 'profile', profile: publicProfile(p.profile) });
@@ -368,6 +493,140 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = []) {
   }, TICK_MS);
 }
 
+// ---------- NPC combat (Stage 1) ----------
+// Combat XP for one damaging hit of `dmg`, OSRS-style: dmg*4 to the
+// style's skill (controlled splits it across Attack/Strength/Defence —
+// each floor(total/3), remainder to Defence) plus dmg*1.33 to Hitpoints.
+function combatXpGains(style, dmg) {
+  const total = dmg * 4;
+  const gains = { hitpoints: Math.round(dmg * 1.33) };
+  if (style === 'aggressive') gains.strength = total;
+  else if (style === 'defensive') gains.defence = total;
+  else if (style === 'controlled') {
+    const each = Math.floor(total / 3);
+    gains.attack = each; gains.strength = each; gains.defence = total - each * 2;
+  } else gains.attack = total; // accurate (and any fallback)
+  return gains;
+}
+// Goblin drop table: 2-8 gold coins always; plus one item roll —
+// 15% prayer potion, 25% ranarr herbs, 60% no item.
+function rollNpcDrops(profile) {
+  const gold = 2 + Math.floor(Math.random() * 7);
+  profile.gold += gold;
+  const items = [];
+  const r = Math.random();
+  const item = r < 0.15 ? 'prayer_potion' : r < 0.40 ? 'herbs' : null;
+  if (item) {
+    const leftover = addStacks(profile.backpack, item, 1, BACKPACK_MAX_STACKS);
+    if (leftover > 0) addStacks(profile.bank, item, leftover); // full pack: bank it, never lose a drop
+    items.push({ item, qty: 1 });
+  }
+  return { gold, items };
+}
+function finishNpcFight(fight, reason, drops) {
+  if (fight.done) return;
+  fight.done = true;
+  clearInterval(fight.timer);
+  npcFights.delete(fight.id);
+  const npc = npcs.get(fight.npcId);
+  if (npc && npc.fightId === fight.id) npc.fightId = null;
+  const sess = online.get(fight.playerKey);
+  if (sess) {
+    if (sess.npcFightId === fight.id) sess.npcFightId = null;
+    send(sess.ws, { type: 'npc_fight', phase: 'end', npcId: fight.npcId, kind: npc ? npc.kind : 'goblin', reason, drops: drops || null, profile: publicProfile(sess.profile) });
+  }
+}
+// Friendly death rule: dying to an NPC costs NOTHING — the player wakes
+// in the plaza (next fight starts at full HP, as fight HP is per-fight).
+function respawnPlayer(key, note) {
+  const sess = online.get(key);
+  if (!sess) return;
+  sess.area = 'plaza';
+  sess.x = AREAS.plaza.spawn.x; sess.y = AREAS.plaza.spawn.y;
+  send(sess.ws, { type: 'area', area: 'plaza' });
+  send(sess.ws, { type: 'chat', from: 'Game', text: note });
+  broadcastState();
+}
+function startNpcFight(key, npc) {
+  const sess = online.get(key);
+  const profile = sess.profile;
+  const id = crypto.randomBytes(6).toString('hex');
+  // Fight HP pool = the player's Hitpoints level (duels keep their 99 pool).
+  const maxHpYou = Math.max(1, levelForXp(profile.xp.hitpoints));
+  const fight = { id, playerKey: key, npcId: npc.id, hpYou: maxHpYou, maxHpYou, specialQueued: false, done: false, timer: null };
+  npcFights.set(id, fight);
+  sess.npcFightId = id;
+  npc.fightId = id;
+  send(sess.ws, {
+    type: 'npc_fight', phase: 'start', npcId: npc.id, kind: npc.kind, name: npc.name, combatLevel: npc.combatLevel,
+    hpYou: fight.hpYou, maxHpYou, hpNpc: npc.hp, maxHpNpc: npc.maxHp, energyYou: profile.specialEnergy,
+  });
+  fight.timer = setInterval(() => npcTick(fight), TICK_MS);
+}
+function npcTick(fight) {
+  const sess = online.get(fight.playerKey);
+  const npc = npcs.get(fight.npcId);
+  if (!sess || !npc) { finishNpcFight(fight, 'gone'); return; }
+  const profile = sess.profile;
+  // Walking too far from the goblin breaks off the fight.
+  if (sess.area !== npc.area || Math.hypot(sess.x - npc.x, sess.y - npc.y) > NPC_RANGE) { finishNpcFight(fight, 'range'); return; }
+  const useSpec = fight.specialQueued; fight.specialQueued = false;
+  if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
+  // Player swing: the exact duel roll (style + worn weapon vs no armour).
+  const youHit = rollHit(profile, NPC_DEFENDER, useSpec);
+  // Goblin swing: Protect from Melee FULLY blocks it (Derek's OSRS spec);
+  // otherwise the duel rules apply — Defensive style block chance, then
+  // the goblin's accuracy, then the player's worn armour reduction.
+  let npcHit = 0;
+  if (profile.activePrayer === npc.attackType) npcHit = 0;
+  else if (STYLES[profile.style] && STYLES[profile.style].block && Math.random() < STYLES[profile.style].block) npcHit = 0;
+  else if (Math.random() <= npc.acc) {
+    const raw = 1 + Math.floor(Math.random() * npc.maxHit);
+    npcHit = Math.floor(raw * (1 - armourReduction(profile)));
+  }
+  npc.hp -= youHit;
+  fight.hpYou -= npcHit;
+  if (youHit > 0) {
+    profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
+    addXp(fight.playerKey, combatXpGains(profile.style, youHit));
+  }
+  send(sess.ws, {
+    type: 'npc_fight', phase: 'tick', npcId: npc.id,
+    hpYou: Math.max(0, fight.hpYou), maxHpYou: fight.maxHpYou,
+    hpNpc: Math.max(0, npc.hp), maxHpNpc: npc.maxHp,
+    youHit, npcHit, youSpecial: useSpec, energyYou: profile.specialEnergy,
+  });
+  broadcastNpcState();
+  if (npc.hp <= 0) {
+    // Kill: drops land, the goblin respawns in 10s. If the goblin's last
+    // swing also dropped the player, the kill still counts (duel-style
+    // both-resolve tick) and the player still wakes in the plaza.
+    npc.alive = false; npc.hp = 0; npc.respawnAt = Date.now() + npc.respawnMs;
+    const drops = rollNpcDrops(profile);
+    save(fight.playerKey);
+    const playerDead = fight.hpYou <= 0;
+    finishNpcFight(fight, 'kill', drops);
+    broadcastNpcState();
+    if (playerDead) respawnPlayer(fight.playerKey, 'You took the goblin down with you — you wake up in the plaza. Nothing lost.');
+    return;
+  }
+  if (fight.hpYou <= 0) {
+    npc.hp = npc.maxHp; // the goblin resets when it wins
+    finishNpcFight(fight, 'death', null);
+    broadcastNpcState();
+    respawnPlayer(fight.playerKey, 'The goblin got you! You wake up in the plaza at full health. Nothing lost.');
+  }
+}
+
+// Goblin respawns: 10s after death, back at full HP on its spawn point.
+setInterval(() => {
+  let any = false;
+  for (const npc of npcs.values()) {
+    if (!npc.alive && Date.now() >= npc.respawnAt) { npc.alive = true; npc.hp = npc.maxHp; any = true; }
+  }
+  if (any) broadcastNpcState();
+}, 1000);
+
 // Gold Exchange prices drift on a random walk inside each good's band.
 setInterval(() => {
   for (const g of GOODS) {
@@ -406,8 +665,9 @@ wss.on('connection', (ws, req) => {
   if (online.has(key)) { send(ws, { type: 'error', message: 'Already signed in somewhere else.' }); ws.close(); return; }
   const profile = db.users[key].profile;
   ensureV2(profile);
-  online.set(key, { ws, profile, x: 100 + Math.random() * 500, y: 100 + Math.random() * 250, duelId: null });
-  send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot() });
+  // Everyone logs into the plaza (area is session-only, never saved).
+  online.set(key, { ws, profile, x: 100 + Math.random() * 500, y: 100 + Math.random() * 250, area: 'plaza', duelId: null, npcFightId: null });
+  send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot('plaza'), area: 'plaza' });
   send(ws, { type: 'catalog', items: catalogList(), shops: SHOPS });
   send(ws, { type: 'exchange_prices', goods: goodsList() });
   broadcast({ type: 'chat', from: 'Game', text: `${profile.username} entered the plaza.` }, key);
@@ -427,6 +687,42 @@ wss.on('connection', (ws, req) => {
     }
     if (m.type === 'style') {
       if (STYLES[m.style]) { profile.style = m.style; save(key); send(ws, { type: 'profile', profile: publicProfile(profile) }); }
+    }
+
+    // ----- Travel between areas (Stage 1) -----
+    // The server just validates the destination; the client gates this
+    // behind walking to the gates / its teleport menu.
+    if (m.type === 'travel') {
+      const to = String(m.to || '');
+      if (!AREAS[to]) return send(ws, { type: 'error', message: 'Unknown destination.' });
+      if (me.duelId) return send(ws, { type: 'error', message: 'You cannot travel during a duel.' });
+      if (me.npcFightId) { const f = npcFights.get(me.npcFightId); if (f) finishNpcFight(f, 'travel'); }
+      me.area = to;
+      me.x = AREAS[to].spawn.x; me.y = AREAS[to].spawn.y;
+      send(ws, { type: 'area', area: to });
+      if (to === 'goblins') send(ws, npcStateMsg());
+      broadcastState();
+      return;
+    }
+
+    // ----- NPC combat (Stage 1): attack / flee -----
+    if (m.type === 'attack_npc') {
+      const npc = npcs.get(String(m.id || ''));
+      if (!npc) return send(ws, { type: 'error', message: 'No such creature.' });
+      if (me.area !== npc.area) return send(ws, { type: 'error', message: 'That creature is not here.' });
+      if (me.duelId) return send(ws, { type: 'error', message: 'You are in a duel.' });
+      if (me.npcFightId) return send(ws, { type: 'error', message: 'You are already fighting something.' });
+      if (!npc.alive) return send(ws, { type: 'error', message: 'It is already dead.' });
+      if (npc.fightId) return send(ws, { type: 'error', message: 'It is already fighting someone else.' });
+      if (Math.hypot(me.x - npc.x, me.y - npc.y) > NPC_RANGE) return send(ws, { type: 'error', message: 'Too far away — walk closer.' });
+      startNpcFight(key, npc);
+      return;
+    }
+    if (m.type === 'flee') {
+      const f = me.npcFightId ? npcFights.get(me.npcFightId) : null;
+      if (!f) return send(ws, { type: 'error', message: 'You are not fighting anything.' });
+      finishNpcFight(f, 'fled'); // the goblin keeps its remaining HP
+      return;
     }
 
     // ----- Shops (one catalog; the shop name is display metadata only) -----
@@ -501,9 +797,26 @@ wss.on('connection', (ws, req) => {
         save(key);
         return sendProfile(key);
       }
-      // Healing only matters mid-duel; refuse (without consuming) outside one.
+      // Healing matters mid-fight; refuse (without consuming) outside one.
       const duel = me.duelId ? duels.get(me.duelId) : null;
-      if (!duel) return send(ws, { type: 'error', message: 'Healing only works during a duel.' });
+      if (!duel) {
+        // NPC fight (Stage 1): food / restore potions heal that pool too.
+        const nf = me.npcFightId ? npcFights.get(me.npcFightId) : null;
+        if (!nf) return send(ws, { type: 'error', message: 'Healing only works during a duel.' });
+        if (nf.hpYou >= nf.maxHpYou) return send(ws, { type: 'error', message: 'Already at full health.' });
+        removeStacks(profile.backpack, item, 1);
+        nf.hpYou = Math.min(nf.maxHpYou, nf.hpYou + def.heal);
+        save(key);
+        const npcNow = npcs.get(nf.npcId);
+        send(ws, {
+          type: 'npc_fight', phase: 'tick', npcId: nf.npcId,
+          hpYou: nf.hpYou, maxHpYou: nf.maxHpYou,
+          hpNpc: npcNow ? Math.max(0, npcNow.hp) : 0, maxHpNpc: npcNow ? npcNow.maxHp : 0,
+          youHit: 0, npcHit: 0, youSpecial: false, energyYou: profile.specialEnergy,
+          note: `${profile.username} used ${def.name} (+${def.heal} HP)`,
+        });
+        return sendProfile(key);
+      }
       if (duel.hp[key] >= 99) return send(ws, { type: 'error', message: 'Already at full health.' });
       removeStacks(profile.backpack, item, 1);
       duel.hp[key] = Math.min(99, duel.hp[key] + def.heal);
@@ -582,10 +895,16 @@ wss.on('connection', (ws, req) => {
     // ----- Special attack (Dragon Slash) -----
     if (m.type === 'special') {
       const duel = me.duelId ? duels.get(me.duelId) : null;
-      if (!duel) return send(ws, { type: 'error', message: 'You are not in a duel.' });
+      const nf = !duel && me.npcFightId ? npcFights.get(me.npcFightId) : null;
+      if (!duel && !nf) return send(ws, { type: 'error', message: 'You are not in a duel.' });
       if (profile.specialEnergy < SPECIAL_COST) return send(ws, { type: 'error', message: `Dragon Slash needs ${SPECIAL_COST} special energy (you have ${Math.floor(profile.specialEnergy)}).` });
-      if (duel.specialQueued[key]) return send(ws, { type: 'error', message: 'Special already queued for the next tick.' });
-      duel.specialQueued[key] = true;
+      if (duel) {
+        if (duel.specialQueued[key]) return send(ws, { type: 'error', message: 'Special already queued for the next tick.' });
+        duel.specialQueued[key] = true;
+      } else {
+        if (nf.specialQueued) return send(ws, { type: 'error', message: 'Special already queued for the next tick.' });
+        nf.specialQueued = true;
+      }
       return send(ws, { type: 'chat', from: 'Game', text: 'Dragon Slash queued — it fires on the next tick.' });
     }
 
@@ -597,6 +916,7 @@ wss.on('connection', (ws, req) => {
       const target = online.get(targetKey);
       if (!target || targetKey === key) return send(ws, { type: 'error', message: 'Pick another online player.' });
       if (me.duelId || target.duelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
+      if (me.npcFightId || target.npcFightId) return send(ws, { type: 'error', message: 'One of you is fighting a monster.' });
       if (items.length === 0 && stake < 1) return send(ws, { type: 'error', message: 'Stake at least 1g, or stake items.' });
       if (stake < 0 || stake > profile.gold || stake > target.profile.gold) return send(ws, { type: 'error', message: 'Gold stake must be up to what you both have.' });
       if (!hasItems(profile, items)) return send(ws, { type: 'error', message: 'You don\'t have all the items you tried to stake.' });
@@ -612,6 +932,7 @@ wss.on('connection', (ws, req) => {
       const fromP = online.get(ch.from);
       if (!fromP) return;
       if (!m.accept) { send(fromP.ws, { type: 'chat', from: 'Game', text: `${profile.username} declined. No gold or items were taken.` }); return; }
+      if (me.npcFightId || fromP.npcFightId) return send(ws, { type: 'error', message: 'One of you is fighting a monster.' });
       const myItems = sanitizeItems(m.items);
       // Re-check purses AND backpacks at accept time — escrow only happens now.
       if (db.users[ch.from].profile.gold < ch.stake || profile.gold < ch.stake) return send(ws, { type: 'error', message: 'Someone no longer has the gold.' });
@@ -626,6 +947,10 @@ wss.on('connection', (ws, req) => {
     if (me && me.duelId) {
       const duel = duels.get(me.duelId);
       if (duel) endDuel(duel, duel.a === key ? duel.b : duel.a, 'forfeit — left mid-duel');
+    }
+    if (me && me.npcFightId) {
+      const f = npcFights.get(me.npcFightId);
+      if (f) finishNpcFight(f, 'disconnect'); // goblin keeps its HP and is free again
     }
     online.delete(key);
     broadcast({ type: 'chat', from: 'Game', text: `${profile.username} left the plaza.` });
