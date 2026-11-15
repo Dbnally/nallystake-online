@@ -15,6 +15,11 @@
  .plabel .bubble{display:none;background:#fff;color:#111;border-radius:10px;padding:3px 8px;font-weight:600;font-size:12px;margin-bottom:3px;white-space:normal;max-width:170px;box-shadow:0 2px 6px rgba(0,0,0,.5)}
  .splat{position:absolute;transform:translate(-50%,-50%);font-weight:900;font-size:19px;color:#ff3b30;text-shadow:0 0 4px #000,0 2px 2px #000;opacity:0}
  .splat.zero{color:#7ec3ff}.splat.spec{color:#ffd75e;font-size:23px}
+ .splat.good{color:#7dff8a;font-size:16px}
+ /* node labels (Stage 2) */
+ .plabel .nname{color:#ffe9a8}
+ .plabel .nsub{font-size:10px;color:#cfe6ff;font-weight:600}
+ .plabel .ndep{font-size:10px;color:#ff9d8a;font-weight:700}
  /* top HUD */
  #topbar{position:fixed;top:0;left:0;right:0;z-index:30;display:flex;gap:10px;align-items:center;padding:6px 10px;background:rgba(23,19,12,var(--uia));border-bottom:2px solid #6b5320;font-size:13px}
  #topbar b{color:#ffd75e}
@@ -204,7 +209,7 @@
  <input id="pass" type="password" placeholder="Password (6+)" autocomplete="current-password">
  <div style="display:flex;gap:8px;margin-top:6px"><button class="act" id="reg">Create account</button><button class="act" id="login">Sign in</button></div>
  <div id="authmsg"></div>
- <p class="note">Stage 1: skills &amp; XP, Goblin Camp, twin sticks, rotating minimap, settings, quick sets.</p>
+ <p class="note">Stage 2: Training &amp; Gathering caves, Fishing Cove — chop, light a fire, fish &amp; cook. Plus skills &amp; XP, Goblin Camp, twin sticks, rotating minimap, settings, quick sets.</p>
 </div></div>
 
 <div id="loaderror"><div><h2 style="color:#ffd75e">Couldn't load 3D 😕</h2><p>The 3D library (Three.js) failed to load, so the plaza can't be drawn.<br>Check your connection and reload the page.</p></div></div>
@@ -221,7 +226,9 @@ let goods={}; // id -> {id,name,price}
 const ICONS={restore_potion:'🍷',prayer_potion:'🌟',ration:'🍗',bronze_sword:'🗡️',iron_sword:'🗡️',steel_sword:'⚔️',mithril_sword:'⚔️',dragon_sword:'🐉',
  bronze_helm:'⛑️',steel_helm:'⛑️',dragon_helm:'⛑️',bronze_platebody:'🦺',steel_platebody:'🦺',dragon_platebody:'🦺',
  bronze_platelegs:'👖',steel_platelegs:'👖',dragon_platelegs:'👖',bronze_shield:'🛡️',steel_shield:'🛡️',dragon_shield:'🛡️',
- bones:'🦴',herbs:'🌿',gems:'💎',bars:'🟨',runes:'🔮',charms:'🧿'};
+ bones:'🦴',herbs:'🌿',gems:'💎',bars:'🟨',runes:'🔮',charms:'🧿',
+ copper_ore:'🟠',tin_ore:'⚪',iron_ore:'🔘',coal:'⚫',uncut_gem:'🔷',logs:'🪵',oak_logs:'🪵',
+ raw_shrimps:'🦐',raw_trout:'🐠',cooked_trout:'🐟',cooked_shrimps:'🍤',burnt_fish:'🖤'};
 const KIND_ICON={potion:'🧪',food:'🍗',weapon:'⚔️',armour:'🛡️',good:'📦'};
 function iconOf(id){ if(ICONS[id])return ICONS[id]; const d=catalog[id]; return d? (KIND_ICON[d.kind]||'📦') : '📦'; }
 function nameOf(id){ if(catalog[id])return catalog[id].name; if(goods[id])return goods[id].name; return id; }
@@ -294,7 +301,7 @@ window.useQuick=function(n){
 $('quick1').onclick=()=>useQuick(1);
 $('quick2').onclick=()=>useQuick(2);
 
-/* ================= auth & websocket ================= */
+ /* ================= auth & websocket ================= */
 async function auth(path){
  const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('name').value,password:$('pass').value})});
  const d=await r.json(); if(!r.ok){ $('authmsg').textContent=d.error||'Sign-in failed.'; return; }
@@ -321,10 +328,20 @@ function onMsg(m){
  if(m.type==='area'){ setArea(m.area); }
  if(m.type==='npc_state'){ npcList=m.npcs||[]; syncNpcs(); drawMinimap(); }
  if(m.type==='npc_fight'){ npcFightUI(m); }
+ if(m.type==='nodes'){ nodesByArea[m.area]=m.nodes||[];
+   if(m.area===curArea){ rebuildNodes();
+     if(activeNode){ const an=(m.nodes||[]).find(x=>x.id===activeNode.id);
+       if(an&&an.depleted){ stopGather(); toast('That spot is used up — it will grow back shortly.'); } } }
+   drawMinimap(); }
+ if(m.type==='fires'){ firesByArea[m.area]=m.fires||[]; if(m.area===curArea) rebuildFires(); drawMinimap(); }
+ if(m.type==='gather_result'){ onGatherResult(m); }
+ if(m.type==='fire_lit'){ toast('🔥 Fire lit (60s)'); }
+ if(m.type==='cook_result'){ if(m.ok) toast(`🍳 Cooked! +1 ${nameOf(m.item)}`); else toast('🔥 Burnt it…'); }
  if(m.type==='xp'){ onXpDrop(m); }
  if(m.type==='profile'){ me=m.profile; renderAll(); }
  if(m.type==='chat'){ logLine(`${m.from}: ${m.text}`); showBubble(m.from,m.text); }
  if(m.type==='error'){ toast('⚠️ '+m.message); logLine('⚠️ '+m.message);
+   if(activeNode && /level|used up|not here|No such spot/.test(m.message||'')) stopGather();
    if(/^Too far/.test(m.message||'')&&lastAttackTry&&Date.now()-lastAttackTry.at<1500){
      const n=npcList.find(x=>x.id===lastAttackTry.id);
      if(n){ pendingAttack={id:n.id}; tapTarget={x:n.x,y:n.y}; }
@@ -402,11 +419,12 @@ function onXpDrop(m){
  if(drawerPanel==='skills') renderDrawer();
 }
 
-/* ================= 3D world ================= */
+ /* ================= 3D world ================= */
 const W2S=10; // world units -> server coords
 const sx2w=x=>x/W2S-40, sy2w=y=>y/W2S-22.5; // server -> world
 const wx2s=x=>(x+40)*W2S, wz2s=z=>(z+22.5)*W2S; // world -> server
-const BANK_POS={x:400,y:225};
+
+ const BANK_POS={x:400,y:225};
 const SHOP_SPOTS=[ // server coords
  {shop:'Potion',x:170,y:110,color:0x7a4fd0},
  {shop:'Weapon',x:630,y:110,color:0xb03a2e},
@@ -485,7 +503,6 @@ function buildPlaza(root){
    box(0.7,0.7,0.7,0xd4af37,-0.8,1.15,0.3,g,act); box(0.6,0.6,0.6,0xb03a2e,0.7,1.1,0.3,g,act); // goods on counter
    const lb=textSprite(s.shop,'#ffffff','rgba(23,19,12,0.85)'); lb.position.set(0,3.6,0); g.add(lb);
  }
- // duel board
  const bg=new THREE.Group(); bg.position.set(sx2w(BOARD_POS.x),0,sy2w(BOARD_POS.y)); scene.add(bg);
  box(0.18,2.4,0.18,0x5a4020,-1.1,1.2,0,bg); box(0.18,2.4,0.18,0x5a4020,1.1,1.2,0,bg);
  box(2.8,1.7,0.12,0x8a6d1f,0,1.7,0,bg);
@@ -572,15 +589,126 @@ function buildGoblinCamp(root){
    rock.position.set(rx,0.4,rz); S.add(rock);
  }
 }
+/* ---- Stage 2 scene helpers ---- */
+function rockWallRun(root,x1,z1,x2,z2){
+ const horiz=Math.abs(x2-x1)>=Math.abs(z2-z1);
+ const len=horiz?Math.abs(x2-x1):Math.abs(z2-z1), n=Math.max(1,Math.round(len/2.2));
+ for(let i=0;i<=n;i++){ const t=i/n;
+   box(horiz?2.15:1.1,1.3,horiz?1.1:2.15,0x55555e,x1+(x2-x1)*t,0.65,z1+(z2-z1)*t,root); }
+}
+function gatePosts(root,gx,gz){
+ const onNS=Math.abs(gz)>=Math.abs(gx); // gate sits on a north/south wall -> posts offset in x
+ const dx=onNS?2.6:0, dz=onNS?0:2.6;
+ box(0.5,3.4,0.5,0x7c7565,gx-dx,1.7,gz-dz,root); box(0.5,3.4,0.5,0x7c7565,gx+dx,1.7,gz+dz,root);
+ box(onNS?5.7:0.6,0.4,onNS?0.6:5.7,0xd4af37,gx,3.3,gz,root);
+}
+function buildTorch(root,x,z){
+ box(0.16,2.0,0.16,0x5a4020,x,1.0,z,root);
+ const fl=new THREE.Mesh(new THREE.ConeGeometry(0.28,0.7,6),new THREE.MeshBasicMaterial({color:0xff7b24})); fl.position.set(x,2.3,z); root.add(fl);
+ const fl2=new THREE.Mesh(new THREE.ConeGeometry(0.15,0.45,6),new THREE.MeshBasicMaterial({color:0xffd75e})); fl2.position.set(x,2.28,z); root.add(fl2);
+}
+function buildCampfire(parent){
+ box(1.6,0.25,0.3,0x5a4020,0,0.15,0,parent);
+ const l2=box(1.6,0.25,0.3,0x5a4020,0,0.15,0,parent); l2.rotation.y=1.57;
+ const flame=new THREE.Mesh(new THREE.ConeGeometry(0.55,1.5,6),new THREE.MeshBasicMaterial({color:0xff7b24})); flame.position.set(0,0.95,0); parent.add(flame);
+ const flame2=new THREE.Mesh(new THREE.ConeGeometry(0.3,0.9,6),new THREE.MeshBasicMaterial({color:0xffd75e})); flame2.position.set(0,0.9,0); parent.add(flame2);
+}
+function buildTrainingCave(root){
+ const S=root;
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({color:0x3a3a40}));
+ floor.rotation.x=-Math.PI/2; S.add(floor);
+ const stone=new THREE.Mesh(new THREE.PlaneGeometry(62,14),new THREE.MeshLambertMaterial({map:stoneTexture(),color:0x888888}));
+ stone.rotation.x=-Math.PI/2; stone.position.y=0.02; S.add(stone);
+ // rock walls, gap at the SOUTH gate (walk out to return to the plaza)
+ rockWallRun(S,-40,-22.5,40,-22.5); // north
+ rockWallRun(S,-40,22.5,-3.5,22.5); rockWallRun(S,3.5,22.5,40,22.5); // south, gap at gate
+ rockWallRun(S,-40,-22.5,-40,22.5); // west
+ rockWallRun(S,40,-22.5,40,22.5); // east
+ gatePosts(S,0,22.5);
+ buildTorch(S,-14,-20); buildTorch(S,14,-20);
+ // signpost by the south gate (stations themselves render from node data)
+ box(0.18,2.2,0.18,0x5a4020,5.5,1.1,19.5,S);
+ const sp=textSprite('🏋️ Training Cave','#ffd75e','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,19.5); S.add(sp);
+}
+function buildGatheringCave(root){
+ const S=root;
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({color:0x453f36}));
+ floor.rotation.x=-Math.PI/2; S.add(floor);
+ // pool on the east side, under the fishing spots (world x +18..+40)
+ const pool=new THREE.Mesh(new THREE.PlaneGeometry(22,45),new THREE.MeshLambertMaterial({color:0x2e6db0}));
+ pool.rotation.x=-Math.PI/2; pool.position.set(29,0.02,0); S.add(pool);
+ // rock walls, gap at the NORTH gate (walk out to return to the plaza)
+ rockWallRun(S,-40,-22.5,-3.5,-22.5); rockWallRun(S,3.5,-22.5,40,-22.5); // north, gap at gate
+ rockWallRun(S,-40,22.5,40,22.5); // south
+ rockWallRun(S,-40,-22.5,-40,22.5); // west
+ rockWallRun(S,40,-22.5,40,22.5); // east
+ gatePosts(S,0,-22.5);
+ buildTorch(S,-14,20); buildTorch(S,14,20);
+ // scattered decor rocks (nodes render separately, from data)
+ for(const [rx,rz] of [[-30,14],[-18,-14],[2,16],[-6,-18],[12,-16]]){
+   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.6),new THREE.MeshLambertMaterial({color:0x6b675e}));
+   rock.position.set(rx,0.35,rz); S.add(rock);
+ }
+ box(0.18,2.2,0.18,0x5a4020,5.5,1.1,-19.5,S);
+ const sp=textSprite('⛏️ Gathering Cave','#ffd75e','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,-19.5); S.add(sp);
+}
+function buildFishingCove(root){
+ const S=root;
+ const grass=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({color:0x3e7d33}));
+ grass.rotation.x=-Math.PI/2; S.add(grass);
+ // lake covering the east third (world x +13..+40)
+ const lake=new THREE.Mesh(new THREE.PlaneGeometry(27,45),new THREE.MeshLambertMaterial({color:0x2e6db0}));
+ lake.rotation.x=-Math.PI/2; lake.position.set(26.5,0.02,0); S.add(lake);
+ // wooden dock jutting into the lake by the middle fishing spot (z=0)
+ box(9,0.25,2.4,0x74552a,17.5,0.35,0,S);
+ box(0.25,0.9,0.25,0x5a4020,13.5,0.1,-1,S); box(0.25,0.9,0.25,0x5a4020,13.5,0.1,1,S);
+ box(0.25,0.9,0.25,0x5a4020,21.5,0.1,-1,S); box(0.25,0.9,0.25,0x5a4020,21.5,0.1,1,S);
+ // fences north + south; west shore open (gate), east is the lake
+ const fenceMat=0x6b4e26;
+ function fenceRun(x1,z1,x2,z2){
+   const len=Math.hypot(x2-x1,z2-z1), n=Math.max(2,Math.round(len/4));
+   for(let i=0;i<=n;i++){ const t=i/n; box(0.16,1.1,0.16,fenceMat,x1+(x2-x1)*t,0.55,z1+(z2-z1)*t,S); }
+   const midx=(x1+x2)/2, midz=(z1+z2)/2, ang=Math.atan2(x2-x1,z2-z1);
+   const rail=box(0.08,0.12,len,fenceMat,midx,0.85,midz,S); rail.rotation.y=ang;
+   const rail2=box(0.08,0.12,len,fenceMat,midx,0.45,midz,S); rail2.rotation.y=ang;
+ }
+ fenceRun(-40,-22.5,40,-22.5); // north
+ fenceRun(-40,22.5,40,22.5); // south
+ gatePosts(S,-40,0);
+ // signpost by the west gate
+ box(0.18,2.2,0.18,0x5a4020,-36,1.1,4.2,S);
+ const sp=textSprite('🎣 Fishing Cove','#ffd75e','rgba(23,19,12,0.85)'); sp.position.set(-36,3.0,4.2); S.add(sp);
+ // Fisher Wren — decorative angler on the shore by the dock
+ const wren=new THREE.Group(); wren.position.set(-8,0,6); S.add(wren);
+ box(0.24,0.7,0.24,0x4a3520,-0.16,0.35,0,wren); box(0.24,0.7,0.24,0x4a3520,0.16,0.35,0,wren); // legs
+ box(0.7,0.8,0.4,0x6e4a1f,0,1.1,0,wren); // body
+ box(0.44,0.44,0.44,0xd9a066,0,1.75,0,wren); // head
+ const brim=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.42,0.07,12),new THREE.MeshLambertMaterial({color:0xd8b25e})); brim.position.set(0,1.99,0); wren.add(brim);
+ box(0.4,0.22,0.4,0xd8b25e,0,2.12,0,wren); // hat top
+ const rod=box(0.05,2.6,0.05,0x5a4020,0.75,1.7,0.3,wren); rod.rotation.z=-0.7; // fishing rod
+ const wlabel=document.createElement('div'); wlabel.className='plabel';
+ wlabel.innerHTML=`<div class="nname">🎣 Fisher Wren</div>`;
+ $('labels').appendChild(wlabel);
+ worldLabels.push({el:wlabel,x:-8,y:3.1,z:6,area:'cove',kind:'static'});
+ // decorative unlit campfire ring, centre-west (real fires come from the fires state)
+ const ringC=new THREE.Group(); ringC.position.set(-20,0,5); S.add(ringC);
+ for(let i=0;i<8;i++){ const a=i/8*Math.PI*2;
+   const r=new THREE.Mesh(new THREE.DodecahedronGeometry(0.22),new THREE.MeshLambertMaterial({color:0x8a8578}));
+   r.position.set(Math.cos(a)*1.1,0.12,Math.sin(a)*1.1); ringC.add(r); }
+ box(1.4,0.22,0.26,0x5a4020,0,0.12,0,ringC);
+ const cl=box(1.4,0.22,0.26,0x5a4020,0,0.12,0,ringC); cl.rotation.y=1.57;
+}
 function buildAreas(){
  areaGroups.plaza=new THREE.Group(); scene.add(areaGroups.plaza); buildPlaza(areaGroups.plaza);
  areaGroups.goblins=new THREE.Group(); scene.add(areaGroups.goblins); buildGoblinCamp(areaGroups.goblins);
+ areaGroups.training=new THREE.Group(); scene.add(areaGroups.training); buildTrainingCave(areaGroups.training);
+ areaGroups.gathering=new THREE.Group(); scene.add(areaGroups.gathering); buildGatheringCave(areaGroups.gathering);
+ areaGroups.cove=new THREE.Group(); scene.add(areaGroups.cove); buildFishingCove(areaGroups.cove);
  applyAreaVisibility();
 }
 function applyAreaVisibility(){
  if(!areaGroups.plaza) return;
- areaGroups.plaza.visible=(curArea==='plaza');
- areaGroups.goblins.visible=(curArea==='goblins');
+ for(const a of Object.keys(areaGroups)) areaGroups[a].visible=(a===curArea);
 }
 function setArea(a){
  if(!AREAS_CLIENT[a]) a='plaza';
@@ -591,17 +719,21 @@ function setArea(a){
    // The server places us at the new area's spawn; re-seed local position
    // from the next per-area state snapshot and rebuild avatars cleanly.
    myInit=false; myPos=null; tapTarget=null; pendingAttack=null;
+   stopGather();
    for(const name of Object.keys(avatars)){ scene.remove(avatars[name].group); avatars[name].label.remove(); delete avatars[name]; }
    if(a!=='goblins'){ npcList=[]; syncNpcs(); }
+   rebuildNodes();
+   rebuildFires();
  }
  drawMinimap();
 }
-const AREAS_CLIENT={plaza:1,goblins:1};
+const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1};
 function makeKnight(isMe,name){
  const g=new THREE.Group();
  // The local player wears red dragon-plate (red body, dark red limbs, gold trim);
  // everyone else stays steel.
  const main=isMe?0xb03a2e:0x77808e, dark=isMe?0x6e1408:0x4a4f58, trim=isMe?0xd4af37:0x77808e;
+ const main2=main;
  box(0.26,0.75,0.26,dark,-0.18,0.38,0,g); box(0.26,0.75,0.26,dark,0.18,0.38,0,g); // legs
  box(0.78,0.85,0.45,main,0,1.18,0,g); // body
  box(0.24,0.7,0.24,main,-0.52,1.2,0,g); box(0.24,0.7,0.24,main,0.52,1.2,0,g); // arms
@@ -641,7 +773,8 @@ function showBubble(name,text){
  const a=avatars[name]; if(!a) return;
  a.bubbleEl.textContent=text; a.bubbleEl.style.display='block'; a.bubbleUntil=Date.now()+3000;
 }
-/* ---- NPC goblins ---- */
+
+ /* ---- NPC goblins ---- */
 function makeGoblin(n){
  const g=new THREE.Group();
  const skin=0x4c9440, dark=0x356b24;
@@ -684,6 +817,132 @@ function attackNpc(id){
  if(d<=140){ lastAttackTry={id,at:Date.now()}; send({type:'attack_npc',id}); }
  else { pendingAttack={id}; tapTarget={x:n.x,y:n.y}; toast('🚶 Walking to the goblin…'); }
 }
+/* ---- Stage 2: resource nodes, fires, gathering ---- */
+let nodesByArea={}; // area -> [node] from 'nodes' messages
+let firesByArea={}; // area -> [fire] from 'fires' messages
+let nodeGroups={}; // area -> THREE.Group holding that area's node props
+let fireGroups={}; // area -> THREE.Group holding that area's fire props
+let nodeProps={}; // CURRENT area: node id -> {x,z,labelY,node} (world coords, for tap tests)
+let worldLabels=[]; // {el,x,y,z,area,kind,nodeId?} — positioned by updateLabels, shown only in their area
+let activeNode=null; // node def being auto-gathered
+let pendingNode=null; // node def to walk to, then auto-gather on arrival
+let gatherTimer=null;
+const ROCK_TINT={copper_ore:0xb87333,tin_ore:0xcfd4d8,iron_ore:0x8a5a4a,coal:0x2b2b2b,uncut_gem:0x9b59d0};
+const GATHER_VERB={rock:['⛏️','Mining'],tree:['🪓','Chopping'],fish:['🎣','Fishing'],station:['🏋️','Training']};
+function makeNodeProp(n){
+ const g=new THREE.Group();
+ g.position.set(sx2w(n.x),0,sy2w(n.y));
+ let labelY=2.2;
+ if(n.kind==='rock'){
+   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.95),new THREE.MeshLambertMaterial({color:ROCK_TINT[n.item]||0x8a8578}));
+   rock.position.y=0.55; g.add(rock); labelY=2.1;
+ } else if(n.kind==='tree'){
+   const oak=(n.item==='oak_logs');
+   box(0.35,1.5,0.35,0x5a4020,0,0.75,0,g);
+   const cone=new THREE.Mesh(new THREE.ConeGeometry(oak?2.0:1.7,oak?4.2:3.4,7),new THREE.MeshLambertMaterial({color:oak?0x1e4620:0x2c5e26}));
+   cone.position.y=oak?3.6:3.1; g.add(cone); labelY=oak?6.0:5.4;
+ } else if(n.kind==='fish'){
+   const ring=new THREE.Mesh(new THREE.RingGeometry(0.75,1.05,24),new THREE.MeshBasicMaterial({color:0x9fd8ff,transparent:true,opacity:0.85,side:THREE.DoubleSide}));
+   ring.rotation.x=-Math.PI/2; ring.position.y=0.09; g.add(ring);
+   const dot=new THREE.Mesh(new THREE.CircleGeometry(0.3,16),new THREE.MeshBasicMaterial({color:0xdff2ff,transparent:true,opacity:0.9}));
+   dot.rotation.x=-Math.PI/2; dot.position.y=0.09; g.add(dot); labelY=1.3;
+ } else if(n.kind==='station'){   if(n.id==='ranged_target'){
+     box(0.18,1.9,0.18,0x5a4020,0,0.95,0,g);
+     const board=new THREE.Mesh(new THREE.CircleGeometry(0.85,20),new THREE.MeshBasicMaterial({color:0xf3ead2})); board.position.set(0,1.9,0.06); g.add(board);
+     const bull=new THREE.Mesh(new THREE.CircleGeometry(0.38,16),new THREE.MeshBasicMaterial({color:0xb03a2e})); bull.position.set(0,1.9,0.08); g.add(bull);
+     labelY=3.4;
+   } else if(n.id==='prayer_altar'){
+     box(1.7,0.9,1.0,0x8a8578,0,0.45,0,g);
+     box(0.16,0.4,0.16,0xd4af37,-0.5,1.1,0,g); box(0.16,0.4,0.16,0xd4af37,0.5,1.1,0,g);
+     const fl=new THREE.Mesh(new THREE.ConeGeometry(0.09,0.3,6),new THREE.MeshBasicMaterial({color:0xffd75e})); fl.position.set(-0.5,1.45,0); g.add(fl);
+     const fl2=fl.clone(); fl2.position.x=0.5; g.add(fl2);
+     labelY=2.6;
+   } else { // combat dummies: post + straw sacks
+     box(0.2,1.7,0.2,0x5a4020,0,0.85,0,g);
+     box(0.85,0.95,0.5,0xd8b25e,0,1.55,0,g); // straw sack body
+     box(0.5,0.5,0.5,0xc9a24e,0,2.25,0,g); // head sack
+     if(n.id==='magic_dummy'){ const hat=new THREE.Mesh(new THREE.ConeGeometry(0.45,0.8,8),new THREE.MeshLambertMaterial({color:0x7a4fd0})); hat.position.y=2.85; g.add(hat); }
+     labelY=3.6;
+   }
+ }
+ if(n.depleted){
+   g.traverse(o=>{ if(o.material){ o.material=o.material.clone(); o.material.transparent=true; o.material.opacity=0.35; } });
+ }
+ return {group:g,labelY};
+}
+function rebuildNodes(){
+ const area=curArea, root=areaGroups[area];
+ nodeProps={};
+ // drop this area's old node labels (other areas' labels stay, hidden by area)
+ worldLabels=worldLabels.filter(wl=>{ if(wl.kind==='node'&&wl.area===area){ wl.el.remove(); return false; } return true; });
+ if(!root||!scene) return;
+ if(nodeGroups[area]) root.remove(nodeGroups[area]);
+ const grp=new THREE.Group(); root.add(grp); nodeGroups[area]=grp;
+ for(const n of (nodesByArea[area]||[])){
+   const made=makeNodeProp(n);
+   grp.add(made.group);
+   const label=document.createElement('div'); label.className='plabel';
+   const sub = n.kind==='station'
+     ? `${SKILL_ICON[n.skill]||''} ${SKILL_NAME[n.skill]||n.skill} training`
+     : `Lvl ${n.levelReq} ${SKILL_NAME[n.skill]||n.skill}`;
+   label.innerHTML=`<div class="nname">${SKILL_ICON[n.skill]||''} ${esc(n.name)}</div><div class="nsub">${sub}</div>${n.depleted?'<div class="ndep">(regrowing…)</div>':''}`;
+   $('labels').appendChild(label);
+   worldLabels.push({el:label,x:sx2w(n.x),y:made.labelY,z:sy2w(n.y),area,kind:'node',nodeId:n.id});
+   nodeProps[n.id]={x:sx2w(n.x),z:sy2w(n.y),labelY:made.labelY,node:n};
+ }
+}
+function rebuildFires(){
+ const area=curArea, root=areaGroups[area];
+ if(!root||!scene) return;
+ if(fireGroups[area]) root.remove(fireGroups[area]);
+ const grp=new THREE.Group(); root.add(grp); fireGroups[area]=grp;
+ for(const f of (firesByArea[area]||[])){
+   const fg=new THREE.Group(); fg.position.set(sx2w(f.x),0,sy2w(f.y)); grp.add(fg);
+   buildCampfire(fg);
+ }
+}
+function fireNearby(){
+ if(!myPos) return false;
+ return (firesByArea[curArea]||[]).some(f=>Math.hypot(myPos.x-f.x,myPos.y-f.y)<=120);
+}
+function startGather(n){
+ stopGather();
+ activeNode=n;
+ send({type:'gather',nodeId:n.id});
+ gatherTimer=setInterval(()=>{ if(activeNode) send({type:'gather',nodeId:activeNode.id}); },1600);
+ const v=GATHER_VERB[n.kind]||['✨','Working'];
+ toast(`${v[0]} ${v[1]} ${n.name}… tap elsewhere to stop`);
+}
+function stopGather(){
+ if(gatherTimer){ clearInterval(gatherTimer); gatherTimer=null; }
+ activeNode=null; pendingNode=null;
+}
+function tapNode(n){
+ if(!myPos) return;
+ if(n.depleted){ toast(`${n.name} is used up — it will grow back shortly.`); return; }
+ const d=Math.hypot(myPos.x-n.x,myPos.y-n.y);
+ if(d<=140) startGather(n);
+ else { pendingNode=n; tapTarget={x:n.x,y:n.y}; toast(`🚶 Walking to the ${n.name}…`); }
+}
+function checkPendingNode(){
+ if(!pendingNode||!myPos) return;
+ const n=(nodesByArea[curArea]||[]).find(x=>x.id===pendingNode.id)||pendingNode;
+ if(n.depleted){ pendingNode=null; return; }
+ if(Math.hypot(myPos.x-n.x,myPos.y-n.y)<=140){ pendingNode=null; tapTarget=null; startGather(n); }
+}
+function onGatherResult(m){
+ const n=(nodesByArea[curArea]||[]).find(x=>x.id===m.nodeId)||activeNode;
+ if(m.ok){
+   if(m.item){
+     logLine(`+1 ${nameOf(m.item)}`);
+     spawnTextSplat(me?avatars[me.username]:null,`${iconOf(m.item)} +1`,'good');
+   } else {
+     logLine(`Trained ${n?(SKILL_NAME[n.skill]||n.skill):''} (+${m.xp||0} XP)`);
+   }
+ } else {
+   logLine('No luck that swing');
+ }
+}
 /* hitsplats */
 let splats=[];
 function spawnSplatOn(a,dmg,special){
@@ -695,6 +954,14 @@ function spawnSplatOn(a,dmg,special){
  splats.push({el,av:a,born:performance.now()});
 }
 function spawnSplat(name,dmg,special){ spawnSplatOn(avatars[name],dmg,special); }
+function spawnTextSplat(a,text,cls){
+ if(!a) return;
+ const el=document.createElement('div');
+ el.className='splat '+(cls||'');
+ el.textContent=text;
+ $('splats').appendChild(el);
+ splats.push({el,av:a,born:performance.now()});
+}
 const _v=new THREE.Vector3();
 function projectTo(x,y,z){
  _v.set(x,y,z).project(camera);
@@ -715,6 +982,13 @@ function updateLabels(now){
    a.label.style.display='block';
    a.label.style.left=s.x+'px'; a.label.style.top=s.y+'px';
  }
+ for(const wl of worldLabels){
+   if(wl.area!==curArea){ wl.el.style.display='none'; continue; }
+   const s=projectTo(wl.x,wl.y,wl.z);
+   if(!s){ wl.el.style.display='none'; continue; }
+   wl.el.style.display='block';
+   wl.el.style.left=s.x+'px'; wl.el.style.top=s.y+'px';
+ }
  splats=splats.filter(sp=>{
    const age=now-sp.born;
    if(age>950){ sp.el.remove(); return false; }
@@ -726,7 +1000,7 @@ function updateLabels(now){
  });
 }
 
-/* ================= controls & movement ================= */
+ /* ================= controls & movement ================= */
 let camYaw=0.7, camDist=21;
 let camPitch=0.92; // camera elevation angle (right stick / settings adjust it)
 let localRot=0; // local knight facing (world radians, atan2(x,z) convention)
@@ -789,6 +1063,7 @@ addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
  el.addEventListener('wheel',e=>{ e.preventDefault(); camDist=clamp(camDist+e.deltaY*0.02,10,42); },{passive:false});
 })();
 function handleTap(cx,cy){
+ stopGather(); // tapping anywhere interrupts auto-gather (a node tap below may restart it)
  const mouse=new THREE.Vector2((cx/innerWidth)*2-1,-(cy/innerHeight)*2+1);
  raycaster.setFromCamera(mouse,camera);
  // interactive props first (plaza only — its meshes are hidden elsewhere)
@@ -810,6 +1085,17 @@ function handleTap(cx,cy){
      if(d<48 && d<gbD){ gb=id; gbD=d; }
    }
    if(gb){ attackNpc(gb); return; }
+ }
+ // resource nodes / training stations (tap to work them; walks over first if too far)
+ if(Object.keys(nodeProps).length){
+   let nb=null,nbD=1e9;
+   for(const p of Object.values(nodeProps)){
+     const s=projectTo(p.x,1.4,p.z);
+     if(!s) continue;
+     const d=Math.hypot(s.x-cx,s.y-cy);
+     if(d<52 && d<nbD){ nb=p.node; nbD=d; }
+   }
+   if(nb){ tapNode(nb); return; }
  }
  // players
  let best=null,bestD=1e9;
@@ -837,8 +1123,18 @@ function faceToward(pt){
 let gateCooldownUntil=0;
 function checkGates(){
  if(!myPos||!me||Date.now()<gateCooldownUntil) return;
- if(curArea==='plaza'&&myPos.x>=795){ gateCooldownUntil=Date.now()+2000; send({type:'travel',to:'goblins'}); toast('🚪 East gate → Goblin Camp…'); }
- else if(curArea==='goblins'&&myPos.x<=5){ gateCooldownUntil=Date.now()+2000; send({type:'travel',to:'plaza'}); toast('🚪 West gate → Plaza…'); }
+ const go=(to,msg)=>{ gateCooldownUntil=Date.now()+2000; stopGather(); send({type:'travel',to}); toast(msg); };
+ if(curArea==='plaza'){
+   // corners first, then edges
+   if(myPos.x>=790&&myPos.y>=430){ go('training','🚪 South-east gate → Training Cave…'); return; }
+   if(myPos.x<=10&&myPos.y>=430){ go('gathering','🚪 South-west gate → Gathering Cave…'); return; }
+   if(myPos.x>=795){ go('goblins','🚪 East gate → Goblin Camp…'); return; }
+   if(myPos.x<=5){ go('cove','🚪 West gate → Fishing Cove…'); return; }
+ }
+ else if(curArea==='goblins'&&myPos.x<=5){ go('plaza','🚪 West gate → Plaza…'); }
+ else if(curArea==='cove'&&myPos.x<=5){ go('plaza','🚪 West gate → Plaza…'); }
+ else if(curArea==='training'&&myPos.y>=445){ go('plaza','🚪 South gate → Plaza…'); }
+ else if(curArea==='gathering'&&myPos.y<=5){ go('plaza','🚪 North gate → Plaza…'); }
 }
 function checkPendingAttack(){
  if(!pendingAttack||!myPos) return;
@@ -860,7 +1156,7 @@ function stepMovement(dt){
  if(keys.w||keys.arrowup) f+=1; if(keys.s||keys.arrowdown) f-=1;
  if(keys.d||keys.arrowright) r+=1; if(keys.a||keys.arrowleft) r-=1;
  f+=-joyVec.y; r+=joyVec.x;
- if(f||r){ tapTarget=null; pendingAttack=null; const l=Math.hypot(f,r); f/=l; r/=l;
+ if(f||r){ tapTarget=null; pendingAttack=null; stopGather(); const l=Math.hypot(f,r); f/=l; r/=l;
    vx=(-sYaw*f + cYaw*r); vz=(-cYaw*f - sYaw*r); }
  else if(tapTarget){
    const dx=tapTarget.x-myPos.x, dy=tapTarget.y-myPos.y, d=Math.hypot(dx,dy);
@@ -891,7 +1187,7 @@ function finishStep(moved){
    lastSend=now;
  }
  checkGates();
- if(moved) checkPendingAttack();
+ if(moved){ checkPendingAttack(); checkPendingNode(); }
 }
 /* ================= minimap (rotating, player-centred) ================= */
 const MM_S=128/520; // minimap px per server unit (~520 units across)
@@ -910,18 +1206,33 @@ function drawMinimap(){
  g.save();
  g.translate(cx,cy); g.rotate(th); g.scale(MM_S,MM_S); g.translate(-myPos.x,-myPos.y);
  // ground + area features (drawn in server coords, rotated by the transform)
- g.fillStyle=(curArea==='goblins')? '#55702f' : '#2e4a2a'; g.fillRect(0,0,800,450);
+ const caveBg=(curArea==='training'||curArea==='gathering');
+ g.fillStyle= caveBg? '#2b2b30' : (curArea==='goblins')? '#55702f' : '#2e4a2a'; g.fillRect(0,0,800,450);
  if(curArea==='plaza'){
    g.fillStyle='#6e675a'; g.fillRect(400-210,225-135,420,270); // stone centre
    g.fillStyle='#ffd75e'; g.fillRect(BANK_POS.x-14,BANK_POS.y-14,28,28); // bank
    for(const s of SHOP_SPOTS){ g.fillStyle='#'+s.color.toString(16).padStart(6,'0'); g.fillRect(s.x-12,s.y-12,24,24); }
    g.fillStyle='#fff'; g.fillRect(BOARD_POS.x-8,BOARD_POS.y-8,16,16);
- } else {
+ } else if(curArea==='goblins'){
    g.fillStyle='#77683f'; g.fillRect(400-240,225-155,480,310); // dirt patch
    g.fillStyle='#ff7b24'; g.fillRect(420-10,255-10,20,20); // campfire
    g.fillStyle='#3f7d2c';
    for(const n of npcList){ g.beginPath(); g.arc(n.x,n.y,11,0,7); g.fill(); } // goblins
+ } else if(curArea==='cove'){
+   g.fillStyle='#2e6db0'; g.fillRect(530,0,270,450); // lake, east third
+ } else if(curArea==='training'){
+   g.fillStyle='#3d3d44'; g.fillRect(400-310,225-70,620,140); // station hall floor
+ } else if(curArea==='gathering'){
+   g.fillStyle='#2e6db0'; g.fillRect(580,0,220,450); // pool, east side
  }
+ // resource node + fire dots for the current area
+ for(const n of (nodesByArea[curArea]||[])){
+   g.fillStyle= n.depleted? 'rgba(150,150,150,0.5)'
+     : n.kind==='rock'? '#a08b6d' : n.kind==='tree'? '#3f9e4d' : n.kind==='fish'? '#7ec3ff' : '#ffd75e';
+   g.beginPath(); g.arc(n.x,n.y,9,0,7); g.fill();
+ }
+ g.fillStyle='#ff7b24';
+ for(const f of (firesByArea[curArea]||[])){ g.beginPath(); g.arc(f.x,f.y,8,0,7); g.fill(); }
  for(const p of players){
    if(me&&p.username===me.username) continue;
    g.fillStyle='#ffffff'; g.beginPath(); g.arc(p.x,p.y,10,0,7); g.fill();
@@ -945,6 +1256,7 @@ $('minimap').addEventListener('pointerdown',e=>{
  const th=mapTheta(), c=Math.cos(-th), s=Math.sin(-th);
  const lx=(dx*c-dy*s)/MM_S, ly=(dx*s+dy*c)/MM_S;
  pendingAttack=null;
+ stopGather();
  tapTarget={x:clamp(myPos.x+lx,0,800), y:clamp(myPos.y+ly,0,450)};
 });
 /* ================= main loop / init ================= */
@@ -1007,7 +1319,6 @@ function initThree(){
  return true;
 }
 initThree();
-
 /* ================= drawer panels ================= */
 let drawerPanel=null, shopTab='Potion', shopMode='buy', bankQty='1', selStack=null, packSorted=false;
 const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',players:'👥 Players online',skills:'📊 Skills',teleport:'🌀 Teleport',settings:'🎛️ Settings'};
@@ -1038,6 +1349,11 @@ function renderDrawer(){
 }
 /* ---- Backpack ---- */
 window.selBp=function(item){ selStack=selStack===item?null:item; renderDrawer(); };
+window.lightFire=function(){ send({type:'light_fire'}); };
+window.cookItem=function(item){
+ if(!fireNearby()){ toast('No fire nearby — light one with Logs first'); return; }
+ send({type:'cook',item});
+};
 window.packBackpack=function(){ packSorted=true; renderDrawer(); toast('🎒 Packed — everything pulled to the top, in order.'); };
 function pBackpack(){
  let h=`<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px"><button class="act" onclick="packBackpack()">🎒 Pack</button><span class="note">Pulls all your stacks to the top, in order.</span></div>`;
@@ -1066,6 +1382,8 @@ function pBackpack(){
      h+=`<div class="btns">`;
      if(d&&(d.kind==='food'||d.kind==='potion')) h+=`<button class="act" onclick="send({type:'use',item:'${s.item}'})">Use</button>`;
      if(d&&d.slot) h+=`<button class="act" onclick="send({type:'equip',item:'${s.item}'})">Equip</button>`;
+     if(s.item==='logs') h+=`<button class="act" onclick="lightFire()">🔥 Light fire</button>`;
+     if(s.item==='raw_trout'||s.item==='raw_shrimps') h+=`<button class="act" onclick="cookItem('${s.item}')">🍳 Cook on fire</button>`;
      h+=`<button class="ghost" onclick="setQuick(1)">Set Quick 1</button>`;
      h+=`<button class="ghost" onclick="setQuick(2)">Set Quick 2</button>`;
      h+=`<button class="ghost" onclick="openPanel('bank')">Deposit in bank →</button>`;
@@ -1176,9 +1494,12 @@ window.doTravel=function(to){
 };
 function pTeleport(){
  const here=(a)=>a===curArea;
- let h=`<p class="note" style="margin-bottom:8px">Teleporting is the shortcut — every place stays walkable too. The Goblin Camp is through the plaza's east gate.</p>`;
+ let h=`<p class="note" style="margin-bottom:8px">Teleporting is the shortcut — every place stays walkable too: Goblin Camp (plaza east gate), Fishing Cove (west gate), Training Cave (south-east corner), Gathering Cave (south-west corner).</p>`;
  h+=`<div class="rowline"><span class="ic">🏰</span><span class="grow"><b>Plaza</b><br><span class="sub">Shops, bank, duels</span></span>${here('plaza')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('plaza')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">👺</span><span class="grow"><b>Goblin Camp</b><br><span class="sub">East gate · fight goblins for drops &amp; XP</span></span>${here('goblins')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('goblins')">Teleport</button>`}</div>`;
+ h+=`<div class="rowline"><span class="ic">🏋️</span><span class="grow"><b>Training Cave</b><br><span class="sub">South-east corner · safe skill training</span></span>${here('training')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('training')">Teleport</button>`}</div>`;
+ h+=`<div class="rowline"><span class="ic">⛏️</span><span class="grow"><b>Gathering Cave</b><br><span class="sub">South-west corner · mine, fish, chop</span></span>${here('gathering')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('gathering')">Teleport</button>`}</div>`;
+ h+=`<div class="rowline"><span class="ic">🎣</span><span class="grow"><b>Fishing Cove</b><br><span class="sub">West gate · chop, light a fire, fish &amp; cook trout</span></span>${here('cove')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('cove')">Teleport</button>`}</div>`;
  return h;
 }
 /* ---- Settings ---- */
@@ -1250,6 +1571,7 @@ function openIncoming(m){
 let duel=null;
 let npcFight=null;
 function startDuelUI(m){
+ stopGather();
  duel={id:m.duelId,opponent:m.opponent,pot:m.pot,hpYou:99,hpOpponent:99,energyYou:Math.floor(me?me.specialEnergy||0:0),escrow:m.escrowItems||[]};
  me=m.profile;
  $('duelflee').style.display='none';
@@ -1315,6 +1637,7 @@ function renderNpcBar(){
 function npcFightUI(m){
  if(m.phase==='start'){
    pendingAttack=null;
+   stopGather();
    npcFight={npcId:m.npcId,name:m.name||'Goblin',combatLevel:m.combatLevel||5,hpYou:m.hpYou,maxHpYou:m.maxHpYou,hpNpc:m.hpNpc,maxHpNpc:m.maxHpNpc,energyYou:Math.floor(m.energyYou||0)};
    $('duelbar').classList.add('open');
    $('duelflee').style.display='block';
