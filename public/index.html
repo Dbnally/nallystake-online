@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>nallystake — Online (gold-only test client)</title>
+<style>
+ body{font-family:system-ui;background:#17130c;color:#f3e6c8;margin:0;padding:12px}
+ h1{font-size:20px;color:#ffd75e;margin:4px 0}
+ .row{display:flex;gap:12px;flex-wrap:wrap} .card{background:#241c10;border:1px solid #6b5320;border-radius:10px;padding:10px}
+ button{background:#8a6d1f;color:#fff;border:0;border-radius:8px;padding:8px 12px;font-weight:700}
+ input,select{background:#0f0c07;color:#f3e6c8;border:1px solid #6b5320;border-radius:6px;padding:7px}
+ #log{height:150px;overflow:auto;font-size:13px;white-space:pre-wrap}
+ canvas{background:#2e4a2a;border:2px solid #6b5320;border-radius:10px;max-width:100%}
+ .hp{height:12px;background:#400;border-radius:6px;overflow:hidden}.hp>div{height:100%;background:#4caf50}
+</style></head><body>
+<h1>⚔️ nallystake — Online test client</h1>
+<p>Gold only. No real money. This is the Phase 1 client to prove real players, real saving, and server-run duels. The full 3D plaza ports in Phase 2.</p>
+<div class="card" id="auth">
+ <input id="name" placeholder="Player name"> <input id="pass" type="password" placeholder="Password (6+)">
+ <button id="reg">Create account</button> <button id="login">Sign in</button> <span id="authmsg"></span>
+</div>
+<div class="row" style="margin-top:10px">
+ <div class="card">
+  <canvas id="cv" width="800" height="450"></canvas>
+  <div>Move: WASD / arrows, or tap the grass. Click a player to select them.</div>
+  <div id="me"></div>
+  <div>Style: <select id="style"><option>accurate</option><option>aggressive</option><option>defensive</option><option>controlled</option></select></div>
+ </div>
+ <div class="card" style="flex:1;min-width:260px">
+  <b>Players online</b><div id="plist"></div>
+  <div style="margin-top:8px">Stake <input id="stake" type="number" value="10" min="1" style="width:70px"> g
+  <button id="challenge">Challenge selected</button></div>
+  <div id="incoming"></div>
+  <div id="duel" style="margin-top:8px"></div>
+  <b>Chat / game log</b><div id="log"></div>
+  <input id="chat" placeholder="Say something…" style="width:65%"> <button id="send">Send</button>
+ </div>
+</div>
+<script>
+let ws, token, me=null, players=[], selected=null, myPos={x:200,y:200}, keys={};
+const $=id=>document.getElementById(id);
+function log(t){$('log').textContent+=t+'\n';$('log').scrollTop=1e6}
+async function auth(path){
+ const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('name').value,password:$('pass').value})});
+ const d=await r.json(); if(!r.ok){$('authmsg').textContent=d.error;return}
+ token=d.token; me=d.profile; $('auth').style.display='none'; $('me').textContent=`${me.username} — ${me.gold}g · rating ${me.rating} · ${me.wins}W/${me.losses}L`;
+ connect();
+}
+$('reg').onclick=()=>auth('/api/register'); $('login').onclick=()=>auth('/api/login');
+function connect(){
+ ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws?token=${token}`);
+ ws.onmessage=e=>{const m=JSON.parse(e.data);
+  if(m.type==='state'){players=m.players;draw();renderList()}
+  if(m.type==='welcome'){players=m.players;draw();renderList()}
+  if(m.type==='chat')log(`${m.from}: ${m.text}`);
+  if(m.type==='error')log('⚠️ '+m.message);
+  if(m.type==='profile'){me=m.profile;$('me').textContent=`${me.username} — ${me.gold}g · rating ${me.rating} · ${me.wins}W/${me.losses}L`}
+  if(m.type==='challenge_incoming'){$('incoming').innerHTML=`<div class="card">⚔️ ${m.from} challenges you for ${m.stake}g <button onclick="respond('${m.challengeId}',true)">Accept</button> <button onclick="respond('${m.challengeId}',false)">Decline</button></div>`}
+  if(m.type==='duel_start'){log(`Duel started vs ${m.opponent} — pot ${m.pot}g (your stake is in escrow)`);$('incoming').innerHTML='';$('duel').innerHTML=duelHtml(99,99)}
+  if(m.type==='duel_tick'){$('duel').innerHTML=duelHtml(m.hpYou,m.hpOpponent)+`<div>You hit ${m.youHit} · they hit ${m.oppHit}</div>`}
+  if(m.type==='duel_end'){log(`🏆 ${m.winner} won ${m.pot}g (${m.reason})`);me=m.profile;$('me').textContent=`${me.username} — ${me.gold}g · rating ${me.rating} · ${me.wins}W/${me.losses}L`;$('duel').innerHTML=''}
+ };
+}
+function duelHtml(y,o){return `You <div class="hp"><div style="width:${y}%"></div></div> Opponent <div class="hp"><div style="width:${o}%"></div></div>`}
+window.respond=(id,accept)=>{ws.send(JSON.stringify({type:'challenge_response',challengeId:id,accept}));$('incoming').innerHTML=''};
+$('challenge').onclick=()=>{if(!selected)return log('Select a player first');ws.send(JSON.stringify({type:'challenge',target:selected,stake:+$('stake').value}))};
+$('send').onclick=()=>{ws.send(JSON.stringify({type:'chat',text:$('chat').value}));$('chat').value=''};
+$('style').onchange=()=>ws&&ws.send(JSON.stringify({type:'style',style:$('style').value}));
+function renderList(){$('plist').innerHTML=players.map(p=>`<div onclick="selected='${p.username}';renderList()" style="cursor:pointer;${selected===p.username?'color:#ffd75e':''}">• ${p.username}${p.inDuel?' (in duel)':''}</div>`).join('')||'Just you so far'}
+const cv=$('cv'),ctx=cv.getContext('2d');
+function draw(){ctx.clearRect(0,0,800,450);ctx.fillStyle='#8a6d1f';ctx.fillRect(360,10,80,30);ctx.fillStyle='#fff';ctx.fillText('PLAZA',385,30);
+ for(const p of players){ctx.beginPath();ctx.arc(p.x,p.y,16,0,7);ctx.fillStyle=p.username===(me&&me.username)?'#ffd75e':'#c33';ctx.fill();ctx.fillStyle='#fff';ctx.font='12px system-ui';ctx.fillText(p.username,p.x-20,p.y-22)}}
+cv.onclick=e=>{const r=cv.getBoundingClientRect();myPos={x:(e.clientX-r.left)*800/r.width,y:(e.clientY-r.top)*450/r.height};
+ for(const p of players){if(Math.hypot(p.x-myPos.x,p.y-myPos.y)<24){selected=p.username;renderList();return}}
+ ws&&ws.send(JSON.stringify({type:'move',x:myPos.x,y:myPos.y}))};
+addEventListener('keydown',e=>keys[e.key.toLowerCase()]=1);addEventListener('keyup',e=>keys[e.key.toLowerCase()]=0);
+setInterval(()=>{if(!ws||ws.readyState!==1)return;let moved=false;
+ if(keys.w||keys.arrowup){myPos.y-=8;moved=true} if(keys.s||keys.arrowdown){myPos.y+=8;moved=true}
+ if(keys.a||keys.arrowleft){myPos.x-=8;moved=true} if(keys.d||keys.arrowright){myPos.x+=8;moved=true}
+ if(moved)ws.send(JSON.stringify({type:'move',x:myPos.x,y:myPos.y}))},100);
+</script></body></html>
