@@ -1,0 +1,20 @@
+{
+  "dependencies": {
+    "pg": "^8.13.0",
+    "ws": "^8.18.0"
+  },
+  "description": "nallystake — gold-only real-multiplayer version (outside Muse). No real-money buy/sell or cash-out.",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "server.js",
+  "name": "nallystake-online",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/two-clients.js",
+    "test:db": "node test/db-mode.js"
+  },
+  "type": "commonjs",
+  "version": "0.1.0"
+}
