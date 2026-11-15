@@ -5,7 +5,7 @@
 <style>
  :root{--uia:.78}
  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
- html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#17130c;color:#f3e6c8;font-family:system-ui,sans-serif}
+ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#160a1a;color:#ffe9f6;font-family:system-ui,sans-serif}
  #scene{position:fixed;inset:0;touch-action:none}
  #scene canvas{display:block}
  #labels,#splats{position:fixed;inset:0;pointer-events:none;overflow:hidden}
@@ -14,151 +14,169 @@
  .plabel .badge{font-size:13px}
  .plabel .bubble{display:none;background:#fff;color:#111;border-radius:10px;padding:3px 8px;font-weight:600;font-size:12px;margin-bottom:3px;white-space:normal;max-width:170px;box-shadow:0 2px 6px rgba(0,0,0,.5)}
  .splat{position:absolute;transform:translate(-50%,-50%);font-weight:900;font-size:19px;color:#ff3b30;text-shadow:0 0 4px #000,0 2px 2px #000;opacity:0}
- .splat.zero{color:#7ec3ff}.splat.spec{color:#ffd75e;font-size:23px}
+ .splat.zero{color:#7ec3ff}.splat.spec{color:#ff8fd0;font-size:23px}
+ .splat.love{color:#ff6ec7;font-size:27px;text-shadow:0 0 8px #ff4fa3,0 2px 2px #000}
  .splat.good{color:#7dff8a;font-size:16px}
  /* node labels (Stage 2) */
- .plabel .nname{color:#ffe9a8}
+ .plabel .nname{color:#ffd9f2}
  .plabel .nsub{font-size:10px;color:#cfe6ff;font-weight:600}
  .plabel .ndep{font-size:10px;color:#ff9d8a;font-weight:700}
  /* top HUD */
- #topbar{position:fixed;top:0;left:0;right:0;z-index:30;display:flex;gap:10px;align-items:center;padding:6px 10px;background:rgba(23,19,12,var(--uia));border-bottom:2px solid #6b5320;font-size:13px}
- #topbar b{color:#ffd75e}
+ #topbar{position:fixed;top:0;left:0;right:0;z-index:30;display:flex;gap:10px;align-items:center;padding:6px 10px;background:rgba(24,10,26,var(--uia));border-bottom:2px solid #ff4fa3;font-size:13px}
+ .sparkle{display:inline-block;animation:sparkpulse 1.6s ease-in-out infinite}
+ @keyframes sparkpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.4)}}
+ #topbar b{color:#ff8fd0}
  #topbar .grow{flex:1}
  /* minimap + orbs */
  #mapwrap{position:fixed;top:40px;right:8px;z-index:20;text-align:center}
- #minimap{background:#2e4a2a;border:2px solid #6b5320;border-radius:8px}
+ #minimap{background:#2e4a2a;border:2px solid #ff4fa3;border-radius:8px}
  #orbs{display:flex;gap:6px;justify-content:center;margin-top:5px}
- .orb{width:52px;height:52px;border-radius:50%;border:2px solid #0c0a06;position:relative;overflow:hidden;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.6)}
+ .orb{width:52px;height:52px;border-radius:50%;border:2px solid #ff4fa3;position:relative;overflow:hidden;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.6)}
  .orb .fill{position:absolute;left:0;right:0;bottom:0}
  .orb .txt{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;text-shadow:0 1px 2px #000;line-height:1.1;z-index:2}
  .orb.hp .fill{background:#c1271b}.orb.hp{background:#3d0a06}
  .orb.pr .fill{background:#2456c8}.orb.pr{background:#0a1740}
  .orb.sp .fill{background:#c9a227}.orb.sp{background:#40340a}
- .orb.sp.ready{box-shadow:0 0 12px 3px #ffd75e}
+ .orb.sp.ready{box-shadow:0 0 12px 3px #ff4fa3}
  /* right rail */
  #rail{position:fixed;right:6px;top:190px;z-index:30;display:flex;flex-direction:column;gap:6px}
- .rbtn{width:46px;height:46px;border-radius:10px;background:rgba(36,28,16,var(--uia));border:2px solid #6b5320;color:#f3e6c8;font-size:20px;cursor:pointer}
- .rbtn.on{border-color:#ffd75e;background:#4a3a12}
- #gearbtn{width:46px;height:46px;border-radius:10px;background:#8a6d1f;border:2px solid #ffd75e;color:#fff;font-size:22px;cursor:pointer;box-shadow:0 0 10px #ffd75e55;flex:none}
+ .rbtn{width:46px;height:46px;border-radius:10px;background:rgba(24,10,26,var(--uia));border:2px solid #8b5cf6;color:#ffe9f6;font-size:20px;cursor:pointer}
+ .rbtn.on{border-color:#ff4fa3;background:#3d1440}
+ #gearbtn{width:46px;height:46px;border-radius:10px;background:linear-gradient(135deg,#ff4fa3,#8b5cf6);border:2px solid #ff8fd0;color:#fff;font-size:22px;cursor:pointer;box-shadow:0 0 10px #ff4fa355;flex:none}
  #railset{display:none;flex-direction:column;gap:6px}
  #railset.open{display:flex}
  /* drawer */
- #drawer{position:fixed;top:40px;right:58px;z-index:40;width:min(330px,80vw);max-height:calc(100dvh - 210px);overflow-y:auto;background:rgba(30,23,13,var(--uia));border:2px solid #6b5320;border-radius:12px;padding:10px;display:none}
+ #drawer{position:fixed;top:40px;right:58px;z-index:40;width:min(330px,80vw);max-height:calc(100dvh - 210px);overflow-y:auto;background:rgba(24,10,26,var(--uia));border:2px solid #ff4fa3;border-radius:12px;padding:10px;display:none}
  #drawer.open{display:block}
- #drawer h3{margin:2px 0 8px;color:#ffd75e;font-size:16px;display:flex;justify-content:space-between;align-items:center}
- #drawer h3 .x{background:none;border:0;color:#f3e6c8;font-size:18px;cursor:pointer}
+ #drawer h3{margin:2px 0 8px;color:#ff8fd0;font-size:16px;display:flex;justify-content:space-between;align-items:center}
+ #drawer h3 .x{background:none;border:0;color:#ffe9f6;font-size:18px;cursor:pointer}
  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
- .cell{background:#171208;border:1px solid #54431d;border-radius:8px;min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:3px;position:relative}
- .cell.sel{border-color:#ffd75e;background:#33270e}
+ .cell{background:#1d0b22;border:1px solid #5b2a6e;border-radius:8px;min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:3px;position:relative}
+ .cell.sel{border-color:#ff4fa3;background:#3d1440}
  .cell .ic{font-size:24px;line-height:1}
- .cell .nm{font-size:9px;text-align:center;color:#d8c491;margin-top:2px;line-height:1.1}
- .cell .q{position:absolute;top:2px;right:5px;font-size:11px;font-weight:800;color:#ffd75e;text-shadow:0 1px 2px #000}
- .rowline{display:flex;align-items:center;gap:8px;background:#171208;border:1px solid #54431d;border-radius:8px;padding:6px 8px;margin-bottom:6px;font-size:13px}
+ .cell .nm{font-size:9px;text-align:center;color:#e8c8f0;margin-top:2px;line-height:1.1}
+ .cell .q{position:absolute;top:2px;right:5px;font-size:11px;font-weight:800;color:#ff8fd0;text-shadow:0 1px 2px #000}
+ .rowline{display:flex;align-items:center;gap:8px;background:#1d0b22;border:1px solid #5b2a6e;border-radius:8px;padding:6px 8px;margin-bottom:6px;font-size:13px}
  .rowline .ic{font-size:22px}
  .rowline .grow{flex:1}
- .rowline .sub{font-size:11px;color:#b7a26e}
- button.act{background:#8a6d1f;color:#fff;border:0;border-radius:7px;padding:6px 9px;font-weight:700;font-size:12px;cursor:pointer}
+ .rowline .sub{font-size:11px;color:#c9a0d8}
+ button.act{background:linear-gradient(135deg,#ff4fa3,#e0388a);color:#fff;border:0;border-radius:7px;padding:6px 9px;font-weight:700;font-size:12px;cursor:pointer}
  button.act:disabled{opacity:.45}
- button.ghost{background:#33270e;color:#f3e6c8;border:1px solid #6b5320;border-radius:7px;padding:6px 9px;font-weight:700;font-size:12px;cursor:pointer}
- .detail{background:#241a0b;border:1px solid #6b5320;border-radius:8px;padding:8px;margin-top:8px;font-size:13px}
+ button.ghost{background:#2a1033;color:#ffe9f6;border:1px solid #8b5cf6;border-radius:7px;padding:6px 9px;font-weight:700;font-size:12px;cursor:pointer}
+ .detail{background:#2a1033;border:1px solid #8b5cf6;border-radius:8px;padding:8px;margin-top:8px;font-size:13px}
  .detail .btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
  .seg{display:flex;gap:4px;margin:6px 0}
- .seg button{flex:1;background:#171208;color:#f3e6c8;border:1px solid #6b5320;border-radius:7px;padding:6px;font-weight:700;cursor:pointer}
- .seg button.on{background:#8a6d1f;color:#fff;border-color:#ffd75e}
+ .seg button{flex:1;background:#1d0b22;color:#ffe9f6;border:1px solid #5b2a6e;border-radius:7px;padding:6px;font-weight:700;cursor:pointer}
+ .seg button.on{background:#ff4fa3;color:#fff;border-color:#ff8fd0}
  .tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
- .tabs button{background:#171208;color:#f3e6c8;border:1px solid #6b5320;border-radius:7px;padding:5px 8px;font-weight:700;font-size:12px;cursor:pointer}
- .tabs button.on{background:#8a6d1f;color:#fff;border-color:#ffd75e}
- .praybtn{flex:1;background:#171208;border:2px solid #54431d;border-radius:10px;color:#f3e6c8;padding:10px 4px;font-size:13px;font-weight:800;cursor:pointer}
- .praybtn.on{border-color:#ffd75e;background:#4a3a12;box-shadow:0 0 10px #ffd75e66}
- .bar{height:12px;background:#0f0c07;border:1px solid #54431d;border-radius:6px;overflow:hidden}
+ .tabs button{background:#1d0b22;color:#ffe9f6;border:1px solid #5b2a6e;border-radius:7px;padding:5px 8px;font-weight:700;font-size:12px;cursor:pointer}
+ .tabs button.on{background:#ff4fa3;color:#fff;border-color:#ff8fd0}
+ .praybtn{flex:1;background:#1d0b22;border:2px solid #5b2a6e;border-radius:10px;color:#ffe9f6;padding:10px 4px;font-size:13px;font-weight:800;cursor:pointer}
+ .praybtn.on{border-color:#ff4fa3;background:#3d1440;box-shadow:0 0 10px #ff4fa366}
+ .bar{height:12px;background:#12060f;border:1px solid #5b2a6e;border-radius:6px;overflow:hidden}
  .bar>div{height:100%}
- input,select{background:#0f0c07;color:#f3e6c8;border:1px solid #6b5320;border-radius:6px;padding:7px;font-size:14px}
+ input,select{background:#12060f;color:#ffe9f6;border:1px solid #8b5cf6;border-radius:6px;padding:7px;font-size:14px}
  input[type=number]{width:76px}
-
  /* joystick */
- #joy{position:fixed;left:18px;bottom:86px;width:112px;height:112px;border-radius:50%;background:rgba(36,28,16,.55);border:2px solid rgba(107,83,32,.8);z-index:30;touch-action:none;opacity:var(--uia)}
- #knob{position:absolute;left:50%;top:50%;width:50px;height:50px;border-radius:50%;background:rgba(255,215,94,.75);border:2px solid #6b5320;transform:translate(-50%,-50%)}
- #camstick{position:fixed;right:16px;bottom:196px;width:104px;height:104px;border-radius:50%;background:rgba(36,28,16,.55);border:2px solid rgba(107,83,32,.8);z-index:30;touch-action:none;opacity:var(--uia)}
- #camknob{position:absolute;left:50%;top:50%;width:46px;height:46px;border-radius:50%;background:rgba(126,195,255,.75);border:2px solid #2e4a6b;transform:translate(-50%,-50%)}
+ #joy{position:fixed;left:18px;bottom:86px;width:112px;height:112px;border-radius:50%;background:rgba(24,10,26,.55);border:2px solid rgba(139,92,246,.8);z-index:30;touch-action:none;opacity:var(--uia)}
+ #knob{position:absolute;left:50%;top:50%;width:50px;height:50px;border-radius:50%;background:rgba(255,79,163,.75);border:2px solid #8b5cf6;transform:translate(-50%,-50%)}
+ #camstick{position:fixed;right:16px;bottom:196px;width:104px;height:104px;border-radius:50%;background:rgba(24,10,26,.55);border:2px solid rgba(34,211,238,.7);z-index:30;touch-action:none;opacity:var(--uia)}
+ #camknob{position:absolute;left:50%;top:50%;width:46px;height:46px;border-radius:50%;background:rgba(34,211,238,.75);border:2px solid #0e7490;transform:translate(-50%,-50%)}
  #camstick .sticklbl{position:absolute;left:0;right:0;bottom:6px;text-align:center;font-size:10px;color:#cfe6ff;pointer-events:none}
  /* quick-set buttons */
  #quickbar{position:fixed;left:146px;bottom:108px;z-index:30;display:flex;gap:8px}
- .qbtn{width:54px;height:54px;border-radius:50%;background:rgba(36,28,16,var(--uia));border:2px solid #6b5320;color:#f3e6c8;font-size:24px;cursor:pointer;position:relative}
- .qbtn .qnum{position:absolute;top:-5px;right:-5px;background:#8a6d1f;border:1px solid #ffd75e;border-radius:50%;width:19px;height:19px;font-size:11px;font-weight:800;color:#fff;display:flex;align-items:center;justify-content:center}
+ .qbtn{width:54px;height:54px;border-radius:50%;background:rgba(24,10,26,var(--uia));border:2px solid #8b5cf6;color:#ffe9f6;font-size:24px;cursor:pointer;position:relative}
+ .qbtn .qnum{position:absolute;top:-5px;right:-5px;background:#ff4fa3;border:1px solid #ff8fd0;border-radius:50%;width:19px;height:19px;font-size:11px;font-weight:800;color:#fff;display:flex;align-items:center;justify-content:center}
  /* XP drops */
  #xpdrops{position:relative;height:0;text-align:center}
- .xpdrop{position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:13px;font-weight:800;color:#7ec3ff;text-shadow:0 1px 3px #000;animation:xprise 1.6s ease-out forwards;pointer-events:none}
+ .xpdrop{position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:13px;font-weight:800;color:#ff8fd0;text-shadow:0 1px 3px #000;animation:xprise 1.6s ease-out forwards;pointer-events:none}
  @keyframes xprise{0%{opacity:0;margin-top:6px}15%{opacity:1}100%{opacity:0;margin-top:-34px}}
  /* goblin label HP bar */
  .plabel .hpwrap{display:none;width:64px;height:7px;background:#400;border:1px solid #200;border-radius:4px;margin:2px auto 0;overflow:hidden}
  .plabel .hpfill{height:100%;background:#4caf50}
  .plabel .gname{color:#b6ffb0}
  /* settings + skills rows */
- .setrow{display:flex;align-items:center;gap:8px;background:#171208;border:1px solid #54431d;border-radius:8px;padding:7px 8px;margin-bottom:6px;font-size:13px}
+ .setrow{display:flex;align-items:center;gap:8px;background:#1d0b22;border:1px solid #5b2a6e;border-radius:8px;padding:7px 8px;margin-bottom:6px;font-size:13px}
  .setrow .grow{flex:1}
- .setrow input[type=range]{flex:1;accent-color:#c9a227}
- .skillrow{display:flex;align-items:center;gap:8px;background:#171208;border:1px solid #54431d;border-radius:8px;padding:5px 8px;margin-bottom:4px;font-size:13px}
+ .setrow input[type=range]{flex:1;accent-color:#ff4fa3}
+ .skillrow{display:flex;align-items:center;gap:8px;background:#1d0b22;border:1px solid #5b2a6e;border-radius:8px;padding:5px 8px;margin-bottom:4px;font-size:13px}
  .skillrow .ic{font-size:19px}
  .skillrow .grow{flex:1}
- .skillrow .lvl{font-weight:900;color:#ffd75e;font-size:15px}
- .skillrow .xp{font-size:11px;color:#b7a26e}
- .cell.empty{cursor:default;background:rgba(23,18,8,.5)}
+ .skillrow .lvl{font-weight:900;color:#ff8fd0;font-size:15px}
+ .skillrow .xp{font-size:11px;color:#c9a0d8}
+ .cell.empty{cursor:default;background:rgba(29,11,34,.5)}
  /* chat */
- #chatbox{position:fixed;right:6px;bottom:6px;z-index:30;width:min(370px,64vw);background:rgba(23,19,12,var(--uia));border:2px solid #6b5320;border-radius:10px;overflow:hidden}
- #chathead{padding:5px 9px;font-size:12px;font-weight:800;color:#ffd75e;cursor:pointer;display:flex;justify-content:space-between}
+ #chatbox{position:fixed;right:6px;bottom:6px;z-index:30;width:min(370px,64vw);background:rgba(24,10,26,var(--uia));border:2px solid #ff4fa3;border-radius:10px;overflow:hidden}
+ #chathead{padding:5px 9px;font-size:12px;font-weight:800;color:#ff8fd0;cursor:pointer;display:flex;justify-content:space-between}
  #chatbody{display:block}
  #chatbox.closed #chatbody{display:none}
  #log{height:104px;overflow-y:auto;font-size:12px;white-space:pre-wrap;padding:4px 8px}
  #chatrow{display:flex;gap:5px;padding:5px}
  #chatrow input{flex:1;min-width:0}
  /* duel banner */
- #duelbar{position:fixed;top:42px;left:50%;transform:translateX(-50%);z-index:45;width:min(440px,94vw);background:rgba(30,23,13,var(--uia));border:2px solid #a33;border-radius:12px;padding:8px 10px;display:none}
+ #duelbar{position:fixed;top:42px;left:50%;transform:translateX(-50%);z-index:45;width:min(440px,94vw);background:rgba(24,10,26,var(--uia));border:2px solid #e0388a;border-radius:12px;padding:8px 10px;display:none}
  #duelbar.open{display:block}
- #duelbar .t{font-weight:900;color:#ffd75e;text-align:center;font-size:14px;margin-bottom:5px}
+ #duelbar .t{font-weight:900;color:#ff8fd0;text-align:center;font-size:14px;margin-bottom:5px}
  .hprow{display:flex;align-items:center;gap:7px;font-size:12px;margin:3px 0}
  .hprow .nm{width:86px;text-align:right;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .hpbar{flex:1;height:13px;background:#400;border:1px solid #200;border-radius:6px;overflow:hidden}
  .hpbar>div{height:100%;background:#4caf50;transition:width .25s}
  #duelquick{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;align-items:center}
- #specbtn.ready{box-shadow:0 0 12px 3px #ffd75e;background:#c9a227}
+ #specbtn.ready{box-shadow:0 0 12px 3px #ff4fa3;background:#e0388a}
  /* modals */
  .modal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:14px}
  .modal.open{display:flex}
- .sheet{background:rgba(36,28,16,var(--uia));border:2px solid #6b5320;border-radius:14px;padding:14px;width:min(430px,94vw);max-height:86dvh;overflow-y:auto}
- .sheet h3{margin:0 0 8px;color:#ffd75e}
+ .sheet{background:rgba(24,10,26,var(--uia));border:2px solid #ff4fa3;border-radius:14px;padding:14px;width:min(430px,94vw);max-height:86dvh;overflow-y:auto}
+ .sheet h3{margin:0 0 8px;color:#ff8fd0}
  .sheet .btns{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
- .pickrow{display:flex;align-items:center;gap:7px;font-size:13px;padding:4px 0;border-bottom:1px solid #33270e}
+ .pickrow{display:flex;align-items:center;gap:7px;font-size:13px;padding:4px 0;border-bottom:1px solid #3d1440}
  .pickrow .grow{flex:1}
  .pickrow input{width:58px;padding:4px}
  /* auth + errors */
- #auth{position:fixed;inset:0;z-index:60;background:#17130c;display:flex;align-items:center;justify-content:center;padding:16px}
- #auth .card{background:#241c10;border:2px solid #6b5320;border-radius:14px;padding:18px;width:min(400px,94vw)}
- #auth h1{font-size:21px;color:#ffd75e;margin:0 0 4px}
+ #auth{position:fixed;inset:0;z-index:60;background:linear-gradient(160deg,#2a0a33,#160a2e 55%,#0d1b2e);display:flex;align-items:center;justify-content:center;padding:16px}
+ #auth .card{background:#1d0b22;border:2px solid #ff4fa3;border-radius:14px;padding:18px;width:min(400px,94vw);box-shadow:0 0 34px #ff4fa333}
+ #auth h1{font-size:21px;color:#ff8fd0;margin:0 0 4px}
  #auth input{display:block;width:100%;margin:7px 0}
  #authmsg{color:#ff8a80;font-size:13px;min-height:18px}
- #loaderror{position:fixed;inset:0;z-index:70;background:#17130c;display:none;align-items:center;justify-content:center;padding:20px;text-align:center}
- #toast{position:fixed;top:44px;left:50%;transform:translateX(-50%);z-index:55;background:rgba(51,39,14,var(--uia));border:2px solid #ffd75e;color:#ffe9a8;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:700;display:none;max-width:92vw;text-align:center}
+ #loaderror{position:fixed;inset:0;z-index:70;background:#160a1a;display:none;align-items:center;justify-content:center;padding:20px;text-align:center}
+ #toast{position:fixed;top:44px;left:50%;transform:translateX(-50%);z-index:55;background:rgba(61,20,64,var(--uia));border:2px solid #ff4fa3;color:#ffe9f6;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:700;display:none;max-width:92vw;text-align:center}
  /* Fight Caves (Stage 4) */
  .plabel .fcname{color:#ffc9a8}
- #fcbar{position:fixed;top:42px;left:50%;transform:translateX(-50%);z-index:45;width:min(440px,94vw);background:rgba(30,23,13,var(--uia));border:2px solid #ff7b24;border-radius:12px;padding:8px 10px;display:none}
+ #fcbar{position:fixed;top:42px;left:50%;transform:translateX(-50%);z-index:45;width:min(440px,94vw);background:rgba(24,10,26,var(--uia));border:2px solid #ff7b24;border-radius:12px;padding:8px 10px;display:none}
  #fcbar.open{display:block}
  #fcbar .t{font-weight:900;color:#ffb03a;text-align:center;font-size:14px;margin-bottom:5px}
  #fcquick{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;align-items:center}
- #fcspecbtn.ready{box-shadow:0 0 12px 3px #ffd75e;background:#c9a227}
+ #fcspecbtn.ready{box-shadow:0 0 12px 3px #ff4fa3;background:#e0388a}
  #fcprayers{display:flex;gap:5px;margin-top:7px}
- .fcpray{flex:1;background:#171208;border:2px solid #54431d;border-radius:9px;color:#f3e6c8;padding:7px 2px;font-size:12px;font-weight:800;cursor:pointer}
- .fcpray.on{border-color:#ffd75e;background:#4a3a12;box-shadow:0 0 10px #ffd75e66}
+ .fcpray{flex:1;background:#1d0b22;border:2px solid #5b2a6e;border-radius:9px;color:#ffe9f6;padding:7px 2px;font-size:12px;font-weight:800;cursor:pointer}
+ .fcpray.on{border-color:#ff4fa3;background:#3d1440;box-shadow:0 0 10px #ff4fa366}
  .fcpray.flash{animation:fcflash .28s ease-in-out infinite alternate}
- @keyframes fcflash{from{border-color:#ff3b30;background:#5a1408;box-shadow:0 0 6px #ff3b30}to{border-color:#ffd75e;background:#7a2a08;box-shadow:0 0 18px #ff7b24}}
+ @keyframes fcflash{from{border-color:#ff3b30;background:#5a1408;box-shadow:0 0 6px #ff3b30}to{border-color:#ff8fd0;background:#7a2a08;box-shadow:0 0 18px #ff7b24}}
  #jadwarn{position:fixed;top:26%;left:50%;transform:translateX(-50%);z-index:56;width:min(430px,92vw);background:rgba(90,16,4,.94);border:3px solid #ff7b24;border-radius:14px;padding:14px 12px;text-align:center;display:none;cursor:pointer;box-shadow:0 0 30px #ff5a1f88;animation:fcflash .28s ease-in-out infinite alternate}
- #jadwarntxt{font-size:21px;font-weight:900;color:#ffe9a8;text-shadow:0 2px 4px #000}
+ #jadwarntxt{font-size:21px;font-weight:900;color:#ffd9f2;text-shadow:0 2px 4px #000}
  #jadwarnhint{font-size:12px;color:#ffd9c2;margin-top:5px}
- .note{font-size:11px;color:#b7a26e}
+ .note{font-size:11px;color:#c9a0d8}
+ /* Barrows (Stage 5) */
+ .plabel .bname{color:#e3d5ff}
+ .plabel .bsub{font-size:10px;color:#b8a8e8;font-weight:600}
+ #barrowsbar{position:fixed;top:44px;left:8px;z-index:44;width:min(320px,74vw);background:rgba(24,10,26,var(--uia));border:2px solid #8b5cf6;border-radius:12px;padding:8px 10px;display:none}
+ #barrowsbar.open{display:block}
+ #barrowsbar .t{font-weight:900;color:#d8b4fe;text-align:center;font-size:14px;margin-bottom:5px}
+ #barrowsbar .x{background:none;border:0;color:#ffe9f6;font-size:15px;cursor:pointer;float:right}
+ .bchip{display:inline-block;background:#1d0b22;border:1px solid #5b2a6e;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700;margin:0 3px 4px 0;color:#c9a0d8}
+ .bchip.slain{color:#7dff8a;border-color:#2e6b24}
+ .bchip.tun{border-color:#ff4fa3;color:#ffb3dd}
+ .puzseq{font-size:34px;text-align:center;letter-spacing:8px;margin:8px 0}
+ .puzans{font-size:26px;text-align:center;letter-spacing:6px;min-height:34px;margin:4px 0;color:#ff8fd0}
+ .puzbtns{display:flex;gap:6px;justify-content:center;margin:8px 0}
+ .puzbtn{font-size:24px;background:#1d0b22;border:2px solid #5b2a6e;border-radius:10px;padding:6px 12px;cursor:pointer}
+ .puzbtn:active{border-color:#ff4fa3}
 </style></head><body>
 <div id="scene"></div>
 <div id="labels"></div>
 <div id="splats"></div>
-<div id="topbar"><b>⚔️ nallystake</b><span id="hudname">—</span><span>🪙 <b id="hudgold">0</b>g</span><span>⭐ <b id="hudrating">1000</b></span><span id="hudwl">0W/0L</span><span id="hudcombat">⚔️ Combat lvl 3</span><span class="grow"></span><span class="note">gold only · no real money</span></div>
+
+<div id="topbar"><b>💖 nallystake <span class="sparkle">✨</span></b><span id="hudname">—</span><span>🪙 <b id="hudgold">0</b>g</span><span>⭐ <b id="hudrating">1000</b></span><span id="hudwl">0W/0L</span><span id="hudcombat">⚔️ Combat lvl 3</span><span class="grow"></span><span class="note">gold only · no real money</span></div>
 
 <div id="mapwrap">
  <canvas id="minimap" width="128" height="72"></canvas>
@@ -221,6 +239,21 @@
  <div style="text-align:center;margin-top:6px"><button class="ghost" id="fcleavebtn">🏃 Leave the caves</button></div>
 </div>
 
+<div id="barrowsbar">
+ <button class="x" id="barrowsx">✕</button>
+ <div class="t" id="barrowstitle">💀 Barrows — kills 0/6</div>
+ <div id="barrowslist" style="text-align:center"></div>
+ <div id="barrowstun" style="display:none">
+  <div class="note" id="barrowspuz" style="text-align:center"></div>
+  <div style="display:flex;gap:5px;margin-top:6px">
+   <button class="act" id="barrowspuzbtn" style="flex:1">🧩 Puzzle door</button>
+   <button class="act" id="barrowschestbtn" style="flex:1">💰 Loot chest</button>
+   <button class="ghost" id="barrowsleavebtn" style="flex:1">🪜 Climb out</button>
+  </div>
+ </div>
+ <div class="note" id="barrowshint" style="text-align:center"></div>
+</div>
+
 <div id="chatbox">
  <div id="chathead"><span>💬 Chat / game log</span><span id="chatchev">▾</span></div>
  <div id="chatbody"><div id="log"></div><div id="chatrow"><input id="chat" placeholder="Say something…" maxlength="140"><button class="act" id="sendchat">Send</button></div></div>
@@ -231,22 +264,24 @@
 <div class="modal" id="duelendmodal"><div class="sheet" id="duelendsheet"></div></div>
 <div class="modal" id="fcstartmodal"><div class="sheet" id="fcstartsheet"></div></div>
 <div class="modal" id="fcendmodal"><div class="sheet" id="fcendsheet"></div></div>
+<div class="modal" id="puzzlemodal"><div class="sheet" id="puzzlesheet"></div></div>
+<div class="modal" id="lootmodal"><div class="sheet" id="lootsheet"></div></div>
 
 <div id="toast"></div>
 
 <div id="jadwarn"><div id="jadwarntxt"></div><div id="jadwarnhint"></div></div>
 
 <div id="auth"><div class="card">
- <h1>⚔️ nallystake — Online</h1>
+ <h1>💖 nallystake — Online ✨</h1>
  <p style="margin:2px 0 8px">Gold only. No real money. Real players, server-run duels, saving on the server.</p>
  <input id="name" placeholder="Player name" maxlength="16" autocomplete="username">
  <input id="pass" type="password" placeholder="Password (6+)" autocomplete="current-password">
  <div style="display:flex;gap:8px;margin-top:6px"><button class="act" id="reg">Create account</button><button class="act" id="login">Sign in</button></div>
  <div id="authmsg"></div>
- <p class="note">Stage 4: the Fight Caves — 63 waves of monsters and TzTok-Jad on wave 63; beat him for the fire cape. Plus the Emberfall Mine &amp; Smithy, Training &amp; Gathering caves, Fishing Cove, skills &amp; XP, Goblin Camp, twin sticks, rotating minimap, settings, quick sets.</p>
+ <p class="note">Stage 5: Barrows, duel arenas, drop piles — now with a full K-pop theme: concert stage, idol outfits, sparkles. Plus the Fight Caves, Emberfall Mine &amp; Smithy, Training &amp; Gathering caves, Fishing Cove, skills &amp; XP, Goblin Camp, twin sticks, rotating minimap, settings, quick sets.</p>
 </div></div>
 
-<div id="loaderror"><div><h2 style="color:#ffd75e">Couldn't load 3D 😕</h2><p>The 3D library (Three.js) failed to load, so the plaza can't be drawn.<br>Check your connection and reload the page.</p></div></div>
+<div id="loaderror"><div><h2 style="color:#ff8fd0">Couldn't load 3D 😕</h2><p>The 3D library (Three.js) failed to load, so the plaza can't be drawn.<br>Check your connection and reload the page.</p></div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.158.0/three.min.js"></script>
 <script>
@@ -265,7 +300,8 @@ const ICONS={restore_potion:'🍷',prayer_potion:'🌟',ration:'🍗',bronze_swo
  raw_shrimps:'🦐',raw_trout:'🐠',cooked_trout:'🐟',cooked_shrimps:'🍤',burnt_fish:'🖤',
  silver_ore:'🤍',gold_ore:'🟡',mithril_ore:'🔵',adamantite_ore:'🟢',runite_ore:'💠',
  bronze_bar:'🟫',iron_bar:'⬜',silver_bar:'🥈',steel_bar:'⬛',mithril_bar:'🟦',adamant_bar:'🟩',rune_bar:'🟪',
- fire_cape:'🔥'};
+ fire_cape:'🔥',
+ dharoks_greataxe:'🪓',guthans_warspear:'🔱',torags_hammers:'🔨',veracs_flail:'⛓️',ahrims_staff:'🪄',karils_crossbow:'🏹'};
 const KIND_ICON={potion:'🧪',food:'🍗',weapon:'⚔️',armour:'🛡️',good:'📦',tool:'⛏️',trophy:'🏆'};
 function iconOf(id){ if(ICONS[id])return ICONS[id]; const d=catalog[id]; return d? (KIND_ICON[d.kind]||'📦') : '📦'; }
 function nameOf(id){ if(catalog[id])return catalog[id].name; if(goods[id])return goods[id].name; return id; }
@@ -372,6 +408,11 @@ function onMsg(m){
        if(an&&an.depleted){ stopGather(); toast('That spot is used up — it will grow back shortly.'); } } }
    drawMinimap(); }
  if(m.type==='fires'){ firesByArea[m.area]=m.fires||[]; if(m.area===curArea) rebuildFires(); drawMinimap(); }
+ if(m.type==='piles'){ pilesByArea[m.area]=m.piles||[]; if(m.area===curArea) rebuildPiles(); drawMinimap(); }
+ if(m.type==='barrows_state'){ onBarrowsState(m); }
+ if(m.type==='barrows_puzzle'){ onBarrowsPuzzle(m); }
+ if(m.type==='barrows_puzzle_result'){ onBarrowsPuzzleResult(m); }
+ if(m.type==='barrows_loot'){ onBarrowsLoot(m); }
  if(m.type==='gather_result'){ onGatherResult(m); }
  if(m.type==='fire_lit'){ toast('🔥 Fire lit (60s)'); }
  if(m.type==='cook_result'){ if(m.ok) toast(`🍳 Cooked! +1 ${nameOf(m.item)}`); else toast('🔥 Burnt it…'); }
@@ -382,6 +423,8 @@ function onMsg(m){
  if(m.type==='profile'){ me=m.profile; renderAll(); }
  if(m.type==='chat'){ logLine(`${m.from}: ${m.text}`); showBubble(m.from,m.text); }
  if(m.type==='error'){ toast('⚠️ '+m.message); logLine('⚠️ '+m.message);
+   if(/Wrong combination/.test(m.message||'')){ puzzleAnswer=[]; renderPuzzle(); /* the server auto-sends a fresh puzzle */ }
+   if(/chest is locked behind the puzzle door/.test(m.message||'')){ puzzleSolved=false; renderBarrowsBar(); openPuzzle(); }
    if(activeNode && /level|used up|not here|No such spot/.test(m.message||'')) stopGather();
    if(/^Too far/.test(m.message||'')&&lastAttackTry&&Date.now()-lastAttackTry.at<1500){
      const n=npcList.find(x=>x.id===lastAttackTry.id);
@@ -455,13 +498,13 @@ function onXpDrop(m){
      const d=document.createElement('div');
      d.className='xpdrop';
      d.style.top=(boxEl.children.length*17)+'px';
-     d.textContent=`+${delta} ${SKILL_ICON[m.skill]||'✨'} ${SKILL_NAME[m.skill]||m.skill}`;
+     d.textContent=`✨ +${delta} ${SKILL_ICON[m.skill]||'✨'} ${SKILL_NAME[m.skill]||m.skill} ✨`;
      boxEl.appendChild(d);
      while(boxEl.children.length>4) boxEl.removeChild(boxEl.firstChild);
      setTimeout(()=>{ if(d.parentNode) d.parentNode.removeChild(d); },1650);
    }
  }
- if(m.level>prevLevel){ toast(`🎉 Level up! ${SKILL_ICON[m.skill]||''} ${SKILL_NAME[m.skill]||m.skill} is now level ${m.level}`); logLine(`🎉 Level up! ${SKILL_NAME[m.skill]||m.skill} is now level ${m.level}.`); }
+ if(m.level>prevLevel){ toast(`🎤✨ Level up! ${SKILL_ICON[m.skill]||''} ${SKILL_NAME[m.skill]||m.skill} is now level ${m.level}`); logLine(`🎤✨ Level up! ${SKILL_NAME[m.skill]||m.skill} is now level ${m.level}.`); }
  renderHUD();
  if(drawerPanel==='skills') renderDrawer();
 }
@@ -515,6 +558,21 @@ function stoneTexture(){
  for(let i=0;i<=4;i++){ g.beginPath(); g.moveTo(i*64,0); g.lineTo(i*64,256); g.stroke(); g.beginPath(); g.moveTo(0,i*64); g.lineTo(256,i*64); g.stroke(); }
  const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(6,4); return t;
 }
+/* Subtle noise texture (Stage 5 texture pass) — base colour + flecks. */
+function noiseTexture(base,flecks,rx,ry){
+ const c=document.createElement('canvas'); c.width=c.height=128; const g=c.getContext('2d');
+ g.fillStyle=base; g.fillRect(0,0,128,128);
+ for(let i=0;i<1000;i++){ g.fillStyle=flecks[i%flecks.length]; g.fillRect(Math.random()*128,Math.random()*128,2,2); }
+ const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(rx||8,ry||5); return t;
+}
+/* Striped awning texture in a shop's colour. */
+function stripeTexture(color){
+ const c=document.createElement('canvas'); c.width=c.height=128; const g=c.getContext('2d');
+ g.fillStyle='#'+color.toString(16).padStart(6,'0'); g.fillRect(0,0,128,128);
+ g.fillStyle='rgba(255,255,255,0.35)';
+ for(let x=0;x<128;x+=32) g.fillRect(x,0,14,128);
+ const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; return t;
+}
 function box(w,h,d,color,x,y,z,parent,act){
  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshLambertMaterial({color}));
  m.position.set(x,y,z); (parent||scene).add(m);
@@ -523,8 +581,8 @@ function box(w,h,d,color,x,y,z,parent,act){
 }
 function buildPlaza(root){
  const scene=root; // build into the plaza area group (box()/add calls below target it)
- // ground: grass
- const grass=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({color:0x3e7d33}));
+ // ground: grass (subtle noise texture, Stage 5)
+ const grass=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({map:noiseTexture('#3e7d33',['#356e2c','#4a8f3c','#2f6629'],8,5)}));
  grass.rotation.x=-Math.PI/2; scene.add(grass);
  // stone-paved centre
  const stone=new THREE.Mesh(new THREE.PlaneGeometry(42,27),new THREE.MeshLambertMaterial({map:stoneTexture()}));
@@ -537,23 +595,61 @@ function buildPlaza(root){
  box(2.6,0.5,1.8,0x59390f,0,1.5,0,bankG,{type:'bank'});
  box(2.65,0.22,1.85,0xd4af37,0,1.18,0,bankG,{type:'bank'}); // gold band
  box(0.5,0.5,0.15,0xffd75e,0,0.75,0.85,bankG,{type:'bank'}); // gold clasp
- const bl=textSprite('🏦 BANK','#ffd75e','rgba(23,19,12,0.85)'); bl.position.set(0,3.1,0); bankG.add(bl);
+ const bl=textSprite('🏦 BANK','#ff8fd0','rgba(23,19,12,0.85)'); bl.position.set(0,3.1,0); bankG.add(bl);
  // shop stalls
  for(const s of SHOP_SPOTS){
    const g=new THREE.Group(); g.position.set(sx2w(s.x),0,sy2w(s.y)); scene.add(g);
    const act={type:'shop',shop:s.shop};
    box(0.18,2.2,0.18,0x5a4020,-1.4,1.1,-0.9,g,act); box(0.18,2.2,0.18,0x5a4020,1.4,1.1,-0.9,g,act);
    box(0.18,2.2,0.18,0x5a4020,-1.4,1.1,0.9,g,act); box(0.18,2.2,0.18,0x5a4020,1.4,1.1,0.9,g,act);
-   box(3.4,0.18,2.4,s.color,0,2.35,0,g,act); // awning
+   const awn=new THREE.Mesh(new THREE.BoxGeometry(3.4,0.18,2.4),new THREE.MeshLambertMaterial({map:stripeTexture(s.color)})); // striped awning
+   awn.position.set(0,2.35,0); awn.userData.act=act; interactives.push(awn); g.add(awn);
    box(3.0,0.8,1.4,0x74552a,0,0.4,0.3,g,act); // counter
    box(0.7,0.7,0.7,0xd4af37,-0.8,1.15,0.3,g,act); box(0.6,0.6,0.6,0xb03a2e,0.7,1.1,0.3,g,act); // goods on counter
    const lb=textSprite(s.shop,'#ffffff','rgba(23,19,12,0.85)'); lb.position.set(0,3.6,0); g.add(lb);
  }
- // duel board
+ // duel board (tapping it opens the Players panel)
  const bg=new THREE.Group(); bg.position.set(sx2w(BOARD_POS.x),0,sy2w(BOARD_POS.y)); scene.add(bg);
  box(0.18,2.4,0.18,0x5a4020,-1.1,1.2,0,bg); box(0.18,2.4,0.18,0x5a4020,1.1,1.2,0,bg);
- box(2.8,1.7,0.12,0x8a6d1f,0,1.7,0,bg);
- const dbl=textSprite('⚔️ DUEL BOARD','#ffd75e','rgba(23,19,12,0.85)'); dbl.position.set(0,3.2,0); bg.add(dbl);
+ box(2.8,1.7,0.12,0x8a6d1f,0,1.7,0,bg,{type:'players'});
+ const dbl=textSprite('⚔️ DUEL BOARD','#ff8fd0','rgba(23,19,12,0.85)'); dbl.position.set(0,3.2,0); bg.add(dbl);
+ // Duel Master — static figure standing by the board (Fisher Wren pattern)
+ const dm=new THREE.Group(); dm.position.set(11.5,0,2.8); scene.add(dm);
+ box(0.24,0.7,0.24,0x2a1033,-0.16,0.35,0,dm); box(0.24,0.7,0.24,0x2a1033,0.16,0.35,0,dm); // legs
+ box(0.7,0.8,0.4,0x8b5cf6,0,1.1,0,dm); // purple robe body
+ box(0.44,0.44,0.44,0xd9a066,0,1.75,0,dm); // head
+ box(0.52,0.2,0.52,0xff4fa3,0,2.08,0,dm); // pink circlet
+ const dmSw=box(0.07,1.1,0.14,0xd9dee6,0.62,1.5,0,dm); dmSw.rotation.z=-0.5; // raised sword
+ const dmlabel=document.createElement('div'); dmlabel.className='plabel';
+ dmlabel.innerHTML=`<div class="nname">⚔️ Duel Master</div>`;
+ $('labels').appendChild(dmlabel);
+ worldLabels.push({el:dmlabel,x:11.5,y:3.1,z:2.8,area:'plaza',kind:'static'});
+ // 🎤 K-POP CONCERT STAGE — north side, centred server (400,70); its
+ // front edge sits at server y≈45, clear of the north gate strip (y<40).
+ const stage=new THREE.Group(); stage.position.set(sx2w(400),0,sy2w(70)); scene.add(stage);
+ box(14,0.8,5,0xc2255c,0,0.4,0,stage); // pink platform
+ box(14.6,0.25,5.6,0xff4fa3,0,0.92,0,stage); // glowing stage lip
+ box(14,5,0.4,0x2a1033,0,3.3,-2.4,stage); // backdrop panel
+ box(14.4,0.3,0.5,0x22d3ee,0,5.9,-2.4,stage); // cyan top trim
+ const stgT=textSprite('🎤 K-POP STAGE ✨','#ffffff','rgba(194,37,92,0.9)'); stgT.scale.set(11,2.75,1); stgT.position.set(0,4.4,-2.1); stage.add(stgT);
+ for(const sx of [-6.6,6.6]){ // light towers with glowing cones
+   box(0.3,5.4,0.3,0x3a3a41,sx,2.7,-1.8,stage);
+   const cone=new THREE.Mesh(new THREE.ConeGeometry(1.15,2.6,10),new THREE.MeshBasicMaterial({color:sx<0?0xff4fa3:0x22d3ee,transparent:true,opacity:0.4}));
+   cone.position.set(sx,3.4,0.4); cone.rotation.x=0.7; stage.add(cone);
+   const lamp=new THREE.Mesh(new THREE.SphereGeometry(0.3,10,8),new THREE.MeshBasicMaterial({color:sx<0?0xff8fd0:0x9be9ff})); lamp.position.set(sx,5.4,-1.8); stage.add(lamp);
+ }
+ for(const sx of [-5.2,5.2]){ // speaker stacks
+   box(1.3,1.6,1.0,0x17121c,sx,0.8,1.6,stage); box(1.1,1.2,0.9,0x241a2e,sx,2.2,1.6,stage);
+ }
+ for(let i=0;i<8;i++){ // light sticks along the front edge
+   const lx=-5.25+i*1.5, tipCol=i%2? 0x22d3ee : 0xff4fa3;
+   box(0.07,0.85,0.07,0xf5f5f5,lx,1.35,2.75,stage);
+   const tip=new THREE.Mesh(new THREE.SphereGeometry(0.17,8,8),new THREE.MeshBasicMaterial({color:tipCol})); tip.position.set(lx,1.9,2.75); stage.add(tip);
+ }
+ const stglabel=document.createElement('div'); stglabel.className='plabel';
+ stglabel.innerHTML=`<div class="nname">🎤 Concert Stage</div>`;
+ $('labels').appendChild(stglabel);
+ worldLabels.push({el:stglabel,x:sx2w(400),y:6.9,z:sy2w(70),area:'plaza',kind:'static'});
  // perimeter fences with gaps at the four gates
  const fenceMat=0x6b4e26;
  function fenceRun(x1,z1,x2,z2){
@@ -624,7 +720,7 @@ function buildGoblinCamp(root){
  box(0.6,0.4,5.7,0xd4af37,-40,3.3,0,S);
  // signpost by the west gate
  box(0.18,2.2,0.18,0x5a4020,-36,1.1,4.2,S);
- const sp=textSprite('👺 Goblin Camp','#ffd75e','rgba(23,19,12,0.85)'); sp.position.set(-36,3.0,4.2); S.add(sp);
+ const sp=textSprite('👺 Goblin Camp','#ff8fd0','rgba(23,19,12,0.85)'); sp.position.set(-36,3.0,4.2); S.add(sp);
  // trees + rocks
  for(const [tx,tz] of [[-30,-16],[-21,15],[27,16],[33,-8],[-8,-19],[14,20]]){
    box(0.35,1.4,0.35,0x5a4020,tx,0.7,tz,S);
@@ -675,7 +771,7 @@ function buildTrainingCave(root){
  buildTorch(S,-14,-20); buildTorch(S,14,-20);
  // signpost by the south gate (stations themselves render from node data)
  box(0.18,2.2,0.18,0x5a4020,5.5,1.1,19.5,S);
- const sp=textSprite('🏋️ Training Cave','#ffd75e','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,19.5); S.add(sp);
+ const sp=textSprite('🏋️ Training Cave','#ff8fd0','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,19.5); S.add(sp);
 }
 function buildGatheringCave(root){
  const S=root;
@@ -697,7 +793,7 @@ function buildGatheringCave(root){
    rock.position.set(rx,0.35,rz); S.add(rock);
  }
  box(0.18,2.2,0.18,0x5a4020,5.5,1.1,-19.5,S);
- const sp=textSprite('⛏️ Gathering Cave','#ffd75e','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,-19.5); S.add(sp);
+ const sp=textSprite('⛏️ Gathering Cave','#ff8fd0','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,-19.5); S.add(sp);
 }
 function buildFishingCove(root){
  const S=root;
@@ -724,7 +820,7 @@ function buildFishingCove(root){
  gatePosts(S,-40,0);
  // signpost by the west gate
  box(0.18,2.2,0.18,0x5a4020,-36,1.1,4.2,S);
- const sp=textSprite('🎣 Fishing Cove','#ffd75e','rgba(23,19,12,0.85)'); sp.position.set(-36,3.0,4.2); S.add(sp);
+ const sp=textSprite('🎣 Fishing Cove','#ff8fd0','rgba(23,19,12,0.85)'); sp.position.set(-36,3.0,4.2); S.add(sp);
  // Fisher Wren — decorative angler on the shore by the dock
  const wren=new THREE.Group(); wren.position.set(-8,0,6); S.add(wren);
  box(0.24,0.7,0.24,0x4a3520,-0.16,0.35,0,wren); box(0.24,0.7,0.24,0x4a3520,0.16,0.35,0,wren); // legs
@@ -758,7 +854,7 @@ function buildMine(root){
  buildTorch(S,-14,-20); buildTorch(S,14,-20); buildTorch(S,36,-6);
  // signpost by the south gate (the rocks themselves render from node data)
  box(0.18,2.2,0.18,0x5a4020,5.5,1.1,19.5,S);
- const sp=textSprite('⛏️🔥 Emberfall','#ffd75e','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,19.5); S.add(sp);
+ const sp=textSprite('⛏️🔥 Emberfall','#ff8fd0','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,19.5); S.add(sp);
  // FURNACE — south-east: stone body, dark mouth facing west, flames inside, chimney
  const furn=new THREE.Group(); furn.position.set(31,0,13); S.add(furn);
  box(3.2,2.2,2.6,0x6b675e,0,1.1,0,furn); // body
@@ -767,14 +863,14 @@ function buildMine(root){
  box(0.25,1.15,1.6,0x140d06,-1.65,0.85,0,furn); // dark mouth (west face)
  const ffl=new THREE.Mesh(new THREE.ConeGeometry(0.42,1.1,6),new THREE.MeshBasicMaterial({color:0xff7b24})); ffl.rotation.z=Math.PI/2; ffl.position.set(-1.95,0.85,0); furn.add(ffl);
  const ffl2=new THREE.Mesh(new THREE.ConeGeometry(0.24,0.7,6),new THREE.MeshBasicMaterial({color:0xffd75e})); ffl2.rotation.z=Math.PI/2; ffl2.position.set(-1.9,0.85,0); furn.add(ffl2);
- const flb=textSprite('🔥 Furnace','#ffd75e','rgba(23,19,12,0.85)'); flb.position.set(31,3.6,13); S.add(flb);
+ const flb=textSprite('🔥 Furnace','#ff8fd0','rgba(23,19,12,0.85)'); flb.position.set(31,3.6,13); S.add(flb);
  // ANVIL — next to the furnace
  const anv=new THREE.Group(); anv.position.set(25,0,16.5); S.add(anv);
  box(1.5,0.5,0.9,0x2e2e33,0,0.25,0,anv); // base
  box(0.7,0.5,0.6,0x3a3a41,0,0.75,0,anv); // waist
  box(2.0,0.35,0.75,0x4a4a52,0,1.18,0,anv); // top plate
  const horn=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.26,1.0,8),new THREE.MeshLambertMaterial({color:0x4a4a52})); horn.rotation.z=Math.PI/2; horn.position.set(1.35,1.18,0); anv.add(horn);
- const alb=textSprite('🔨 Anvil','#ffd75e','rgba(23,19,12,0.85)'); alb.position.set(25,2.6,16.5); S.add(alb);
+ const alb=textSprite('🔨 Anvil','#ff8fd0','rgba(23,19,12,0.85)'); alb.position.set(25,2.6,16.5); S.add(alb);
  // Pickaxe Pete — miner standing by the smithy (his pickaxes are in the Shops panel)
  const pete=new THREE.Group(); pete.position.set(27,0,7); S.add(pete);
  box(0.24,0.7,0.24,0x3a2c1c,-0.16,0.35,0,pete); box(0.24,0.7,0.24,0x3a2c1c,0.16,0.35,0,pete); // legs
@@ -833,6 +929,271 @@ function buildFightCaves(root){
  box(0.18,2.2,0.18,0x5a4020,5.5,1.1,19.5,S);
  const sp=textSprite('🌋 Fight Caves','#ffb03a','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,19.5); S.add(sp);
 }
+/* ================= Stage 5: Barrows, duel arenas, drop piles ================= */
+const BARROWS_CLIENT={
+ dharok:{name:'Dharok the Wretched',lvl:115,type:'melee',x:150,y:110,tint:0x7a9a4d,short:'Dharok'},
+ guthan:{name:'Guthan the Infested',lvl:115,type:'melee',x:330,y:80,tint:0xb59a6a,short:'Guthan'},
+ torag:{name:'Torag the Corrupted',lvl:115,type:'melee',x:510,y:80,tint:0x7a8a9a,short:'Torag'},
+ verac:{name:'Verac the Defiled',lvl:115,type:'melee',x:660,y:110,tint:0x8a5aa8,short:'Verac'},
+ ahrim:{name:'Ahrim the Blighted',lvl:98,type:'magic',x:240,y:220,tint:0xa83a3a,short:'Ahrim'},
+ karil:{name:'Karil the Tainted',lvl:98,type:'missiles',x:560,y:220,tint:0x5d4a38,short:'Karil'}
+};
+const BARROWS_ORDER=['dharok','guthan','torag','verac','ahrim','karil'];
+const PRAYER_FOR_TYPE={melee:['🛡️','Protect from Melee'],magic:['🔮','Protect from Magic'],missiles:['🏹','Protect from Missiles']};
+let barrowsState={kills:[],tunnel:null,inTunnels:false};
+let barrowsBarHidden=false;
+let pendingMound=null; // brother id — walk to his mound, enter on arrival
+let pendingPile=null; // pile id — walk to it, pick up on arrival
+let pendingChest=false; // walk to the tunnels chest, loot on arrival
+let moundProps={}; // brother id -> {x,z,labelY,labelEl} (world coords, tap tests)
+let moundGroups={}; // brother id -> {group,ring,dimmed}
+let puzzleSolved=false, puzzleSeq=[], puzzleAnswer=[];
+const PUZZLE_EMOJI={circle:'⚪',square:'🟦',triangle:'🔺',diamond:'🔷'};
+
+function buildBarrows(root){
+ const S=root;
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({map:noiseTexture('#3f4433',['#363b2c','#4a5040','#2e3325'],8,5),color:0xbfc4b0}));
+ floor.rotation.x=-Math.PI/2; S.add(floor);
+ // rock walls, gap at the SOUTH gate (walk out to return to the plaza)
+ rockWallRun(S,-40,-22.5,40,-22.5); // north
+ rockWallRun(S,-40,22.5,-3.5,22.5); rockWallRun(S,3.5,22.5,40,22.5); // south, gap at gate
+ rockWallRun(S,-40,-22.5,-40,22.5); // west
+ rockWallRun(S,40,-22.5,40,22.5); // east
+ gatePosts(S,0,22.5);
+ buildTorch(S,-6,20); buildTorch(S,6,20);
+ // signpost by the south gate
+ box(0.18,2.2,0.18,0x5a4020,5.5,1.1,19.5,S);
+ const sp=textSprite('💀 Barrows','#d8b4fe','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,19.5); S.add(sp);
+ // dead trees
+ for(const [tx,tz] of [[-33,-17],[-14,-19],[30,-18],[36,12],[-36,8],[8,17],[-24,19]]){
+   box(0.3,2.2,0.3,0x2e2620,tx,1.1,tz,S);
+   const br=box(0.14,1.4,0.14,0x2e2620,tx+0.4,2.6,tz,S); br.rotation.z=-0.7;
+   const br2=box(0.12,1.1,0.12,0x2e2620,tx-0.35,2.5,tz,S); br2.rotation.z=0.6;
+ }
+ // scattered rocks
+ for(const [rx,rz] of [[-20,-6],[16,-12],[24,14],[-10,8],[34,-4]]){
+   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.6),new THREE.MeshLambertMaterial({color:0x55554e}));
+   rock.position.set(rx,0.35,rz); S.add(rock);
+ }
+ // the six burial mounds at the exact server positions
+ moundProps={}; moundGroups={};
+ for(const id of BARROWS_ORDER){
+   const b=BARROWS_CLIENT[id], wx=sx2w(b.x), wz=sy2w(b.y);
+   const g=new THREE.Group(); g.position.set(wx,0,wz); S.add(g);
+   const dome=new THREE.Mesh(new THREE.SphereGeometry(2.3,12,8),new THREE.MeshLambertMaterial({color:0x4a4436}));
+   dome.scale.y=0.42; dome.position.y=0.1; g.add(dome);
+   box(1.7,0.5,0.9,0x6e6a60,0,1.05,0,g); // sarcophagus slab
+   box(0.5,0.28,0.5,b.tint,0,1.42,0,g); // brother-coloured capstone
+   const ring=new THREE.Mesh(new THREE.TorusGeometry(2.7,0.12,8,28),new THREE.MeshBasicMaterial({color:0xb26bff}));
+   ring.rotation.x=Math.PI/2; ring.position.y=0.15; ring.visible=false; g.add(ring);
+   moundGroups[id]={group:g,ring,dimmed:false};
+   const label=document.createElement('div'); label.className='plabel';
+   $('labels').appendChild(label);
+   worldLabels.push({el:label,x:wx,y:2.7,z:wz,area:'barrows',kind:'barrows_mound',brotherId:id});
+   moundProps[id]={x:wx,z:wz,labelY:2.7,labelEl:label};
+ }
+ refreshBarrowsMounds();
+}
+function refreshBarrowsMounds(){
+ for(const id of BARROWS_ORDER){
+   const b=BARROWS_CLIENT[id], mp=moundProps[id]; if(!mp) continue;
+   const slain=barrowsState.kills.includes(id), isTun=barrowsState.tunnel===id;
+   let sub='';
+   if(slain) sub+='<div class="bsub">✓ slain</div>';
+   if(isTun) sub+='<div class="bsub">🕳️ Tunnel entrance</div>';
+   mp.labelEl.innerHTML=`<div class="nname bname">${esc(b.name)} · lvl ${b.lvl}</div>${sub}`;
+   const mg=moundGroups[id];
+   if(mg){
+     mg.ring.visible=isTun;
+     if(slain&&!mg.dimmed){ mg.dimmed=true; mg.group.traverse(o=>{ if(o.material&&o.material!==mg.ring.material){ o.material=o.material.clone(); o.material.transparent=true; o.material.opacity=0.5; } }); }
+     if(!slain&&mg.dimmed){ mg.dimmed=false; mg.group.traverse(o=>{ if(o.material){ o.material.transparent=false; o.material.opacity=1; } }); }
+   }
+ }
+}
+function buildBarrowsTunnels(root){
+ const S=root;
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({color:0x14101c}));
+ floor.rotation.x=-Math.PI/2; S.add(floor);
+ rockWallRun(S,-40,-22.5,40,-22.5); rockWallRun(S,-40,22.5,40,22.5);
+ rockWallRun(S,-40,-22.5,-40,22.5); rockWallRun(S,40,-22.5,40,22.5);
+ buildTorch(S,-14,-14); buildTorch(S,14,-14); buildTorch(S,-14,14); buildTorch(S,14,14); buildTorch(S,0,-20);
+ // reward chest at the centre (server 400,225 -> world 0,0)
+ const chest=new THREE.Group(); chest.position.set(0,0,0); S.add(chest);
+ box(1.8,0.9,1.1,0x6b4a1f,0,0.45,0,chest);
+ box(1.9,0.35,1.2,0x8a6d1f,0,1.05,0,chest);
+ box(0.35,0.4,0.12,0xffd75e,0,0.75,0.58,chest); // gold clasp
+ const clabel=document.createElement('div'); clabel.className='plabel';
+ clabel.innerHTML=`<div class="nname">💰 Reward chest</div>`;
+ $('labels').appendChild(clabel);
+ worldLabels.push({el:clabel,x:0,y:2.2,z:0,area:'barrows_tunnels',kind:'static'});
+ // ladder near the spawn corner (server 435,260)
+ const lad=new THREE.Group(); lad.position.set(sx2w(435),0,sy2w(260)); S.add(lad);
+ box(0.14,2.6,0.14,0x8a6d4a,-0.35,1.3,0,lad); box(0.14,2.6,0.14,0x8a6d4a,0.35,1.3,0,lad);
+ for(let i=0;i<4;i++) box(0.85,0.1,0.1,0xa8845a,0,0.5+i*0.55,0,lad);
+ const llabel=document.createElement('div'); llabel.className='plabel';
+ llabel.innerHTML=`<div class="nname">🪜 Climb out</div>`;
+ $('labels').appendChild(llabel);
+ worldLabels.push({el:llabel,x:sx2w(435),y:3.2,z:sy2w(260),area:'barrows_tunnels',kind:'static'});
+}
+/* ---- Duel arena (Stage 5): one pit, recoloured per duel variant ---- */
+const ARENA_VARIANTS={
+ sand:{floor:0xffffff,css:'#d8c491',name:'Sand Arena'},
+ ember:{floor:0xffc9a0,css:'#e0a878',name:'Ember Arena'},
+ azure:{floor:0xa8d4ff,css:'#a8c8e8',name:'Azure Arena'},
+ violet:{floor:0xdcc4ff,css:'#bfa8e8',name:'Violet Arena'}
+};
+let arenaVariant='sand', arenaFloorMat=null, arenaDecor={ember:[],azure:[],violet:[]};
+function buildArena(root){
+ const S=root;
+ arenaFloorMat=new THREE.MeshLambertMaterial({map:noiseTexture('#d8c491',['#c9b37e','#e8d9a8','#bfa96e'],8,5)});
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(80,45),arenaFloorMat);
+ floor.rotation.x=-Math.PI/2; S.add(floor);
+ rockWallRun(S,-40,-22.5,40,-22.5); rockWallRun(S,-40,22.5,40,22.5);
+ rockWallRun(S,-40,-22.5,-40,22.5); rockWallRun(S,40,-22.5,40,22.5);
+ for(const [px,pz] of [[-38,-20.5],[38,-20.5],[-38,20.5],[38,20.5]]) box(0.6,3.2,0.6,0x7c7565,px,1.6,pz,S); // corner posts
+ buildTorch(S,-20,-20); buildTorch(S,20,-20); buildTorch(S,-20,20); buildTorch(S,20,20);
+ arenaDecor={ember:[],azure:[],violet:[]};
+ // ember: glowing lava cracks
+ for(const [lx,lz,lw] of [[-12,6,7],[10,-8,9],[0,14,6],[-20,-12,5]]){
+   const crack=new THREE.Mesh(new THREE.BoxGeometry(lw,0.06,0.35),new THREE.MeshBasicMaterial({color:0xff5a1f}));
+   crack.position.set(lx,0.05,lz); crack.rotation.y=lx*0.7; S.add(crack); arenaDecor.ember.push(crack);
+ }
+ // azure / violet: coloured banners on the north wall
+ for(const [key,col] of [['azure',0x2e7fd9],['violet',0x8b5cf6]]){
+   for(const bx of [-16,0,16]){
+     const pole=box(0.14,3.4,0.14,0x5a4020,bx,1.7,-21.6,S);
+     const ban=box(1.5,1.9,0.08,col,bx,2.2,-21.5,S);
+     arenaDecor[key].push(pole,ban);
+   }
+ }
+ setArenaVariant('sand');
+}
+function setArenaVariant(id){
+ arenaVariant=ARENA_VARIANTS[id]? id : 'sand';
+ const v=ARENA_VARIANTS[arenaVariant];
+ if(arenaFloorMat) arenaFloorMat.color.setHex(v.floor);
+ for(const k of Object.keys(arenaDecor)) for(const o of arenaDecor[k]) o.visible=(k===arenaVariant);
+}
+/* ---- Barrows state + HUD ---- */
+function onBarrowsState(m){
+ barrowsState={kills:m.kills||[],tunnel:m.tunnel||null,inTunnels:!!m.inTunnels};
+ refreshBarrowsMounds();
+ renderBarrowsBar();
+ drawMinimap();
+}
+function renderBarrowsBar(){
+ const inB=(curArea==='barrows'||curArea==='barrows_tunnels');
+ if(!inB||barrowsBarHidden){ $('barrowsbar').classList.remove('open'); return; }
+ $('barrowsbar').classList.add('open');
+ const n=barrowsState.kills.length;
+ $('barrowstitle').textContent=`💀 Barrows — kills ${n}/6`;
+ $('barrowslist').innerHTML=BARROWS_ORDER.map(id=>{
+   const b=BARROWS_CLIENT[id], slain=barrowsState.kills.includes(id), tun=barrowsState.tunnel===id;
+   return `<span class="bchip${slain?' slain':''}${tun?' tun':''}">${slain?'✓':'✗'} ${b.short}${tun?' 🕳️':''}</span>`;
+ }).join('');
+ const inT=curArea==='barrows_tunnels';
+ $('barrowstun').style.display=inT?'block':'none';
+ if(inT) $('barrowspuz').textContent=puzzleSolved? '🧩 Puzzle door: solved ✓ — the chest is open.' : '🧩 Puzzle door: locked — tap the chest to face it.';
+ $('barrowshint').textContent=inT? 'Loot the chest (needs 5+ kills) or climb out — your kills are kept either way.'
+   : 'Tap a mound to enter its crypt. The 🕳️ mound leads down to the tunnels.';
+}
+$('barrowsx').onclick=()=>{ barrowsBarHidden=true; $('barrowsbar').classList.remove('open'); };
+$('barrowspuzbtn').onclick=()=>{ openPuzzle(); };
+$('barrowschestbtn').onclick=()=>{ tapChest(); };
+$('barrowsleavebtn').onclick=()=>{ send({type:'barrows_leave_tunnel'}); };
+function tapMound(id){
+ if(!myPos) return;
+ const b=BARROWS_CLIENT[id]; if(!b) return;
+ if(barrowsState.kills.includes(id)&&barrowsState.tunnel!==id){ toast(`💀 ${b.name} is already slain this run.`); return; }
+ const d=Math.hypot(myPos.x-b.x,myPos.y-b.y);
+ if(d<=140){ send({type:'barrows_enter',brother:id}); }
+ else { pendingMound=id; tapTarget={x:b.x,y:b.y}; toast(`🚶 Walking to ${b.name}'s mound…`); }
+}
+function checkPendingMound(){
+ if(!pendingMound||!myPos) return;
+ const b=BARROWS_CLIENT[pendingMound]; if(!b){ pendingMound=null; return; }
+ if(Math.hypot(myPos.x-b.x,myPos.y-b.y)<=140){
+   const id=pendingMound; pendingMound=null; tapTarget=null;
+   send({type:'barrows_enter',brother:id});
+ }
+}
+/* ---- Tunnels: puzzle door, chest, loot ---- */
+function openPuzzle(){
+ if(curArea!=='barrows_tunnels') return;
+ puzzleAnswer=[];
+ send({type:'barrows_puzzle'});
+ $('puzzlemodal').classList.add('open');
+ renderPuzzle();
+}
+function onBarrowsPuzzle(m){
+ puzzleSeq=m.sequence||[];
+ puzzleAnswer=[];
+ if(!$('puzzlemodal').classList.contains('open')) $('puzzlemodal').classList.add('open');
+ renderPuzzle();
+}
+function renderPuzzle(){
+ const sh=$('puzzlesheet'); if(!sh) return;
+ if(!puzzleSeq.length){ sh.innerHTML=`<h3>🧩 Puzzle door</h3><div class="note">Asking the door for its combination…</div><div class="btns"><button class="ghost" onclick="document.getElementById('puzzlemodal').classList.remove('open')">Close</button></div>`; return; }
+ sh.innerHTML=`<h3>🧩 Puzzle door</h3>
+ <div class="note">The door shows a combination. Repeat it with the buttons below.</div>
+ <div class="puzseq">${puzzleSeq.map(s=>PUZZLE_EMOJI[s]||'❓').join(' ')}</div>
+ <div class="puzans">${puzzleAnswer.map(s=>PUZZLE_EMOJI[s]).join(' ')||'· · ·'}</div>
+ <div class="puzbtns">${['circle','square','triangle','diamond'].map(s=>`<button class="puzbtn" onclick="window.puzPick('${s}')">${PUZZLE_EMOJI[s]}</button>`).join('')}</div>
+ <div class="btns"><button class="ghost" onclick="window.puzClear()">Clear</button><button class="act" onclick="window.puzSubmit()">Submit</button><button class="ghost" onclick="document.getElementById('puzzlemodal').classList.remove('open')">Close</button></div>`;
+}
+window.puzPick=s=>{ if(puzzleAnswer.length<3){ puzzleAnswer.push(s); renderPuzzle(); } };
+window.puzClear=()=>{ puzzleAnswer=[]; renderPuzzle(); };
+window.puzSubmit=()=>{
+ if(puzzleAnswer.length!==3){ toast('Pick 3 symbols first.'); return; }
+ send({type:'barrows_puzzle_answer',answer:puzzleAnswer.slice()});
+};
+function onBarrowsPuzzleResult(m){
+ if(m.ok){ puzzleSolved=true; $('puzzlemodal').classList.remove('open'); toast('🧩 Puzzle solved! The chest is unlocked.'); renderBarrowsBar(); }
+}
+function tapChest(){
+ if(curArea!=='barrows_tunnels'||!myPos) return;
+ if(npcFight){ toast('Finish this fight first!'); return; }
+ if(!puzzleSolved){ openPuzzle(); return; }
+ const d=Math.hypot(myPos.x-400,myPos.y-225);
+ if(d<=140){ send({type:'barrows_loot'}); }
+ else { pendingChest=true; tapTarget={x:400,y:225}; toast('🚶 Walking to the reward chest…'); }
+}
+function checkPendingChest(){
+ if(!pendingChest||!myPos) return;
+ if(Math.hypot(myPos.x-400,myPos.y-225)<=140){ pendingChest=false; tapTarget=null; tapChest(); }
+}
+function onBarrowsLoot(m){
+ if(m.profile) me=m.profile;
+ puzzleSolved=false;
+ const items=(m.items||[]).map(it=>`${iconOf(it.item)} ${esc(nameOf(it.item))}${it.qty>1?' ×'+it.qty:''}`).join('<br>')||'—';
+ $('lootsheet').innerHTML=`<h3>💰 Barrows chest!</h3>
+ <div style="font-size:15px">🪙 <b>${m.gold} gold</b>${items!=='—'?'<br>'+items:''}</div>
+ <div class="note" style="margin-top:6px">Brothers slain: ${m.kills}/6. The run resets — the brothers are back for another round.</div>
+ <div class="btns"><button class="act" onclick="document.getElementById('lootmodal').classList.remove('open')">Nice!</button></div>`;
+ $('lootmodal').classList.add('open');
+ logLine(`💰 Barrows chest: ${m.gold} gold${(m.items||[]).length? ' + '+(m.items||[]).map(it=>nameOf(it.item)).join(', ') : ''}.`);
+ renderAll();
+}
+/* ---- Brother avatars (fight visuals; positions are client-side) ---- */
+function makeBrother(m){
+ const b=BARROWS_CLIENT[m.npcId]||{name:m.name||'Barrows brother',tint:0x555560,lvl:m.combatLevel||100};
+ const g=new THREE.Group();
+ const tint=b.tint, dark=0x2a2a30;
+ box(0.26,0.7,0.26,dark,-0.17,0.35,0,g); box(0.26,0.7,0.26,dark,0.17,0.35,0,g); // legs
+ box(0.8,0.95,0.46,tint,0,1.15,0,g); // armoured body
+ box(0.24,0.75,0.24,tint,-0.54,1.2,0,g); box(0.24,0.75,0.24,tint,0.54,1.2,0,g); // arms
+ box(0.46,0.46,0.46,0x8a7a5e,0,1.9,0,g); // head
+ box(0.54,0.22,0.54,dark,0,2.18,0,g); // helm
+ const wp=box(0.09,1.2,0.16,0xb9c1cc,0.68,1.4,0,g); wp.rotation.z=-0.4; // weapon
+ const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.3}));
+ sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
+ const label=document.createElement('div'); label.className='plabel';
+ label.innerHTML=`<div class="gname">${esc(b.name||m.name)} · lvl ${b.lvl||m.combatLevel||''}</div><div class="hpwrap"><div class="hpfill"></div></div>`;
+ $('labels').appendChild(label);
+ const anchor=(curArea==='barrows_tunnels')? {x:400,y:225} : {x:b.x,y:b.y};
+ return {group:g,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),
+   x:sx2w(anchor.x),z:sy2w(anchor.y),hp:100,maxHp:100,isBrother:true};
+}
 function buildAreas(){
  areaGroups.plaza=new THREE.Group(); scene.add(areaGroups.plaza); buildPlaza(areaGroups.plaza);
  areaGroups.goblins=new THREE.Group(); scene.add(areaGroups.goblins); buildGoblinCamp(areaGroups.goblins);
@@ -841,6 +1202,9 @@ function buildAreas(){
  areaGroups.cove=new THREE.Group(); scene.add(areaGroups.cove); buildFishingCove(areaGroups.cove);
  areaGroups.mine=new THREE.Group(); scene.add(areaGroups.mine); buildMine(areaGroups.mine);
  areaGroups.fightcaves=new THREE.Group(); scene.add(areaGroups.fightcaves); buildFightCaves(areaGroups.fightcaves);
+ areaGroups.barrows=new THREE.Group(); scene.add(areaGroups.barrows); buildBarrows(areaGroups.barrows);
+ areaGroups.barrows_tunnels=new THREE.Group(); scene.add(areaGroups.barrows_tunnels); buildBarrowsTunnels(areaGroups.barrows_tunnels);
+ areaGroups.arena=new THREE.Group(); scene.add(areaGroups.arena); buildArena(areaGroups.arena);
  applyAreaVisibility();
 }
 function applyAreaVisibility(){
@@ -865,25 +1229,43 @@ function setArea(a){
      fcRun=null; $('fcbar').classList.remove('open'); $('jadwarn').style.display='none';
      clearFcMonsters();
    }
+   pendingMound=null; pendingPile=null; pendingChest=null;
+   puzzleSolved=false; puzzleAnswer=[]; $('puzzlemodal').classList.remove('open');
+   for(const id of Object.keys(npcAvatars)) if(npcAvatars[id].isBrother){ scene.remove(npcAvatars[id].group); npcAvatars[id].label.remove(); delete npcAvatars[id]; }
+   if(a==='barrows'||a==='barrows_tunnels'){ barrowsBarHidden=false; renderBarrowsBar(); } else $('barrowsbar').classList.remove('open');
    rebuildNodes();
    rebuildFires();
+   rebuildPiles();
    if(a==='fightcaves'&&me&&!fcRun) openFcStart();
  }
  drawMinimap();
 }
-const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1};
+const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_tunnels:1,arena:1};
+/* Idol outfits (K-pop theme): YOU wear hot pink with purple limbs, cyan
+   trim and bright-pink hair; everyone else wears a pastel set picked by a
+   hash of their name, with a matching hair block. Swords stay — it's a
+   fighting game — but your blade is tinted neon cyan. */
+const IDOL_PASTELS=[
+ {main:0x7fe3b0,dark:0x3d9e72,trim:0xd8fff0,hair:0x2f7d5c}, // mint
+ {main:0xc4a8ff,dark:0x7c5cc9,trim:0xefe6ff,hair:0x5b3fa8}, // lavender
+ {main:0x8fd0ff,dark:0x4a8fc9,trim:0xe6f5ff,hair:0x2c5f9e}, // sky blue
+ {main:0xffc39e,dark:0xd98a52,trim:0xfff0e0,hair:0xa85f2c}, // peach
+ {main:0xffe98a,dark:0xd9b93d,trim:0xfffbe0,hair:0x9e8a1f}  // lemon
+];
 function makeKnight(isMe,name){
  const g=new THREE.Group();
- // The local player wears red dragon-plate (red body, dark red limbs, gold trim);
- // everyone else stays steel.
- const main=isMe?0xb03a2e:0x77808e, dark=isMe?0x6e1408:0x4a4f58, trim=isMe?0xd4af37:0x77808e;
+ let pal;
+ if(isMe) pal={main:0xff4fa3,dark:0x8b5cf6,trim:0x22d3ee,hair:0xff2e93};
+ else { let h=0; const nm=name||''; for(let i=0;i<nm.length;i++) h=(h*31+nm.charCodeAt(i))>>>0; pal=IDOL_PASTELS[h%IDOL_PASTELS.length]; }
+ const main=pal.main, dark=pal.dark, trim=pal.trim;
  box(0.26,0.75,0.26,dark,-0.18,0.38,0,g); box(0.26,0.75,0.26,dark,0.18,0.38,0,g); // legs
  box(0.78,0.85,0.45,main,0,1.18,0,g); // body
  box(0.24,0.7,0.24,main,-0.52,1.2,0,g); box(0.24,0.7,0.24,main,0.52,1.2,0,g); // arms
  box(0.46,0.46,0.46,0xd9a066,0,1.85,0,g); // head
- box(0.52,0.2,0.52,trim,0,2.12,0,g); // helm rim (gold trim on dragon-plate)
+ box(0.52,0.2,0.52,pal.hair,0,2.14,0,g); // idol hair (top)
+ box(0.52,0.52,0.1,pal.hair,0,1.86,0.24,g); // idol hair (back)
  const sword=new THREE.Group(); sword.position.set(0.62,1.35,0); g.add(sword);
- box(0.07,0.85,0.14,0xd9dee6,0,0.35,0,sword); box(0.3,0.08,0.2,0xd4af37,0,-0.1,0,sword);
+ box(0.07,0.85,0.14,isMe? 0x9be9ff : 0xd9dee6,0,0.35,0,sword); box(0.3,0.08,0.2,trim,0,-0.1,0,sword);
  const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.28}));
  sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
  const label=document.createElement('div'); label.className='plabel';
@@ -1069,6 +1451,9 @@ function checkPendingFcAttack(){
 /* ---- Stage 2: resource nodes, fires, gathering ---- */
 let nodesByArea={}; // area -> [node] from 'nodes' messages
 let firesByArea={}; // area -> [fire] from 'fires' messages
+let pilesByArea={}; // area -> [pile] from 'piles' messages (Stage 5 drop piles)
+let pileGroups={}; // area -> THREE.Group holding that area's pile props
+let pileProps={}; // CURRENT area: pile id -> {x,z,labelY,pile} (world coords, for tap tests)
 let nodeGroups={}; // area -> THREE.Group holding that area's node props
 let fireGroups={}; // area -> THREE.Group holding that area's fire props
 let nodeProps={}; // CURRENT area: node id -> {x,z,labelY,node} (world coords, for tap tests)
@@ -1181,6 +1566,38 @@ function checkPendingNode(){
  if(n.depleted){ pendingNode=null; return; }
  if(Math.hypot(myPos.x-n.x,myPos.y-n.y)<=140){ pendingNode=null; tapTarget=null; startGather(n); }
 }
+/* ---- Stage 5: drop piles (dropped items on the ground) ---- */
+function rebuildPiles(){
+ const area=curArea, root=areaGroups[area];
+ pileProps={};
+ worldLabels=worldLabels.filter(wl=>{ if(wl.kind==='pile'&&wl.area===area){ wl.el.remove(); return false; } return true; });
+ if(!root||!scene) return;
+ if(pileGroups[area]) root.remove(pileGroups[area]);
+ const grp=new THREE.Group(); root.add(grp); pileGroups[area]=grp;
+ for(const p of (pilesByArea[area]||[])){
+   const g=new THREE.Group(); g.position.set(sx2w(p.x),0,sy2w(p.y)); grp.add(g);
+   box(0.62,0.42,0.62,0x8a6d3f,0,0.21,0,g); // sack
+   box(0.3,0.22,0.3,0xa8845a,0,0.52,0,g); // sack neck
+   const label=document.createElement('div'); label.className='plabel';
+   label.innerHTML=`<div class="nname">${iconOf(p.item)} ${esc(nameOf(p.item))}${p.qty>1?' ×'+p.qty:''}</div>${p.owner?`<div class="nsub">${esc(p.owner)}'s drop</div>`:''}`;
+   $('labels').appendChild(label);
+   worldLabels.push({el:label,x:sx2w(p.x),y:1.5,z:sy2w(p.y),area,kind:'pile',pileId:p.id});
+   pileProps[p.id]={x:sx2w(p.x),z:sy2w(p.y),labelY:1.5,pile:p};
+ }
+}
+function tapPile(p){
+ if(!myPos) return;
+ const d=Math.hypot(myPos.x-p.x,myPos.y-p.y);
+ if(d<=140){ send({type:'pickup',pileId:p.id}); }
+ else { pendingPile=p.id; tapTarget={x:p.x,y:p.y}; toast(`🚶 Walking to the ${nameOf(p.item)}…`); }
+}
+function checkPendingPile(){
+ if(!pendingPile||!myPos) return;
+ const p=(pilesByArea[curArea]||[]).find(x=>x.id===pendingPile);
+ if(!p){ pendingPile=null; return; }
+ if(Math.hypot(myPos.x-p.x,myPos.y-p.y)<=140){ pendingPile=null; tapTarget=null; send({type:'pickup',pileId:p.id}); }
+}
+window.dropItem=(item,qty)=>{ send({type:'drop',item,qty}); };
 function onGatherResult(m){
  const n=(nodesByArea[curArea]||[]).find(x=>x.id===m.nodeId)||activeNode;
  if(m.ok){
@@ -1199,8 +1616,8 @@ let splats=[];
 function spawnSplatOn(a,dmg,special){
  if(!a) return;
  const el=document.createElement('div');
- el.className='splat'+(dmg===0?' zero':'')+(special?' spec':'');
- el.textContent=special?`⚔️ ${dmg}`:String(dmg);
+ el.className='splat'+(dmg===0?' zero':'')+(special?' spec love':'');
+ el.textContent=special?`💖 ${dmg}`:String(dmg);
  $('splats').appendChild(el);
  splats.push({el,av:a,born:performance.now()});
 }
@@ -1330,6 +1747,7 @@ function handleTap(cx,cy){
      const act=ih.object.userData.act;
      if(act.type==='bank'){ openPanel('bank'); return; }
      if(act.type==='shop'){ shopTab=act.shop; openPanel('shop'); return; }
+     if(act.type==='players'){ openPanel('players'); return; }
    }
  }
  // goblins (tap to attack; walks over first if too far)
@@ -1353,6 +1771,35 @@ function handleTap(cx,cy){
      if(d<52 && d<fbD){ fb=id; fbD=d; }
    }
    if(fb){ attackFcMonster(fb); return; }
+ }
+ // Barrows mounds (tap to enter the crypt; walks over first if too far)
+ if(curArea==='barrows'){
+   let mb=null,mbD=1e9;
+   for(const [id,p] of Object.entries(moundProps)){
+     const s=projectTo(p.x,1.4,p.z);
+     if(!s) continue;
+     const d=Math.hypot(s.x-cx,s.y-cy);
+     if(d<52 && d<mbD){ mb=id; mbD=d; }
+   }
+   if(mb){ tapMound(mb); return; }
+ }
+ // Tunnels: the reward chest + the climb-out ladder
+ if(curArea==='barrows_tunnels'){
+   const cs=projectTo(0,1.2,0);
+   if(cs && Math.hypot(cs.x-cx,cs.y-cy)<56){ tapChest(); return; }
+   const ls=projectTo(sx2w(435),1.6,sy2w(260));
+   if(ls && Math.hypot(ls.x-cx,ls.y-cy)<48){ send({type:'barrows_leave_tunnel'}); return; }
+ }
+ // drop piles (tap to pick up; walks over first if too far)
+ if(Object.keys(pileProps).length){
+   let pb=null,pbD=1e9;
+   for(const p of Object.values(pileProps)){
+     const s=projectTo(p.x,1.0,p.z);
+     if(!s) continue;
+     const d=Math.hypot(s.x-cx,s.y-cy);
+     if(d<52 && d<pbD){ pb=p.pile; pbD=d; }
+   }
+   if(pb){ tapPile(pb); return; }
  }
  // resource nodes / training stations (tap to work them; walks over first if too far)
  if(Object.keys(nodeProps).length){
@@ -1379,7 +1826,7 @@ function handleTap(cx,cy){
  const gh=groundRoot? raycaster.intersectObjects(groundRoot.children.filter(o=>o.geometry&&o.geometry.type==='PlaneGeometry'),false)[0] : null;
  if(gh){
    const pt={x:clamp(wx2s(gh.point.x),0,800), y:clamp(wz2s(gh.point.z),0,450)};
-   pendingAttack=null; pendingFcAttack=null;
+   pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false;
    if(settings.tapMode==='face') faceToward(pt); else tapTarget=pt;
  }
 }
@@ -1400,7 +1847,9 @@ function checkGates(){
    if(myPos.x>=795){ go('goblins','🚪 East gate → Goblin Camp…'); return; }
    if(myPos.x<=5){ go('cove','🚪 West gate → Fishing Cove…'); return; }
    if(myPos.y<=5&&myPos.x>=300&&myPos.x<=500){ go('fightcaves','🚪 North gate → Fight Caves…'); return; }
+   if(myPos.y>=445&&myPos.x>=300&&myPos.x<=500){ go('barrows','🚪 South gate → Barrows…'); return; }
  }
+ else if(curArea==='barrows'&&myPos.y>=445){ go('plaza','🚪 South gate → Plaza…'); }
  else if(curArea==='goblins'&&myPos.x<=5){ go('plaza','🚪 West gate → Plaza…'); }
  else if(curArea==='cove'&&myPos.x<=5){ go('plaza','🚪 West gate → Plaza…'); }
  else if(curArea==='training'&&myPos.y>=445){ go('plaza','🚪 South gate → Plaza…'); }
@@ -1428,7 +1877,7 @@ function stepMovement(dt){
  if(keys.w||keys.arrowup) f+=1; if(keys.s||keys.arrowdown) f-=1;
  if(keys.d||keys.arrowright) r+=1; if(keys.a||keys.arrowleft) r-=1;
  f+=-joyVec.y; r+=joyVec.x;
- if(f||r){ tapTarget=null; pendingAttack=null; pendingFcAttack=null; stopGather(); const l=Math.hypot(f,r); f/=l; r/=l;
+ if(f||r){ tapTarget=null; pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false; stopGather(); const l=Math.hypot(f,r); f/=l; r/=l;
    vx=(-sYaw*f + cYaw*r); vz=(-cYaw*f - sYaw*r); }
  else if(tapTarget){
    const dx=tapTarget.x-myPos.x, dy=tapTarget.y-myPos.y, d=Math.hypot(dx,dy);
@@ -1459,7 +1908,7 @@ function finishStep(moved){
    lastSend=now;
  }
  checkGates();
- if(moved){ checkPendingAttack(); checkPendingNode(); checkPendingFcAttack(); }
+ if(moved){ checkPendingAttack(); checkPendingNode(); checkPendingFcAttack(); checkPendingMound(); checkPendingPile(); checkPendingChest(); }
 }
 /* ================= minimap (rotating, player-centred) ================= */
 const MM_S=128/520; // minimap px per server unit (~520 units across)
@@ -1479,12 +1928,25 @@ function drawMinimap(){
  g.translate(cx,cy); g.rotate(th); g.scale(MM_S,MM_S); g.translate(-myPos.x,-myPos.y);
  // ground + area features (drawn in server coords, rotated by the transform)
  const caveBg=(curArea==='training'||curArea==='gathering'||curArea==='mine'||curArea==='fightcaves');
- g.fillStyle= caveBg? (curArea==='fightcaves'? '#241a12' : '#2b2b30') : (curArea==='goblins')? '#55702f' : '#2e4a2a'; g.fillRect(0,0,800,450);
+ g.fillStyle= curArea==='barrows'? '#333a2a'
+   : curArea==='barrows_tunnels'? '#0d0a12'
+   : curArea==='arena'? ARENA_VARIANTS[arenaVariant].css
+   : caveBg? (curArea==='fightcaves'? '#241a12' : '#2b2b30') : (curArea==='goblins')? '#55702f' : '#2e4a2a'; g.fillRect(0,0,800,450);
  if(curArea==='plaza'){
-   g.fillStyle='#6e675a'; g.fillRect(400-210,225-135,420,270); // stone centre
-   g.fillStyle='#ffd75e'; g.fillRect(BANK_POS.x-14,BANK_POS.y-14,28,28); // bank
+   g.fillStyle='#a87e94'; g.fillRect(400-210,225-135,420,270); // stone centre (pink-tinted)
+   g.fillStyle='#ff4fa3'; g.fillRect(400-70,70-25,140,50); // concert stage
+   g.fillStyle='#ff8fd0'; g.fillRect(BANK_POS.x-14,BANK_POS.y-14,28,28); // bank
    for(const s of SHOP_SPOTS){ g.fillStyle='#'+s.color.toString(16).padStart(6,'0'); g.fillRect(s.x-12,s.y-12,24,24); }
    g.fillStyle='#fff'; g.fillRect(BOARD_POS.x-8,BOARD_POS.y-8,16,16);
+ } else if(curArea==='barrows'){
+   for(const id of BARROWS_ORDER){
+     const b=BARROWS_CLIENT[id], slain=barrowsState.kills.includes(id);
+     g.fillStyle= slain? '#777' : '#d4af37';
+     g.beginPath(); g.arc(b.x,b.y,13,0,7); g.fill();
+     if(barrowsState.tunnel===id){ g.strokeStyle='#b26bff'; g.lineWidth=5; g.beginPath(); g.arc(b.x,b.y,19,0,7); g.stroke(); }
+   }
+ } else if(curArea==='barrows_tunnels'){
+   g.fillStyle='#ff8fd0'; g.fillRect(400-14,225-14,28,28); // reward chest
  } else if(curArea==='goblins'){
    g.fillStyle='#77683f'; g.fillRect(400-240,225-155,480,310); // dirt patch
    g.fillStyle='#ff7b24'; g.fillRect(420-10,255-10,20,20); // campfire
@@ -1509,24 +1971,26 @@ function drawMinimap(){
  // resource node + fire dots for the current area
  for(const n of (nodesByArea[curArea]||[])){
    g.fillStyle= n.depleted? 'rgba(150,150,150,0.5)'
-     : n.kind==='rock'? '#a08b6d' : n.kind==='tree'? '#3f9e4d' : n.kind==='fish'? '#7ec3ff' : '#ffd75e';
+     : n.kind==='rock'? '#a08b6d' : n.kind==='tree'? '#3f9e4d' : n.kind==='fish'? '#7ec3ff' : '#ff8fd0';
    g.beginPath(); g.arc(n.x,n.y,9,0,7); g.fill();
  }
  g.fillStyle='#ff7b24';
  for(const f of (firesByArea[curArea]||[])){ g.beginPath(); g.arc(f.x,f.y,8,0,7); g.fill(); }
+ g.fillStyle='#ffd9f2';
+ for(const p of (pilesByArea[curArea]||[])){ g.beginPath(); g.arc(p.x,p.y,7,0,7); g.fill(); } // drop piles
  for(const p of players){
    if(me&&p.username===me.username) continue;
    g.fillStyle='#ffffff'; g.beginPath(); g.arc(p.x,p.y,10,0,7); g.fill();
  }
  g.restore();
  // player dot, always centred, with a facing tick pointing up
- g.fillStyle='#ffd75e'; g.beginPath(); g.arc(cx,cy,3.4,0,7); g.fill();
- g.strokeStyle='#ffd75e'; g.lineWidth=2; g.beginPath(); g.moveTo(cx,cy-4); g.lineTo(cx,cy-9); g.stroke();
+ g.fillStyle='#ff8fd0'; g.beginPath(); g.arc(cx,cy,3.4,0,7); g.fill();
+ g.strokeStyle='#ff8fd0'; g.lineWidth=2; g.beginPath(); g.moveTo(cx,cy-4); g.lineTo(cx,cy-9); g.stroke();
  // "N" indicator: where north (server -y) ended up after the rotation
  const nx=Math.sin(th), ny=-Math.cos(th);
  g.fillStyle='#fff'; g.font='bold 11px system-ui'; g.textAlign='center'; g.textBaseline='middle';
  g.fillText('N', cx+nx*(Math.min(W,H)/2-9), cy+ny*(Math.min(W,H)/2-9));
- g.strokeStyle='#6b5320'; g.lineWidth=2; g.strokeRect(0,0,W,H);
+ g.strokeStyle='#ff4fa3'; g.lineWidth=2; g.strokeRect(0,0,W,H);
 }
 /* Tapping the minimap walks to that spot (inverse of the draw transform). */
 $('minimap').addEventListener('pointerdown',e=>{
@@ -1536,7 +2000,7 @@ $('minimap').addEventListener('pointerdown',e=>{
  const dy=(e.clientY-r.top)*(e.target.height/r.height)-e.target.height/2;
  const th=mapTheta(), c=Math.cos(-th), s=Math.sin(-th);
  const lx=(dx*c-dy*s)/MM_S, ly=(dx*s+dy*c)/MM_S;
- pendingAttack=null; pendingFcAttack=null;
+ pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false;
  stopGather();
  tapTarget={x:clamp(myPos.x+lx,0,800), y:clamp(myPos.y+ly,0,450)};
 });
@@ -1629,6 +2093,7 @@ function renderDrawer(){
  if(drawerPanel==='smithy') b.innerHTML=pSmithy();
  if(drawerPanel==='teleport') b.innerHTML=pTeleport();
  if(drawerPanel==='settings') b.innerHTML=pSettings();
+ if(drawerPanel==='bank') applyBankFilter();
 }
 /* ---- Backpack ---- */
 window.selBp=function(item){ selStack=selStack===item?null:item; renderDrawer(); };
@@ -1672,6 +2137,8 @@ function pBackpack(){
      h+=`<button class="ghost" onclick="setQuick(1)">Set Quick 1</button>`;
      h+=`<button class="ghost" onclick="setQuick(2)">Set Quick 2</button>`;
      h+=`<button class="ghost" onclick="openPanel('bank')">Deposit in bank →</button>`;
+     h+=`<button class="ghost" onclick="dropItem('${s.item}',1)">⬇️ Drop 1</button>`;
+     if(s.qty>1) h+=`<button class="ghost" onclick="dropItem('${s.item}',${s.qty})">⬇️ Drop all</button>`;
      h+=`</div>`;
      if(smithM){ const u=+(smithM[2]||0);
        h+=`<div class="note" style="margin-top:6px">${u>=4?'Already +4 — fully upgraded.':`⬆️ Upgrade uses 1 ${esc(nameOf(smithM[1]+'_bar'))} · only at the Emberfall anvil`}</div>`;
@@ -1682,14 +2149,18 @@ function pBackpack(){
  return h;
 }
 /* ---- Worn ---- */
-const SLOTS=['weapon','shield','head','body','legs'];
+const SLOT_DEFS=[
+ ['weapon','Weapon','🗡️'],['shield','Shield','🛡️'],['head','Head','⛑️'],['body','Body','🦺'],['legs','Legs','👖'],
+ ['cape','Cape','🧣'],['amulet','Amulet','📿'],['hands','Hands','🧤'],['feet','Feet','🥾'],['ring','Ring','💍']
+];
+const SLOTS=SLOT_DEFS.map(s=>s[0]);
 function pWorn(){
  let h='';
- for(const slot of SLOTS){
+ for(const [slot,label,emptyIcon] of SLOT_DEFS){
    const it=me.worn[slot];
-   h+=`<div class="rowline"><span class="ic">${it?iconOf(it):'▫️'}</span><span class="grow"><b>${slot}</b><br><span class="sub">${it?esc(nameOf(it)):'Empty'}</span></span>${it?`<button class="act" onclick="send({type:'unequip',slot:'${slot}'})">Unequip</button>`:''}</div>`;
+   h+=`<div class="rowline"><span class="ic">${it?iconOf(it):emptyIcon}</span><span class="grow"><b>${label}</b><br><span class="sub">${it?esc(nameOf(it)):'Empty'}</span></span>${it?`<button class="act" onclick="send({type:'unequip',slot:'${slot}'})">Unequip</button>`:''}</div>`;
  }
- h+=`<p class="note">Worn gear boosts your duels: weapons raise accuracy / max hit, armour cuts damage taken (full set +5% extra, capped at 45%).</p>`;
+ h+=`<p class="note">Worn gear boosts your duels: weapons raise accuracy / max hit, armour cuts damage taken (full set +5% extra, capped at 45%). The cape slot holds your Fight Caves fire cape 🔥.</p>`;
  return h;
 }
 /* ---- Shops ---- */
@@ -1698,7 +2169,7 @@ window.setShopMode=function(m){ shopMode=m; renderDrawer(); };
 function pShop(){
  let h=`<div class="tabs">${shopNames.map(s=>`<button class="${s===shopTab?'on':''}" onclick="setShopTab('${s}')">${esc(s)}</button>`).join('')}</div>`;
  h+=`<div class="seg"><button class="${shopMode==='buy'?'on':''}" onclick="setShopMode('buy')">Buy</button><button class="${shopMode==='sell'?'on':''}" onclick="setShopMode('sell')">Sell (60% back)</button></div>`;
- h+=`<div class="note" style="margin-bottom:6px">Your gold: <b style="color:#ffd75e">${me.gold}g</b></div>`;
+ h+=`<div class="note" style="margin-bottom:6px">Your gold: <b style="color:#ff8fd0">${me.gold}g</b></div>`;
  if(shopMode==='buy'){
    const items=catalogArr.filter(i=>i.shop===shopTab);
    if(!items.length) h+=`<p class="note">Nothing here yet.</p>`;
@@ -1718,21 +2189,49 @@ function pShop(){
  return h;
 }
 /* ---- Bank ---- */
-window.setBankQty=function(q){ bankQty=q; renderDrawer(); };
+let bankTab='all', bankSearch='', bankXQty=10;
+const BANK_TABS=[['all','All'],['weapons','⚔️ Weapons'],['armour','🛡️ Armour'],['food','🍗 Food & Potions'],['resources','⛏️ Resources'],['other','📦 Other']];
+function bankCat(item){
+ const d=catalog[item];
+ if(d){ if(d.kind==='weapon') return 'weapons'; if(d.kind==='armour') return 'armour';
+   if(d.kind==='food'||d.kind==='potion') return 'food'; if(d.kind==='good'||d.kind==='tool') return 'other'; }
+ return 'resources';
+}
+window.setBankQty=function(q){
+ if(q==='x'){ const v=parseInt(prompt('How many?','10'),10); bankXQty=(isFinite(v)&&v>=1)? Math.min(9999,v) : 10; bankQty='x'; }
+ else bankQty=q;
+ renderDrawer();
+};
+window.setBankTab=function(t){ bankTab=t; renderDrawer(); };
+window.bankSearchInput=function(v){ bankSearch=v||''; applyBankFilter(); };
 function bankValue(){ return (me?me.bank:[]).reduce((t,s)=>{ const d=catalog[s.item]; const v=d? d.buy : (goods[s.item]? goods[s.item].price : 0); return t+v*s.qty; },0); }
-function qtyFor(owned){ return bankQty==='all'? owned : Math.min(owned, bankQty==='5'?5:1); }
+function qtyFor(owned){ if(bankQty==='all') return owned; if(bankQty==='x') return Math.min(owned,bankXQty); return Math.min(owned, bankQty==='10'?10 : bankQty==='5'?5 : 1); }
+function bankCell(s,onclick){
+ return `<div class="cell" data-cat="${bankCat(s.item)}" data-name="${esc(nameOf(s.item)).toLowerCase()}" onclick="${onclick}"><span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${iconOf(s.item)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
+}
+function applyBankFilter(){
+ if(drawerPanel!=='bank') return;
+ const q=bankSearch.trim().toLowerCase();
+ document.querySelectorAll('#drawerbody .cell[data-cat]').forEach(c=>{
+   const okCat=(bankTab==='all'||c.dataset.cat===bankTab);
+   const okQ=(!q||c.dataset.name.includes(q));
+   c.style.display=(okCat&&okQ)?'':'none';
+ });
+}
 function pBank(){
- let h=`<div class="note">Quantity:</div><div class="seg">${['1','5','all'].map(q=>`<button class="${bankQty===q?'on':''}" onclick="setBankQty('${q}')">${q==='all'?'All':q}</button>`).join('')}</div>`;
- h+=`<div class="note" style="margin:4px 0">Bank value: <b style="color:#ffd75e">${bankValue()}g</b> · items only — gold stays in your purse.</div>`;
- h+=`<h4 style="margin:8px 0 5px;color:#ffd75e">Backpack — tap to deposit</h4>`;
- h+= me.backpack.length? `<div class="grid">${me.backpack.map(s=>itemCell(s,`send({type:'bank_deposit',item:'${s.item}',qty:${qtyFor(s.qty)}})`)).join('')}</div>` : `<p class="note">Backpack is empty.</p>`;
- h+=`<h4 style="margin:10px 0 5px;color:#ffd75e">Bank — tap to withdraw</h4>`;
- h+= me.bank.length? `<div class="grid">${me.bank.map(s=>itemCell(s,`send({type:'bank_withdraw',item:'${s.item}',qty:${qtyFor(s.qty)}})`)).join('')}</div>` : `<p class="note">Bank is empty.</p>`;
+ let h=`<div class="note">Quantity:</div><div class="seg">${['1','5','10','x','all'].map(q=>`<button class="${bankQty===q?'on':''}" onclick="setBankQty('${q}')">${q==='all'?'All':q==='x'?`X (${bankXQty})`:q}</button>`).join('')}</div>`;
+ h+=`<div class="note" style="margin:4px 0">Bank value: <b style="color:#ff8fd0">${bankValue()}g</b> · items only — gold stays in your purse.</div>`;
+ h+=`<div class="tabs">${BANK_TABS.map(([id,lb])=>`<button class="${bankTab===id?'on':''}" onclick="setBankTab('${id}')">${lb}</button>`).join('')}</div>`;
+ h+=`<input placeholder="🔍 Search items…" value="${esc(bankSearch)}" oninput="bankSearchInput(this.value)" style="width:100%;box-sizing:border-box;margin-bottom:8px">`;
+ h+=`<h4 style="margin:8px 0 5px;color:#ff8fd0">Backpack — tap to deposit</h4>`;
+ h+= me.backpack.length? `<div class="grid">${me.backpack.map(s=>bankCell(s,`send({type:'bank_deposit',item:'${s.item}',qty:${qtyFor(s.qty)}})`)).join('')}</div>` : `<p class="note">Backpack is empty.</p>`;
+ h+=`<h4 style="margin:10px 0 5px;color:#ff8fd0">Bank — tap to withdraw</h4>`;
+ h+= me.bank.length? `<div class="grid">${me.bank.map(s=>bankCell(s,`send({type:'bank_withdraw',item:'${s.item}',qty:${qtyFor(s.qty)}})`)).join('')}</div>` : `<p class="note">Bank is empty.</p>`;
  return h;
 }
 /* ---- Gold Exchange ---- */
 function pExchange(){
- let h=`<div class="note" style="margin-bottom:6px">Prices drift over time. The Exchange buys back at 97%. Your gold: <b style="color:#ffd75e">${me.gold}g</b></div>`;
+ let h=`<div class="note" style="margin-bottom:6px">Prices drift over time. The Exchange buys back at 97%. Your gold: <b style="color:#ff8fd0">${me.gold}g</b></div>`;
  const list=Object.values(goods);
  if(!list.length) h+=`<p class="note">Waiting for prices…</p>`;
  for(const g of list){
@@ -1746,7 +2245,7 @@ function pExchange(){
 /* ---- Prayers ---- */
 function pPrayers(){
  const pct=clamp(me.prayerPoints/me.prayerMax*100,0,100);
- let h=`<div class="note">Prayer points: <b style="color:#ffd75e">${Math.floor(me.prayerPoints)} / ${me.prayerMax}</b> — an active prayer drains slowly and switches off at 0.</div>
+ let h=`<div class="note">Prayer points: <b style="color:#ff8fd0">${Math.floor(me.prayerPoints)} / ${me.prayerMax}</b> — an active prayer drains slowly and switches off at 0.</div>
  <div class="bar" style="margin:6px 0 10px"><div style="width:${pct}%;background:#2456c8"></div></div>
  <div style="display:flex;gap:6px">
   <button class="praybtn ${me.activePrayer==='melee'?'on':''}" onclick="send({type:'prayer',prayer:'melee'})">🛡️<br>Protect<br>Melee</button>
@@ -1770,8 +2269,8 @@ function pSkills(){
  for(const [id,ic,nm] of SKILL_DEFS){
    h+=`<div class="skillrow"><span class="ic">${ic}</span><span class="grow">${nm}<br><span class="xp">${(xp[id]||0).toLocaleString()} XP</span></span><span class="lvl">${lv[id]||1}</span></div>`;
  }
- h+=`<div class="setrow" style="margin-top:8px"><span class="grow"><b>Total Level</b></span><b style="color:#ffd75e">${me.totalLevel||0}</b></div>`;
- h+=`<div class="setrow"><span class="grow"><b>Combat Level</b></span><b style="color:#ffd75e">${Math.floor(me.combatLevel||3)}</b></div>`;
+ h+=`<div class="setrow" style="margin-top:8px"><span class="grow"><b>Total Level</b></span><b style="color:#ff8fd0">${me.totalLevel||0}</b></div>`;
+ h+=`<div class="setrow"><span class="grow"><b>Combat Level</b></span><b style="color:#ff8fd0">${Math.floor(me.combatLevel||3)}</b></div>`;
  h+=`<p class="note">Combat XP lands as you fight — watch for the blue drops by the orbs.</p>`;
  return h;
 }
@@ -1825,20 +2324,20 @@ function pSmithy(){
    h+=`<p class="note" style="margin-bottom:6px">The furnace and anvil are at the <b>Emberfall Mine &amp; Smithy</b> — walk out of the plaza's north-east corner, or teleport. Smelting and smithing only work there; you can check your ore and bar counts here.</p>`;
    h+=`<button class="act" onclick="doTravel('mine')">🌀 Teleport to the Emberfall Mine</button>`;
  }
- h+=`<h4 style="margin:10px 0 5px;color:#ffd75e">🔥 Furnace — smelt ore into bars</h4>`;
- h+=`<div class="note" style="margin-bottom:6px">Your Smithing level: <b style="color:#ffd75e">${lvl}</b></div>`;
+ h+=`<h4 style="margin:10px 0 5px;color:#ff8fd0">🔥 Furnace — smelt ore into bars</h4>`;
+ h+=`<div class="note" style="margin-bottom:6px">Your Smithing level: <b style="color:#ff8fd0">${lvl}</b></div>`;
  for(const [bar,rec] of Object.entries(BAR_RECIPES_CLIENT)){
    const needs=Object.entries(rec.ores).map(([ore,n])=>`${n}× ${esc(nameOf(ore))} (have ${myQty(ore)})`).join(' + ');
    h+=`<div class="rowline"><span class="ic">${iconOf(bar)}</span><span class="grow"><b>${esc(nameOf(bar))}</b> <span class="sub">(have ${myQty(bar)})</span><br><span class="sub">needs ${needs} · Lvl ${rec.level} Smithing${lvl<rec.level?` (you: ${lvl})`:''} · ${rec.xp} XP each</span></span>
    <button class="act" onclick="send({type:'smelt',bar:'${bar}',qty:1})">Smelt 1</button><button class="ghost" onclick="send({type:'smelt',bar:'${bar}',qty:5})">5</button><button class="ghost" onclick="send({type:'smelt',bar:'${bar}',qty:'all'})">All</button></div>`;
  }
- h+=`<h4 style="margin:10px 0 5px;color:#ffd75e">🔨 Anvil — smith bars into gear</h4>`;
+ h+=`<h4 style="margin:10px 0 5px;color:#ff8fd0">🔨 Anvil — smith bars into gear</h4>`;
  if(smithState){
    const heat=smithHeatShown();
    const heatCol=heat>=66?'#ff5a3c':heat>=33?'#ff9d3c':'#8a8578';
    h+=`<div class="detail"><b>${iconOf(smithState.item)} ${esc(nameOf(smithState.item))}</b> — on the anvil
    <div class="note" style="margin-top:5px">Progress ${smithState.progress}/100</div>
-   <div class="bar" style="margin:2px 0 6px"><div style="width:${clamp(smithState.progress,0,100)}%;background:#ffd75e"></div></div>
+   <div class="bar" style="margin:2px 0 6px"><div style="width:${clamp(smithState.progress,0,100)}%;background:#ff8fd0"></div></div>
    <div class="note">Heat ${heat}/100</div>
    <div class="bar" style="margin:2px 0 6px"><div style="width:${clamp(heat,0,100)}%;background:${heatCol}"></div></div>
    <div class="btns"><button class="act" onclick="send({type:'smith_hit'})">🔨 Hit the metal</button><button class="ghost" onclick="send({type:'smith_reheat'})">🔥 Reheat</button></div>
@@ -1860,7 +2359,7 @@ window.doTravel=function(to){
 };
 function pTeleport(){
  const here=(a)=>a===curArea;
- let h=`<p class="note" style="margin-bottom:8px">Teleporting is the shortcut — every place stays walkable too: Goblin Camp (plaza east gate), Fishing Cove (west gate), Training Cave (south-east corner), Gathering Cave (south-west corner), Emberfall Mine &amp; Smithy (north-east corner), Fight Caves (north gate).</p>`;
+ let h=`<p class="note" style="margin-bottom:8px">Teleporting is the shortcut — every place stays walkable too: Goblin Camp (plaza east gate), Fishing Cove (west gate), Training Cave (south-east corner), Gathering Cave (south-west corner), Emberfall Mine &amp; Smithy (north-east corner), Fight Caves (north gate), Barrows (south gate).</p>`;
  h+=`<div class="rowline"><span class="ic">🏰</span><span class="grow"><b>Plaza</b><br><span class="sub">Shops, bank, duels</span></span>${here('plaza')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('plaza')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">👺</span><span class="grow"><b>Goblin Camp</b><br><span class="sub">East gate · fight goblins for drops &amp; XP</span></span>${here('goblins')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('goblins')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">🏋️</span><span class="grow"><b>Training Cave</b><br><span class="sub">South-east corner · safe skill training</span></span>${here('training')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('training')">Teleport</button>`}</div>`;
@@ -1868,16 +2367,17 @@ function pTeleport(){
  h+=`<div class="rowline"><span class="ic">🎣</span><span class="grow"><b>Fishing Cove</b><br><span class="sub">West gate · chop, light a fire, fish &amp; cook trout</span></span>${here('cove')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('cove')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">⛏️🔥</span><span class="grow"><b>Emberfall Mine &amp; Smithy</b><br><span class="sub">North-east corner · mine 9 ores, smelt &amp; smith</span></span>${here('mine')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('mine')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">🌋</span><span class="grow"><b>Fight Caves</b><br><span class="sub">North gate · 63 waves, TzTok-Jad, fire cape</span></span>${here('fightcaves')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('fightcaves')">Teleport</button>`}</div>`;
+ h+=`<div class="rowline"><span class="ic">💀</span><span class="grow"><b>Barrows</b><br><span class="sub">South gate · 6 brothers, tunnels, chest</span></span>${here('barrows')||here('barrows_tunnels')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('barrows')">Teleport</button>`}</div>`;
  return h;
 }
 /* ---- Settings ---- */
 const PANEL_LIST=[['backpack','🎒 Backpack'],['worn','🗡️ Worn items'],['shop','🏪 Shops'],['bank','🏦 Bank'],['exchange','💱 Gold Exchange'],['prayers','🙏 Prayers'],['players','👥 Players'],['skills','📊 Skills'],['smithy','🔥 Smithy'],['teleport','🌀 Teleport'],['settings','🎛️ Settings']];
 function pSettings(){
- let h=`<div class="setrow"><span class="grow">📷 Camera drag speed<br><span class="note">Screen-drag rotation &amp; camera stick</span></span><input type="range" min="0.25" max="3" step="0.25" value="${settings.camSpeed}" oninput="setCamSpeed(this.value)"><b id="camspeedval" style="color:#ffd75e;min-width:34px;text-align:right">${settings.camSpeed}×</b></div>`;
+ let h=`<div class="setrow"><span class="grow">📷 Camera drag speed<br><span class="note">Screen-drag rotation &amp; camera stick</span></span><input type="range" min="0.25" max="3" step="0.25" value="${settings.camSpeed}" oninput="setCamSpeed(this.value)"><b id="camspeedval" style="color:#ff8fd0;min-width:34px;text-align:right">${settings.camSpeed}×</b></div>`;
  h+=`<div class="setrow"><span class="grow">👆 Ground tap mode</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.tapMode==='walk'?'on':''}" onclick="setTapMode('walk')">🚶 Walk</button><button class="${settings.tapMode==='face'?'on':''}" onclick="setTapMode('face')">🧭 Face</button></div>`;
  h+=`<p class="note" style="margin:2px 0 8px">Walk: tapping the ground walks there. Face: tapping just turns your knight to face that spot.</p>`;
  h+=`<div class="setrow"><span class="grow">🔅 Interface transparency<br><span class="note">Sticks, panels &amp; buttons</span></span><input type="range" min="0.3" max="1" step="0.02" value="${settings.uiAlpha}" oninput="setUiAlpha(this.value)"></div>`;
- h+=`<h4 style="margin:10px 0 5px;color:#ffd75e">Menu buttons (⚙)</h4>`;
+ h+=`<h4 style="margin:10px 0 5px;color:#ff8fd0">Menu buttons (⚙)</h4>`;
  for(const [p,label] of PANEL_LIST){
    h+=`<div class="setrow"><span class="grow">${label}</span><input type="checkbox" ${settings.hidden[p]?'':'checked'} onchange="setBtnVisible('${p}',this.checked)"></div>`;
  }
@@ -1920,7 +2420,7 @@ function openIncoming(m){
  incomingCh=m;
  const itemsTxt=(m.items&&m.items.length)? m.items.map(s=>`${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}`).join(', ') : 'no items';
  $('incomingsheet').innerHTML=`<h3>⚔️ ${esc(m.from)} challenges you!</h3>
- <p>Gold stake: <b style="color:#ffd75e">${m.stake}g</b> each<br>Their items: ${itemsTxt}</p>
+ <p>Gold stake: <b style="color:#ff8fd0">${m.stake}g</b> each<br>Their items: ${itemsTxt}</p>
  <p class="note">Add your own items to match (winner takes all):</p>
  ${pickerHTML('inp')}
  <p class="note" id="incount"></p>
@@ -1940,13 +2440,15 @@ let duel=null;
 let npcFight=null;
 function startDuelUI(m){
  stopGather();
- duel={id:m.duelId,opponent:m.opponent,pot:m.pot,hpYou:99,hpOpponent:99,energyYou:Math.floor(me?me.specialEnergy||0:0),escrow:m.escrowItems||[]};
+ duel={id:m.duelId,opponent:m.opponent,pot:m.pot,hpYou:99,hpOpponent:99,energyYou:Math.floor(me?me.specialEnergy||0:0),escrow:m.escrowItems||[],arena:m.arena||null};
  me=m.profile;
+ if(m.arena&&m.arena.id) setArenaVariant(m.arena.id); // recolour the pit for this duel
  $('duelflee').style.display='none';
  $('duelbar').classList.add('open');
  $('dueloppname').textContent=m.opponent;
  const itemsTxt=duel.escrow.length? ` + ${duel.escrow.reduce((t,s)=>t+s.qty,0)} items in escrow`:'';
- $('dueltitle').textContent=`⚔️ You vs ${m.opponent} — pot ${m.pot}g${itemsTxt}`;
+ const arenaTxt=m.arena&&m.arena.name? ` — ${m.arena.name}`:'';
+ $('dueltitle').textContent=`⚔️ You vs ${m.opponent}${arenaTxt} — pot ${m.pot}g${itemsTxt}`;
  $('duellast').textContent='Fight! Land hits to charge your Dragon Slash (50%).';
  renderDuelBar(); renderAll();
 }
@@ -1982,7 +2484,7 @@ function endDuelUI(m){
  const won=m.winner===me.username;
  const itemsTxt=(m.itemsWon&&m.itemsWon.length)? `<br>Items in the pot: ${m.itemsWon.map(s=>`${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}`).join(', ')}`:'';
  $('duelendsheet').innerHTML=`<h3>${won?'🏆 You won!':'💀 You lost'}</h3>
- <p><b>${esc(m.winner)}</b> won the duel (${esc(m.reason)}) and took the <b style="color:#ffd75e">${m.pot}g</b> pot.${itemsTxt}</p>
+ <p><b>${esc(m.winner)}</b> won the duel (${esc(m.reason)}) and took the <b style="color:#ff8fd0">${m.pot}g</b> pot.${itemsTxt}</p>
  <p class="note">Your gold: ${me.gold}g · Record: ${me.wins}W/${me.losses}L · Rating ${me.rating}</p>
  <div class="btns"><button class="act" onclick="closeModal('duelendmodal')">Back to the plaza</button></div>`;
  $('duelendmodal').classList.add('open');
@@ -2006,12 +2508,25 @@ function npcFightUI(m){
  if(m.phase==='start'){
    pendingAttack=null;
    stopGather();
-   npcFight={npcId:m.npcId,name:m.name||'Goblin',combatLevel:m.combatLevel||5,hpYou:m.hpYou,maxHpYou:m.maxHpYou,hpNpc:m.hpNpc,maxHpNpc:m.maxHpNpc,energyYou:Math.floor(m.energyYou||0)};
+   npcFight={npcId:m.npcId,kind:m.kind||'goblin',name:m.name||'Goblin',combatLevel:m.combatLevel||5,hpYou:m.hpYou,maxHpYou:m.maxHpYou,hpNpc:m.hpNpc,maxHpNpc:m.maxHpNpc,energyYou:Math.floor(m.energyYou||0)};
    $('duelbar').classList.add('open');
    $('duelflee').style.display='block';
-   $('dueloppname').textContent='Goblin';
-   $('dueltitle').textContent=`🥊 Goblin · lvl ${npcFight.combatLevel}`;
-   $('duellast').textContent='Fight! Land hits to charge your Dragon Slash (50%). Run with 🏃 Flee if it goes bad.';
+   if(m.kind==='barrows'){
+     // Brother fight: render his avatar at the anchor (mound / chest) —
+     // the server sends no position for brothers.
+     const old=npcAvatars[m.npcId];
+     if(old){ scene.remove(old.group); old.label.remove(); }
+     const ba=makeBrother(m); ba.group.position.set(ba.x,0,ba.z); scene.add(ba.group); npcAvatars[m.npcId]=ba;
+     const b=BARROWS_CLIENT[m.npcId]||{};
+     const pf=PRAYER_FOR_TYPE[b.type||'melee'];
+     $('dueloppname').textContent=m.name||'Barrows brother';
+     $('dueltitle').textContent=`💀 ${m.name} · lvl ${npcFight.combatLevel}`;
+     $('duellast').textContent=`Fight! ${pf[0]} ${pf[1]} fully blocks him. Stay near the ${curArea==='barrows_tunnels'?'chest':'mound'} or the fight breaks off.`;
+   } else {
+     $('dueloppname').textContent='Goblin';
+     $('dueltitle').textContent=`🥊 Goblin · lvl ${npcFight.combatLevel}`;
+     $('duellast').textContent='Fight! Land hits to charge your Dragon Slash (50%). Run with 🏃 Flee if it goes bad.';
+   }
    renderNpcBar(); renderOrbs();
    return;
  }
@@ -2021,17 +2536,33 @@ function npcFightUI(m){
    if(me) me.specialEnergy=m.energyYou;
    spawnSplatOn(npcAvatars[m.npcId],m.youHit,m.youSpecial);
    spawnSplat(me.username,m.npcHit,false);
-   let last=`You hit ${m.youHit}${m.youSpecial?' (DRAGON SLASH!)':''} · goblin hit ${m.npcHit}`;
+   const ba=npcAvatars[m.npcId];
+   if(ba&&ba.isBrother){ ba.hp=m.hpNpc; ba.maxHp=m.maxHpNpc; ba.hpFill.style.width=clamp(m.hpNpc/Math.max(1,m.maxHpNpc)*100,0,100)+'%'; ba.hpWrap.style.display='block'; }
+   const oppName=npcFight.kind==='barrows'? (npcFight.name.split(' ')[0]) : 'goblin';
+   let last=`You hit ${m.youHit}${m.youSpecial?' (DRAGON SLASH!)':''} · ${oppName} hit ${m.npcHit}`;
    if(m.note) last=m.note;
    $('duellast').textContent=last;
    renderNpcBar(); renderOrbs();
    return;
  }
  if(m.phase==='end'){
+   const wasBarrows=(m.kind==='barrows');
+   const bName=m.name||(npcFight&&npcFight.name)||'Barrows brother';
    npcFight=null;
    $('duelbar').classList.remove('open');
    $('duelflee').style.display='none';
    if(m.profile){ me=m.profile; }
+   if(wasBarrows){
+     const ba=npcAvatars[m.npcId];
+     if(ba&&ba.isBrother){ scene.remove(ba.group); ba.label.remove(); delete npcAvatars[m.npcId]; }
+     if(m.reason==='kill'){ toast(`💀 ${bName} slain! (${barrowsState.kills.length}/6)`); logLine(`💀 ${bName} slain! (${barrowsState.kills.length}/6)`); }
+     else if(m.reason==='death'){ toast(`💀 ${bName} got you! You wake up in the plaza — your Barrows kills are kept.`); }
+     else if(m.reason==='fled'){ toast('🏃 You fled the crypt.'); }
+     else if(m.reason==='range'){ toast('The fight broke off — you moved too far from the mound.'); }
+     else if(m.reason==='travel'){ toast('You left the fight behind.'); }
+     renderAll();
+     return;
+   }
    if(m.reason==='kill'){
      if(m.drops){
        const parts=[];
@@ -2150,8 +2681,8 @@ function onFcEnd(m){
  if(m.reason==='complete'){
    const rw=m.reward;
    h=`<h3>🏆 FIRE CAPE! You beat TzTok-Jad!</h3>
-   <p>You cleared all 63 waves in <b style="color:#ffd75e">${fmtMs(m.timeMs)}</b> — ${m.kills} kills this run.</p>
-   <p>Reward: <b style="color:#ffd75e">+${rw?rw.gold:500}g</b> and the 🔥 <b>Fire cape</b> — check your backpack (or the bank, if your pack was full).</p>`;
+   <p>You cleared all 63 waves in <b style="color:#ff8fd0">${fmtMs(m.timeMs)}</b> — ${m.kills} kills this run.</p>
+   <p>Reward: <b style="color:#ff8fd0">+${rw?rw.gold:500}g</b> and the 🔥 <b>Fire cape</b> — check your backpack (or the bank, if your pack was full).</p>`;
  } else if(m.reason==='death'){
    h=`<h3>💀 You fell on wave ${m.wave}</h3>
    <p>${m.kills} kills this run. You wake up in the plaza at full health — nothing lost.</p>`;
@@ -2172,11 +2703,11 @@ function openFcStart(){
  $('fcstartsheet').innerHTML=`<h3>🌋 The Fight Caves</h3>
  <p>63 waves of monsters, one after another — Tz-Kih, Tz-Kek, Tok-Xil, Yt-MejKot and Ket-Zek — and on wave 63, <b>TzTok-Jad</b> himself. Beat him for the 🔥 <b>Fire cape</b> and <b>500g</b>.</p>
  <p class="note">Your fight HP is your Hitpoints level. Protect prayers fully block matching attacks. Jad telegraphs every attack — when the warning flashes, switch to the matching Protect prayer before it lands. Food, potions and Dragon Slash all work in there. Dying costs nothing.</p>
- <div class="setrow"><span class="grow">Attempts</span><b style="color:#ffd75e">${f.attempts}</b></div>
- <div class="setrow"><span class="grow">Best wave</span><b style="color:#ffd75e">${f.bestWave} / 63</b></div>
- <div class="setrow"><span class="grow">Total kills</span><b style="color:#ffd75e">${f.kills}</b></div>
- <div class="setrow"><span class="grow">Completions</span><b style="color:#ffd75e">${f.completions}</b></div>
- <div class="setrow"><span class="grow">Best clear time</span><b style="color:#ffd75e">${f.bestTimeMs?fmtMs(f.bestTimeMs):'—'}</b></div>
+ <div class="setrow"><span class="grow">Attempts</span><b style="color:#ff8fd0">${f.attempts}</b></div>
+ <div class="setrow"><span class="grow">Best wave</span><b style="color:#ff8fd0">${f.bestWave} / 63</b></div>
+ <div class="setrow"><span class="grow">Total kills</span><b style="color:#ff8fd0">${f.kills}</b></div>
+ <div class="setrow"><span class="grow">Completions</span><b style="color:#ff8fd0">${f.completions}</b></div>
+ <div class="setrow"><span class="grow">Best clear time</span><b style="color:#ff8fd0">${f.bestTimeMs?fmtMs(f.bestTimeMs):'—'}</b></div>
  <div class="btns"><button class="act" onclick="startFcRun()">▶ Enter the Fight Caves</button><button class="ghost" onclick="closeModal('fcstartmodal')">Look around first</button></div>`;
  $('fcstartmodal').classList.add('open');
 }
