@@ -17,6 +17,13 @@
 // potions). Prayer rule per Derek's spec: Protect prayers FULLY block
 // matching NPC hits; they still do NOT block in PvP duels — every duel
 // attack is melee-type, so a full block would stalemate every fight.
+//
+// Stage 2 (catch-up) adds: three more areas (Training Cave, Gathering
+// Cave, Fishing Cove), a gathering system (resource nodes with level
+// gates, charges and respawns; training stations that grant XP only),
+// lightable fires (60s, Firemaking XP) and cooking on them (burn chance
+// falls with Cooking level). Gathered resources are sell-only stock:
+// shops buy them at a fixed price but never sell them.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -91,17 +98,41 @@ const GOODS = [
   { id: 'charms', name: 'Spirit charms', base: 60, min: 30, max: 120 },
 ];
 for (const g of GOODS) ITEMS[g.id] = { name: g.name, kind: 'good' };
+// Stage 2 gathered resources + cooked food. No `buy` price (shops never
+// sell them); `sellOnly` is the fixed price shops pay for them.
+for (const [id, name, sellOnly, extra] of [
+  ['copper_ore', 'Copper ore', 5, {}],
+  ['tin_ore', 'Tin ore', 5, {}],
+  ['iron_ore', 'Iron ore', 12, {}],
+  ['coal', 'Coal', 25, {}],
+  ['uncut_gem', 'Uncut gem', 60, {}],
+  ['logs', 'Logs', 4, {}],
+  ['oak_logs', 'Oak logs', 10, {}],
+  ['raw_shrimps', 'Raw shrimps', 3, {}],
+  ['raw_trout', 'Raw trout', 8, {}],
+  ['burnt_fish', 'Burnt fish', 1, {}],
+  ['cooked_trout', 'Cooked trout', 10, { kind: 'food', heal: 15 }],
+  ['cooked_shrimps', 'Cooked shrimps', 5, { kind: 'food', heal: 4 }],
+]) {
+  ITEMS[id] = { name, kind: 'resource', sellOnly, ...extra };
+}
 const SHOPS = ['Potion', 'Weapon', 'Armour', 'Food & Supplies'];
 const exchangePrices = {};
 for (const g of GOODS) exchangePrices[g.id] = g.base;
 
 function sellPrice(itemId) {
   const def = ITEMS[itemId];
-  return def && def.buy ? Math.max(1, Math.floor(def.buy * SHOP_SELLBACK)) : 0;
+  if (!def) return 0;
+  if (def.buy) return Math.max(1, Math.floor(def.buy * SHOP_SELLBACK));
+  if (def.sellOnly) return def.sellOnly; // Stage 2 resources: fixed buy-back
+  return 0;
 }
 function catalogList() {
-  return Object.entries(ITEMS).filter(([, d]) => d.buy).map(([id, d]) => ({
-    id, name: d.name, kind: d.kind, slot: d.slot || null, shop: d.shop, buy: d.buy, sell: sellPrice(id),
+  // Buyable stock plus sell-only resources (buy: 0, shop: null — the
+  // client filters buy lists by shop name, so resources never show as
+  // buyable, but sell mode and name lookups can see them).
+  return Object.entries(ITEMS).filter(([, d]) => d.buy || d.sellOnly).map(([id, d]) => ({
+    id, name: d.name, kind: d.kind, slot: d.slot || null, shop: d.shop || null, buy: d.buy || 0, sell: sellPrice(id),
     heal: d.heal || 0, prayerRestore: d.prayerRestore || 0,
     accBonus: d.accBonus || 0, maxBonus: d.maxBonus || 0, reduction: d.reduction || 0,
   }));
@@ -331,6 +362,9 @@ const duels = new Map(); // id -> duel
 const AREAS = {
   plaza: { name: 'Plaza', spawn: { x: 400, y: 225 } },
   goblins: { name: 'Goblin Camp', spawn: { x: 100, y: 225 } },
+  training: { name: 'Training Cave', spawn: { x: 400, y: 360 } },
+  gathering: { name: 'Gathering Cave', spawn: { x: 400, y: 225 } },
+  cove: { name: 'Fishing Cove', spawn: { x: 90, y: 225 } },
 };
 const NPC_RANGE = 150; // server units — attack / stay-in-combat range (15 tiles at 10 units/tile)
 
@@ -627,6 +661,112 @@ setInterval(() => {
   if (any) broadcastNpcState();
 }, 1000);
 
+// ---------- Gathering (Stage 2): resource nodes, fires, cooking ----------
+// Node charges / depletion are session-only world state (like goblin HP);
+// profiles keep the items and XP. Training stations have infinite charges
+// and grant XP only (item: null) — the Training Cave is safe, no combat.
+const GATHER_RANGE = 150; // server units, same as NPC attack range
+const ACTION_COOLDOWN_MS = 1400; // one gather / cook / light-fire per player per 1.4s
+const NODES = new Map(); // id -> node def + { chargesLeft, depletedUntil }
+function defNode(id, area, kind, name, skill, levelReq, item, xp, charges, respawnMs, x, y) {
+  NODES.set(id, { id, area, kind, name, skill, levelReq, item, xp, charges, respawnMs, x, y, chargesLeft: charges, depletedUntil: 0 });
+}
+// Gathering Cave — rocks on the west side, fishing spots at the east pool,
+// trees scattered through the middle.
+defNode('copper_rock', 'gathering', 'rock', 'Copper rock', 'mining', 1, 'copper_ore', 18, 3, 8000, 120, 110);
+defNode('tin_rock', 'gathering', 'rock', 'Tin rock', 'mining', 1, 'tin_ore', 18, 3, 8000, 120, 230);
+defNode('iron_rock', 'gathering', 'rock', 'Iron rock', 'mining', 15, 'iron_ore', 35, 2, 15000, 120, 350);
+defNode('coal_rock', 'gathering', 'rock', 'Coal rock', 'mining', 30, 'coal', 50, 2, 20000, 240, 160);
+defNode('gem_rock', 'gathering', 'rock', 'Gem rock', 'mining', 40, 'uncut_gem', 65, 1, 30000, 240, 300);
+defNode('shrimp_spot', 'gathering', 'fish', 'Shrimp spot', 'fishing', 1, 'raw_shrimps', 10, 4, 8000, 640, 140);
+defNode('trout_spot_g', 'gathering', 'fish', 'Trout spot', 'fishing', 20, 'raw_trout', 30, 3, 12000, 640, 300);
+defNode('tree_g', 'gathering', 'tree', 'Tree', 'woodcutting', 1, 'logs', 25, 3, 10000, 420, 90);
+defNode('oak_g', 'gathering', 'tree', 'Oak tree', 'woodcutting', 15, 'oak_logs', 38, 3, 15000, 470, 360);
+// Fishing Cove — trees on the west shore, trout spots along the east lake
+// edge. Cove trout are Fishing 1 on purpose: the cove is the starter
+// fishing spot (Derek's cove spec names no level); the cave trout spot
+// above is the level-20 one.
+defNode('tree_c1', 'cove', 'tree', 'Tree', 'woodcutting', 1, 'logs', 25, 3, 10000, 120, 100);
+defNode('tree_c2', 'cove', 'tree', 'Tree', 'woodcutting', 1, 'logs', 25, 3, 10000, 120, 230);
+defNode('tree_c3', 'cove', 'tree', 'Tree', 'woodcutting', 1, 'logs', 25, 3, 10000, 120, 360);
+defNode('trout_spot_c1', 'cove', 'fish', 'Trout spot', 'fishing', 1, 'raw_trout', 30, 3, 12000, 660, 100);
+defNode('trout_spot_c2', 'cove', 'fish', 'Trout spot', 'fishing', 1, 'raw_trout', 30, 3, 12000, 660, 225);
+defNode('trout_spot_c3', 'cove', 'fish', 'Trout spot', 'fishing', 1, 'raw_trout', 30, 3, 12000, 660, 350);
+// Training Cave — one station per combat skill, in a row. XP only.
+defNode('attack_dummy', 'training', 'station', 'Attack dummy', 'attack', 1, null, 12, Infinity, 0, 140, 225);
+defNode('strength_dummy', 'training', 'station', 'Strength dummy', 'strength', 1, null, 12, Infinity, 0, 240, 225);
+defNode('defence_dummy', 'training', 'station', 'Defence dummy', 'defence', 1, null, 12, Infinity, 0, 340, 225);
+defNode('ranged_target', 'training', 'station', 'Ranged target', 'ranged', 1, null, 12, Infinity, 0, 440, 225);
+defNode('magic_dummy', 'training', 'station', 'Magic dummy', 'magic', 1, null, 12, Infinity, 0, 540, 225);
+defNode('prayer_altar', 'training', 'station', 'Prayer altar', 'prayer', 1, null, 6, Infinity, 0, 640, 225);
+
+function nodesMsg(area) {
+  const now = Date.now();
+  return {
+    type: 'nodes', area,
+    nodes: [...NODES.values()].filter((n) => n.area === area).map((n) => ({
+      id: n.id, kind: n.kind, name: n.name, skill: n.skill, levelReq: n.levelReq, item: n.item, xp: n.xp,
+      x: n.x, y: n.y, depleted: n.depletedUntil > now,
+    })),
+  };
+}
+function broadcastNodes(area) {
+  const msg = nodesMsg(area);
+  for (const p of online.values()) if (p.area === area) send(p.ws, msg);
+}
+// Depleted nodes grow back on their respawn timer (checked every 1s,
+// like goblin respawns) and the area hears about it.
+setInterval(() => {
+  const now = Date.now();
+  const touched = new Set();
+  for (const n of NODES.values()) {
+    if (n.depletedUntil && now >= n.depletedUntil) { n.depletedUntil = 0; n.chargesLeft = n.charges; touched.add(n.area); }
+  }
+  for (const a of touched) broadcastNodes(a);
+}, 1000);
+
+// Fires: lit from Logs anywhere, burn 60s. Session-only world state.
+const fires = new Map(); // id -> { id, area, x, y, expiresAt }
+const FIRE_RANGE = 120; // must be this close to a lit fire to cook on it
+const FIRE_BURN_MS = 60000;
+function firesMsg(area) {
+  const now = Date.now();
+  return {
+    type: 'fires', area,
+    fires: [...fires.values()].filter((f) => f.area === area && f.expiresAt > now)
+      .map((f) => ({ id: f.id, x: Math.round(f.x), y: Math.round(f.y), secondsLeft: Math.max(0, Math.round((f.expiresAt - now) / 1000)) })),
+  };
+}
+function broadcastFires(area) {
+  const msg = firesMsg(area);
+  for (const p of online.values()) if (p.area === area) send(p.ws, msg);
+}
+// Fire sweep every 5s: drop expired fires and refresh countdowns in any
+// area where a fire is burning (or just went out).
+setInterval(() => {
+  const now = Date.now();
+  const touched = new Set();
+  for (const [id, f] of fires) if (f.expiresAt <= now) { fires.delete(id); touched.add(f.area); }
+  for (const f of fires.values()) touched.add(f.area);
+  for (const a of touched) broadcastFires(a);
+}, 5000);
+
+// Cooking recipes: raw item -> cooked item + Cooking XP on success.
+// Burn chance (%) = clamp(55 - cookingLevel * 1.2, 8, 55): 53.8% at
+// level 1, falling as Cooking rises, never below 8%.
+const COOKABLE = {
+  raw_trout: { cooked: 'cooked_trout', xp: 70 },
+  raw_shrimps: { cooked: 'cooked_shrimps', xp: 30 },
+};
+// Shared per-player action cooldown for gather / cook / light_fire.
+// Returns true (and does NOT stamp) when the player is acting too fast.
+function actionOnCooldown(sess) {
+  const now = Date.now();
+  if (now - (sess.lastActionAt || 0) < ACTION_COOLDOWN_MS) return true;
+  sess.lastActionAt = now;
+  return false;
+}
+
 // Gold Exchange prices drift on a random walk inside each good's band.
 setInterval(() => {
   for (const g of GOODS) {
@@ -666,7 +806,7 @@ wss.on('connection', (ws, req) => {
   const profile = db.users[key].profile;
   ensureV2(profile);
   // Everyone logs into the plaza (area is session-only, never saved).
-  online.set(key, { ws, profile, x: 100 + Math.random() * 500, y: 100 + Math.random() * 250, area: 'plaza', duelId: null, npcFightId: null });
+  online.set(key, { ws, profile, x: 100 + Math.random() * 500, y: 100 + Math.random() * 250, area: 'plaza', duelId: null, npcFightId: null, lastActionAt: 0 });
   send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot('plaza'), area: 'plaza' });
   send(ws, { type: 'catalog', items: catalogList(), shops: SHOPS });
   send(ws, { type: 'exchange_prices', goods: goodsList() });
@@ -701,6 +841,10 @@ wss.on('connection', (ws, req) => {
       me.x = AREAS[to].spawn.x; me.y = AREAS[to].spawn.y;
       send(ws, { type: 'area', area: to });
       if (to === 'goblins') send(ws, npcStateMsg());
+      // Stage 2: every area entry also brings its node + fire state
+      // (empty lists for areas that have none).
+      send(ws, nodesMsg(to));
+      send(ws, firesMsg(to));
       broadcastState();
       return;
     }
@@ -725,6 +869,77 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
+    // ----- Gathering (Stage 2): work a resource node / training station -----
+    if (m.type === 'gather') {
+      const node = NODES.get(String(m.nodeId || ''));
+      if (!node) return send(ws, { type: 'error', message: 'No such spot.' });
+      if (me.area !== node.area) return send(ws, { type: 'error', message: 'That spot is not here.' });
+      if (me.duelId) return send(ws, { type: 'error', message: 'You are in a duel.' });
+      if (me.npcFightId) return send(ws, { type: 'error', message: 'You are fighting something.' });
+      if (Math.hypot(me.x - node.x, me.y - node.y) > GATHER_RANGE) return send(ws, { type: 'error', message: 'Too far away — walk closer.' });
+      if (node.depletedUntil > Date.now()) return send(ws, { type: 'error', message: `${node.name} is used up — it will grow back shortly.` });
+      const level = levelForXp((profile.xp && profile.xp[node.skill]) || 0);
+      if (level < node.levelReq) return send(ws, { type: 'error', message: `You need ${cap(node.skill)} level ${node.levelReq} for the ${node.name} (you are level ${level}).` });
+      if (actionOnCooldown(me)) return send(ws, { type: 'error', message: 'Too fast — one action at a time.' });
+      // Success chance: 55% at the required level, +2% per level above
+      // it, capped at 95%. A failed attempt uses the action (cooldown)
+      // but no node charge and grants no XP.
+      const chance = Math.max(0.55, Math.min(0.95, 0.55 + 0.02 * (level - node.levelReq)));
+      if (Math.random() > chance) return send(ws, { type: 'gather_result', nodeId: node.id, ok: false });
+      if (node.chargesLeft !== Infinity) { // stations never deplete
+        node.chargesLeft -= 1;
+        if (node.chargesLeft <= 0) { node.chargesLeft = 0; node.depletedUntil = Date.now() + node.respawnMs; }
+        broadcastNodes(node.area);
+      }
+      if (node.item) {
+        const leftover = addStacks(profile.backpack, node.item, 1, BACKPACK_MAX_STACKS);
+        if (leftover > 0) addStacks(profile.bank, node.item, leftover); // full pack: bank it, never lose a gather
+      }
+      addXp(key, { [node.skill]: node.xp });
+      save(key);
+      send(ws, { type: 'gather_result', nodeId: node.id, ok: true, item: node.item, xp: node.xp });
+      return sendProfile(key);
+    }
+
+    // ----- Fires + cooking (Stage 2) -----
+    if (m.type === 'light_fire') {
+      if (me.duelId || me.npcFightId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
+      if (stackQty(profile.backpack, 'logs') < 1) return send(ws, { type: 'error', message: 'You need Logs to light a fire.' });
+      if (actionOnCooldown(me)) return send(ws, { type: 'error', message: 'Too fast — one action at a time.' });
+      removeStacks(profile.backpack, 'logs', 1);
+      const id = crypto.randomBytes(6).toString('hex');
+      fires.set(id, { id, area: me.area, x: me.x, y: me.y, expiresAt: Date.now() + FIRE_BURN_MS });
+      addXp(key, { firemaking: 40 });
+      save(key);
+      broadcastFires(me.area);
+      send(ws, { type: 'fire_lit', id, seconds: Math.round(FIRE_BURN_MS / 1000) });
+      return sendProfile(key);
+    }
+    if (m.type === 'cook') {
+      const item = String(m.item || '');
+      const recipe = COOKABLE[item];
+      if (!recipe) return send(ws, { type: 'error', message: 'You can\'t cook that.' });
+      if (me.duelId || me.npcFightId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
+      if (stackQty(profile.backpack, item) < 1) return send(ws, { type: 'error', message: `No ${ITEMS[item].name} in your backpack.` });
+      const now = Date.now();
+      const nearFire = [...fires.values()].some((f) => f.area === me.area && f.expiresAt > now && Math.hypot(me.x - f.x, me.y - f.y) <= FIRE_RANGE);
+      if (!nearFire) return send(ws, { type: 'error', message: 'You need a lit fire nearby to cook on.' });
+      if (actionOnCooldown(me)) return send(ws, { type: 'error', message: 'Too fast — one action at a time.' });
+      removeStacks(profile.backpack, item, 1);
+      // Burn chance (%) = clamp(55 - cookingLevel * 1.2, 8, 55).
+      const cookLevel = levelForXp((profile.xp && profile.xp.cooking) || 0);
+      const burnChance = Math.max(8, Math.min(55, 55 - cookLevel * 1.2));
+      const burnt = Math.random() * 100 < burnChance;
+      const resultItem = burnt ? 'burnt_fish' : recipe.cooked;
+      const leftover = addStacks(profile.backpack, resultItem, 1, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(profile.bank, resultItem, leftover);
+      const xp = burnt ? 0 : recipe.xp;
+      if (xp) addXp(key, { cooking: xp });
+      save(key);
+      send(ws, { type: 'cook_result', ok: !burnt, item: resultItem, xp });
+      return sendProfile(key);
+    }
+
     // ----- Shops (one catalog; the shop name is display metadata only) -----
     if (m.type === 'shop_buy') {
       const item = String(m.item || '');
@@ -744,7 +959,9 @@ wss.on('connection', (ws, req) => {
       const def = ITEMS[item];
       const qty = Math.max(1, Math.min(999, Math.floor(+m.qty || 1)));
       if (!def) return send(ws, { type: 'error', message: 'Unknown item.' });
-      if (!def.buy) return send(ws, { type: 'error', message: 'The shops don\'t buy that — try the Gold Exchange.' });
+      // Shops buy anything with a sell price: their own stock at 60%
+      // back, and Stage 2 gathered resources at their fixed sellOnly.
+      if (!sellPrice(item)) return send(ws, { type: 'error', message: 'The shops don\'t buy that — try the Gold Exchange.' });
       if (!removeStacks(profile.backpack, item, qty)) return send(ws, { type: 'error', message: `You don't have ${qty} x ${def.name}.` });
       const total = sellPrice(item) * qty;
       profile.gold += total;
