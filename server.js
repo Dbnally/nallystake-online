@@ -45,6 +45,16 @@
 // player (best wave / attempts / kills / completions / best time);
 // clearing wave 63 pays 500g and a Fire cape. Dying costs nothing —
 // you wake in the plaza (the house rule).
+//
+// Stage 5 (catch-up) adds: the worn expansion (10 slots — the Fire
+// cape is wearable in the new cape slot), the Barrows (six brothers,
+// crypt fights, one randomised tunnel crypt per run, a puzzle door and
+// the reward chest; kills are SAVED on the profile and kept until the
+// round is finished), four duel arenas (duels move both fighters into
+// a random arena and back to the plaza afterwards), drop piles
+// (backpack items dropped as per-area ground piles anyone can pick
+// up), and the Muse-game style boosts (Accurate extra hits,
+// Aggressive power hits, Defensive / Controlled defender blocks).
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -198,9 +208,22 @@ for (const [metal, md] of Object.entries(SMITH_METALS)) {
 }
 // Stage 4: the Fight Caves reward. kind 'trophy': never sold by shops,
 // and sellOnly 0 means sellPrice() returns 0, so the shops refuse to buy
-// it. It is not wearable yet — a cape slot arrives with the Stage 5 worn
-// expansion; until then it sits in the backpack/bank as the trophy it is.
-ITEMS.fire_cape = { name: 'Fire cape', kind: 'trophy', sellOnly: 0 };
+// it. Stage 5: it is wearable in the new cape slot and carries small
+// bonuses (+0.02 accuracy, +1 max hit, applied in rollHit like a
+// weapon's) — a trophy that is also genuinely useful.
+ITEMS.fire_cape = { name: 'Fire cape', kind: 'trophy', slot: 'cape', accBonus: 0.02, maxBonus: 1, sellOnly: 0 };
+// Stage 5: Barrows weapons — the reward chest's rare roll. Loot-only
+// (no `buy`, no shop); shops buy them back at the 800g sellOnly floor.
+for (const [id, name, accBonus, maxBonus] of [
+  ['dharoks_greataxe', "Dharok's greataxe", 0.10, 9],
+  ['guthans_warspear', "Guthan's warspear", 0.09, 8],
+  ['torags_hammers', "Torag's hammers", 0.09, 8],
+  ['veracs_flail', "Verac's flail", 0.10, 8],
+  ['ahrims_staff', "Ahrim's staff", 0.11, 7],
+  ['karils_crossbow', "Karil's crossbow", 0.11, 7],
+]) {
+  ITEMS[id] = { name, kind: 'weapon', slot: 'weapon', sellOnly: 800, accBonus, maxBonus };
+}
 const SHOPS = ['Potion', 'Weapon', 'Armour', 'Food & Supplies', 'Pickaxe Pete'];
 const exchangePrices = {};
 for (const g of GOODS) exchangePrices[g.id] = g.base;
@@ -272,17 +295,31 @@ function combatLevelOf(levels) {
 }
 
 // ---------- player state v2 ----------
+// Stage 5 worn expansion: 10 slots. Only the cape slot has dedicated
+// content so far (the Fire cape); amulet / hands / feet / ring start
+// empty and simply work with the generic equip/unequip handlers.
+const WORN_SLOTS = ['weapon', 'shield', 'head', 'body', 'legs', 'cape', 'amulet', 'hands', 'feet', 'ring'];
+function emptyWorn() {
+  const w = {};
+  for (const s of WORN_SLOTS) w[s] = null;
+  return w;
+}
 function newProfile(username) {
   return {
     username, gold: START_GOLD, rating: 1000, wins: 0, losses: 0,
     style: 'accurate', createdAt: new Date().toISOString(),
     backpack: [], // [{item, qty}] stacks, max BACKPACK_MAX_STACKS distinct
-    worn: { weapon: null, shield: null, head: null, body: null, legs: null },
+    worn: emptyWorn(),
     bank: [], // [{item, qty}] stacks — items only, gold stays a number
     prayerPoints: PRAYER_MAX, prayerMax: PRAYER_MAX, activePrayer: null,
     specialEnergy: 0,
     xp: defaultXp(), // Stage 1 skills — see SKILLS / XP_TABLE above
     fc: { bestWave: 0, attempts: 0, kills: 0, completions: 0, bestTimeMs: 0 }, // Stage 4 Fight Caves records
+    // Stage 5 Barrows run state: brothers killed this round, which
+    // crypt is the tunnel entrance (null until a run starts), and a
+    // looted flag (the round resets the moment the chest is looted,
+    // so this is never persisted as true — it completes the shape).
+    barrows: { kills: [], tunnel: null, looted: false },
   };
 }
 // Migration: Phase 1 accounts gain the v2 fields with defaults. Existing
@@ -290,8 +327,8 @@ function newProfile(username) {
 function ensureV2(p) {
   let changed = false;
   if (!Array.isArray(p.backpack)) { p.backpack = []; changed = true; }
-  if (!p.worn || typeof p.worn !== 'object') { p.worn = { weapon: null, shield: null, head: null, body: null, legs: null }; changed = true; }
-  for (const slot of ['weapon', 'shield', 'head', 'body', 'legs']) if (!(slot in p.worn)) { p.worn[slot] = null; changed = true; }
+  if (!p.worn || typeof p.worn !== 'object') { p.worn = emptyWorn(); changed = true; }
+  for (const slot of WORN_SLOTS) if (!(slot in p.worn)) { p.worn[slot] = null; changed = true; }
   if (!Array.isArray(p.bank)) { p.bank = []; changed = true; }
   if (typeof p.prayerMax !== 'number') { p.prayerMax = PRAYER_MAX; changed = true; }
   if (typeof p.prayerPoints !== 'number') { p.prayerPoints = p.prayerMax; changed = true; }
@@ -313,6 +350,20 @@ function ensureV2(p) {
       if (typeof p.fc[f] !== 'number' || p.fc[f] < 0) { p.fc[f] = 0; changed = true; }
     }
   }
+  // Stage 5 migration: Barrows run state. Kills already recorded are
+  // NEVER reset (leaving mid-run keeps them until the round ends) —
+  // only a missing/corrupt record gains defaults, and the kills list
+  // is cleaned down to known brother ids, deduped.
+  if (!p.barrows || typeof p.barrows !== 'object') { p.barrows = { kills: [], tunnel: null, looted: false }; changed = true; }
+  else {
+    if (!Array.isArray(p.barrows.kills)) { p.barrows.kills = []; changed = true; }
+    else {
+      const clean = [...new Set(p.barrows.kills.filter((k) => BARROWS_BROTHERS[k]))];
+      if (clean.length !== p.barrows.kills.length) { p.barrows.kills = clean; changed = true; }
+    }
+    if (p.barrows.tunnel !== null && !BARROWS_BROTHERS[p.barrows.tunnel]) { p.barrows.tunnel = null; changed = true; }
+    if (typeof p.barrows.looted !== 'boolean') { p.barrows.looted = false; changed = true; }
+  }
   return changed;
 }
 function publicProfile(p) {
@@ -333,6 +384,8 @@ function publicProfile(p) {
     // Stage 4 Fight Caves records (best wave reached, attempts, total
     // kills across all runs, completions, best full-clear time).
     fc: { ...p.fc },
+    // Stage 5 Barrows run state (kills this round + tunnel crypt).
+    barrows: { kills: [...p.barrows.kills], tunnel: p.barrows.tunnel, looted: p.barrows.looted },
   };
 }
 function leaderboardProfile(p) {
@@ -465,6 +518,12 @@ const AREAS = {
   cove: { name: 'Fishing Cove', spawn: { x: 90, y: 225 } },
   mine: { name: 'Emberfall Mine & Smithy', spawn: { x: 400, y: 380 } },
   fightcaves: { name: 'Fight Caves', spawn: { x: 400, y: 400 } },
+  // Stage 5: the Barrows field (south entrance) and its tunnels; the
+  // duel arena is not travel-reachable in normal play — duels move
+  // both fighters in and back out (see startDuel / endDuel).
+  barrows: { name: 'Barrows', spawn: { x: 400, y: 400 } },
+  barrows_tunnels: { name: 'Barrows Tunnels', spawn: { x: 400, y: 225 } },
+  arena: { name: 'Duel Arena', spawn: { x: 400, y: 225 } },
 };
 const NPC_RANGE = 150; // server units — attack / stay-in-combat range (15 tiles at 10 units/tile)
 
@@ -519,9 +578,17 @@ function sendProfile(key) {
 const STYLES = {
   accurate:   { acc: 0.85, max: 11 }, // +accuracy
   aggressive: { acc: 0.70, max: 15 }, // +power
-  defensive:  { acc: 0.75, max: 11, block: 0.35 }, // chance to fully block
-  controlled: { acc: 0.78, max: 13 }, // a bit of all three
+  defensive:  { acc: 0.75, max: 11, block: 0.25 }, // Stage 5 style boost: 25% defender block
+  controlled: { acc: 0.78, max: 13, block: 0.12 }, // Stage 5 style boost: 12% defender block
 };
+// Stage 5 style boosts (the Muse-game rules Derek asked for) — the
+// defender half lives in the styles' `block` field above (read by
+// rollHit for duels and by the NPC / Fight Caves / Barrows ticks for
+// monster swings): Defensive blocks 25% of incoming hits outright,
+// Controlled 12%. The attacker half lives in rollPlayerAttack below:
+// Accurate has a 25% chance of a second swing in the same tick,
+// Aggressive a 25% chance of a power hit (+25% damage), Controlled
+// 12% for each effect independently.
 function weaponBonus(p) {
   const def = p.worn && p.worn.weapon ? ITEMS[p.worn.weapon] : null;
   return def && def.kind === 'weapon' ? def : null;
@@ -543,11 +610,51 @@ function rollHit(attackerProfile, defenderProfile, useSpecial = false) {
   const w = weaponBonus(attackerProfile);
   let acc = s.acc + (w ? w.accBonus : 0);
   let max = s.max + (w ? w.maxBonus : 0);
+  // Stage 5: a worn cape (the Fire cape) adds its own small bonuses,
+  // exactly like a weapon's — it is the only cape-slot item so far.
+  const capeDef = attackerProfile.worn && attackerProfile.worn.cape ? ITEMS[attackerProfile.worn.cape] : null;
+  if (capeDef) { acc += capeDef.accBonus || 0; max += capeDef.maxBonus || 0; }
   if (useSpecial) { acc += 0.05; max = Math.floor(max * 1.5); } // Dragon Slash
   if (Math.random() > Math.min(acc, 0.98)) return 0;
   const raw = 1 + Math.floor(Math.random() * max);
   return Math.floor(raw * (1 - armourReduction(defenderProfile)));
 }
+// Stage 5: one full player attack for a tick — the base rollHit plus
+// the attacker's style boosts. Returns { dmg, notes }: `dmg` is the
+// TOTAL damage for the tick (callers grant combat XP on it, so an
+// extra hit earns XP on its damage like any other hit), and `notes`
+// names any boost that triggered, for the tick's note field.
+//   accurate   25%: a second, independent swing is added.
+//   aggressive 25%: a power hit — the connecting hit deals +25%.
+//   controlled 12%: each of the two rolls above, independently.
+// (Defensive has no attacker boost; its boost is the defender block.)
+function rollPlayerAttack(attackerProfile, defenderProfile, useSpecial = false) {
+  const style = attackerProfile.style || 'accurate';
+  const notes = [];
+  let dmg = rollHit(attackerProfile, defenderProfile, useSpecial);
+  const powerChance = style === 'aggressive' ? 0.25 : style === 'controlled' ? 0.12 : 0;
+  if (powerChance && dmg > 0 && Math.random() < powerChance) {
+    dmg = Math.round(dmg * 1.25);
+    notes.push('Power hit!');
+  }
+  const extraChance = style === 'accurate' ? 0.25 : style === 'controlled' ? 0.12 : 0;
+  if (extraChance && Math.random() < extraChance) {
+    const extra = rollHit(attackerProfile, defenderProfile, false);
+    if (extra > 0) { dmg += extra; notes.push('Style boost: extra hit!'); }
+  }
+  return { dmg, notes };
+}
+
+// Stage 5: the four duel arenas. A duel picks one at random; both
+// fighters are moved into the shared 'arena' area for the fight (the
+// client renders the variant from the arena id in duel_start) and
+// returned to the plaza spawn when it ends — win, lose or forfeit.
+const DUEL_ARENAS = [
+  { id: 'sand', name: 'Sand Arena' },
+  { id: 'ember', name: 'Ember Arena' },
+  { id: 'azure', name: 'Azure Arena' },
+  { id: 'violet', name: 'Violet Arena' },
+];
 
 function endDuel(duel, winnerKey, reason) {
   if (duel.done) return;
@@ -571,7 +678,15 @@ function endDuel(duel, winnerKey, reason) {
   save(winnerKey); save(loserKey);
   for (const k of [duel.a, duel.b]) {
     const p = online.get(k);
-    if (p) { p.duelId = null; send(p.ws, { type: 'duel_end', winner: winner.username, reason, pot: duel.pot, itemsWon, profile: publicProfile(db.users[k].profile) }); }
+    if (p) {
+      p.duelId = null;
+      // Stage 5: the fight is over — both fighters return to the plaza.
+      p.area = 'plaza';
+      p.x = AREAS.plaza.spawn.x; p.y = AREAS.plaza.spawn.y;
+      send(p.ws, { type: 'duel_end', winner: winner.username, reason, pot: duel.pot, itemsWon, profile: publicProfile(db.users[k].profile) });
+      send(p.ws, { type: 'area', area: 'plaza' });
+      send(p.ws, pilesMsg('plaza'));
+    }
   }
   broadcast({ type: 'chat', from: 'Duel Master', text: `${winner.username} beat ${loser.username} for ${duel.pot}g (${reason}).` });
   broadcastState();
@@ -587,17 +702,27 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = []) {
   for (const s of itemsB) { removeStacks(b.backpack, s.item, s.qty); addStacks(escrowItems, s.item, s.qty); }
   save(aKey); save(bKey);
   const id = crypto.randomBytes(6).toString('hex');
+  // Stage 5: this duel is fought in one of the four arenas, picked at
+  // random. Both fighters move into the 'arena' area at facing start
+  // positions; endDuel walks them back to the plaza.
+  const arenaDef = DUEL_ARENAS[Math.floor(Math.random() * DUEL_ARENAS.length)];
   const duel = {
     id, a: aKey, b: bKey, stake, pot: stake * 2, escrowItems,
     hp: { [aKey]: 99, [bKey]: 99 }, specialQueued: { [aKey]: false, [bKey]: false },
     done: false, timer: null,
+    arena: { id: arenaDef.id, name: arenaDef.name },
   };
   duels.set(id, duel);
-  online.get(aKey).duelId = id; online.get(bKey).duelId = id;
+  const sessA = online.get(aKey), sessB = online.get(bKey);
+  sessA.duelId = id; sessB.duelId = id;
+  sessA.area = 'arena'; sessA.x = 300; sessA.y = 225;
+  sessB.area = 'arena'; sessB.x = 500; sessB.y = 225;
   for (const k of [aKey, bKey]) {
     const p = online.get(k);
-    send(p.ws, { type: 'duel_start', duelId: id, stake, pot: duel.pot, escrowItems, you: db.users[k].profile.username, opponent: db.users[k === aKey ? bKey : aKey].profile.username, profile: publicProfile(db.users[k].profile) });
+    send(p.ws, { type: 'area', area: 'arena' });
+    send(p.ws, { type: 'duel_start', duelId: id, stake, pot: duel.pot, escrowItems, arena: duel.arena, you: db.users[k].profile.username, opponent: db.users[k === aKey ? bKey : aKey].profile.username, profile: publicProfile(db.users[k].profile) });
   }
+  broadcast({ type: 'chat', from: 'Duel Master', text: `${a.username} vs ${b.username} — now fighting in the ${arenaDef.name}!` });
   broadcastState();
   duel.timer = setInterval(() => {
     // Both attacks due this tick resolve, then deaths are checked (OSRS tick rule).
@@ -605,8 +730,11 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = []) {
     duel.specialQueued[aKey] = false; duel.specialQueued[bKey] = false;
     if (aSpecial) a.specialEnergy = Math.max(0, a.specialEnergy - SPECIAL_COST);
     if (bSpecial) b.specialEnergy = Math.max(0, b.specialEnergy - SPECIAL_COST);
-    const dmgToB = rollHit(a, b, aSpecial);
-    const dmgToA = rollHit(b, a, bSpecial);
+    // Stage 5: style boosts ride along on every player attack.
+    const aRes = rollPlayerAttack(a, b, aSpecial);
+    const bRes = rollPlayerAttack(b, a, bSpecial);
+    const dmgToB = aRes.dmg;
+    const dmgToA = bRes.dmg;
     duel.hp[bKey] = Math.max(0, duel.hp[bKey] - dmgToB);
     duel.hp[aKey] = Math.max(0, duel.hp[aKey] - dmgToA);
     // Special energy charges on landed (damaging) hits.
@@ -614,11 +742,16 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = []) {
     if (dmgToA > 0) b.specialEnergy = Math.min(100, b.specialEnergy + SPECIAL_CHARGE_PER_HIT);
     for (const k of [aKey, bKey]) {
       const p = online.get(k);
+      const ownNotes = k === aKey ? aRes.notes : bRes.notes;
+      const oppNotes = k === aKey ? bRes.notes : aRes.notes;
+      const noteParts = [...ownNotes];
+      if (oppNotes.length) noteParts.push(`Opponent: ${oppNotes.join(' ')}`);
       if (p) send(p.ws, {
         type: 'duel_tick', hpYou: duel.hp[k], hpOpponent: duel.hp[k === aKey ? bKey : aKey],
         youHit: k === aKey ? dmgToB : dmgToA, oppHit: k === aKey ? dmgToA : dmgToB,
         youSpecial: k === aKey ? aSpecial : bSpecial, oppSpecial: k === aKey ? bSpecial : aSpecial,
         energyYou: db.users[k].profile.specialEnergy,
+        note: noteParts.length ? noteParts.join(' ') : undefined,
       });
     }
     if (duel.hp[aKey] <= 0 && duel.hp[bKey] <= 0) endDuel(duel, Math.random() < 0.5 ? aKey : bKey, 'double KO — coin flip');
@@ -678,6 +811,7 @@ function respawnPlayer(key, note) {
   sess.area = 'plaza';
   sess.x = AREAS.plaza.spawn.x; sess.y = AREAS.plaza.spawn.y;
   send(sess.ws, { type: 'area', area: 'plaza' });
+  send(sess.ws, pilesMsg('plaza'));
   send(sess.ws, { type: 'chat', from: 'Game', text: note });
   broadcastState();
 }
@@ -706,14 +840,21 @@ function npcTick(fight) {
   if (sess.area !== npc.area || Math.hypot(sess.x - npc.x, sess.y - npc.y) > NPC_RANGE) { finishNpcFight(fight, 'range'); return; }
   const useSpec = fight.specialQueued; fight.specialQueued = false;
   if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
-  // Player swing: the exact duel roll (style + worn weapon vs no armour).
-  const youHit = rollHit(profile, NPC_DEFENDER, useSpec);
+  // Player swing: the duel roll (style + worn weapon vs no armour),
+  // plus the Stage 5 style boosts (extra hits / power hits).
+  const atkRes = rollPlayerAttack(profile, NPC_DEFENDER, useSpec);
+  const youHit = atkRes.dmg;
+  const tickNotes = [...atkRes.notes];
   // Goblin swing: Protect from Melee FULLY blocks it (Derek's OSRS spec);
-  // otherwise the duel rules apply — Defensive style block chance, then
-  // the goblin's accuracy, then the player's worn armour reduction.
+  // otherwise the duel rules apply — the style's block chance (Stage 5:
+  // Defensive 25% / Controlled 12%), then the goblin's accuracy, then
+  // the player's worn armour reduction.
   let npcHit = 0;
   if (profile.activePrayer === npc.attackType) npcHit = 0;
-  else if (STYLES[profile.style] && STYLES[profile.style].block && Math.random() < STYLES[profile.style].block) npcHit = 0;
+  else if (STYLES[profile.style] && STYLES[profile.style].block && Math.random() < STYLES[profile.style].block) {
+    npcHit = 0;
+    tickNotes.push(`Blocked by your ${cap(profile.style)} style!`);
+  }
   else if (Math.random() <= npc.acc) {
     const raw = 1 + Math.floor(Math.random() * npc.maxHit);
     npcHit = Math.floor(raw * (1 - armourReduction(profile)));
@@ -729,6 +870,7 @@ function npcTick(fight) {
     hpYou: Math.max(0, fight.hpYou), maxHpYou: fight.maxHpYou,
     hpNpc: Math.max(0, npc.hp), maxHpNpc: npc.maxHp,
     youHit, npcHit, youSpecial: useSpec, energyYou: profile.specialEnergy,
+    note: tickNotes.length ? tickNotes.join(' ') : undefined,
   });
   broadcastNpcState();
   if (npc.hp <= 0) {
@@ -760,6 +902,247 @@ setInterval(() => {
   }
   if (any) broadcastNpcState();
 }, 1000);
+
+// ---------- Barrows (Stage 5) ----------
+// Six brothers in six mounds across the north of the 'barrows' field.
+// DESIGN CHOICE: crypt fights are instanced per player (like Fight
+// Caves runs), NOT shared world NPCs like the goblins — a brother
+// exists only inside his killer's fight. The fight itself is a
+// dedicated engine modelled on the goblin one (server auto-combat on
+// the 0.6s tick, fight HP pool = Hitpoints level, flee / walk-away
+// breaks it off) and it speaks the same npc_fight message shapes with
+// kind 'barrows', so the client reuses one fight UI. It cannot reuse
+// npcTick itself: brothers need per-brother mechanics (below) and the
+// goblin kill path is wired to goblin drops/respawns.
+//
+// Run state is SAVED on the profile (profile.barrows): the brothers
+// killed this round and which crypt is the tunnel entrance. Leaving
+// mid-run — walking out, logging out, even DYING — keeps the kills
+// until the round is finished at the chest (Derek's rule). One crypt
+// per run is the tunnel: entering it descends to 'barrows_tunnels'
+// instead of starting a crypt fight, and its brother waits by the
+// chest if he has not been killed yet. The puzzle door and the chest
+// live in the tunnels; climbing out (barrows_leave_tunnel) surfaces
+// above the tunnel mound with the run intact.
+//
+// Brother tuning — combat levels are the OSRS ones (115 / 98); HP,
+// accuracy, max hit and cadence are this port's tuning, in line with
+// the Fight Caves': ~100 HP, swings every 2 ticks (1.2s). A mid-level
+// player (HP pool 30-60) with food and the right Protect prayer wins
+// comfortably; without prayer the incoming damage is real but
+// survivable on food. Mechanics per Derek's 2026-11-13 spec, exactly:
+//   - The matching Protect prayer FULLY prevents a brother's damage
+//     (Melee for Dharok/Guthan/Torag/Verac, Magic for Ahrim, Missiles
+//     for Karil). Verac has NO prayer bypass — Derek removed it.
+//   - Dharok's max hit scales with his missing health: 8 at full HP
+//     up to 20 (2.5x) at near-death, with rage warnings in the tick
+//     note as he crosses 75% / 50% / 25% HP.
+//   - Guthan heals himself for the damage of a connecting hit, 25%
+//     of the time (the green swirl — here: the heal + a note).
+//   - Torag swings two hammers: two independent hit rolls per swing.
+//   - Prayer drain in crypt fights is the ordinary active-prayer
+//     drain only — no extra Barrows drain (parity with goblin fights).
+const BARROWS_BROTHERS = {
+  dharok: { id: 'dharok', name: 'Dharok the Wretched', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 8, acc: 0.60, attackEvery: 2, mound: { x: 150, y: 110 } },
+  guthan: { id: 'guthan', name: 'Guthan the Infested', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 9, acc: 0.60, attackEvery: 2, mound: { x: 330, y: 80 } },
+  torag:  { id: 'torag', name: 'Torag the Corrupted', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 7, acc: 0.60, attackEvery: 2, mound: { x: 510, y: 80 } },
+  verac:  { id: 'verac', name: 'Verac the Defiled', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 10, acc: 0.62, attackEvery: 2, mound: { x: 660, y: 110 } },
+  ahrim:  { id: 'ahrim', name: 'Ahrim the Blighted', combatLevel: 98, attackType: 'magic', maxHp: 90, maxHit: 11, acc: 0.60, attackEvery: 2, mound: { x: 240, y: 220 } },
+  karil:  { id: 'karil', name: 'Karil the Tainted', combatLevel: 98, attackType: 'missiles', maxHp: 90, maxHit: 11, acc: 0.62, attackEvery: 2, mound: { x: 560, y: 220 } },
+};
+const BARROWS_CHEST = { x: 400, y: 225 }; // centre of the tunnels = the tunnels spawn
+const BARROWS_PUZZLE_SYMBOLS = ['circle', 'square', 'triangle', 'diamond'];
+const barrowsFights = new Map(); // id -> fight (instanced, one per player)
+
+function barrowsStateMsg(sess) {
+  ensureV2(sess.profile);
+  const b = sess.profile.barrows;
+  return { type: 'barrows_state', kills: [...b.kills], tunnel: b.tunnel, inTunnels: sess.area === 'barrows_tunnels' };
+}
+function sendBarrowsState(key) {
+  const sess = online.get(key);
+  if (sess) send(sess.ws, barrowsStateMsg(sess));
+}
+// A run starts at the first crypt entry of a round: if no tunnel crypt
+// has been chosen yet, one of the six is randomised now.
+function ensureBarrowsRun(key) {
+  const u = db.users[key];
+  if (!u) return;
+  ensureV2(u.profile);
+  if (!u.profile.barrows.tunnel) {
+    const ids = Object.keys(BARROWS_BROTHERS);
+    u.profile.barrows.tunnel = ids[Math.floor(Math.random() * ids.length)];
+    save(key);
+  }
+}
+function startBarrowsFight(key, def, area, anchorX, anchorY) {
+  const sess = online.get(key);
+  const profile = sess.profile;
+  const id = crypto.randomBytes(6).toString('hex');
+  // Fight HP pool = the player's Hitpoints level (same as NPC fights).
+  const maxHpYou = Math.max(1, levelForXp(profile.xp.hitpoints));
+  const fight = {
+    id, playerKey: key, brother: def.id, name: def.name, combatLevel: def.combatLevel,
+    attackType: def.attackType, area, anchorX, anchorY,
+    hpYou: maxHpYou, maxHpYou, hpNpc: def.maxHp, maxHpNpc: def.maxHp,
+    specialQueued: false, done: false, timer: null, tickCount: 0, rageFlags: {},
+  };
+  barrowsFights.set(id, fight);
+  sess.barrowsFightId = id;
+  send(sess.ws, {
+    type: 'npc_fight', phase: 'start', npcId: def.id, kind: 'barrows', name: def.name, combatLevel: def.combatLevel,
+    hpYou: fight.hpYou, maxHpYou, hpNpc: fight.hpNpc, maxHpNpc: fight.maxHpNpc, energyYou: profile.specialEnergy,
+  });
+  fight.timer = setInterval(() => barrowsTick(fight), TICK_MS);
+}
+function finishBarrowsFight(fight, reason) {
+  if (fight.done) return;
+  fight.done = true;
+  clearInterval(fight.timer);
+  barrowsFights.delete(fight.id);
+  const sess = online.get(fight.playerKey);
+  if (reason === 'kill') {
+    // The kill is banked on the SAVED run state at once — it survives
+    // walking out, logging out and dying later in the round.
+    const u = db.users[fight.playerKey];
+    if (u) {
+      ensureV2(u.profile);
+      if (!u.profile.barrows.kills.includes(fight.brother)) u.profile.barrows.kills.push(fight.brother);
+      save(fight.playerKey);
+    }
+    if (sess) sendBarrowsState(fight.playerKey);
+  }
+  if (sess) {
+    if (sess.barrowsFightId === fight.id) sess.barrowsFightId = null;
+    send(sess.ws, { type: 'npc_fight', phase: 'end', npcId: fight.brother, kind: 'barrows', reason, drops: null, profile: publicProfile(sess.profile) });
+  }
+}
+function barrowsTick(fight) {
+  const sess = online.get(fight.playerKey);
+  const def = BARROWS_BROTHERS[fight.brother];
+  if (!sess || !def) { finishBarrowsFight(fight, 'gone'); return; }
+  const profile = sess.profile;
+  // Walking too far from the crypt (or leaving the area) breaks it off.
+  if (sess.area !== fight.area || Math.hypot(sess.x - fight.anchorX, sess.y - fight.anchorY) > NPC_RANGE) { finishBarrowsFight(fight, 'range'); return; }
+  fight.tickCount += 1;
+  const notes = [];
+
+  // Player swing (every tick): the shared player attack — style boosts
+  // included — with combat XP on the total damage, like goblin fights.
+  const useSpec = fight.specialQueued; fight.specialQueued = false;
+  if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
+  const atkRes = rollPlayerAttack(profile, NPC_DEFENDER, useSpec);
+  const youHit = atkRes.dmg;
+  notes.push(...atkRes.notes);
+  fight.hpNpc -= youHit;
+  if (youHit > 0) {
+    profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
+    addXp(fight.playerKey, combatXpGains(profile.style, youHit));
+  }
+  // Dharok's rage: warn once at each HP threshold he falls through.
+  if (def.id === 'dharok' && fight.hpNpc > 0) {
+    const frac = fight.hpNpc / fight.maxHpNpc;
+    for (const t of [0.75, 0.5, 0.25]) {
+      if (frac <= t && !fight.rageFlags[t]) {
+        fight.rageFlags[t] = true;
+        notes.push(`⚠️ Dharok the Wretched is enraged (${Math.round(t * 100)}% health) — he hits harder as his health falls!`);
+      }
+    }
+  }
+
+  // Brother swing, on his own cadence (every `attackEvery` ticks). He
+  // swings even on the tick the player kills him (the goblin rule:
+  // both sides resolve, then deaths are checked).
+  let npcHit = 0;
+  if (fight.tickCount % def.attackEvery === 0) {
+    if (profile.activePrayer === def.attackType) {
+      npcHit = 0; // the matching Protect prayer FULLY prevents it — Verac included, no bypass
+    } else {
+      const swings = def.id === 'torag' ? 2 : 1; // Torag's two hammers: two independent rolls
+      let styleBlocked = false;
+      for (let sIdx = 0; sIdx < swings; sIdx++) {
+        if (STYLES[profile.style] && STYLES[profile.style].block && Math.random() < STYLES[profile.style].block) { styleBlocked = true; continue; }
+        if (Math.random() > def.acc) continue;
+        let maxHit = def.maxHit;
+        // Dharok: +150% of base spread over his missing health (8 -> 20).
+        if (def.id === 'dharok') maxHit = Math.round(def.maxHit * (1 + 1.5 * (1 - Math.max(0, fight.hpNpc) / fight.maxHpNpc)));
+        const raw = 1 + Math.floor(Math.random() * maxHit);
+        npcHit += Math.floor(raw * (1 - armourReduction(profile)));
+      }
+      if (styleBlocked && npcHit === 0 && swings > 0) notes.push(`Blocked by your ${cap(profile.style)} style!`);
+      // Guthan's swirl: a connecting hit (damage got through) has a
+      // 25% chance to heal him for what he dealt — never from the dead.
+      if (def.id === 'guthan' && npcHit > 0 && fight.hpNpc > 0 && Math.random() < 0.25) {
+        fight.hpNpc = Math.min(fight.maxHpNpc, fight.hpNpc + npcHit);
+        notes.push(`Guthan's warspear glows green — he heals for ${npcHit}!`);
+      }
+    }
+  }
+  fight.hpYou -= npcHit;
+
+  send(sess.ws, {
+    type: 'npc_fight', phase: 'tick', npcId: fight.brother, kind: 'barrows',
+    hpYou: Math.max(0, fight.hpYou), maxHpYou: fight.maxHpYou,
+    hpNpc: Math.max(0, fight.hpNpc), maxHpNpc: fight.maxHpNpc,
+    youHit, npcHit, youSpecial: useSpec, energyYou: profile.specialEnergy,
+    note: notes.length ? notes.join(' ') : undefined,
+  });
+
+  if (fight.hpNpc <= 0) {
+    // Kill banked (see finishBarrowsFight). If his last swing dropped
+    // the player too, the kill still counts and the player still
+    // wakes in the plaza (the both-resolve tick rule).
+    const playerDead = fight.hpYou <= 0;
+    finishBarrowsFight(fight, 'kill');
+    if (playerDead) respawnPlayer(fight.playerKey, `${def.name} took you down with him — you wake up in the plaza. Your Barrows kills are kept.`);
+    return;
+  }
+  if (fight.hpYou <= 0) {
+    finishBarrowsFight(fight, 'death');
+    respawnPlayer(fight.playerKey, `${def.name} got you! You wake up in the plaza at full health. Your Barrows kills are kept — nothing else lost.`);
+  }
+}
+// The tunnels puzzle door: a 3-symbol sequence drawn from 4 symbols.
+// The server sends the sequence (the client shows it as the door's
+// combination); the player answers it back. A wrong answer earns an
+// error and a fresh puzzle.
+function newBarrowsPuzzle(sess) {
+  const seq = [];
+  for (let i = 0; i < 3; i++) seq.push(BARROWS_PUZZLE_SYMBOLS[Math.floor(Math.random() * BARROWS_PUZZLE_SYMBOLS.length)]);
+  sess.barrowsPuzzle = seq;
+  return { type: 'barrows_puzzle', sequence: seq, options: [...BARROWS_PUZZLE_SYMBOLS] };
+}
+// The reward chest: OSRS-flavoured loot scaled by brothers killed
+// (6 = the full round, the best roll). Gold 300-900 scaled by kills/6;
+// two item rolls from the common table (existing items); and a rare
+// roll — 8% at 6 kills, proportionally less with fewer — for one of
+// the six Barrows weapons.
+const BARROWS_LOOT_ITEMS = [
+  { item: 'runes', min: 10, max: 30 },
+  { item: 'herbs', min: 2, max: 5 },
+  { item: 'gems', min: 1, max: 2 },
+  { item: 'bars', min: 1, max: 3 },
+  { item: 'coal', min: 5, max: 15 },
+];
+const BARROWS_WEAPONS = ['dharoks_greataxe', 'guthans_warspear', 'torags_hammers', 'veracs_flail', 'ahrims_staff', 'karils_crossbow'];
+function rollBarrowsLoot(profile, killCount) {
+  const gold = Math.round((300 + Math.floor(Math.random() * 601)) * (killCount / 6));
+  profile.gold += gold;
+  const items = [];
+  const give = (item, qty) => {
+    const leftover = addStacks(profile.backpack, item, qty, BACKPACK_MAX_STACKS);
+    if (leftover > 0) addStacks(profile.bank, item, leftover); // full pack: bank it, never lose loot
+    items.push({ item, qty });
+  };
+  for (let roll = 0; roll < 2; roll++) {
+    const row = BARROWS_LOOT_ITEMS[Math.floor(Math.random() * BARROWS_LOOT_ITEMS.length)];
+    give(row.item, row.min + Math.floor(Math.random() * (row.max - row.min + 1)));
+  }
+  if (Math.random() < 0.08 * (killCount / 6)) {
+    give(BARROWS_WEAPONS[Math.floor(Math.random() * BARROWS_WEAPONS.length)], 1);
+  }
+  return { gold, items };
+}
 
 // ---------- Fight Caves (Stage 4): Derek's 63-wave OSRS table ----------
 // Instanced per player: every runner gets their own monster roster
@@ -954,7 +1337,10 @@ function fcTick(run) {
     if (Math.hypot(sess.x - target.x, sess.y - target.y) > FC_RANGE) {
       note = `Too far away from the ${target.name} — walk closer.`;
     } else {
-      youHit = rollHit(profile, NPC_DEFENDER, useSpec);
+      // Stage 5: style boosts ride along on the player's swing.
+      const atkRes = rollPlayerAttack(profile, NPC_DEFENDER, useSpec);
+      youHit = atkRes.dmg;
+      if (atkRes.notes.length) note = atkRes.notes.join(' ');
       target.hp -= youHit;
       if (youHit > 0) {
         profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
@@ -970,6 +1356,7 @@ function fcTick(run) {
   if (run.hpYou <= 0) { endFcRun(run, 'death'); return; }
 
   // 3) The surviving monsters act on their own cadences.
+  let anyStyleBlock = false;
   for (const mon of run.monsters.values()) {
     if (!mon.alive || run.done) continue;
     mon.cooldown -= 1;
@@ -999,6 +1386,7 @@ function fcTick(run) {
     // Melee monsters are stationary: they can only reach a nearby player.
     if (mon.attackType === 'melee' && Math.hypot(sess.x - mon.x, sess.y - mon.y) > FC_RANGE) continue;
     const styleBlocked = !!(STYLES[profile.style] && STYLES[profile.style].block && Math.random() < STYLES[profile.style].block);
+    if (styleBlocked) anyStyleBlock = true;
     const prayerBlocked = profile.activePrayer === mon.attackType;
     let dmg = 0;
     if (!styleBlocked && Math.random() <= mon.acc) {
@@ -1015,6 +1403,11 @@ function fcTick(run) {
   }
 
   if (run.hpYou <= 0) { endFcRun(run, 'death'); return; }
+  // Stage 5: surface a style block in the tick note (once per tick).
+  if (anyStyleBlock) {
+    const blockNote = `Blocked by your ${cap(profile.style)} style!`;
+    note = note ? `${note} ${blockNote}` : blockNote;
+  }
 
   // 4) Wave clear: everything (splits included) is dead — a breather,
   // then the next wave spawns.
@@ -1174,6 +1567,32 @@ setInterval(() => {
   for (const a of touched) broadcastFires(a);
 }, 5000);
 
+// ---------- Drop piles (Stage 5) ----------
+// Backpack items dropped on the ground: per-area, session-only world
+// state (like fires). A pile is visible to everyone in its area, anyone
+// in range can pick it up, and it despawns after 3 minutes. Gold can
+// never be a pile — it is a profile number, not an item.
+const piles = new Map(); // id -> { id, item, qty, x, y, area, owner, bornAt }
+const PILE_DESPAWN_MS = 3 * 60 * 1000;
+function pilesMsg(area) {
+  return {
+    type: 'piles', area,
+    piles: [...piles.values()].filter((p) => p.area === area)
+      .map((p) => ({ id: p.id, item: p.item, qty: p.qty, x: Math.round(p.x), y: Math.round(p.y), owner: p.owner })),
+  };
+}
+function broadcastPiles(area) {
+  const msg = pilesMsg(area);
+  for (const p of online.values()) if (p.area === area) send(p.ws, msg);
+}
+// Pile sweep: expired piles vanish and their area hears about it.
+setInterval(() => {
+  const now = Date.now();
+  const touched = new Set();
+  for (const [id, p] of piles) if (now - p.bornAt >= PILE_DESPAWN_MS) { piles.delete(id); touched.add(p.area); }
+  for (const a of touched) broadcastPiles(a);
+}, 5000);
+
 // Cooking recipes: raw item -> cooked item + Cooking XP on success.
 // Burn chance (%) = clamp(55 - cookingLevel * 1.2, 8, 55): 53.8% at
 // level 1, falling as Cooking rises, never below 8%.
@@ -1265,8 +1684,9 @@ wss.on('connection', (ws, req) => {
   const profile = db.users[key].profile;
   ensureV2(profile);
   // Everyone logs into the plaza (area is session-only, never saved).
-  online.set(key, { ws, profile, x: 100 + Math.random() * 500, y: 100 + Math.random() * 250, area: 'plaza', duelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0 });
+  online.set(key, { ws, profile, x: 100 + Math.random() * 500, y: 100 + Math.random() * 250, area: 'plaza', duelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsPuzzleSolved: false });
   send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot('plaza'), area: 'plaza' });
+  send(ws, pilesMsg('plaza')); // Stage 5: any drop piles waiting in the plaza
   send(ws, { type: 'catalog', items: catalogList(), shops: SHOPS });
   send(ws, { type: 'exchange_prices', goods: goodsList() });
   broadcast({ type: 'chat', from: 'Game', text: `${profile.username} entered the plaza.` }, key);
@@ -1296,6 +1716,8 @@ wss.on('connection', (ws, req) => {
       if (!AREAS[to]) return send(ws, { type: 'error', message: 'Unknown destination.' });
       if (me.duelId) return send(ws, { type: 'error', message: 'You cannot travel during a duel.' });
       if (me.npcFightId) { const f = npcFights.get(me.npcFightId); if (f) finishNpcFight(f, 'travel'); }
+      // Stage 5: travelling abandons a Barrows crypt fight (kills kept).
+      if (me.barrowsFightId) { const f = barrowsFights.get(me.barrowsFightId); if (f) finishBarrowsFight(f, 'travel'); }
       // Travelling out of the caves abandons a Fight Caves run (records kept).
       if (me.fcRunId) { const r = fcRuns.get(me.fcRunId); if (r) endFcRun(r, 'left'); }
       me.area = to;
@@ -1306,6 +1728,10 @@ wss.on('connection', (ws, req) => {
       // (empty lists for areas that have none).
       send(ws, nodesMsg(to));
       send(ws, firesMsg(to));
+      // Stage 5: every area entry also brings its drop piles, and the
+      // Barrows areas bring the saved run state.
+      send(ws, pilesMsg(to));
+      if (to === 'barrows' || to === 'barrows_tunnels') send(ws, barrowsStateMsg(me));
       // Stage 3: an unfinished smithing piece (session-only) is still
       // on the anvil when you come back to the mine — remind the client.
       if (to === 'mine' && me.smithing) {
@@ -1322,6 +1748,7 @@ wss.on('connection', (ws, req) => {
       if (me.area !== npc.area) return send(ws, { type: 'error', message: 'That creature is not here.' });
       if (me.duelId) return send(ws, { type: 'error', message: 'You are in a duel.' });
       if (me.npcFightId) return send(ws, { type: 'error', message: 'You are already fighting something.' });
+      if (me.barrowsFightId) return send(ws, { type: 'error', message: 'You are already fighting a Barrows brother.' });
       if (!npc.alive) return send(ws, { type: 'error', message: 'It is already dead.' });
       if (npc.fightId) return send(ws, { type: 'error', message: 'It is already fighting someone else.' });
       if (Math.hypot(me.x - npc.x, me.y - npc.y) > NPC_RANGE) return send(ws, { type: 'error', message: 'Too far away — walk closer.' });
@@ -1330,9 +1757,11 @@ wss.on('connection', (ws, req) => {
     }
     if (m.type === 'flee') {
       const f = me.npcFightId ? npcFights.get(me.npcFightId) : null;
-      if (!f) return send(ws, { type: 'error', message: 'You are not fighting anything.' });
-      finishNpcFight(f, 'fled'); // the goblin keeps its remaining HP
-      return;
+      if (f) { finishNpcFight(f, 'fled'); return; } // the goblin keeps its remaining HP
+      // Stage 5: fleeing also breaks off a Barrows crypt fight.
+      const bf = me.barrowsFightId ? barrowsFights.get(me.barrowsFightId) : null;
+      if (bf) { finishBarrowsFight(bf, 'fled'); return; }
+      return send(ws, { type: 'error', message: 'You are not fighting anything.' });
     }
 
     // ----- Fight Caves (Stage 4): start / target / leave a run -----
@@ -1340,6 +1769,7 @@ wss.on('connection', (ws, req) => {
       if (me.area !== 'fightcaves') return send(ws, { type: 'error', message: 'You need to be in the Fight Caves to start a run.' });
       if (me.duelId) return send(ws, { type: 'error', message: 'You are in a duel.' });
       if (me.npcFightId) return send(ws, { type: 'error', message: 'You are already fighting something.' });
+      if (me.barrowsFightId) return send(ws, { type: 'error', message: 'You are already fighting a Barrows brother.' });
       if (me.fcRunId) return send(ws, { type: 'error', message: 'You are already in a Fight Caves run — leave it first.' });
       startFcRun(key);
       return;
@@ -1359,6 +1789,136 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
+    // ----- Barrows (Stage 5): crypts, tunnels, puzzle door, chest -----
+    if (m.type === 'barrows_enter') {
+      const def = BARROWS_BROTHERS[String(m.brother || '')];
+      if (!def) return send(ws, { type: 'error', message: 'No such barrow.' });
+      if (me.area !== 'barrows') return send(ws, { type: 'error', message: 'You need to be at the Barrows to enter a crypt.' });
+      if (me.duelId) return send(ws, { type: 'error', message: 'You are in a duel.' });
+      if (me.npcFightId) return send(ws, { type: 'error', message: 'You are already fighting something.' });
+      if (me.fcRunId) return send(ws, { type: 'error', message: 'You are in a Fight Caves run.' });
+      if (me.barrowsFightId) return send(ws, { type: 'error', message: 'You are already fighting a Barrows brother.' });
+      if (Math.hypot(me.x - def.mound.x, me.y - def.mound.y) > NPC_RANGE) return send(ws, { type: 'error', message: `Too far away — walk closer to ${def.name}'s mound.` });
+      ensureBarrowsRun(key); // first crypt entry of a round picks the tunnel crypt
+      if (def.id === profile.barrows.tunnel) {
+        // The tunnel entrance: descending replaces the crypt fight.
+        me.area = 'barrows_tunnels';
+        me.x = AREAS.barrows_tunnels.spawn.x; me.y = AREAS.barrows_tunnels.spawn.y;
+        me.barrowsPuzzle = null; me.barrowsPuzzleSolved = false; // a fresh puzzle door below
+        send(ws, { type: 'area', area: 'barrows_tunnels' });
+        send(ws, nodesMsg('barrows_tunnels'));
+        send(ws, firesMsg('barrows_tunnels'));
+        send(ws, pilesMsg('barrows_tunnels'));
+        send(ws, barrowsStateMsg(me));
+        broadcastState();
+        return send(ws, { type: 'chat', from: 'Game', text: 'You climb down into the Barrows tunnels. The reward chest waits at the centre, behind a puzzle door.' });
+      }
+      if (profile.barrows.kills.includes(def.id)) return send(ws, { type: 'error', message: `You have already defeated ${def.name} this round.` });
+      startBarrowsFight(key, def, 'barrows', def.mound.x, def.mound.y);
+      send(ws, barrowsStateMsg(me)); // the tunnel assignment may be new
+      return;
+    }
+    if (m.type === 'barrows_puzzle') {
+      if (me.area !== 'barrows_tunnels') return send(ws, { type: 'error', message: 'The puzzle door is in the Barrows tunnels.' });
+      if (me.barrowsPuzzleSolved) return send(ws, { type: 'barrows_puzzle_result', ok: true, alreadySolved: true });
+      return send(ws, newBarrowsPuzzle(me));
+    }
+    if (m.type === 'barrows_puzzle_answer') {
+      if (me.area !== 'barrows_tunnels') return send(ws, { type: 'error', message: 'The puzzle door is in the Barrows tunnels.' });
+      if (!me.barrowsPuzzle) return send(ws, { type: 'error', message: 'Ask the door for a puzzle first (barrows_puzzle).' });
+      const answer = Array.isArray(m.answer) ? m.answer.map((s) => String(s)) : [];
+      if (JSON.stringify(answer) === JSON.stringify(me.barrowsPuzzle)) {
+        me.barrowsPuzzle = null;
+        me.barrowsPuzzleSolved = true;
+        return send(ws, { type: 'barrows_puzzle_result', ok: true });
+      }
+      send(ws, { type: 'error', message: 'Wrong combination — the door resets with a new puzzle.' });
+      return send(ws, newBarrowsPuzzle(me));
+    }
+    if (m.type === 'barrows_loot') {
+      if (me.area !== 'barrows_tunnels') return send(ws, { type: 'error', message: 'The reward chest is in the Barrows tunnels.' });
+      if (me.duelId || me.npcFightId || me.fcRunId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
+      if (me.barrowsFightId) return send(ws, { type: 'error', message: 'Finish the fight first!' });
+      if (Math.hypot(me.x - BARROWS_CHEST.x, me.y - BARROWS_CHEST.y) > NPC_RANGE) return send(ws, { type: 'error', message: 'Too far away — walk to the chest at the centre of the tunnels.' });
+      if (!me.barrowsPuzzleSolved) return send(ws, { type: 'error', message: 'The chest is locked behind the puzzle door — solve the puzzle first.' });
+      ensureV2(profile);
+      const b = profile.barrows;
+      // The tunnel brother guards his own chest: if he has not been
+      // killed yet, approaching the loot wakes him — kill him first.
+      if (b.tunnel && !b.kills.includes(b.tunnel)) {
+        const def = BARROWS_BROTHERS[b.tunnel];
+        startBarrowsFight(key, def, 'barrows_tunnels', BARROWS_CHEST.x, BARROWS_CHEST.y);
+        return send(ws, { type: 'chat', from: 'Game', text: `${def.name} bursts from the shadows by the chest — he guards the loot himself!` });
+      }
+      if (b.kills.length < 5) return send(ws, { type: 'error', message: `The chest stays shut — defeat more brothers first (${b.kills.length}/6).` });
+      const killCount = b.kills.length;
+      const loot = rollBarrowsLoot(profile, killCount);
+      // The round is finished: the run state resets (the next round
+      // re-randomises its tunnel crypt) and the player climbs back
+      // out onto the field.
+      profile.barrows = { kills: [], tunnel: null, looted: false };
+      save(key);
+      me.barrowsPuzzle = null; me.barrowsPuzzleSolved = false;
+      me.area = 'barrows';
+      me.x = AREAS.barrows.spawn.x; me.y = AREAS.barrows.spawn.y;
+      send(ws, { type: 'barrows_loot', gold: loot.gold, items: loot.items, kills: killCount, profile: publicProfile(profile) });
+      send(ws, { type: 'area', area: 'barrows' });
+      send(ws, nodesMsg('barrows'));
+      send(ws, firesMsg('barrows'));
+      send(ws, pilesMsg('barrows'));
+      send(ws, barrowsStateMsg(me));
+      broadcastState();
+      return;
+    }
+    if (m.type === 'barrows_leave_tunnel') {
+      if (me.area !== 'barrows_tunnels') return send(ws, { type: 'error', message: 'You are not in the Barrows tunnels.' });
+      if (me.barrowsFightId) { const f = barrowsFights.get(me.barrowsFightId); if (f) finishBarrowsFight(f, 'fled'); }
+      ensureV2(profile);
+      // Climb out above the TUNNEL mound — still in the Barrows
+      // field, and the run (kills, tunnel) is kept (Derek's rule).
+      const def = profile.barrows.tunnel ? BARROWS_BROTHERS[profile.barrows.tunnel] : null;
+      me.area = 'barrows';
+      me.x = def ? def.mound.x : AREAS.barrows.spawn.x;
+      me.y = def ? def.mound.y : AREAS.barrows.spawn.y;
+      me.barrowsPuzzle = null; me.barrowsPuzzleSolved = false; // the door resets behind you
+      send(ws, { type: 'area', area: 'barrows' });
+      send(ws, nodesMsg('barrows'));
+      send(ws, firesMsg('barrows'));
+      send(ws, pilesMsg('barrows'));
+      send(ws, barrowsStateMsg(me));
+      broadcastState();
+      return;
+    }
+
+    // ----- Drop piles (Stage 5): drop / pick up backpack items -----
+    if (m.type === 'drop') {
+      const item = String(m.item || '');
+      const def = ITEMS[item];
+      const qty = Math.max(1, Math.min(9999, Math.floor(+m.qty || 1)));
+      if (!def) return send(ws, { type: 'error', message: 'Unknown item. (Gold is not an item — it cannot be dropped.)' });
+      if (me.duelId) return send(ws, { type: 'error', message: 'You cannot drop items during a duel.' });
+      if (me.fcRunId) return send(ws, { type: 'error', message: 'You cannot drop items during a Fight Caves run.' });
+      if (!removeStacks(profile.backpack, item, qty)) return send(ws, { type: 'error', message: `You don't have ${qty} x ${def.name}.` });
+      const id = crypto.randomBytes(6).toString('hex');
+      piles.set(id, { id, item, qty, x: me.x, y: me.y, area: me.area, owner: profile.username, bornAt: Date.now() });
+      save(key);
+      broadcastPiles(me.area);
+      return sendProfile(key);
+    }
+    if (m.type === 'pickup') {
+      const pile = piles.get(String(m.pileId || ''));
+      if (!pile) return send(ws, { type: 'error', message: 'That pile is gone.' });
+      if (me.area !== pile.area) return send(ws, { type: 'error', message: 'That pile is not here.' });
+      if (Math.hypot(me.x - pile.x, me.y - pile.y) > NPC_RANGE) return send(ws, { type: 'error', message: 'Too far away — walk closer to the pile.' });
+      const leftover = addStacks(profile.backpack, pile.item, pile.qty, BACKPACK_MAX_STACKS);
+      if (leftover === pile.qty) return send(ws, { type: 'error', message: 'Backpack full (28 stacks).' });
+      if (leftover > 0) pile.qty = leftover; // partial pickup: the rest stays on the ground
+      else piles.delete(pile.id);
+      save(key);
+      broadcastPiles(me.area);
+      return sendProfile(key);
+    }
+
     // ----- Gathering (Stage 2): work a resource node / training station -----
     if (m.type === 'gather') {
       const node = NODES.get(String(m.nodeId || ''));
@@ -1366,6 +1926,7 @@ wss.on('connection', (ws, req) => {
       if (me.area !== node.area) return send(ws, { type: 'error', message: 'That spot is not here.' });
       if (me.duelId) return send(ws, { type: 'error', message: 'You are in a duel.' });
       if (me.npcFightId) return send(ws, { type: 'error', message: 'You are fighting something.' });
+      if (me.barrowsFightId) return send(ws, { type: 'error', message: 'You are fighting a Barrows brother.' });
       if (Math.hypot(me.x - node.x, me.y - node.y) > GATHER_RANGE) return send(ws, { type: 'error', message: 'Too far away — walk closer.' });
       if (node.depletedUntil > Date.now()) return send(ws, { type: 'error', message: `${node.name} is used up — it will grow back shortly.` });
       const level = levelForXp((profile.xp && profile.xp[node.skill]) || 0);
@@ -1645,6 +2206,22 @@ wss.on('connection', (ws, req) => {
         // NPC fight (Stage 1): food / restore potions heal that pool too.
         const nf = me.npcFightId ? npcFights.get(me.npcFightId) : null;
         if (!nf) {
+          // Barrows fight (Stage 5): food / restore potions heal it too.
+          const bf = me.barrowsFightId ? barrowsFights.get(me.barrowsFightId) : null;
+          if (bf) {
+            if (bf.hpYou >= bf.maxHpYou) return send(ws, { type: 'error', message: 'Already at full health.' });
+            removeStacks(profile.backpack, item, 1);
+            bf.hpYou = Math.min(bf.maxHpYou, bf.hpYou + def.heal);
+            save(key);
+            send(ws, {
+              type: 'npc_fight', phase: 'tick', npcId: bf.brother, kind: 'barrows',
+              hpYou: bf.hpYou, maxHpYou: bf.maxHpYou,
+              hpNpc: Math.max(0, bf.hpNpc), maxHpNpc: bf.maxHpNpc,
+              youHit: 0, npcHit: 0, youSpecial: false, energyYou: profile.specialEnergy,
+              note: `${profile.username} used ${def.name} (+${def.heal} HP)`,
+            });
+            return sendProfile(key);
+          }
           // Fight Caves (Stage 4): food / restore potions heal the run pool.
           const run = me.fcRunId ? fcRuns.get(me.fcRunId) : null;
           if (!run) return send(ws, { type: 'error', message: 'Healing only works during a duel.' });
@@ -1757,7 +2334,8 @@ wss.on('connection', (ws, req) => {
       const duel = me.duelId ? duels.get(me.duelId) : null;
       const nf = !duel && me.npcFightId ? npcFights.get(me.npcFightId) : null;
       const fc = !duel && !nf && me.fcRunId ? fcRuns.get(me.fcRunId) : null; // Stage 4: specials work in the caves too
-      if (!duel && !nf && !fc) return send(ws, { type: 'error', message: 'You are not in a duel.' });
+      const bf = !duel && !nf && !fc && me.barrowsFightId ? barrowsFights.get(me.barrowsFightId) : null; // Stage 5: and in Barrows crypts
+      if (!duel && !nf && !fc && !bf) return send(ws, { type: 'error', message: 'You are not in a duel.' });
       if (profile.specialEnergy < SPECIAL_COST) return send(ws, { type: 'error', message: `Dragon Slash needs ${SPECIAL_COST} special energy (you have ${Math.floor(profile.specialEnergy)}).` });
       if (duel) {
         if (duel.specialQueued[key]) return send(ws, { type: 'error', message: 'Special already queued for the next tick.' });
@@ -1765,6 +2343,9 @@ wss.on('connection', (ws, req) => {
       } else if (fc) {
         if (fc.specialQueued) return send(ws, { type: 'error', message: 'Special already queued for the next tick.' });
         fc.specialQueued = true;
+      } else if (bf) {
+        if (bf.specialQueued) return send(ws, { type: 'error', message: 'Special already queued for the next tick.' });
+        bf.specialQueued = true;
       } else {
         if (nf.specialQueued) return send(ws, { type: 'error', message: 'Special already queued for the next tick.' });
         nf.specialQueued = true;
@@ -1781,6 +2362,7 @@ wss.on('connection', (ws, req) => {
       if (!target || targetKey === key) return send(ws, { type: 'error', message: 'Pick another online player.' });
       if (me.duelId || target.duelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
       if (me.npcFightId || target.npcFightId) return send(ws, { type: 'error', message: 'One of you is fighting a monster.' });
+      if (me.barrowsFightId || target.barrowsFightId) return send(ws, { type: 'error', message: 'One of you is fighting a Barrows brother.' });
       if (me.fcRunId || target.fcRunId) return send(ws, { type: 'error', message: 'One of you is in the Fight Caves.' });
       if (items.length === 0 && stake < 1) return send(ws, { type: 'error', message: 'Stake at least 1g, or stake items.' });
       if (stake < 0 || stake > profile.gold || stake > target.profile.gold) return send(ws, { type: 'error', message: 'Gold stake must be up to what you both have.' });
@@ -1798,6 +2380,7 @@ wss.on('connection', (ws, req) => {
       if (!fromP) return;
       if (!m.accept) { send(fromP.ws, { type: 'chat', from: 'Game', text: `${profile.username} declined. No gold or items were taken.` }); return; }
       if (me.npcFightId || fromP.npcFightId) return send(ws, { type: 'error', message: 'One of you is fighting a monster.' });
+      if (me.barrowsFightId || fromP.barrowsFightId) return send(ws, { type: 'error', message: 'One of you is fighting a Barrows brother.' });
       if (me.fcRunId || fromP.fcRunId) return send(ws, { type: 'error', message: 'One of you is in the Fight Caves.' });
       const myItems = sanitizeItems(m.items);
       // Re-check purses AND backpacks at accept time — escrow only happens now.
@@ -1817,6 +2400,10 @@ wss.on('connection', (ws, req) => {
     if (me && me.npcFightId) {
       const f = npcFights.get(me.npcFightId);
       if (f) finishNpcFight(f, 'disconnect'); // goblin keeps its HP and is free again
+    }
+    if (me && me.barrowsFightId) {
+      const f = barrowsFights.get(me.barrowsFightId);
+      if (f) finishBarrowsFight(f, 'disconnect'); // the run's banked kills are saved state — they stay
     }
     if (me && me.fcRunId) {
       const r = fcRuns.get(me.fcRunId);
