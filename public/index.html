@@ -87,6 +87,9 @@
  #quickbar{position:fixed;left:146px;bottom:108px;z-index:30;display:flex;gap:8px}
  .qbtn{width:54px;height:54px;border-radius:50%;background:rgba(24,10,26,var(--uia));border:2px solid #8b5cf6;color:#ffe9f6;font-size:24px;cursor:pointer;position:relative}
  .qbtn .qnum{position:absolute;top:-5px;right:-5px;background:#ff4fa3;border:1px solid #ff8fd0;border-radius:50%;width:19px;height:19px;font-size:11px;font-weight:800;color:#fff;display:flex;align-items:center;justify-content:center}
+ .qbtn.actbtn{font-size:21px;line-height:1}
+ .qbtn .qlbl{position:absolute;left:0;right:0;bottom:3px;font-size:8px;font-weight:800;color:#ffb3dd;text-align:center;pointer-events:none}
+ .plabel .aname{color:#a5ff9e;font-weight:800}
  /* XP drops */
  #xpdrops{position:relative;height:0;text-align:center}
  .xpdrop{position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:13px;font-weight:800;color:#ff8fd0;text-shadow:0 1px 3px #000;animation:xprise 1.6s ease-out forwards;pointer-events:none}
@@ -214,6 +217,8 @@
 <div id="quickbar">
  <button class="qbtn" id="quick1" title="Quick set 1"><span class="qic">＋</span><span class="qnum">1</span></button>
  <button class="qbtn" id="quick2" title="Quick set 2"><span class="qic">＋</span><span class="qnum">2</span></button>
+ <button class="qbtn actbtn" id="awakenbtn" title="Awaken the nearest tree into a Tree Guardian">🌳<span class="qlbl">AWAKEN</span></button>
+ <button class="qbtn actbtn" id="jumpbtn" title="Jump — moving jumps flip in the direction you're travelling!">🤸<span class="qlbl">JUMP</span></button>
 </div>
 
 <div id="duelbar">
@@ -278,7 +283,7 @@
  <input id="pass" type="password" placeholder="Password (6+)" autocomplete="current-password">
  <div style="display:flex;gap:8px;margin-top:6px"><button class="act" id="reg">Create account</button><button class="act" id="login">Sign in</button></div>
  <div id="authmsg"></div>
- <p class="note">Stage 5: Barrows, duel arenas, drop piles — now with a full K-pop theme: concert stage, idol outfits, sparkles. Plus the Fight Caves, Emberfall Mine &amp; Smithy, Training &amp; Gathering caves, Fishing Cove, skills &amp; XP, Goblin Camp, twin sticks, rotating minimap, settings, quick sets.</p>
+ <p class="note">Stage 6: 🌳 Awaken a tree into a Tree Guardian who follows you and fights beside you — and a 🤸 Jump button: jump while moving to flip in the direction you're travelling! Stage 5: Barrows, duel arenas, drop piles — now with a full K-pop theme: concert stage, idol outfits, sparkles. Plus the Fight Caves, Emberfall Mine &amp; Smithy, Training &amp; Gathering caves, Fishing Cove, skills &amp; XP, Goblin Camp, twin sticks, rotating minimap, settings, quick sets.</p>
 </div></div>
 
 <div id="loaderror"><div><h2 style="color:#ff8fd0">Couldn't load 3D 😕</h2><p>The 3D library (Three.js) failed to load, so the plaza can't be drawn.<br>Check your connection and reload the page.</p></div></div>
@@ -374,6 +379,8 @@ window.useQuick=function(n){
 };
 $('quick1').onclick=()=>useQuick(1);
 $('quick2').onclick=()=>useQuick(2);
+$('awakenbtn').onclick=()=>{ send({type:'awaken_tree'}); };
+$('jumpbtn').onclick=()=>{ const a=me?avatars[me.username]:null; if(a) startJump(a,true); };
 
 /* ================= auth & websocket ================= */
 async function auth(path){
@@ -409,6 +416,9 @@ function onMsg(m){
    drawMinimap(); }
  if(m.type==='fires'){ firesByArea[m.area]=m.fires||[]; if(m.area===curArea) rebuildFires(); drawMinimap(); }
  if(m.type==='piles'){ pilesByArea[m.area]=m.piles||[]; if(m.area===curArea) rebuildPiles(); drawMinimap(); }
+ if(m.type==='allies'){ alliesByArea[m.area]=m.allies||[]; if(m.area===curArea) syncAllies(); drawMinimap(); }
+ if(m.type==='ally_died'){ toast(`🌳 Your ${m.name||'Tree Guardian'} has fallen…`); }
+ if(m.type==='player_jump'){ const a=avatars[m.username]; if(a&&(!me||m.username!==me.username)) startJump(a,false); }
  if(m.type==='barrows_state'){ onBarrowsState(m); }
  if(m.type==='barrows_puzzle'){ onBarrowsPuzzle(m); }
  if(m.type==='barrows_puzzle_result'){ onBarrowsPuzzleResult(m); }
@@ -1231,11 +1241,13 @@ function setArea(a){
    }
    pendingMound=null; pendingPile=null; pendingChest=null;
    puzzleSolved=false; puzzleAnswer=[]; $('puzzlemodal').classList.remove('open');
+   clearAllies(); // guardians re-sync from the new area's 'allies' message
    for(const id of Object.keys(npcAvatars)) if(npcAvatars[id].isBrother){ scene.remove(npcAvatars[id].group); npcAvatars[id].label.remove(); delete npcAvatars[id]; }
    if(a==='barrows'||a==='barrows_tunnels'){ barrowsBarHidden=false; renderBarrowsBar(); } else $('barrowsbar').classList.remove('open');
    rebuildNodes();
    rebuildFires();
    rebuildPiles();
+   syncAllies();
    if(a==='fightcaves'&&me&&!fcRun) openFcStart();
  }
  drawMinimap();
@@ -1254,25 +1266,29 @@ const IDOL_PASTELS=[
 ];
 function makeKnight(isMe,name){
  const g=new THREE.Group();
+ // Stage 6: the body rides on an inner pivot so a jump can lift it
+ // (pivot.position.y) and flip it (pivot.rotation.x/z) without moving
+ // the group's ground position, facing (rotation.y) or shadow.
+ const pivot=new THREE.Group(); g.add(pivot);
  let pal;
  if(isMe) pal={main:0xff4fa3,dark:0x8b5cf6,trim:0x22d3ee,hair:0xff2e93};
  else { let h=0; const nm=name||''; for(let i=0;i<nm.length;i++) h=(h*31+nm.charCodeAt(i))>>>0; pal=IDOL_PASTELS[h%IDOL_PASTELS.length]; }
  const main=pal.main, dark=pal.dark, trim=pal.trim;
- box(0.26,0.75,0.26,dark,-0.18,0.38,0,g); box(0.26,0.75,0.26,dark,0.18,0.38,0,g); // legs
- box(0.78,0.85,0.45,main,0,1.18,0,g); // body
- box(0.24,0.7,0.24,main,-0.52,1.2,0,g); box(0.24,0.7,0.24,main,0.52,1.2,0,g); // arms
- box(0.46,0.46,0.46,0xd9a066,0,1.85,0,g); // head
- box(0.52,0.2,0.52,pal.hair,0,2.14,0,g); // idol hair (top)
- box(0.52,0.52,0.1,pal.hair,0,1.86,0.24,g); // idol hair (back)
- const sword=new THREE.Group(); sword.position.set(0.62,1.35,0); g.add(sword);
+ box(0.26,0.75,0.26,dark,-0.18,0.38,0,pivot); box(0.26,0.75,0.26,dark,0.18,0.38,0,pivot); // legs
+ box(0.78,0.85,0.45,main,0,1.18,0,pivot); // body
+ box(0.24,0.7,0.24,main,-0.52,1.2,0,pivot); box(0.24,0.7,0.24,main,0.52,1.2,0,pivot); // arms
+ box(0.46,0.46,0.46,0xd9a066,0,1.85,0,pivot); // head
+ box(0.52,0.2,0.52,pal.hair,0,2.14,0,pivot); // idol hair (top)
+ box(0.52,0.52,0.1,pal.hair,0,1.86,0.24,pivot); // idol hair (back)
+ const sword=new THREE.Group(); sword.position.set(0.62,1.35,0); pivot.add(sword);
  box(0.07,0.85,0.14,isMe? 0x9be9ff : 0xd9dee6,0,0.35,0,sword); box(0.3,0.08,0.2,trim,0,-0.1,0,sword);
  const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.28}));
  sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
  const label=document.createElement('div'); label.className='plabel';
  label.innerHTML=`<div class="bubble"></div><span class="badge"></span> <span class="nm">${esc(name)}</span>`;
  $('labels').appendChild(label);
- return {group:g,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),
-   x:0,z:0,tx:0,tz:0,prayer:null,bubbleUntil:0,bob:Math.random()*6,isMe};
+ return {group:g,pivot,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),
+   x:0,z:0,tx:0,tz:0,rot:0,jump:null,prayer:null,bubbleUntil:0,bob:Math.random()*6,isMe};
 }
 const PRAYER_BADGE={melee:'🛡️',missiles:'🏹',magic:'🔮'};
 function syncAvatars(){
@@ -1284,6 +1300,8 @@ function syncAvatars(){
    if(!a){
      a=makeKnight(p.username===me.username,p.username);
      a.x=a.tx=sx2w(p.x); a.z=a.tz=sy2w(p.y);
+     a.group.position.set(a.x,0,a.z); // spawn exactly here — the animate easing takes over from here
+     if(a.isMe){ a.rot=localRot; a.group.rotation.y=localRot; }
      avatars[p.username]=a; scene.add(a.group);
    }
    if(p.username!==me.username){ a.tx=sx2w(p.x); a.tz=sy2w(p.y); }
@@ -1297,6 +1315,107 @@ function syncAvatars(){
 function showBubble(name,text){
  const a=avatars[name]; if(!a) return;
  a.bubbleEl.textContent=text; a.bubbleEl.style.display='block'; a.bubbleUntil=Date.now()+3000;
+}
+/* ---- Stage 6: Tree Guardians (allies) ---- */
+let alliesByArea={}; // area -> [ally] from 'allies' messages
+let allyAvatars={}; // ally id -> {group,label,nameEl,x,z,tx,tz,rot,bob,hp,maxHp}
+function makeGuardian(al){
+ const g=new THREE.Group();
+ const trunk=0x6b4a26, dark=0x54381c;
+ const leaf=al.oak?0x1e5c26:0x2e7d32, leaf2=al.oak?0x2c7a35:0x43a047;
+ const s=al.oak?1.22:1; // oak guardians stand larger
+ box(0.36*s,1.05*s,0.36*s,trunk,0,0.55*s,0,g); // trunk body
+ box(0.5*s,0.22*s,0.5*s,dark,0,0.1*s,0,g); // root flare
+ const armL=box(0.15*s,0.9*s,0.15*s,trunk,-0.42*s,1.05*s,0,g); armL.rotation.z=0.65; // branch arms
+ const armR=box(0.15*s,0.9*s,0.15*s,trunk,0.42*s,1.05*s,0,g); armR.rotation.z=-0.65;
+ const can=new THREE.Mesh(new THREE.SphereGeometry(0.66*s,10,8),new THREE.MeshLambertMaterial({color:leaf}));
+ can.position.y=1.85*s; can.scale.y=0.92; g.add(can); // leafy canopy head
+ const can2=new THREE.Mesh(new THREE.SphereGeometry(0.42*s,9,7),new THREE.MeshLambertMaterial({color:leaf2}));
+ can2.position.set(0.38*s,2.2*s,0.08); g.add(can2);
+ const eyeM=new THREE.MeshBasicMaterial({color:0xffe9a8});
+ const e1=new THREE.Mesh(new THREE.SphereGeometry(0.055*s,7,7),eyeM); e1.position.set(-0.14*s,1.35*s,0.19*s); g.add(e1);
+ const e2=e1.clone(); e2.position.x=0.14*s; g.add(e2); // glowing eyes on the trunk
+ const sh=new THREE.Mesh(new THREE.CircleGeometry(0.6*s,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.28}));
+ sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
+ const label=document.createElement('div'); label.className='plabel';
+ label.innerHTML=`<div class="aname"></div>`;
+ $('labels').appendChild(label);
+ return {group:g,label,nameEl:label.querySelector('.aname'),labelTxt:'',
+   x:0,z:0,tx:0,tz:0,rot:0,bob:Math.random()*6,hp:al.hp,maxHp:al.maxHp};
+}
+function syncAllies(){
+ if(!scene) return;
+ const seen=new Set();
+ for(const al of (alliesByArea[curArea]||[])){
+   seen.add(al.id);
+   let a=allyAvatars[al.id];
+   if(!a){
+     a=makeGuardian(al);
+     a.x=a.tx=sx2w(al.x); a.z=a.tz=sy2w(al.y);
+     a.group.position.set(a.x,0,a.z);
+     allyAvatars[al.id]=a; scene.add(a.group);
+     if(me&&al.owner===me.username){ // your own guardian just rose — leafy flourish
+       spawnTextSplat(a,'🌿','good');
+       setTimeout(()=>{ if(allyAvatars[al.id]===a) spawnTextSplat(a,'✨','good'); },140);
+     }
+   }
+   a.tx=sx2w(al.x); a.tz=sy2w(al.y);
+   a.hp=al.hp; a.maxHp=al.maxHp;
+   const txt=`🌳 ${al.name} · ${al.owner}`+(al.hp<al.maxHp?` · ${al.hp}/${al.maxHp}`:'');
+   if(a.labelTxt!==txt){ a.nameEl.textContent=txt; a.labelTxt=txt; }
+ }
+ for(const id of Object.keys(allyAvatars)){
+   if(!seen.has(id)){ scene.remove(allyAvatars[id].group); allyAvatars[id].label.remove(); delete allyAvatars[id]; }
+ }
+}
+function clearAllies(){
+ if(scene) for(const id of Object.keys(allyAvatars)){ scene.remove(allyAvatars[id].group); allyAvatars[id].label.remove(); }
+ allyAvatars={};
+}
+/* ---- Stage 6: jump + directional flips ---- */
+const JUMP_MS=550, JUMP_H=1.2;
+let myVel={x:0,z:0}; // local knight's current world-space velocity direction (set by stepMovement)
+function startJump(a,announce){
+ if(!a||a.jump||!a.pivot) return; // airborne (or not a knight): ignore
+ let vx=0, vz=0, facing=a.rot||0;
+ if(a.isMe){ vx=myVel.x; vz=myVel.z; facing=localRot; }
+ else { vx=a.tx-a.x; vz=a.tz-a.z; }
+ let axis=null, dir=1;
+ if(Math.hypot(vx,vz)>0.05){
+   // movement direction relative to facing, snapped to the nearest of 4
+   const rel=Math.atan2(Math.sin(Math.atan2(vx,vz)-facing),Math.cos(Math.atan2(vx,vz)-facing));
+   const q=Math.round(rel/(Math.PI/2));
+   if(q===0){ axis='x'; dir=1; }              // forward → front flip
+   else if(q===2||q===-2){ axis='x'; dir=-1; } // backward → backflip
+   else if(q===1){ axis='z'; dir=-1; }         // strafe left → side flip
+   else if(q===-1){ axis='z'; dir=1; }         // strafe right → side flip
+ }
+ a.jump={t0:performance.now(),axis,dir};
+ if(announce) send({type:'jump'});
+}
+function updateJump(a,now){
+ if(!a.pivot) return;
+ if(!a.jump){
+   if(a.pivot.position.y||a.pivot.rotation.x||a.pivot.rotation.z){ a.pivot.position.y=0; a.pivot.rotation.x=0; a.pivot.rotation.z=0; }
+   return;
+ }
+ const t=(now-a.jump.t0)/JUMP_MS;
+ if(t>=1){ a.jump=null; a.pivot.position.y=0; a.pivot.rotation.x=0; a.pivot.rotation.z=0; return; }
+ a.pivot.position.y=Math.sin(t*Math.PI)*JUMP_H; // smooth arc, lands back at 0
+ if(a.jump.axis){
+   const e=t*t*(3-2*t); // smoothstep: gentle start/stop, ends at exactly 2π ≡ 0
+   const ang=a.jump.dir*Math.PI*2*e;
+   if(a.jump.axis==='x') a.pivot.rotation.x=ang; else a.pivot.rotation.z=ang;
+ }
+}
+/* Smooth turning: ease a displayed rotation toward its target heading
+   along the shortest arc (used by every avatar + guardians). */
+function easeRot(a,target,dt){
+ let d=target-(a.rot||0);
+ d=Math.atan2(Math.sin(d),Math.cos(d));
+ if(Math.abs(d)<0.002){ a.rot=target; }
+ else { a.rot=(a.rot||0)+d*(1-Math.exp(-15*dt)); }
+ a.group.rotation.y=a.rot;
 }
 /* ---- NPC goblins ---- */
 function makeGoblin(n){
@@ -1656,6 +1775,12 @@ function updateLabels(now){
    a.label.style.display='block';
    a.label.style.left=s.x+'px'; a.label.style.top=s.y+'px';
  }
+ for(const a of Object.values(allyAvatars)){
+   const s=projectTo(a.group.position.x,3.0,a.group.position.z);
+   if(!s){ a.label.style.display='none'; continue; }
+   a.label.style.display='block';
+   a.label.style.left=s.x+'px'; a.label.style.top=s.y+'px';
+ }
  for(const wl of worldLabels){
    if(wl.area!==curArea){ wl.el.style.display='none'; continue; }
    const s=projectTo(wl.x,wl.y,wl.z);
@@ -1878,12 +2003,13 @@ function stepMovement(dt){
  if(keys.d||keys.arrowright) r+=1; if(keys.a||keys.arrowleft) r-=1;
  f+=-joyVec.y; r+=joyVec.x;
  if(f||r){ tapTarget=null; pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false; stopGather(); const l=Math.hypot(f,r); f/=l; r/=l;
-   vx=(-sYaw*f + cYaw*r); vz=(-cYaw*f - sYaw*r); }
+   vx=(-sYaw*f + cYaw*r); vz=(-cYaw*f - sYaw*r); myVel={x:vx,z:vz}; }
  else if(tapTarget){
    const dx=tapTarget.x-myPos.x, dy=tapTarget.y-myPos.y, d=Math.hypot(dx,dy);
-   if(d<6){ tapTarget=null; }
+   if(d<6){ tapTarget=null; myVel={x:0,z:0}; }
    else { const sp=150*dt; // server units per step
           localRot=Math.atan2(dx,dy);
+          myVel={x:(dx/d)*15,z:(dy/d)*15}; // world units/s, same speed as stick movement
           myPos.x+=(dx/d)*sp; myPos.y+=(dy/d)*sp;
           finishStep(true); return; }
  }
@@ -1893,7 +2019,7 @@ function stepMovement(dt){
    myPos.x=clamp(myPos.x+vx*sp*W2S,0,800);
    myPos.y=clamp(myPos.y+vz*sp*W2S,0,450);
    finishStep(true);
- } else finishStep(false);
+ } else { myVel={x:0,z:0}; finishStep(false); }
 }
 function finishStep(moved){
  const a=avatars[me.username]; if(!a) return;
@@ -1978,6 +2104,8 @@ function drawMinimap(){
  for(const f of (firesByArea[curArea]||[])){ g.beginPath(); g.arc(f.x,f.y,8,0,7); g.fill(); }
  g.fillStyle='#ffd9f2';
  for(const p of (pilesByArea[curArea]||[])){ g.beginPath(); g.arc(p.x,p.y,7,0,7); g.fill(); } // drop piles
+ g.fillStyle='#51ff6e';
+ for(const al of (alliesByArea[curArea]||[])){ g.beginPath(); g.arc(al.x,al.y,8,0,7); g.fill(); } // Tree Guardians
  for(const p of players){
    if(me&&p.username===me.username) continue;
    g.fillStyle='#ffffff'; g.beginPath(); g.arc(p.x,p.y,10,0,7); g.fill();
@@ -2018,19 +2146,41 @@ function animate(){
  }
  if(now-lastMapDraw>150){ lastMapDraw=now; drawMinimap(); }
  stepMovement(dt);
- // remote avatars ease toward snapshot targets; local follows myPos
+ // Avatars ease toward their targets (Stage 6 smoothing): the local
+ // knight's group glides toward the authoritative a.x/a.z instead of
+ // snapping to it, and every facing eases along the shortest arc.
  for(const [name,a] of Object.entries(avatars)){
-   if(me && name===me.username){ a.group.position.set(a.x,Math.abs(Math.sin(a.bob))*0.09,a.z); a.group.rotation.y=localRot; }
+   if(me && name===me.username){
+     const k=1-Math.exp(-18*dt); // tight: smooth but never laggy
+     const dx=a.x-a.group.position.x, dz=a.z-a.group.position.z;
+     if(Math.hypot(dx,dz)>6){ a.group.position.x=a.x; a.group.position.z=a.z; } // teleports snap, steps glide
+     else { a.group.position.x+=dx*k; a.group.position.z+=dz*k; }
+     a.group.position.y=Math.abs(Math.sin(a.bob))*0.09;
+     easeRot(a,localRot,dt);
+   }
    else {
      const k=1-Math.exp(-9*dt);
      const moving=Math.hypot(a.tx-a.x,a.tz-a.z)>0.05;
      a.x+=(a.tx-a.x)*k; a.z+=(a.tz-a.z)*k;
      if(moving) a.bob+=dt*9;
      a.group.position.set(a.x,moving?Math.abs(Math.sin(a.bob))*0.09:0,a.z);
+     // face movement direction roughly (toward target), eased
+     const dx=a.tx-a.x, dz=a.tz-a.z;
+     if(Math.hypot(dx,dz)>0.05) easeRot(a,Math.atan2(dx,dz),dt);
+     else a.group.rotation.y=a.rot||0;
    }
-   // face movement direction roughly (toward target)
-   const dx=(me&&name===me.username)?0:(a.tx-a.x), dz=(me&&name===me.username)?0:(a.tz-a.z);
-   if(Math.hypot(dx,dz)>0.05) a.group.rotation.y=Math.atan2(dx,dz);
+   updateJump(a,now);
+ }
+ // Tree Guardians trail their owners with the same easing
+ for(const a of Object.values(allyAvatars)){
+   const k=1-Math.exp(-9*dt);
+   const moving=Math.hypot(a.tx-a.x,a.tz-a.z)>0.05;
+   a.x+=(a.tx-a.x)*k; a.z+=(a.tz-a.z)*k;
+   if(moving) a.bob+=dt*7;
+   a.group.position.set(a.x,moving?Math.abs(Math.sin(a.bob))*0.07:0,a.z);
+   const dx=a.tx-a.x, dz=a.tz-a.z;
+   if(Math.hypot(dx,dz)>0.05) easeRot(a,Math.atan2(dx,dz),dt);
+   else a.group.rotation.y=a.rot||0;
  }
  // camera follows local player
  const a=me?avatars[me.username]:null;
