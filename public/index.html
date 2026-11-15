@@ -3,6 +3,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>nallystake — Online (gold-only)</title>
 <style>
+ :root{--uia:.78}
  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#17130c;color:#f3e6c8;font-family:system-ui,sans-serif}
  #scene{position:fixed;inset:0;touch-action:none}
@@ -15,7 +16,7 @@
  .splat{position:absolute;transform:translate(-50%,-50%);font-weight:900;font-size:19px;color:#ff3b30;text-shadow:0 0 4px #000,0 2px 2px #000;opacity:0}
  .splat.zero{color:#7ec3ff}.splat.spec{color:#ffd75e;font-size:23px}
  /* top HUD */
- #topbar{position:fixed;top:0;left:0;right:0;z-index:30;display:flex;gap:10px;align-items:center;padding:6px 10px;background:rgba(23,19,12,.88);border-bottom:2px solid #6b5320;font-size:13px}
+ #topbar{position:fixed;top:0;left:0;right:0;z-index:30;display:flex;gap:10px;align-items:center;padding:6px 10px;background:rgba(23,19,12,var(--uia));border-bottom:2px solid #6b5320;font-size:13px}
  #topbar b{color:#ffd75e}
  #topbar .grow{flex:1}
  /* minimap + orbs */
@@ -31,10 +32,13 @@
  .orb.sp.ready{box-shadow:0 0 12px 3px #ffd75e}
  /* right rail */
  #rail{position:fixed;right:6px;top:190px;z-index:30;display:flex;flex-direction:column;gap:6px}
- .rbtn{width:46px;height:46px;border-radius:10px;background:rgba(36,28,16,.92);border:2px solid #6b5320;color:#f3e6c8;font-size:20px;cursor:pointer}
+ .rbtn{width:46px;height:46px;border-radius:10px;background:rgba(36,28,16,var(--uia));border:2px solid #6b5320;color:#f3e6c8;font-size:20px;cursor:pointer}
  .rbtn.on{border-color:#ffd75e;background:#4a3a12}
+ #gearbtn{width:46px;height:46px;border-radius:10px;background:#8a6d1f;border:2px solid #ffd75e;color:#fff;font-size:22px;cursor:pointer;box-shadow:0 0 10px #ffd75e55;flex:none}
+ #railset{display:none;flex-direction:column;gap:6px}
+ #railset.open{display:flex}
  /* drawer */
- #drawer{position:fixed;top:40px;right:58px;z-index:40;width:min(330px,80vw);max-height:calc(100dvh - 210px);overflow-y:auto;background:rgba(30,23,13,.97);border:2px solid #6b5320;border-radius:12px;padding:10px;display:none}
+ #drawer{position:fixed;top:40px;right:58px;z-index:40;width:min(330px,80vw);max-height:calc(100dvh - 210px);overflow-y:auto;background:rgba(30,23,13,var(--uia));border:2px solid #6b5320;border-radius:12px;padding:10px;display:none}
  #drawer.open{display:block}
  #drawer h3{margin:2px 0 8px;color:#ffd75e;font-size:16px;display:flex;justify-content:space-between;align-items:center}
  #drawer h3 .x{background:none;border:0;color:#f3e6c8;font-size:18px;cursor:pointer}
@@ -66,10 +70,35 @@
  input,select{background:#0f0c07;color:#f3e6c8;border:1px solid #6b5320;border-radius:6px;padding:7px;font-size:14px}
  input[type=number]{width:76px}
  /* joystick */
- #joy{position:fixed;left:18px;bottom:86px;width:112px;height:112px;border-radius:50%;background:rgba(36,28,16,.55);border:2px solid rgba(107,83,32,.8);z-index:30;touch-action:none}
+ #joy{position:fixed;left:18px;bottom:86px;width:112px;height:112px;border-radius:50%;background:rgba(36,28,16,.55);border:2px solid rgba(107,83,32,.8);z-index:30;touch-action:none;opacity:var(--uia)}
  #knob{position:absolute;left:50%;top:50%;width:50px;height:50px;border-radius:50%;background:rgba(255,215,94,.75);border:2px solid #6b5320;transform:translate(-50%,-50%)}
+ #camstick{position:fixed;right:16px;bottom:196px;width:104px;height:104px;border-radius:50%;background:rgba(36,28,16,.55);border:2px solid rgba(107,83,32,.8);z-index:30;touch-action:none;opacity:var(--uia)}
+ #camknob{position:absolute;left:50%;top:50%;width:46px;height:46px;border-radius:50%;background:rgba(126,195,255,.75);border:2px solid #2e4a6b;transform:translate(-50%,-50%)}
+ #camstick .sticklbl{position:absolute;left:0;right:0;bottom:6px;text-align:center;font-size:10px;color:#cfe6ff;pointer-events:none}
+ /* quick-set buttons */
+ #quickbar{position:fixed;left:146px;bottom:108px;z-index:30;display:flex;gap:8px}
+ .qbtn{width:54px;height:54px;border-radius:50%;background:rgba(36,28,16,var(--uia));border:2px solid #6b5320;color:#f3e6c8;font-size:24px;cursor:pointer;position:relative}
+ .qbtn .qnum{position:absolute;top:-5px;right:-5px;background:#8a6d1f;border:1px solid #ffd75e;border-radius:50%;width:19px;height:19px;font-size:11px;font-weight:800;color:#fff;display:flex;align-items:center;justify-content:center}
+ /* XP drops */
+ #xpdrops{position:relative;height:0;text-align:center}
+ .xpdrop{position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:13px;font-weight:800;color:#7ec3ff;text-shadow:0 1px 3px #000;animation:xprise 1.6s ease-out forwards;pointer-events:none}
+ @keyframes xprise{0%{opacity:0;margin-top:6px}15%{opacity:1}100%{opacity:0;margin-top:-34px}}
+ /* goblin label HP bar */
+ .plabel .hpwrap{display:none;width:64px;height:7px;background:#400;border:1px solid #200;border-radius:4px;margin:2px auto 0;overflow:hidden}
+ .plabel .hpfill{height:100%;background:#4caf50}
+ .plabel .gname{color:#b6ffb0}
+ /* settings + skills rows */
+ .setrow{display:flex;align-items:center;gap:8px;background:#171208;border:1px solid #54431d;border-radius:8px;padding:7px 8px;margin-bottom:6px;font-size:13px}
+ .setrow .grow{flex:1}
+ .setrow input[type=range]{flex:1;accent-color:#c9a227}
+ .skillrow{display:flex;align-items:center;gap:8px;background:#171208;border:1px solid #54431d;border-radius:8px;padding:5px 8px;margin-bottom:4px;font-size:13px}
+ .skillrow .ic{font-size:19px}
+ .skillrow .grow{flex:1}
+ .skillrow .lvl{font-weight:900;color:#ffd75e;font-size:15px}
+ .skillrow .xp{font-size:11px;color:#b7a26e}
+ .cell.empty{cursor:default;background:rgba(23,18,8,.5)}
  /* chat */
- #chatbox{position:fixed;right:6px;bottom:6px;z-index:30;width:min(370px,64vw);background:rgba(23,19,12,.9);border:2px solid #6b5320;border-radius:10px;overflow:hidden}
+ #chatbox{position:fixed;right:6px;bottom:6px;z-index:30;width:min(370px,64vw);background:rgba(23,19,12,var(--uia));border:2px solid #6b5320;border-radius:10px;overflow:hidden}
  #chathead{padding:5px 9px;font-size:12px;font-weight:800;color:#ffd75e;cursor:pointer;display:flex;justify-content:space-between}
  #chatbody{display:block}
  #chatbox.closed #chatbody{display:none}
@@ -77,7 +106,7 @@
  #chatrow{display:flex;gap:5px;padding:5px}
  #chatrow input{flex:1;min-width:0}
  /* duel banner */
- #duelbar{position:fixed;top:42px;left:50%;transform:translateX(-50%);z-index:45;width:min(440px,94vw);background:rgba(30,23,13,.96);border:2px solid #a33;border-radius:12px;padding:8px 10px;display:none}
+ #duelbar{position:fixed;top:42px;left:50%;transform:translateX(-50%);z-index:45;width:min(440px,94vw);background:rgba(30,23,13,var(--uia));border:2px solid #a33;border-radius:12px;padding:8px 10px;display:none}
  #duelbar.open{display:block}
  #duelbar .t{font-weight:900;color:#ffd75e;text-align:center;font-size:14px;margin-bottom:5px}
  .hprow{display:flex;align-items:center;gap:7px;font-size:12px;margin:3px 0}
@@ -89,7 +118,7 @@
  /* modals */
  .modal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:14px}
  .modal.open{display:flex}
- .sheet{background:#241c10;border:2px solid #6b5320;border-radius:14px;padding:14px;width:min(430px,94vw);max-height:86dvh;overflow-y:auto}
+ .sheet{background:rgba(36,28,16,var(--uia));border:2px solid #6b5320;border-radius:14px;padding:14px;width:min(430px,94vw);max-height:86dvh;overflow-y:auto}
  .sheet h3{margin:0 0 8px;color:#ffd75e}
  .sheet .btns{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
  .pickrow{display:flex;align-items:center;gap:7px;font-size:13px;padding:4px 0;border-bottom:1px solid #33270e}
@@ -102,14 +131,14 @@
  #auth input{display:block;width:100%;margin:7px 0}
  #authmsg{color:#ff8a80;font-size:13px;min-height:18px}
  #loaderror{position:fixed;inset:0;z-index:70;background:#17130c;display:none;align-items:center;justify-content:center;padding:20px;text-align:center}
- #toast{position:fixed;top:44px;left:50%;transform:translateX(-50%);z-index:55;background:#33270e;border:2px solid #ffd75e;color:#ffe9a8;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:700;display:none;max-width:92vw;text-align:center}
+ #toast{position:fixed;top:44px;left:50%;transform:translateX(-50%);z-index:55;background:rgba(51,39,14,var(--uia));border:2px solid #ffd75e;color:#ffe9a8;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:700;display:none;max-width:92vw;text-align:center}
  .note{font-size:11px;color:#b7a26e}
 </style></head><body>
 <div id="scene"></div>
 <div id="labels"></div>
 <div id="splats"></div>
 
-<div id="topbar"><b>⚔️ nallystake</b><span id="hudname">—</span><span>🪙 <b id="hudgold">0</b>g</span><span>⭐ <b id="hudrating">1000</b></span><span id="hudwl">0W/0L</span><span class="grow"></span><span class="note">gold only · no real money</span></div>
+<div id="topbar"><b>⚔️ nallystake</b><span id="hudname">—</span><span>🪙 <b id="hudgold">0</b>g</span><span>⭐ <b id="hudrating">1000</b></span><span id="hudwl">0W/0L</span><span id="hudcombat">⚔️ Combat lvl 3</span><span class="grow"></span><span class="note">gold only · no real money</span></div>
 
 <div id="mapwrap">
  <canvas id="minimap" width="128" height="72"></canvas>
@@ -118,21 +147,35 @@
   <div class="orb pr" id="orbpr" title="Prayers"><div class="fill"></div><div class="txt"><span>🙏</span><span id="orbprv">25</span></div></div>
   <div class="orb sp" id="orbsp" title="Special attack"><div class="fill"></div><div class="txt"><span>⚡</span><span id="orbspv">0%</span></div></div>
  </div>
+ <div id="xpdrops"></div>
 </div>
 
 <div id="rail">
- <button class="rbtn" data-panel="backpack" title="Backpack">🎒</button>
- <button class="rbtn" data-panel="worn" title="Worn items">🗡️</button>
- <button class="rbtn" data-panel="shop" title="Shops">🏪</button>
- <button class="rbtn" data-panel="bank" title="Bank of Gielinor">🏦</button>
- <button class="rbtn" data-panel="exchange" title="Gold Exchange">💱</button>
- <button class="rbtn" data-panel="prayers" title="Prayers">🙏</button>
- <button class="rbtn" data-panel="players" title="Players">👥</button>
+ <button id="gearbtn" title="Menu">⚙</button>
+ <div id="railset">
+  <button class="rbtn" data-panel="backpack" title="Backpack">🎒</button>
+  <button class="rbtn" data-panel="worn" title="Worn items">🗡️</button>
+  <button class="rbtn" data-panel="shop" title="Shops">🏪</button>
+  <button class="rbtn" data-panel="bank" title="Bank of Gielinor">🏦</button>
+  <button class="rbtn" data-panel="exchange" title="Gold Exchange">💱</button>
+  <button class="rbtn" data-panel="prayers" title="Prayers">🙏</button>
+  <button class="rbtn" data-panel="players" title="Players">👥</button>
+  <button class="rbtn" data-panel="skills" title="Skills">📊</button>
+  <button class="rbtn" data-panel="teleport" title="Teleport">🌀</button>
+  <button class="rbtn" data-panel="settings" title="Settings">🎛️</button>
+ </div>
 </div>
 
 <div id="drawer"><h3><span id="drawertitle">Panel</span><button class="x" id="drawerx">✕</button></h3><div id="drawerbody"></div></div>
 
 <div id="joy"><div id="knob"></div></div>
+
+<div id="camstick"><div id="camknob"></div><div class="sticklbl">📷 CAM</div></div>
+
+<div id="quickbar">
+ <button class="qbtn" id="quick1" title="Quick set 1"><span class="qic">＋</span><span class="qnum">1</span></button>
+ <button class="qbtn" id="quick2" title="Quick set 2"><span class="qic">＋</span><span class="qnum">2</span></button>
+</div>
 
 <div id="duelbar">
  <div class="t" id="dueltitle">⚔️ Duel</div>
@@ -140,6 +183,7 @@
  <div class="hprow"><span class="nm" id="dueloppname">Opponent</span><div class="hpbar"><div id="hpopp" style="width:100%"></div></div><span id="hpoppv">99</span></div>
  <div id="duellast" class="note" style="text-align:center"></div>
  <div id="duelquick"></div>
+ <div id="duelflee" style="display:none;text-align:center;margin-top:6px"><button class="ghost" id="fleebtn">🏃 Flee</button></div>
 </div>
 
 <div id="chatbox">
@@ -160,7 +204,7 @@
  <input id="pass" type="password" placeholder="Password (6+)" autocomplete="current-password">
  <div style="display:flex;gap:8px;margin-top:6px"><button class="act" id="reg">Create account</button><button class="act" id="login">Sign in</button></div>
  <div id="authmsg"></div>
- <p class="note">Phase 2: 3D plaza, shops, bank, Gold Exchange, item staking, Protect prayers.</p>
+ <p class="note">Stage 1: skills &amp; XP, Goblin Camp, twin sticks, rotating minimap, settings, quick sets.</p>
 </div></div>
 
 <div id="loaderror"><div><h2 style="color:#ffd75e">Couldn't load 3D 😕</h2><p>The 3D library (Three.js) failed to load, so the plaza can't be drawn.<br>Check your connection and reload the page.</p></div></div>
@@ -189,6 +233,67 @@ function toast(t){ const el=$('toast'); el.textContent=t; el.style.display='bloc
 function logLine(t){ const el=$('log'); el.textContent+=t+'\n'; while(el.textContent.split('\n').length>60) el.textContent=el.textContent.split('\n').slice(1).join('\n'); el.scrollTop=1e6; }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
+/* ================= settings (localStorage) ================= */
+const SETTINGS_KEY='nallystake_settings_v1';
+let settings={camSpeed:1.5,tapMode:'walk',uiAlpha:0.78,hidden:{}};
+try{ const s=JSON.parse(localStorage.getItem(SETTINGS_KEY)||'null'); if(s&&typeof s==='object') settings=Object.assign(settings,s); }catch(e){}
+if(typeof settings.camSpeed!=='number') settings.camSpeed=1.5;
+if(settings.tapMode!=='face') settings.tapMode='walk';
+if(typeof settings.uiAlpha!=='number') settings.uiAlpha=0.78;
+if(!settings.hidden||typeof settings.hidden!=='object') settings.hidden={};
+function saveSettings(){ try{ localStorage.setItem(SETTINGS_KEY,JSON.stringify(settings)); }catch(e){} applySettings(); }
+let railOpen=false;
+function applyRailVisibility(){
+ const rs=$('railset'); if(rs) rs.classList.toggle('open',railOpen);
+ const gb=$('gearbtn'); if(gb) gb.textContent=railOpen?'✕':'⚙';
+ document.querySelectorAll('#railset .rbtn').forEach(b=>{ b.style.display=settings.hidden[b.dataset.panel]?'none':''; });
+}
+function applySettings(){
+ document.documentElement.style.setProperty('--uia',settings.uiAlpha);
+ applyRailVisibility();
+}
+window.toggleRail=function(){ railOpen=!railOpen; if(!railOpen) closeDrawer(); applyRailVisibility(); };
+$('gearbtn').onclick=()=>toggleRail();
+window.setCamSpeed=function(v){ settings.camSpeed=clamp(parseFloat(v)||1.5,0.25,3); const el=$('camspeedval'); if(el) el.textContent=settings.camSpeed+'×'; saveSettings(); };
+window.setTapMode=function(m){ settings.tapMode=(m==='face')?'face':'walk'; saveSettings(); renderDrawer(); };
+window.setUiAlpha=function(v){ settings.uiAlpha=clamp(parseFloat(v)||0.78,0.3,1); saveSettings(); };
+window.setBtnVisible=function(p,vis){ settings.hidden[p]=!vis; saveSettings(); };
+
+/* ================= quick sets 1 & 2 (localStorage) ================= */
+const QUICK_KEY='nallystake_quick_v1';
+let quick={1:null,2:null};
+try{ const q=JSON.parse(localStorage.getItem(QUICK_KEY)||'null'); if(q&&typeof q==='object'){ if(q[1]) quick[1]=q[1]; if(q[2]) quick[2]=q[2]; } }catch(e){}
+function saveQuick(){ try{ localStorage.setItem(QUICK_KEY,JSON.stringify(quick)); }catch(e){} renderQuickButtons(); }
+function renderQuickButtons(){
+ for(const n of [1,2]){
+   const b=$('quick'+n); if(!b) continue;
+   b.querySelector('.qic').textContent=quick[n]? iconOf(quick[n]) : '＋';
+   b.title=quick[n]? ('Quick '+n+': '+nameOf(quick[n])) : ('Quick '+n+' (empty)');
+ }
+}
+window.setQuick=function(n){
+ if(!selStack){ toast('Select an item in your backpack first.'); return; }
+ quick[n]=selStack; saveQuick();
+ toast(`⭐ Quick ${n} set to ${iconOf(selStack)} ${nameOf(selStack)}`);
+ renderDrawer();
+};
+window.useQuick=function(n){
+ const id=quick[n];
+ if(!id){ toast(`Quick ${n} is empty — open your 🎒 Backpack, tap an item, then "Set Quick ${n}".`); return; }
+ if(!me) return;
+ const d=catalog[id];
+ if(myQty(id)<1){
+   if(Object.values(me.worn||{}).includes(id)){ toast(`${iconOf(id)} ${nameOf(id)} is already worn.`); return; }
+   toast(`You don't have any ${nameOf(id)} left.`); return;
+ }
+ if(!d){ toast('That item is gone from the game.'); return; }
+ if(d.kind==='food'||d.kind==='potion') send({type:'use',item:id});
+ else if(d.slot) send({type:'equip',item:id});
+ else toast(`${nameOf(id)} can't be quick-used — open the panel for it instead.`);
+};
+$('quick1').onclick=()=>useQuick(1);
+$('quick2').onclick=()=>useQuick(2);
+
 /* ================= auth & websocket ================= */
 async function auth(path){
  const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('name').value,password:$('pass').value})});
@@ -209,13 +314,21 @@ function connect(){
  ws.onerror=()=>{ logLine('⚠️ Connection problem.'); };
 }
 function onMsg(m){
- if(m.type==='welcome'){ me=m.profile; players=m.players||[]; initMyPos(); renderAll(); syncAvatars(); }
- if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(drawerPanel==='shop') renderDrawer(); }
+ if(m.type==='welcome'){ me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); }
+ if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(drawerPanel==='shop') renderDrawer(); renderQuickButtons(); }
  if(m.type==='exchange_prices'){ goods={}; for(const g of (m.goods||[])) goods[g.id]=g; if(drawerPanel==='exchange') renderDrawer(); drawMinimap(); }
- if(m.type==='state'){ players=m.players||[]; initMyPos(); syncAvatars(); if(drawerPanel==='players') renderDrawer(); drawMinimap(); }
+ if(m.type==='state'){ if(m.area&&m.area!==curArea) setArea(m.area); players=m.players||[]; initMyPos(); syncAvatars(); if(drawerPanel==='players') renderDrawer(); drawMinimap(); }
+ if(m.type==='area'){ setArea(m.area); }
+ if(m.type==='npc_state'){ npcList=m.npcs||[]; syncNpcs(); drawMinimap(); }
+ if(m.type==='npc_fight'){ npcFightUI(m); }
+ if(m.type==='xp'){ onXpDrop(m); }
  if(m.type==='profile'){ me=m.profile; renderAll(); }
  if(m.type==='chat'){ logLine(`${m.from}: ${m.text}`); showBubble(m.from,m.text); }
- if(m.type==='error'){ toast('⚠️ '+m.message); logLine('⚠️ '+m.message); }
+ if(m.type==='error'){ toast('⚠️ '+m.message); logLine('⚠️ '+m.message);
+   if(/^Too far/.test(m.message||'')&&lastAttackTry&&Date.now()-lastAttackTry.at<1500){
+     const n=npcList.find(x=>x.id===lastAttackTry.id);
+     if(n){ pendingAttack={id:n.id}; tapTarget={x:n.x,y:n.y}; }
+   } }
  if(m.type==='shop'){ const d=catalog[m.item]; toast(`${m.action==='buy'?'Bought':'Sold'} ${nameOf(m.item)} x${m.qty} for ${m.total}g (${m.shop})`); }
  if(m.type==='exchange'){ toast(`${m.action==='buy'?'Bought':'Sold'} ${nameOf(m.good)} x${m.qty} @ ${m.price}g = ${m.total}g`); }
  if(m.type==='challenge_incoming'){ openIncoming(m); }
@@ -232,22 +345,62 @@ function renderHUD(){
  $('hudgold').textContent=me.gold;
  $('hudrating').textContent=me.rating;
  $('hudwl').textContent=`${me.wins}W/${me.losses}L`;
+ $('hudcombat').textContent=`⚔️ Combat lvl ${Math.floor(me.combatLevel||3)}`;
 }
 function renderOrbs(){
  if(!me) return;
- const hp = duel? duel.hpYou : 99;
+ let hp=99, hpMax=99;
+ if(duel){ hp=duel.hpYou; hpMax=99; }
+ else if(npcFight){ hp=npcFight.hpYou; hpMax=npcFight.maxHpYou||99; }
  $('orbhpv').textContent=hp;
- $('orbhp').querySelector('.fill').style.height=clamp(hp/99*100,0,100)+'%';
+ $('orbhp').querySelector('.fill').style.height=clamp(hp/hpMax*100,0,100)+'%';
  $('orbprv').textContent=`${Math.floor(me.prayerPoints)}/${me.prayerMax}`;
  $('orbpr').querySelector('.fill').style.height=clamp(me.prayerPoints/me.prayerMax*100,0,100)+'%';
- const en = duel? duel.energyYou : Math.floor(me.specialEnergy||0);
+ const en = duel? duel.energyYou : npcFight? npcFight.energyYou : Math.floor(me.specialEnergy||0);
  $('orbspv').textContent=en+'%';
  $('orbsp').querySelector('.fill').style.height=clamp(en,0,100)+'%';
  $('orbsp').classList.toggle('ready', en>=50);
 }
 $('orbpr').onclick=()=>togglePanel('prayers');
-$('orbsp').onclick=()=>{ if(duel) send({type:'special'}); else toast('Special attack is for duels — it charges as you land hits.'); };
-$('orbhp').onclick=()=>{ if(duel) toast('Eat food or drink a restore potion from your backpack to heal mid-duel.'); };
+$('orbsp').onclick=()=>{ if(duel||npcFight) send({type:'special'}); else toast('Special attack is for fights — it charges as you land hits.'); };
+$('orbhp').onclick=()=>{ if(duel||npcFight) toast('Eat food or drink a restore potion from your backpack to heal mid-fight.'); };
+
+/* ================= XP drops ================= */
+const SKILL_DEFS=[['attack','⚔️','Attack'],['strength','💪','Strength'],['defence','🛡️','Defence'],['hitpoints','❤️','Hitpoints'],['ranged','🏹','Ranged'],['magic','🔮','Magic'],['prayer','🙏','Prayer'],['mining','⛏️','Mining'],['smithing','🔨','Smithing'],['woodcutting','🪓','Woodcutting'],['firemaking','🔥','Firemaking'],['fishing','🎣','Fishing'],['cooking','🍳','Cooking']];
+const SKILL_ICON={}; const SKILL_NAME={};
+for(const [id,ic,nm] of SKILL_DEFS){ SKILL_ICON[id]=ic; SKILL_NAME[id]=nm; }
+let lastXp={};
+function combatLevelClient(levels){
+ const base=0.25*(levels.defence+levels.hitpoints+Math.floor(levels.prayer/2));
+ const melee=0.325*(levels.attack+levels.strength);
+ const ranged=0.325*Math.floor(levels.ranged*1.5);
+ const magic=0.325*Math.floor(levels.magic*1.5);
+ return base+Math.max(melee,ranged,magic);
+}
+function onXpDrop(m){
+ if(!me) return;
+ const prevTotal=(typeof lastXp[m.skill]==='number')? lastXp[m.skill] : (me.xp? me.xp[m.skill]||0 : 0);
+ const delta=m.xp-prevTotal;
+ lastXp[m.skill]=m.xp;
+ const prevLevel=me.levels? (me.levels[m.skill]||1) : m.level;
+ if(me.xp) me.xp[m.skill]=m.xp;
+ if(me.levels){ me.levels[m.skill]=m.level; me.totalLevel=SKILL_DEFS.reduce((t,[s])=>t+(me.levels[s]||1),0); me.combatLevel=combatLevelClient(me.levels); }
+ if(delta>0){
+   const boxEl=$('xpdrops');
+   if(boxEl){
+     const d=document.createElement('div');
+     d.className='xpdrop';
+     d.style.top=(boxEl.children.length*17)+'px';
+     d.textContent=`+${delta} ${SKILL_ICON[m.skill]||'✨'} ${SKILL_NAME[m.skill]||m.skill}`;
+     boxEl.appendChild(d);
+     while(boxEl.children.length>4) boxEl.removeChild(boxEl.firstChild);
+     setTimeout(()=>{ if(d.parentNode) d.parentNode.removeChild(d); },1650);
+   }
+ }
+ if(m.level>prevLevel){ toast(`🎉 Level up! ${SKILL_ICON[m.skill]||''} ${SKILL_NAME[m.skill]||m.skill} is now level ${m.level}`); logLine(`🎉 Level up! ${SKILL_NAME[m.skill]||m.skill} is now level ${m.level}.`); }
+ renderHUD();
+ if(drawerPanel==='skills') renderDrawer();
+}
 
 /* ================= 3D world ================= */
 const W2S=10; // world units -> server coords
@@ -262,6 +415,12 @@ const SHOP_SPOTS=[ // server coords
 ];
 const BOARD_POS={x:492,y:225};
 let renderer, scene, camera, raycaster;
+let curArea='plaza';
+let areaGroups={}; // 'plaza' | 'goblins' -> THREE.Group (only the current one is visible)
+let npcList=[]; // latest npc_state npcs for the goblin camp
+let npcAvatars={}; // npc id -> {group,label,hpWrap,hpFill,x,z}
+let pendingAttack=null; // {id} — walk to this goblin, attack on arrival
+let lastAttackTry=null; // {id,at} — last direct attack_npc send (for too-far recovery)
 let avatars={}; // username -> {group,label,bubbleEl,badgeEl,nameEl,x,z,tx,tz,prayer,bubbleUntil,bob}
 let interactives=[]; // meshes with userData.act
 let myPos=null; // server coords, authoritative-local
@@ -298,7 +457,8 @@ function box(w,h,d,color,x,y,z,parent,act){
  if(act){ m.userData.act=act; interactives.push(m); }
  return m;
 }
-function buildPlaza(){
+function buildPlaza(root){
+ const scene=root; // build into the plaza area group (box()/add calls below target it)
  // ground: grass
  const grass=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({color:0x3e7d33}));
  grass.rotation.x=-Math.PI/2; scene.add(grass);
@@ -363,14 +523,90 @@ function buildPlaza(){
    rock.position.set(rx,0.4,rz); scene.add(rock);
  }
 }
+function buildGoblinCamp(root){
+ const S=root;
+ // dirt/grass ground
+ const grass=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({color:0x55702f}));
+ grass.rotation.x=-Math.PI/2; S.add(grass);
+ const dirt=new THREE.Mesh(new THREE.PlaneGeometry(48,31),new THREE.MeshLambertMaterial({color:0x77683f}));
+ dirt.rotation.x=-Math.PI/2; dirt.position.y=0.02; S.add(dirt);
+ // tents
+ for(const [tx,tz] of [[-14,-9],[9,11],[21,-12]]){
+   const tent=new THREE.Mesh(new THREE.ConeGeometry(2.6,3.2,4),new THREE.MeshLambertMaterial({color:0x8a4b2a}));
+   tent.position.set(tx,1.6,tz); tent.rotation.y=0.78; S.add(tent);
+   box(1.0,1.4,0.15,0x3a2410,tx,0.7,tz+1.9,S); // dark doorway
+ }
+ // campfire
+ const fire=new THREE.Group(); fire.position.set(2,0,3); S.add(fire);
+ box(1.6,0.25,0.3,0x5a4020,0,0.15,0,fire);
+ const log2=box(1.6,0.25,0.3,0x5a4020,0,0.15,0,fire); log2.rotation.y=1.57;
+ const flame=new THREE.Mesh(new THREE.ConeGeometry(0.55,1.5,6),new THREE.MeshBasicMaterial({color:0xff7b24})); flame.position.set(0,0.95,0); fire.add(flame);
+ const flame2=new THREE.Mesh(new THREE.ConeGeometry(0.3,0.9,6),new THREE.MeshBasicMaterial({color:0xffd75e})); flame2.position.set(0,0.9,0); fire.add(flame2);
+ // perimeter fences, gap at the WEST gate (walk out to return to the plaza)
+ const fenceMat=0x6b4e26;
+ function fenceRun(x1,z1,x2,z2){
+   const len=Math.hypot(x2-x1,z2-z1), n=Math.max(2,Math.round(len/4));
+   for(let i=0;i<=n;i++){ const t=i/n; box(0.16,1.1,0.16,fenceMat,x1+(x2-x1)*t,0.55,z1+(z2-z1)*t,S); }
+   const midx=(x1+x2)/2, midz=(z1+z2)/2, ang=Math.atan2(x2-x1,z2-z1);
+   const rail=box(0.08,0.12,len,fenceMat,midx,0.85,midz,S); rail.rotation.y=ang;
+   const rail2=box(0.08,0.12,len,fenceMat,midx,0.45,midz,S); rail2.rotation.y=ang;
+ }
+ fenceRun(-40,-22.5,40,-22.5); // north
+ fenceRun(-40,22.5,40,22.5); // south
+ fenceRun(-40,-22.5,-40,-3.5); fenceRun(-40,3.5,-40,22.5); // west, gap at gate
+ fenceRun(40,-22.5,40,22.5); // east
+ // gate posts at the west gap
+ box(0.5,3.4,0.5,0x7c7565,-40,1.7,-2.6,S); box(0.5,3.4,0.5,0x7c7565,-40,1.7,2.6,S);
+ box(0.6,0.4,5.7,0xd4af37,-40,3.3,0,S);
+ // signpost by the west gate
+ box(0.18,2.2,0.18,0x5a4020,-36,1.1,4.2,S);
+ const sp=textSprite('👺 Goblin Camp','#ffd75e','rgba(23,19,12,0.85)'); sp.position.set(-36,3.0,4.2); S.add(sp);
+ // trees + rocks
+ for(const [tx,tz] of [[-30,-16],[-21,15],[27,16],[33,-8],[-8,-19],[14,20]]){
+   box(0.35,1.4,0.35,0x5a4020,tx,0.7,tz,S);
+   const cone=new THREE.Mesh(new THREE.ConeGeometry(1.7,3.4,7),new THREE.MeshLambertMaterial({color:0x3d5e22}));
+   cone.position.set(tx,3.1,tz); S.add(cone);
+ }
+ for(const [rx,rz] of [[-16,5],[18,-5],[-27,-8],[11,15]]){
+   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.7),new THREE.MeshLambertMaterial({color:0x8a8578}));
+   rock.position.set(rx,0.4,rz); S.add(rock);
+ }
+}
+function buildAreas(){
+ areaGroups.plaza=new THREE.Group(); scene.add(areaGroups.plaza); buildPlaza(areaGroups.plaza);
+ areaGroups.goblins=new THREE.Group(); scene.add(areaGroups.goblins); buildGoblinCamp(areaGroups.goblins);
+ applyAreaVisibility();
+}
+function applyAreaVisibility(){
+ if(!areaGroups.plaza) return;
+ areaGroups.plaza.visible=(curArea==='plaza');
+ areaGroups.goblins.visible=(curArea==='goblins');
+}
+function setArea(a){
+ if(!AREAS_CLIENT[a]) a='plaza';
+ const changed=(a!==curArea);
+ curArea=a;
+ applyAreaVisibility();
+ if(changed){
+   // The server places us at the new area's spawn; re-seed local position
+   // from the next per-area state snapshot and rebuild avatars cleanly.
+   myInit=false; myPos=null; tapTarget=null; pendingAttack=null;
+   for(const name of Object.keys(avatars)){ scene.remove(avatars[name].group); avatars[name].label.remove(); delete avatars[name]; }
+   if(a!=='goblins'){ npcList=[]; syncNpcs(); }
+ }
+ drawMinimap();
+}
+const AREAS_CLIENT={plaza:1,goblins:1};
 function makeKnight(isMe,name){
  const g=new THREE.Group();
- const main=isMe?0xd4af37:0x77808e, dark=isMe?0x8a6d1f:0x4a4f58;
+ // The local player wears red dragon-plate (red body, dark red limbs, gold trim);
+ // everyone else stays steel.
+ const main=isMe?0xb03a2e:0x77808e, dark=isMe?0x6e1408:0x4a4f58, trim=isMe?0xd4af37:0x77808e;
  box(0.26,0.75,0.26,dark,-0.18,0.38,0,g); box(0.26,0.75,0.26,dark,0.18,0.38,0,g); // legs
  box(0.78,0.85,0.45,main,0,1.18,0,g); // body
  box(0.24,0.7,0.24,main,-0.52,1.2,0,g); box(0.24,0.7,0.24,main,0.52,1.2,0,g); // arms
  box(0.46,0.46,0.46,0xd9a066,0,1.85,0,g); // head
- box(0.52,0.2,0.52,main,0,2.12,0,g); // helm rim
+ box(0.52,0.2,0.52,trim,0,2.12,0,g); // helm rim (gold trim on dragon-plate)
  const sword=new THREE.Group(); sword.position.set(0.62,1.35,0); g.add(sword);
  box(0.07,0.85,0.14,0xd9dee6,0,0.35,0,sword); box(0.3,0.08,0.2,0xd4af37,0,-0.1,0,sword);
  const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.28}));
@@ -405,16 +641,60 @@ function showBubble(name,text){
  const a=avatars[name]; if(!a) return;
  a.bubbleEl.textContent=text; a.bubbleEl.style.display='block'; a.bubbleUntil=Date.now()+3000;
 }
+/* ---- NPC goblins ---- */
+function makeGoblin(n){
+ const g=new THREE.Group();
+ const skin=0x4c9440, dark=0x356b24;
+ box(0.2,0.45,0.2,dark,-0.14,0.23,0,g); box(0.2,0.45,0.2,dark,0.14,0.23,0,g); // legs
+ box(0.58,0.6,0.38,dark,0,0.75,0,g); // body
+ box(0.18,0.5,0.18,skin,-0.4,0.8,0,g); box(0.18,0.5,0.18,skin,0.4,0.8,0,g); // arms
+ box(0.5,0.45,0.45,skin,0,1.28,0,g); // head
+ const earGeo=new THREE.ConeGeometry(0.09,0.44,5);
+ const earMat=new THREE.MeshLambertMaterial({color:skin});
+ const earL=new THREE.Mesh(earGeo,earMat); earL.position.set(-0.4,1.36,0); earL.rotation.z=1.85; g.add(earL);
+ const earR=new THREE.Mesh(earGeo,earMat); earR.position.set(0.4,1.36,0); earR.rotation.z=-1.85; g.add(earR);
+ const sh=new THREE.Mesh(new THREE.CircleGeometry(0.5,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.28}));
+ sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
+ const label=document.createElement('div'); label.className='plabel';
+ label.innerHTML=`<div class="gname">Goblin · lvl 5</div><div class="hpwrap"><div class="hpfill"></div></div>`;
+ $('labels').appendChild(label);
+ return {group:g,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),
+   x:sx2w(n.x),z:sy2w(n.y),hp:n.hp,maxHp:n.maxHp};
+}
+function syncNpcs(){
+ if(!scene) return;
+ const seen=new Set();
+ if(curArea==='goblins'){
+   for(const n of npcList){
+     seen.add(n.id);
+     let a=npcAvatars[n.id];
+     if(!a){ a=makeGoblin(n); a.group.position.set(a.x,0,a.z); npcAvatars[n.id]=a; scene.add(a.group); }
+     a.hp=n.hp; a.maxHp=n.maxHp;
+     a.hpFill.style.width=clamp(n.hp/Math.max(1,n.maxHp)*100,0,100)+'%';
+     a.hpWrap.style.display=(n.hp<n.maxHp)?'block':'none';
+   }
+ }
+ for(const id of Object.keys(npcAvatars)){
+   if(!seen.has(id)){ scene.remove(npcAvatars[id].group); npcAvatars[id].label.remove(); delete npcAvatars[id]; }
+ }
+}
+function attackNpc(id){
+ const n=npcList.find(x=>x.id===id); if(!n||!myPos) return;
+ const d=Math.hypot(myPos.x-n.x,myPos.y-n.y);
+ if(d<=140){ lastAttackTry={id,at:Date.now()}; send({type:'attack_npc',id}); }
+ else { pendingAttack={id}; tapTarget={x:n.x,y:n.y}; toast('🚶 Walking to the goblin…'); }
+}
 /* hitsplats */
 let splats=[];
-function spawnSplat(name,dmg,special){
- const a=avatars[name]; if(!a) return;
+function spawnSplatOn(a,dmg,special){
+ if(!a) return;
  const el=document.createElement('div');
  el.className='splat'+(dmg===0?' zero':'')+(special?' spec':'');
  el.textContent=special?`⚔️ ${dmg}`:String(dmg);
  $('splats').appendChild(el);
  splats.push({el,av:a,born:performance.now()});
 }
+function spawnSplat(name,dmg,special){ spawnSplatOn(avatars[name],dmg,special); }
 const _v=new THREE.Vector3();
 function projectTo(x,y,z){
  _v.set(x,y,z).project(camera);
@@ -429,6 +709,12 @@ function updateLabels(now){
    a.label.style.left=s.x+'px'; a.label.style.top=s.y+'px';
    if(a.bubbleUntil && now>a.bubbleUntil){ a.bubbleEl.style.display='none'; a.bubbleUntil=0; }
  }
+ for(const a of Object.values(npcAvatars)){
+   const s=projectTo(a.group.position.x,2.05,a.group.position.z);
+   if(!s){ a.label.style.display='none'; continue; }
+   a.label.style.display='block';
+   a.label.style.left=s.x+'px'; a.label.style.top=s.y+'px';
+ }
  splats=splats.filter(sp=>{
    const age=now-sp.born;
    if(age>950){ sp.el.remove(); return false; }
@@ -442,9 +728,11 @@ function updateLabels(now){
 
 /* ================= controls & movement ================= */
 let camYaw=0.7, camDist=21;
-const CAM_PITCH=0.92;
+let camPitch=0.92; // camera elevation angle (right stick / settings adjust it)
+let localRot=0; // local knight facing (world radians, atan2(x,z) convention)
 let tapTarget=null; // server coords
 let joyVec={x:0,y:0};
+let camVec={x:0,y:0}; // right (camera) stick deflection
 const keys={};
 addEventListener('keydown',e=>{ keys[e.key.toLowerCase()]=1; });
 addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
@@ -463,6 +751,21 @@ addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
    joyVec={x:dx/max,y:dy/max}; setKnob(dx,dy);
  }
 })();
+/* right analog stick: camera (yaw + pitch, applied per-frame in animate) */
+(function(){
+ const stick=$('camstick'), knob=$('camknob'); let pid=null;
+ function setKnob(dx,dy){ knob.style.transform=`translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`; }
+ stick.addEventListener('pointerdown',e=>{ pid=e.pointerId; stick.setPointerCapture(pid); move(e); });
+ stick.addEventListener('pointermove',e=>{ if(e.pointerId===pid) move(e); });
+ function end(e){ if(e.pointerId===pid){ pid=null; camVec={x:0,y:0}; setKnob(0,0); } }
+ stick.addEventListener('pointerup',end); stick.addEventListener('pointercancel',end);
+ function move(e){
+   const r=stick.getBoundingClientRect(), cx=r.left+r.width/2, cy=r.top+r.height/2;
+   let dx=e.clientX-cx, dy=e.clientY-cy; const len=Math.hypot(dx,dy), max=34;
+   if(len>max){ dx*=max/len; dy*=max/len; }
+   camVec={x:dx/max,y:dy/max}; setKnob(dx,dy);
+ }
+})();
 /* pointer on the 3D view: tap = interact/move, drag = rotate, pinch/wheel = zoom */
 (function(){
  const el=$('scene'); const pts=new Map();
@@ -476,7 +779,7 @@ addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
      if(pinchD>0) camDist=clamp(camDist*pinchD/d,10,42); pinchD=d; dragged=true; return; }
    const dx=e.clientX-prev.x, dy=e.clientY-prev.y;
    if(Math.hypot(e.clientX-downX,e.clientY-downY)>9) dragged=true;
-   if(dragged && (e.pointerType==='mouse' ? e.buttons===1 : true)) camYaw-=dx*0.006;
+   if(dragged && (e.pointerType==='mouse' ? e.buttons===1 : true)) camYaw-=dx*0.006*settings.camSpeed;
  });
  function up(e){
    pts.delete(e.pointerId);
@@ -488,12 +791,25 @@ addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
 function handleTap(cx,cy){
  const mouse=new THREE.Vector2((cx/innerWidth)*2-1,-(cy/innerHeight)*2+1);
  raycaster.setFromCamera(mouse,camera);
- // interactive props first
- const ih=raycaster.intersectObjects(interactives,false)[0];
- if(ih && ih.object.userData.act){
-   const act=ih.object.userData.act;
-   if(act.type==='bank'){ openPanel('bank'); return; }
-   if(act.type==='shop'){ shopTab=act.shop; openPanel('shop'); return; }
+ // interactive props first (plaza only — its meshes are hidden elsewhere)
+ if(curArea==='plaza'){
+   const ih=raycaster.intersectObjects(interactives,false)[0];
+   if(ih && ih.object.userData.act){
+     const act=ih.object.userData.act;
+     if(act.type==='bank'){ openPanel('bank'); return; }
+     if(act.type==='shop'){ shopTab=act.shop; openPanel('shop'); return; }
+   }
+ }
+ // goblins (tap to attack; walks over first if too far)
+ if(curArea==='goblins'){
+   let gb=null,gbD=1e9;
+   for(const [id,a] of Object.entries(npcAvatars)){
+     const s=projectTo(a.group.position.x,1.1,a.group.position.z);
+     if(!s) continue;
+     const d=Math.hypot(s.x-cx,s.y-cy);
+     if(d<48 && d<gbD){ gb=id; gbD=d; }
+   }
+   if(gb){ attackNpc(gb); return; }
  }
  // players
  let best=null,bestD=1e9;
@@ -504,9 +820,35 @@ function handleTap(cx,cy){
    if(d<44 && d<bestD){ best=name; bestD=d; }
  }
  if(best){ if(best!==me.username) openChallenge(best); return; }
- // ground -> walk there
- const gh=raycaster.intersectObjects(scene.children.filter(o=>o.geometry&&o.geometry.type==='PlaneGeometry'),false)[0];
- if(gh) tapTarget={x:clamp(wx2s(gh.point.x),0,800), y:clamp(wz2s(gh.point.z),0,450)};
+ // ground -> walk there (or just face it, in Face tap mode)
+ const groundRoot=areaGroups[curArea];
+ const gh=groundRoot? raycaster.intersectObjects(groundRoot.children.filter(o=>o.geometry&&o.geometry.type==='PlaneGeometry'),false)[0] : null;
+ if(gh){
+   const pt={x:clamp(wx2s(gh.point.x),0,800), y:clamp(wz2s(gh.point.z),0,450)};
+   pendingAttack=null;
+   if(settings.tapMode==='face') faceToward(pt); else tapTarget=pt;
+ }
+}
+function faceToward(pt){
+ if(!myPos) return;
+ const dx=pt.x-myPos.x, dy=pt.y-myPos.y; // server deltas scale 1:1 with world deltas
+ if(Math.hypot(dx,dy)>1) localRot=Math.atan2(dx,dy);
+}
+let gateCooldownUntil=0;
+function checkGates(){
+ if(!myPos||!me||Date.now()<gateCooldownUntil) return;
+ if(curArea==='plaza'&&myPos.x>=795){ gateCooldownUntil=Date.now()+2000; send({type:'travel',to:'goblins'}); toast('🚪 East gate → Goblin Camp…'); }
+ else if(curArea==='goblins'&&myPos.x<=5){ gateCooldownUntil=Date.now()+2000; send({type:'travel',to:'plaza'}); toast('🚪 West gate → Plaza…'); }
+}
+function checkPendingAttack(){
+ if(!pendingAttack||!myPos) return;
+ const n=npcList.find(x=>x.id===pendingAttack.id);
+ if(!n){ pendingAttack=null; return; }
+ if(Math.hypot(myPos.x-n.x,myPos.y-n.y)<=120){
+   const id=pendingAttack.id; pendingAttack=null; tapTarget=null;
+   lastAttackTry={id,at:Date.now()};
+   send({type:'attack_npc',id});
+ }
 }
 let lastSend=0, lastSentPos=null;
 function stepMovement(dt){
@@ -518,16 +860,18 @@ function stepMovement(dt){
  if(keys.w||keys.arrowup) f+=1; if(keys.s||keys.arrowdown) f-=1;
  if(keys.d||keys.arrowright) r+=1; if(keys.a||keys.arrowleft) r-=1;
  f+=-joyVec.y; r+=joyVec.x;
- if(f||r){ tapTarget=null; const l=Math.hypot(f,r); f/=l; r/=l;
+ if(f||r){ tapTarget=null; pendingAttack=null; const l=Math.hypot(f,r); f/=l; r/=l;
    vx=(-sYaw*f + cYaw*r); vz=(-cYaw*f - sYaw*r); }
  else if(tapTarget){
    const dx=tapTarget.x-myPos.x, dy=tapTarget.y-myPos.y, d=Math.hypot(dx,dy);
    if(d<6){ tapTarget=null; }
    else { const sp=150*dt; // server units per step
+          localRot=Math.atan2(dx,dy);
           myPos.x+=(dx/d)*sp; myPos.y+=(dy/d)*sp;
           finishStep(true); return; }
  }
  if(vx||vz){
+   localRot=Math.atan2(vx,vz);
    const sp=15*dt; // world units/s
    myPos.x=clamp(myPos.x+vx*sp*W2S,0,800);
    myPos.y=clamp(myPos.y+vz*sp*W2S,0,450);
@@ -546,31 +890,80 @@ function finishStep(moved){
    }
    lastSend=now;
  }
+ checkGates();
+ if(moved) checkPendingAttack();
 }
-/* ================= minimap ================= */
+/* ================= minimap (rotating, player-centred) ================= */
+const MM_S=128/520; // minimap px per server unit (~520 units across)
+function mapTheta(){
+ // Facing on the ground (server plane) is (-sinYaw, -cosYaw); rotate the
+ // map so that direction points straight up. Player stays centred.
+ const fx=-Math.sin(camYaw), fy=-Math.cos(camYaw);
+ return -Math.PI/2 - Math.atan2(fy,fx);
+}
 function drawMinimap(){
  const c=$('minimap'); if(!c) return; const g=c.getContext('2d');
- const X=v=>v/800*128, Y=v=>v/450*72;
- g.fillStyle='#2e4a2a'; g.fillRect(0,0,128,72);
- g.fillStyle='#6e675a'; g.fillRect(X(400-210),Y(225-135),X(420),Y(270)); // stone centre (server 420x270)
- g.fillStyle='#ffd75e'; g.fillRect(X(400)-2,Y(225)-2,4,4); // bank
- for(const s of SHOP_SPOTS){ g.fillStyle='#'+s.color.toString(16).padStart(6,'0'); g.fillRect(X(s.x)-2,Y(s.y)-2,4,4); }
- g.fillStyle='#fff'; g.fillRect(X(BOARD_POS.x)-1,Y(BOARD_POS.y)-1,3,3);
- for(const p of players){
-   g.fillStyle=(me&&p.username===me.username)?'#ffd75e':'#ffffff';
-   g.beginPath(); g.arc(X(p.x),Y(p.y),2,0,7); g.fill();
+ const W=c.width, H=c.height, cx=W/2, cy=H/2;
+ g.fillStyle='#1c2b18'; g.fillRect(0,0,W,H);
+ if(!me||!myPos){ g.fillStyle='#f3e6c8'; g.font='10px system-ui'; g.textAlign='center'; g.fillText('map',cx,cy); return; }
+ const th=mapTheta();
+ g.save();
+ g.translate(cx,cy); g.rotate(th); g.scale(MM_S,MM_S); g.translate(-myPos.x,-myPos.y);
+ // ground + area features (drawn in server coords, rotated by the transform)
+ g.fillStyle=(curArea==='goblins')? '#55702f' : '#2e4a2a'; g.fillRect(0,0,800,450);
+ if(curArea==='plaza'){
+   g.fillStyle='#6e675a'; g.fillRect(400-210,225-135,420,270); // stone centre
+   g.fillStyle='#ffd75e'; g.fillRect(BANK_POS.x-14,BANK_POS.y-14,28,28); // bank
+   for(const s of SHOP_SPOTS){ g.fillStyle='#'+s.color.toString(16).padStart(6,'0'); g.fillRect(s.x-12,s.y-12,24,24); }
+   g.fillStyle='#fff'; g.fillRect(BOARD_POS.x-8,BOARD_POS.y-8,16,16);
+ } else {
+   g.fillStyle='#77683f'; g.fillRect(400-240,225-155,480,310); // dirt patch
+   g.fillStyle='#ff7b24'; g.fillRect(420-10,255-10,20,20); // campfire
+   g.fillStyle='#3f7d2c';
+   for(const n of npcList){ g.beginPath(); g.arc(n.x,n.y,11,0,7); g.fill(); } // goblins
  }
+ for(const p of players){
+   if(me&&p.username===me.username) continue;
+   g.fillStyle='#ffffff'; g.beginPath(); g.arc(p.x,p.y,10,0,7); g.fill();
+ }
+ g.restore();
+ // player dot, always centred, with a facing tick pointing up
+ g.fillStyle='#ffd75e'; g.beginPath(); g.arc(cx,cy,3.4,0,7); g.fill();
+ g.strokeStyle='#ffd75e'; g.lineWidth=2; g.beginPath(); g.moveTo(cx,cy-4); g.lineTo(cx,cy-9); g.stroke();
+ // "N" indicator: where north (server -y) ended up after the rotation
+ const nx=Math.sin(th), ny=-Math.cos(th);
+ g.fillStyle='#fff'; g.font='bold 11px system-ui'; g.textAlign='center'; g.textBaseline='middle';
+ g.fillText('N', cx+nx*(Math.min(W,H)/2-9), cy+ny*(Math.min(W,H)/2-9));
+ g.strokeStyle='#6b5320'; g.lineWidth=2; g.strokeRect(0,0,W,H);
 }
+/* Tapping the minimap walks to that spot (inverse of the draw transform). */
+$('minimap').addEventListener('pointerdown',e=>{
+ if(!me||!myPos) return;
+ const r=e.target.getBoundingClientRect();
+ const dx=(e.clientX-r.left)*(e.target.width/r.width)-e.target.width/2;
+ const dy=(e.clientY-r.top)*(e.target.height/r.height)-e.target.height/2;
+ const th=mapTheta(), c=Math.cos(-th), s=Math.sin(-th);
+ const lx=(dx*c-dy*s)/MM_S, ly=(dx*s+dy*c)/MM_S;
+ pendingAttack=null;
+ tapTarget={x:clamp(myPos.x+lx,0,800), y:clamp(myPos.y+ly,0,450)};
+});
 /* ================= main loop / init ================= */
 let lastT=performance.now();
+let lastMapDraw=0;
 function animate(){
  requestAnimationFrame(animate);
  const now=performance.now(); const dt=Math.min(0.05,(now-lastT)/1000); lastT=now;
  if(!scene) return;
+ // right stick drives the camera continuously (scaled by the speed setting)
+ if(camVec.x||camVec.y){
+   camYaw-=camVec.x*2.4*dt*settings.camSpeed;
+   camPitch=clamp(camPitch+camVec.y*1.6*dt*settings.camSpeed,0.25,1.35);
+ }
+ if(now-lastMapDraw>150){ lastMapDraw=now; drawMinimap(); }
  stepMovement(dt);
  // remote avatars ease toward snapshot targets; local follows myPos
  for(const [name,a] of Object.entries(avatars)){
-   if(me && name===me.username){ a.group.position.set(a.x,Math.abs(Math.sin(a.bob))*0.09,a.z); }
+   if(me && name===me.username){ a.group.position.set(a.x,Math.abs(Math.sin(a.bob))*0.09,a.z); a.group.rotation.y=localRot; }
    else {
      const k=1-Math.exp(-9*dt);
      const moving=Math.hypot(a.tx-a.x,a.tz-a.z)>0.05;
@@ -585,9 +978,9 @@ function animate(){
  // camera follows local player
  const a=me?avatars[me.username]:null;
  const fx=a?a.group.position.x:0, fz=a?a.group.position.z:0;
- const cx=fx+Math.sin(camYaw)*Math.cos(CAM_PITCH)*camDist;
- const cz=fz+Math.cos(camYaw)*Math.cos(CAM_PITCH)*camDist;
- const cy=Math.sin(CAM_PITCH)*camDist;
+ const cx=fx+Math.sin(camYaw)*Math.cos(camPitch)*camDist;
+ const cz=fz+Math.cos(camYaw)*Math.cos(camPitch)*camDist;
+ const cy=Math.sin(camPitch)*camDist;
  camera.position.set(cx,cy,cz);
  camera.lookAt(fx,1.1,fz);
  updateLabels(now);
@@ -608,7 +1001,7 @@ function initThree(){
  raycaster=new THREE.Raycaster();
  scene.add(new THREE.AmbientLight(0xffffff,0.75));
  const sun=new THREE.DirectionalLight(0xfff2cc,0.9); sun.position.set(30,50,20); scene.add(sun);
- buildPlaza();
+ buildAreas();
  addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
  animate();
  return true;
@@ -616,14 +1009,14 @@ function initThree(){
 initThree();
 
 /* ================= drawer panels ================= */
-let drawerPanel=null, shopTab='Potion', shopMode='buy', bankQty='1', selStack=null;
-const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',players:'👥 Players online'};
+let drawerPanel=null, shopTab='Potion', shopMode='buy', bankQty='1', selStack=null, packSorted=false;
+const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',players:'👥 Players online',skills:'📊 Skills',teleport:'🌀 Teleport',settings:'🎛️ Settings'};
 function togglePanel(name){ drawerPanel===(name)? closeDrawer() : openPanel(name); }
-function openPanel(name){ drawerPanel=name; selStack=null; $('drawer').classList.add('open'); renderDrawer();
+function openPanel(name){ drawerPanel=name; selStack=null; if(name==='backpack') packSorted=false; $('drawer').classList.add('open'); renderDrawer();
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.toggle('on',b.dataset.panel===name)); }
 function closeDrawer(){ drawerPanel=null; $('drawer').classList.remove('open');
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.remove('on')); }
-document.querySelectorAll('.rbtn').forEach(b=>b.onclick=()=>togglePanel(b.dataset.panel));
+document.querySelectorAll('.rbtn').forEach(b=>b.onclick=()=>{ togglePanel(b.dataset.panel); railOpen=false; applyRailVisibility(); });
 $('drawerx').onclick=closeDrawer;
 function itemCell(s,onclick,extra){
  return `<div class="cell ${extra||''}" onclick="${onclick}"><span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${iconOf(s.item)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
@@ -639,12 +1032,31 @@ function renderDrawer(){
  if(drawerPanel==='exchange') b.innerHTML=pExchange();
  if(drawerPanel==='prayers') b.innerHTML=pPrayers();
  if(drawerPanel==='players') b.innerHTML=pPlayers();
+ if(drawerPanel==='skills') b.innerHTML=pSkills();
+ if(drawerPanel==='teleport') b.innerHTML=pTeleport();
+ if(drawerPanel==='settings') b.innerHTML=pSettings();
 }
 /* ---- Backpack ---- */
 window.selBp=function(item){ selStack=selStack===item?null:item; renderDrawer(); };
+window.packBackpack=function(){ packSorted=true; renderDrawer(); toast('🎒 Packed — everything pulled to the top, in order.'); };
 function pBackpack(){
- if(!me.backpack.length) return `<p>Your backpack is empty.<br><span class="note">Buy food, potions and gear from the shop stalls around the plaza.</span></p>`;
- let h=`<div class="grid">${me.backpack.map(s=>itemCell(s,`selBp('${s.item}')`,selStack===s.item?'sel':'')).join('')}</div>`;
+ let h=`<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px"><button class="act" onclick="packBackpack()">🎒 Pack</button><span class="note">Pulls all your stacks to the top, in order.</span></div>`;
+ if(!me.backpack.length){
+   h+=`<div class="grid">${'<div class="cell empty"></div>'.repeat(28)}</div>`;
+   h+=`<p>Your backpack is empty.<br><span class="note">Buy food, potions and gear from the shop stalls around the plaza.</span></p>`;
+   return h;
+ }
+ // Display order only — the server's stack order is untouched. Pack sorts
+ // carried stacks (kind, then name) to the top; empty cells fill to 28.
+ let stacks=me.backpack.slice();
+ if(packSorted) stacks.sort((a,b)=>{
+   const ka=(catalog[a.item]&&catalog[a.item].kind)||'zzz', kb=(catalog[b.item]&&catalog[b.item].kind)||'zzz';
+   if(ka!==kb) return ka<kb?-1:1;
+   return nameOf(a.item).localeCompare(nameOf(b.item));
+ });
+ let cells=stacks.map(s=>itemCell(s,`selBp('${s.item}')`,selStack===s.item?'sel':'')).join('');
+ for(let i=stacks.length;i<28;i++) cells+=`<div class="cell empty"></div>`;
+ h+=`<div class="grid">${cells}</div>`;
  h+=`<div class="note" style="margin-top:6px">${me.backpack.length} / 28 stacks</div>`;
  if(selStack){
    const s=me.backpack.find(x=>x.item===selStack), d=catalog[selStack];
@@ -654,6 +1066,8 @@ function pBackpack(){
      h+=`<div class="btns">`;
      if(d&&(d.kind==='food'||d.kind==='potion')) h+=`<button class="act" onclick="send({type:'use',item:'${s.item}'})">Use</button>`;
      if(d&&d.slot) h+=`<button class="act" onclick="send({type:'equip',item:'${s.item}'})">Equip</button>`;
+     h+=`<button class="ghost" onclick="setQuick(1)">Set Quick 1</button>`;
+     h+=`<button class="ghost" onclick="setQuick(2)">Set Quick 2</button>`;
      h+=`<button class="ghost" onclick="openPanel('bank')">Deposit in bank →</button>`;
      h+=`</div></div>`;
    }
@@ -742,6 +1156,45 @@ function pPlayers(){
  if(!others.length) return `<p>Just you in the plaza so far.<br><span class="note">Share the link — when a friend signs in, they'll appear here and in the plaza. Tap their knight (or their name here) to challenge them.</span></p>`;
  return others.map(p=>`<div class="rowline"><span class="ic">🧍</span><span class="grow"><b>${esc(p.username)}</b> ${p.activePrayer?PRAYER_BADGE[p.activePrayer]:''}<br><span class="sub">${p.inDuel?'in a duel':'in the plaza'}</span></span>${p.inDuel?'':`<button class="act" onclick="openChallenge('${esc(p.username)}')">Challenge</button>`}</div>`).join('');
 }
+/* ---- Skills ---- */
+function pSkills(){
+ const xp=me.xp||{}, lv=me.levels||{};
+ let h='';
+ for(const [id,ic,nm] of SKILL_DEFS){
+   h+=`<div class="skillrow"><span class="ic">${ic}</span><span class="grow">${nm}<br><span class="xp">${(xp[id]||0).toLocaleString()} XP</span></span><span class="lvl">${lv[id]||1}</span></div>`;
+ }
+ h+=`<div class="setrow" style="margin-top:8px"><span class="grow"><b>Total Level</b></span><b style="color:#ffd75e">${me.totalLevel||0}</b></div>`;
+ h+=`<div class="setrow"><span class="grow"><b>Combat Level</b></span><b style="color:#ffd75e">${Math.floor(me.combatLevel||3)}</b></div>`;
+ h+=`<p class="note">Combat XP lands as you fight — watch for the blue drops by the orbs.</p>`;
+ return h;
+}
+/* ---- Teleport ---- */
+window.doTravel=function(to){
+ if(to===curArea){ toast('You are already here.'); return; }
+ send({type:'travel',to});
+ closeDrawer();
+};
+function pTeleport(){
+ const here=(a)=>a===curArea;
+ let h=`<p class="note" style="margin-bottom:8px">Teleporting is the shortcut — every place stays walkable too. The Goblin Camp is through the plaza's east gate.</p>`;
+ h+=`<div class="rowline"><span class="ic">🏰</span><span class="grow"><b>Plaza</b><br><span class="sub">Shops, bank, duels</span></span>${here('plaza')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('plaza')">Teleport</button>`}</div>`;
+ h+=`<div class="rowline"><span class="ic">👺</span><span class="grow"><b>Goblin Camp</b><br><span class="sub">East gate · fight goblins for drops &amp; XP</span></span>${here('goblins')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('goblins')">Teleport</button>`}</div>`;
+ return h;
+}
+/* ---- Settings ---- */
+const PANEL_LIST=[['backpack','🎒 Backpack'],['worn','🗡️ Worn items'],['shop','🏪 Shops'],['bank','🏦 Bank'],['exchange','💱 Gold Exchange'],['prayers','🙏 Prayers'],['players','👥 Players'],['skills','📊 Skills'],['teleport','🌀 Teleport'],['settings','🎛️ Settings']];
+function pSettings(){
+ let h=`<div class="setrow"><span class="grow">📷 Camera drag speed<br><span class="note">Screen-drag rotation &amp; camera stick</span></span><input type="range" min="0.25" max="3" step="0.25" value="${settings.camSpeed}" oninput="setCamSpeed(this.value)"><b id="camspeedval" style="color:#ffd75e;min-width:34px;text-align:right">${settings.camSpeed}×</b></div>`;
+ h+=`<div class="setrow"><span class="grow">👆 Ground tap mode</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.tapMode==='walk'?'on':''}" onclick="setTapMode('walk')">🚶 Walk</button><button class="${settings.tapMode==='face'?'on':''}" onclick="setTapMode('face')">🧭 Face</button></div>`;
+ h+=`<p class="note" style="margin:2px 0 8px">Walk: tapping the ground walks there. Face: tapping just turns your knight to face that spot.</p>`;
+ h+=`<div class="setrow"><span class="grow">🔅 Interface transparency<br><span class="note">Sticks, panels &amp; buttons</span></span><input type="range" min="0.3" max="1" step="0.02" value="${settings.uiAlpha}" oninput="setUiAlpha(this.value)"></div>`;
+ h+=`<h4 style="margin:10px 0 5px;color:#ffd75e">Menu buttons (⚙)</h4>`;
+ for(const [p,label] of PANEL_LIST){
+   h+=`<div class="setrow"><span class="grow">${label}</span><input type="checkbox" ${settings.hidden[p]?'':'checked'} onchange="setBtnVisible('${p}',this.checked)"></div>`;
+ }
+ h+=`<p class="note">Unticked buttons never appear in the ⚙ menu. Settings save on this device automatically.</p>`;
+ return h;
+}
 /* ================= challenge cards ================= */
 function pickerHTML(prefix){
  if(!me||!me.backpack.length) return `<p class="note">Your backpack is empty — gold-only stake.</p>`;
@@ -795,12 +1248,14 @@ function openIncoming(m){
 }
 /* ================= duel UI ================= */
 let duel=null;
+let npcFight=null;
 function startDuelUI(m){
  duel={id:m.duelId,opponent:m.opponent,pot:m.pot,hpYou:99,hpOpponent:99,energyYou:Math.floor(me?me.specialEnergy||0:0),escrow:m.escrowItems||[]};
  me=m.profile;
+ $('duelflee').style.display='none';
  $('duelbar').classList.add('open');
  $('dueloppname').textContent=m.opponent;
- const itemsTxt=duel.escrow.length? ` + ${duel.escrow.reduce((t,s)=>t+s.qty,0)} items in escrow` : '';
+ const itemsTxt=duel.escrow.length? ` + ${duel.escrow.reduce((t,s)=>t+s.qty,0)} items in escrow`:'';
  $('dueltitle').textContent=`⚔️ You vs ${m.opponent} — pot ${m.pot}g${itemsTxt}`;
  $('duellast').textContent='Fight! Land hits to charge your Dragon Slash (50%).';
  renderDuelBar(); renderAll();
@@ -831,10 +1286,11 @@ function duelTickUI(m){
 }
 function endDuelUI(m){
  const wasDuel=duel; duel=null;
+ $('duelflee').style.display='none';
  $('duelbar').classList.remove('open');
  me=m.profile;
  const won=m.winner===me.username;
- const itemsTxt=(m.itemsWon&&m.itemsWon.length)? `<br>Items in the pot: ${m.itemsWon.map(s=>`${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}`).join(', ')}` : '';
+ const itemsTxt=(m.itemsWon&&m.itemsWon.length)? `<br>Items in the pot: ${m.itemsWon.map(s=>`${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}`).join(', ')}`:'';
  $('duelendsheet').innerHTML=`<h3>${won?'🏆 You won!':'💀 You lost'}</h3>
  <p><b>${esc(m.winner)}</b> won the duel (${esc(m.reason)}) and took the <b style="color:#ffd75e">${m.pot}g</b> pot.${itemsTxt}</p>
  <p class="note">Your gold: ${me.gold}g · Record: ${me.wins}W/${me.losses}L · Rating ${me.rating}</p>
@@ -842,10 +1298,71 @@ function endDuelUI(m){
  $('duelendmodal').classList.add('open');
  renderAll();
 }
+/* ================= NPC fight UI (shares the duel bar) ================= */
+$('fleebtn').onclick=()=>send({type:'flee'});
+function renderNpcBar(){
+ if(!npcFight) return;
+ $('hpyou').style.width=clamp(npcFight.hpYou/Math.max(1,npcFight.maxHpYou)*100,0,100)+'%'; $('hpyouv').textContent=npcFight.hpYou;
+ $('hpopp').style.width=clamp(npcFight.hpNpc/Math.max(1,npcFight.maxHpNpc)*100,0,100)+'%'; $('hpoppv').textContent=npcFight.hpNpc;
+ const consum=(me?me.backpack:[]).filter(s=>catalog[s.item]&&(catalog[s.item].kind==='food'||catalog[s.item].kind==='potion'));
+ let h=`<button class="act" id="specbtn">⚡ Dragon Slash (${npcFight.energyYou}%)</button>`;
+ for(const s of consum) h+=`<button class="ghost" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}</button>`;
+ $('duelquick').innerHTML=h;
+ const sb=$('specbtn');
+ sb.classList.toggle('ready',npcFight.energyYou>=50);
+ sb.onclick=()=>send({type:'special'});
+}
+function npcFightUI(m){
+ if(m.phase==='start'){
+   pendingAttack=null;
+   npcFight={npcId:m.npcId,name:m.name||'Goblin',combatLevel:m.combatLevel||5,hpYou:m.hpYou,maxHpYou:m.maxHpYou,hpNpc:m.hpNpc,maxHpNpc:m.maxHpNpc,energyYou:Math.floor(m.energyYou||0)};
+   $('duelbar').classList.add('open');
+   $('duelflee').style.display='block';
+   $('dueloppname').textContent='Goblin';
+   $('dueltitle').textContent=`🥊 Goblin · lvl ${npcFight.combatLevel}`;
+   $('duellast').textContent='Fight! Land hits to charge your Dragon Slash (50%). Run with 🏃 Flee if it goes bad.';
+   renderNpcBar(); renderOrbs();
+   return;
+ }
+ if(m.phase==='tick'){
+   if(!npcFight) return;
+   npcFight.hpYou=m.hpYou; npcFight.maxHpYou=m.maxHpYou; npcFight.hpNpc=m.hpNpc; npcFight.maxHpNpc=m.maxHpNpc; npcFight.energyYou=m.energyYou;
+   if(me) me.specialEnergy=m.energyYou;
+   spawnSplatOn(npcAvatars[m.npcId],m.youHit,m.youSpecial);
+   spawnSplat(me.username,m.npcHit,false);
+   let last=`You hit ${m.youHit}${m.youSpecial?' (DRAGON SLASH!)':''} · goblin hit ${m.npcHit}`;
+   if(m.note) last=m.note;
+   $('duellast').textContent=last;
+   renderNpcBar(); renderOrbs();
+   return;
+ }
+ if(m.phase==='end'){
+   npcFight=null;
+   $('duelbar').classList.remove('open');
+   $('duelflee').style.display='none';
+   if(m.profile){ me=m.profile; }
+   if(m.reason==='kill'){
+     if(m.drops){
+       const parts=[];
+       if(m.drops.gold) parts.push(`+${m.drops.gold}g`);
+       for(const s of (m.drops.items||[])) parts.push(`${iconOf(s.item)} ${nameOf(s.item)}${s.qty>1?' x'+s.qty:''}`);
+       toast(`💀 Goblin down! Drops: ${parts.join(', ')}`);
+       logLine(`💀 Goblin down! Drops: ${parts.join(', ')}`);
+     } else toast('💀 Goblin down!');
+   }
+   else if(m.reason==='death'){ toast('💀 The goblin got you! You wake up in the plaza at full health — nothing lost.'); }
+   else if(m.reason==='fled'){ toast('🏃 You fled the fight.'); }
+   else if(m.reason==='range'){ toast('The fight broke off — you moved too far from the goblin.'); }
+   else if(m.reason==='travel'){ toast('You left the fight behind.'); }
+   renderAll();
+ }
+}
 /* ================= chat ================= */
 $('sendchat').onclick=()=>{ const v=$('chat').value.trim(); if(v){ send({type:'chat',text:v}); $('chat').value=''; } };
 $('chat').addEventListener('keydown',e=>{ if(e.key==='Enter') $('sendchat').click(); });
 $('chathead').onclick=()=>{ const b=$('chatbox'); b.classList.toggle('closed'); $('chatchev').textContent=b.classList.contains('closed')?'▸':'▾'; };
 logLine('Welcome to nallystake online. Create an account or sign in to enter the plaza.');
+applySettings();
+renderQuickButtons();
 </script>
 </body></html>
