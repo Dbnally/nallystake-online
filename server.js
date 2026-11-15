@@ -35,6 +35,16 @@
 // unfinished piece on the anvil is SESSION-ONLY state — it is lost if
 // you log out. Note: smelting gold ore yields `bars`, the existing
 // Gold bars Exchange good — one gold-bar item, traded on the Exchange.
+//
+// Stage 4 (catch-up) adds: the Fight Caves (north gate) — Derek's exact
+// 63-wave OSRS table, instanced per player: Tz-Kih prayer drains, Tz-Kek
+// splitting on death, Tok-Xil ranged, Yt-MejKot self-heals, Ket-Zek
+// magic, and TzTok-Jad (702) with telegraphed prayer-switch attacks and
+// exactly 4 Yt-HurKot healers at half health. Protect prayers FULLY
+// block matching attack types (the Stage 1 NPC rule). Records save per
+// player (best wave / attempts / kills / completions / best time);
+// clearing wave 63 pays 500g and a Fire cape. Dying costs nothing —
+// you wake in the plaza (the house rule).
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -186,6 +196,11 @@ for (const [metal, md] of Object.entries(SMITH_METALS)) {
     }
   }
 }
+// Stage 4: the Fight Caves reward. kind 'trophy': never sold by shops,
+// and sellOnly 0 means sellPrice() returns 0, so the shops refuse to buy
+// it. It is not wearable yet — a cape slot arrives with the Stage 5 worn
+// expansion; until then it sits in the backpack/bank as the trophy it is.
+ITEMS.fire_cape = { name: 'Fire cape', kind: 'trophy', sellOnly: 0 };
 const SHOPS = ['Potion', 'Weapon', 'Armour', 'Food & Supplies', 'Pickaxe Pete'];
 const exchangePrices = {};
 for (const g of GOODS) exchangePrices[g.id] = g.base;
@@ -267,6 +282,7 @@ function newProfile(username) {
     prayerPoints: PRAYER_MAX, prayerMax: PRAYER_MAX, activePrayer: null,
     specialEnergy: 0,
     xp: defaultXp(), // Stage 1 skills — see SKILLS / XP_TABLE above
+    fc: { bestWave: 0, attempts: 0, kills: 0, completions: 0, bestTimeMs: 0 }, // Stage 4 Fight Caves records
   };
 }
 // Migration: Phase 1 accounts gain the v2 fields with defaults. Existing
@@ -289,6 +305,14 @@ function ensureV2(p) {
     const d = defaultXp();
     for (const s of SKILLS) if (typeof p.xp[s] !== 'number' || p.xp[s] < 0) { p.xp[s] = d[s]; changed = true; }
   }
+  // Stage 4 migration: Fight Caves records. Existing values are never
+  // reset — only a missing record or field gains the zero defaults.
+  if (!p.fc || typeof p.fc !== 'object') { p.fc = { bestWave: 0, attempts: 0, kills: 0, completions: 0, bestTimeMs: 0 }; changed = true; }
+  else {
+    for (const f of ['bestWave', 'attempts', 'kills', 'completions', 'bestTimeMs']) {
+      if (typeof p.fc[f] !== 'number' || p.fc[f] < 0) { p.fc[f] = 0; changed = true; }
+    }
+  }
   return changed;
 }
 function publicProfile(p) {
@@ -306,6 +330,9 @@ function publicProfile(p) {
     levels,
     totalLevel: SKILLS.reduce((t, s) => t + levels[s], 0),
     combatLevel: Math.round(combatLevelOf(levels) * 100) / 100,
+    // Stage 4 Fight Caves records (best wave reached, attempts, total
+    // kills across all runs, completions, best full-clear time).
+    fc: { ...p.fc },
   };
 }
 function leaderboardProfile(p) {
@@ -437,6 +464,7 @@ const AREAS = {
   gathering: { name: 'Gathering Cave', spawn: { x: 400, y: 225 } },
   cove: { name: 'Fishing Cove', spawn: { x: 90, y: 225 } },
   mine: { name: 'Emberfall Mine & Smithy', spawn: { x: 400, y: 380 } },
+  fightcaves: { name: 'Fight Caves', spawn: { x: 400, y: 400 } },
 };
 const NPC_RANGE = 150; // server units — attack / stay-in-combat range (15 tiles at 10 units/tile)
 
@@ -733,6 +761,316 @@ setInterval(() => {
   if (any) broadcastNpcState();
 }, 1000);
 
+// ---------- Fight Caves (Stage 4): Derek's 63-wave OSRS table ----------
+// Instanced per player: every runner gets their own monster roster
+// inside the shared 'fightcaves' area (other players in the area just
+// see each other walk around). Combat reuses the goblin engine's rolls
+// (rollHit vs NPC_DEFENDER, combatXpGains) and the Stage 1 prayer rule:
+// a Protect prayer FULLY blocks a monster hit of the matching attack
+// type. The player's HP pool is their Hitpoints level, like NPC fights.
+// Runs are session-only state; the RECORDS live on the profile (fc).
+// Monster tuning — the combat levels are Derek's exact table; HP, max
+// hit, accuracy and attack cadence (in 0.6s ticks) are this port's
+// tuning, kept in line with the Muse game:
+//   Tz-Kih 22: on a CONNECTING hit it also drains 2 prayer points —
+//     OSRS-style, Protect from Melee blocks the damage but not the
+//     drain; only a Defensive-style block or an outright miss avoids it.
+//   Tz-Kek 45: splits into two small Tz-Kek (22) when it dies.
+//   Yt-MejKot 180: on its attack tick, a 25% chance to heal ITSELF for
+//     10 HP instead of attacking (a simplification of OSRS behaviour).
+//   TzTok-Jad 702: attacks strictly alternate missiles / magic (first
+//     one random). Each attack is TELEGRAPHED ({type:'fc_telegraph'})
+//     one tick before it lands, and the pending hit resolves against
+//     the prayer active AT RESOLUTION TIME: matching Protect = 0
+//     damage; wrong / no prayer = acc 0.75, max hit 30, armour applies.
+//   Yt-HurKot 108: never attacks; heals Jad for 8 HP every 3 ticks.
+//     Exactly 4 spawn the first time Jad drops to half health or below.
+const FC_DEFS = {
+  tzkih:       { kind: 'tzkih', name: 'Tz-Kih', combatLevel: 22, maxHp: 10, maxHit: 2, acc: 0.6, attackType: 'melee', attackEvery: 2 },
+  tzkek:       { kind: 'tzkek', name: 'Tz-Kek', combatLevel: 45, maxHp: 20, maxHit: 3, acc: 0.6, attackType: 'melee', attackEvery: 2 },
+  tzkek_small: { kind: 'tzkek_small', name: 'Tz-Kek', combatLevel: 22, maxHp: 10, maxHit: 2, acc: 0.6, attackType: 'melee', attackEvery: 2 },
+  tokxil:      { kind: 'tokxil', name: 'Tok-Xil', combatLevel: 90, maxHp: 40, maxHit: 5, acc: 0.6, attackType: 'missiles', attackEvery: 3 },
+  ytmejkot:    { kind: 'ytmejkot', name: 'Yt-MejKot', combatLevel: 180, maxHp: 80, maxHit: 8, acc: 0.6, attackType: 'melee', attackEvery: 3 },
+  ketzek:      { kind: 'ketzek', name: 'Ket-Zek', combatLevel: 360, maxHp: 120, maxHit: 12, acc: 0.62, attackType: 'magic', attackEvery: 4 },
+  jad:         { kind: 'jad', name: 'TzTok-Jad', combatLevel: 702, maxHp: 250, maxHit: 30, acc: 0.75, attackType: 'jad', attackEvery: 3 },
+  hurkot:      { kind: 'hurkot', name: 'Yt-HurKot', combatLevel: 108, maxHp: 40, maxHit: 0, acc: 0, attackType: null, attackEvery: 3 },
+};
+// Wave compositions, waves 1-62: counts of [Tz-Kih, Tz-Kek, Tok-Xil,
+// Yt-MejKot, Ket-Zek] — the canonical OSRS table Derek supplied. Wave 63
+// is TzTok-Jad alone and is spawned specially in spawnFcWave().
+const FC_WAVE_KINDS = ['tzkih', 'tzkek', 'tokxil', 'ytmejkot', 'ketzek'];
+const FC_WAVES = [null,
+  [1,0,0,0,0],[2,0,0,0,0],[0,1,0,0,0],[1,1,0,0,0],[2,1,0,0,0],[0,2,0,0,0],
+  [0,0,1,0,0],[1,0,1,0,0],[2,0,1,0,0],[0,1,1,0,0],[1,1,1,0,0],[2,1,1,0,0],[0,2,1,0,0],[0,0,2,0,0],
+  [0,0,0,1,0],[1,0,0,1,0],[2,0,0,1,0],[0,1,0,1,0],[1,1,0,1,0],[2,1,0,1,0],[0,2,0,1,0],
+  [0,0,1,1,0],[1,0,1,1,0],[2,0,1,1,0],[0,1,1,1,0],[1,1,1,1,0],[2,1,1,1,0],[0,2,1,1,0],[0,0,2,1,0],[0,0,0,2,0],
+  [0,0,0,0,1],[1,0,0,0,1],[2,0,0,0,1],[0,1,0,0,1],[1,1,0,0,1],[2,1,0,0,1],[0,2,0,0,1],
+  [0,0,1,0,1],[1,0,1,0,1],[2,0,1,0,1],[0,1,1,0,1],[1,1,1,0,1],[2,1,1,0,1],[0,2,1,0,1],[0,0,2,0,1],
+  [0,0,0,1,1],[1,0,0,1,1],[2,0,0,1,1],[0,1,0,1,1],[1,1,0,1,1],[2,1,0,1,1],[0,2,0,1,1],
+  [0,0,1,1,1],[1,0,1,1,1],[2,0,1,1,1],[0,1,1,1,1],[1,1,1,1,1],[2,1,1,1,1],[0,2,1,1,1],[0,0,2,1,1],[0,0,0,2,1],[0,0,0,0,2],
+]; // index = wave number (1..62)
+// Deterministic spawn grid across the cave's north two-thirds (the
+// entrance is at the south, y=400). Monsters are stationary, like the
+// Goblin Camp: melee monsters only reach a player within FC_RANGE.
+const FC_SPAWN_POINTS = [
+  [400, 90], [250, 90], [550, 90], [120, 150], [680, 150],
+  [250, 170], [550, 170], [400, 170], [120, 240], [680, 240],
+  [250, 250], [550, 250], [400, 250], [180, 60], [620, 60],
+];
+const FC_RANGE = NPC_RANGE; // 150 units — attack / stay-in-combat range
+const FC_WAVE_PAUSE_MS = 2000; // breather between waves
+const fcRuns = new Map(); // run id -> run
+
+function fcRoster(run) {
+  return [...run.monsters.values()].filter((m) => m.alive).map((m) => ({
+    id: m.id, kind: m.kind, name: m.name, combatLevel: m.combatLevel,
+    hp: Math.max(0, m.hp), maxHp: m.maxHp, x: m.x, y: m.y, attackType: m.attackType,
+  }));
+}
+function fcStateMsg(run) {
+  return { type: 'fc_state', wave: run.wave, hpYou: Math.max(0, run.hpYou), maxHpYou: run.maxHpYou, monsters: fcRoster(run) };
+}
+function addFcMonster(run, kind, x, y) {
+  const def = FC_DEFS[kind];
+  run.spawnSeq += 1;
+  let px = x, py = y;
+  if (px === undefined) { const p = FC_SPAWN_POINTS[(run.spawnSeq - 1) % FC_SPAWN_POINTS.length]; px = p[0]; py = p[1]; }
+  const mon = {
+    id: 'fc' + run.spawnSeq, kind: def.kind, name: def.name, combatLevel: def.combatLevel,
+    maxHp: def.maxHp, hp: def.maxHp, maxHit: def.maxHit, acc: def.acc,
+    attackType: def.attackType, attackEvery: def.attackEvery,
+    x: px, y: py, alive: true, cooldown: def.attackEvery,
+  };
+  run.monsters.set(mon.id, mon);
+  return mon;
+}
+function spawnFcWave(run, wave) {
+  run.wave = wave;
+  run.betweenWaves = false;
+  run.monsters.clear();
+  run.jadPending = null;
+  if (wave === 63) addFcMonster(run, 'jad', 400, 110); // wave 63: TzTok-Jad alone
+  else {
+    const counts = FC_WAVES[wave];
+    FC_WAVE_KINDS.forEach((kind, i) => { for (let n = 0; n < counts[i]; n++) addFcMonster(run, kind); });
+  }
+  const first = [...run.monsters.values()].find((m) => m.alive);
+  run.targetId = first ? first.id : null;
+  const sess = online.get(run.playerKey);
+  if (sess) {
+    if (wave > 1) send(sess.ws, { type: 'fc_wave', wave, monsters: fcRoster(run) });
+    send(sess.ws, fcStateMsg(run));
+  }
+}
+function startFcRun(key) {
+  const sess = online.get(key);
+  const profile = sess.profile;
+  ensureV2(profile);
+  profile.fc.attempts += 1; // an attempt counts the moment the run starts
+  save(key);
+  const id = crypto.randomBytes(6).toString('hex');
+  // Fight HP pool = the player's Hitpoints level (duels keep their 99 pool).
+  const maxHpYou = Math.max(1, levelForXp(profile.xp.hitpoints));
+  const run = {
+    id, playerKey: key, wave: 0, monsters: new Map(), targetId: null,
+    hpYou: maxHpYou, maxHpYou, specialQueued: false, done: false,
+    timer: null, waveTimer: null, startedAt: Date.now(), kills: 0,
+    spawnSeq: 0, betweenWaves: false, rosterChanged: false,
+    jadPending: null, // { style, from } — telegraphed last tick, lands now
+    jadNextStyle: Math.random() < 0.5 ? 'missiles' : 'magic',
+    healersSpawned: false, jadDead: false,
+  };
+  fcRuns.set(id, run);
+  sess.fcRunId = id;
+  spawnFcWave(run, 1);
+  run.timer = setInterval(() => fcTick(run), TICK_MS);
+}
+// A monster died: count the kill, run the on-death specials (Tz-Kek
+// splits into two small Tz-Kek in the same wave; Jad ends the caves).
+function killFcMonster(run, mon) {
+  mon.alive = false;
+  mon.hp = 0;
+  run.kills += 1;
+  run.rosterChanged = true;
+  if (mon.kind === 'tzkek') {
+    addFcMonster(run, 'tzkek_small', Math.max(0, mon.x - 25), mon.y);
+    addFcMonster(run, 'tzkek_small', Math.min(800, mon.x + 25), mon.y);
+  }
+  if (mon.kind === 'jad') run.jadDead = true;
+}
+// The first time Jad falls to half health or below, exactly 4 Yt-HurKot
+// healers rush in around him.
+function maybeSpawnFcHealers(run) {
+  if (run.healersSpawned) return;
+  const jad = [...run.monsters.values()].find((m) => m.kind === 'jad' && m.alive);
+  if (!jad || jad.hp > jad.maxHp / 2) return;
+  run.healersSpawned = true;
+  run.rosterChanged = true;
+  for (const [hx, hy] of [[340, 70], [460, 70], [340, 160], [460, 160]]) addFcMonster(run, 'hurkot', hx, hy);
+}
+function fcTick(run) {
+  if (run.done) return;
+  const sess = online.get(run.playerKey);
+  if (!sess) { endFcRun(run, 'disconnect'); return; }
+  if (sess.area !== 'fightcaves') { endFcRun(run, 'left'); return; } // safety net; travel ends runs itself
+  const profile = sess.profile;
+  const hitsTaken = [];
+  let note = null;
+
+  // 1) A telegraphed Jad hit lands FIRST (it was announced last tick, so
+  // the player had a full tick to switch prayer). It resolves against
+  // the prayer active right now: matching Protect fully blocks it.
+  if (run.jadPending) {
+    const pending = run.jadPending;
+    run.jadPending = null;
+    const jad = run.monsters.get(pending.from);
+    if (jad && jad.alive) {
+      if (profile.activePrayer === pending.style) {
+        hitsTaken.push({ from: jad.id, kind: 'jad', dmg: 0, blocked: true });
+      } else {
+        let dmg = 0;
+        if (Math.random() <= jad.acc) {
+          const raw = 1 + Math.floor(Math.random() * jad.maxHit);
+          dmg = Math.floor(raw * (1 - armourReduction(profile)));
+        }
+        run.hpYou -= dmg;
+        hitsTaken.push({ from: jad.id, kind: 'jad', dmg, blocked: false });
+      }
+    }
+  }
+
+  // 2) The player's swing at their current target (auto-retargets to the
+  // first living monster when the target is gone). Out of range = a
+  // wasted swing, said so in the note.
+  let target = run.targetId ? run.monsters.get(run.targetId) : null;
+  if (!target || !target.alive) {
+    target = [...run.monsters.values()].find((m) => m.alive) || null;
+    run.targetId = target ? target.id : null;
+  }
+  const useSpec = run.specialQueued; run.specialQueued = false;
+  if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
+  let youHit = 0;
+  if (target && !run.betweenWaves) {
+    if (Math.hypot(sess.x - target.x, sess.y - target.y) > FC_RANGE) {
+      note = `Too far away from the ${target.name} — walk closer.`;
+    } else {
+      youHit = rollHit(profile, NPC_DEFENDER, useSpec);
+      target.hp -= youHit;
+      if (youHit > 0) {
+        profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
+        addXp(run.playerKey, combatXpGains(profile.style, youHit));
+      }
+      if (target.hp <= 0) killFcMonster(run, target);
+      else if (target.kind === 'jad') maybeSpawnFcHealers(run);
+    }
+  }
+
+  // Beating Jad ends the caves at once (healers still standing or not).
+  if (run.jadDead) { endFcRun(run, 'complete'); return; }
+  if (run.hpYou <= 0) { endFcRun(run, 'death'); return; }
+
+  // 3) The surviving monsters act on their own cadences.
+  for (const mon of run.monsters.values()) {
+    if (!mon.alive || run.done) continue;
+    mon.cooldown -= 1;
+    if (mon.cooldown > 0) continue;
+    mon.cooldown = mon.attackEvery;
+    if (mon.kind === 'hurkot') {
+      // Healers never attack: they pour health back into Jad.
+      const jad = [...run.monsters.values()].find((m) => m.kind === 'jad' && m.alive);
+      if (jad && jad.hp < jad.maxHp) jad.hp = Math.min(jad.maxHp, jad.hp + 8);
+      continue;
+    }
+    if (mon.kind === 'jad') {
+      // Jad does not hit instantly: he TELEGRAPHS. The style alternates
+      // strictly; the damage resolves at the start of the next tick.
+      const style = run.jadNextStyle;
+      run.jadNextStyle = style === 'missiles' ? 'magic' : 'missiles';
+      run.jadPending = { style, from: mon.id };
+      send(sess.ws, { type: 'fc_telegraph', style, wave: run.wave });
+      continue;
+    }
+    // Yt-MejKot: 25% of its attack ticks it heals itself instead.
+    if (mon.kind === 'ytmejkot' && mon.hp < mon.maxHp && Math.random() < 0.25) {
+      mon.hp = Math.min(mon.maxHp, mon.hp + 10);
+      if (!note) note = 'The Yt-MejKot heals itself!';
+      continue;
+    }
+    // Melee monsters are stationary: they can only reach a nearby player.
+    if (mon.attackType === 'melee' && Math.hypot(sess.x - mon.x, sess.y - mon.y) > FC_RANGE) continue;
+    const styleBlocked = !!(STYLES[profile.style] && STYLES[profile.style].block && Math.random() < STYLES[profile.style].block);
+    const prayerBlocked = profile.activePrayer === mon.attackType;
+    let dmg = 0;
+    if (!styleBlocked && Math.random() <= mon.acc) {
+      // The hit connects. Tz-Kih drains prayer even through a Protect
+      // prayer (OSRS-style); the damage itself is fully blocked by it.
+      if (mon.kind === 'tzkih') profile.prayerPoints = Math.max(0, profile.prayerPoints - 2);
+      if (!prayerBlocked) {
+        const raw = 1 + Math.floor(Math.random() * mon.maxHit);
+        dmg = Math.floor(raw * (1 - armourReduction(profile)));
+      }
+    }
+    run.hpYou -= dmg;
+    hitsTaken.push({ from: mon.id, kind: mon.kind, dmg, blocked: prayerBlocked || styleBlocked });
+  }
+
+  if (run.hpYou <= 0) { endFcRun(run, 'death'); return; }
+
+  // 4) Wave clear: everything (splits included) is dead — a breather,
+  // then the next wave spawns.
+  const anyAlive = [...run.monsters.values()].some((m) => m.alive);
+  if (!anyAlive && !run.betweenWaves) {
+    run.betweenWaves = true;
+    run.targetId = null;
+    note = note || `Wave ${run.wave} cleared!`;
+    run.waveTimer = setTimeout(() => { if (!run.done) spawnFcWave(run, run.wave + 1); }, FC_WAVE_PAUSE_MS);
+  }
+
+  if (run.rosterChanged) { run.rosterChanged = false; send(sess.ws, fcStateMsg(run)); }
+  const tgt = run.targetId ? run.monsters.get(run.targetId) : null;
+  send(sess.ws, {
+    type: 'fc_tick', wave: run.wave,
+    hpYou: Math.max(0, run.hpYou), maxHpYou: run.maxHpYou,
+    targetId: run.targetId, targetHp: tgt ? Math.max(0, tgt.hp) : 0,
+    youHit, hitsTaken, energyYou: profile.specialEnergy,
+    monsters: [...run.monsters.values()].filter((m) => m.alive).map((m) => ({ id: m.id, hp: Math.max(0, m.hp) })),
+    note,
+  });
+}
+// End a run and settle the saved records. bestWave is the highest wave
+// REACHED. Reason 'death' also wakes the player in the plaza (house
+// rule: dying costs nothing). Reason 'disconnect' settles silently.
+function endFcRun(run, reason) {
+  if (run.done) return;
+  run.done = true;
+  clearInterval(run.timer);
+  if (run.waveTimer) clearTimeout(run.waveTimer);
+  fcRuns.delete(run.id);
+  const sess = online.get(run.playerKey);
+  if (sess && sess.fcRunId === run.id) sess.fcRunId = null;
+  const u = db.users[run.playerKey];
+  if (!u) return;
+  const p = u.profile;
+  ensureV2(p);
+  const timeMs = Date.now() - run.startedAt;
+  p.fc.kills += run.kills;
+  if (run.wave > p.fc.bestWave) p.fc.bestWave = run.wave;
+  let reward = null;
+  if (reason === 'complete') {
+    p.fc.completions += 1;
+    if (!p.fc.bestTimeMs || timeMs < p.fc.bestTimeMs) p.fc.bestTimeMs = timeMs;
+    p.gold += 500;
+    const leftover = addStacks(p.backpack, 'fire_cape', 1, BACKPACK_MAX_STACKS);
+    if (leftover > 0) addStacks(p.bank, 'fire_cape', leftover); // full pack: bank it, never lose the cape
+    reward = { gold: 500, item: 'fire_cape' };
+  }
+  save(run.playerKey);
+  if (sess && reason !== 'disconnect') {
+    send(sess.ws, { type: 'fc_end', reason, wave: run.wave, kills: run.kills, timeMs, reward, profile: publicProfile(p) });
+    if (reason === 'death') respawnPlayer(run.playerKey, 'The Fight Caves overwhelm you — you wake up in the plaza. Nothing lost.');
+  }
+}
+
 // ---------- Gathering (Stage 2): resource nodes, fires, cooking ----------
 // Node charges / depletion are session-only world state (like goblin HP);
 // profiles keep the items and XP. Training stations have infinite charges
@@ -927,7 +1265,7 @@ wss.on('connection', (ws, req) => {
   const profile = db.users[key].profile;
   ensureV2(profile);
   // Everyone logs into the plaza (area is session-only, never saved).
-  online.set(key, { ws, profile, x: 100 + Math.random() * 500, y: 100 + Math.random() * 250, area: 'plaza', duelId: null, npcFightId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0 });
+  online.set(key, { ws, profile, x: 100 + Math.random() * 500, y: 100 + Math.random() * 250, area: 'plaza', duelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0 });
   send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot('plaza'), area: 'plaza' });
   send(ws, { type: 'catalog', items: catalogList(), shops: SHOPS });
   send(ws, { type: 'exchange_prices', goods: goodsList() });
@@ -958,6 +1296,8 @@ wss.on('connection', (ws, req) => {
       if (!AREAS[to]) return send(ws, { type: 'error', message: 'Unknown destination.' });
       if (me.duelId) return send(ws, { type: 'error', message: 'You cannot travel during a duel.' });
       if (me.npcFightId) { const f = npcFights.get(me.npcFightId); if (f) finishNpcFight(f, 'travel'); }
+      // Travelling out of the caves abandons a Fight Caves run (records kept).
+      if (me.fcRunId) { const r = fcRuns.get(me.fcRunId); if (r) endFcRun(r, 'left'); }
       me.area = to;
       me.x = AREAS[to].spawn.x; me.y = AREAS[to].spawn.y;
       send(ws, { type: 'area', area: to });
@@ -992,6 +1332,30 @@ wss.on('connection', (ws, req) => {
       const f = me.npcFightId ? npcFights.get(me.npcFightId) : null;
       if (!f) return send(ws, { type: 'error', message: 'You are not fighting anything.' });
       finishNpcFight(f, 'fled'); // the goblin keeps its remaining HP
+      return;
+    }
+
+    // ----- Fight Caves (Stage 4): start / target / leave a run -----
+    if (m.type === 'fc_start') {
+      if (me.area !== 'fightcaves') return send(ws, { type: 'error', message: 'You need to be in the Fight Caves to start a run.' });
+      if (me.duelId) return send(ws, { type: 'error', message: 'You are in a duel.' });
+      if (me.npcFightId) return send(ws, { type: 'error', message: 'You are already fighting something.' });
+      if (me.fcRunId) return send(ws, { type: 'error', message: 'You are already in a Fight Caves run — leave it first.' });
+      startFcRun(key);
+      return;
+    }
+    if (m.type === 'fc_attack') {
+      const run = me.fcRunId ? fcRuns.get(me.fcRunId) : null;
+      if (!run) return send(ws, { type: 'error', message: 'You are not in a Fight Caves run.' });
+      const mon = run.monsters.get(String(m.id || ''));
+      if (!mon || !mon.alive) return send(ws, { type: 'error', message: 'That monster is not here (or already dead).' });
+      run.targetId = mon.id;
+      return;
+    }
+    if (m.type === 'fc_leave') {
+      const run = me.fcRunId ? fcRuns.get(me.fcRunId) : null;
+      if (!run) return send(ws, { type: 'error', message: 'You are not in a Fight Caves run.' });
+      endFcRun(run, 'left');
       return;
     }
 
@@ -1280,7 +1644,25 @@ wss.on('connection', (ws, req) => {
       if (!duel) {
         // NPC fight (Stage 1): food / restore potions heal that pool too.
         const nf = me.npcFightId ? npcFights.get(me.npcFightId) : null;
-        if (!nf) return send(ws, { type: 'error', message: 'Healing only works during a duel.' });
+        if (!nf) {
+          // Fight Caves (Stage 4): food / restore potions heal the run pool.
+          const run = me.fcRunId ? fcRuns.get(me.fcRunId) : null;
+          if (!run) return send(ws, { type: 'error', message: 'Healing only works during a duel.' });
+          if (run.hpYou >= run.maxHpYou) return send(ws, { type: 'error', message: 'Already at full health.' });
+          removeStacks(profile.backpack, item, 1);
+          run.hpYou = Math.min(run.maxHpYou, run.hpYou + def.heal);
+          save(key);
+          const tgt = run.targetId ? run.monsters.get(run.targetId) : null;
+          send(ws, {
+            type: 'fc_tick', wave: run.wave,
+            hpYou: run.hpYou, maxHpYou: run.maxHpYou,
+            targetId: run.targetId, targetHp: tgt ? Math.max(0, tgt.hp) : 0,
+            youHit: 0, hitsTaken: [], energyYou: profile.specialEnergy,
+            monsters: [...run.monsters.values()].filter((x) => x.alive).map((x) => ({ id: x.id, hp: Math.max(0, x.hp) })),
+            note: `${profile.username} used ${def.name} (+${def.heal} HP)`,
+          });
+          return sendProfile(key);
+        }
         if (nf.hpYou >= nf.maxHpYou) return send(ws, { type: 'error', message: 'Already at full health.' });
         removeStacks(profile.backpack, item, 1);
         nf.hpYou = Math.min(nf.maxHpYou, nf.hpYou + def.heal);
@@ -1374,11 +1756,15 @@ wss.on('connection', (ws, req) => {
     if (m.type === 'special') {
       const duel = me.duelId ? duels.get(me.duelId) : null;
       const nf = !duel && me.npcFightId ? npcFights.get(me.npcFightId) : null;
-      if (!duel && !nf) return send(ws, { type: 'error', message: 'You are not in a duel.' });
+      const fc = !duel && !nf && me.fcRunId ? fcRuns.get(me.fcRunId) : null; // Stage 4: specials work in the caves too
+      if (!duel && !nf && !fc) return send(ws, { type: 'error', message: 'You are not in a duel.' });
       if (profile.specialEnergy < SPECIAL_COST) return send(ws, { type: 'error', message: `Dragon Slash needs ${SPECIAL_COST} special energy (you have ${Math.floor(profile.specialEnergy)}).` });
       if (duel) {
         if (duel.specialQueued[key]) return send(ws, { type: 'error', message: 'Special already queued for the next tick.' });
         duel.specialQueued[key] = true;
+      } else if (fc) {
+        if (fc.specialQueued) return send(ws, { type: 'error', message: 'Special already queued for the next tick.' });
+        fc.specialQueued = true;
       } else {
         if (nf.specialQueued) return send(ws, { type: 'error', message: 'Special already queued for the next tick.' });
         nf.specialQueued = true;
@@ -1395,6 +1781,7 @@ wss.on('connection', (ws, req) => {
       if (!target || targetKey === key) return send(ws, { type: 'error', message: 'Pick another online player.' });
       if (me.duelId || target.duelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
       if (me.npcFightId || target.npcFightId) return send(ws, { type: 'error', message: 'One of you is fighting a monster.' });
+      if (me.fcRunId || target.fcRunId) return send(ws, { type: 'error', message: 'One of you is in the Fight Caves.' });
       if (items.length === 0 && stake < 1) return send(ws, { type: 'error', message: 'Stake at least 1g, or stake items.' });
       if (stake < 0 || stake > profile.gold || stake > target.profile.gold) return send(ws, { type: 'error', message: 'Gold stake must be up to what you both have.' });
       if (!hasItems(profile, items)) return send(ws, { type: 'error', message: 'You don\'t have all the items you tried to stake.' });
@@ -1411,6 +1798,7 @@ wss.on('connection', (ws, req) => {
       if (!fromP) return;
       if (!m.accept) { send(fromP.ws, { type: 'chat', from: 'Game', text: `${profile.username} declined. No gold or items were taken.` }); return; }
       if (me.npcFightId || fromP.npcFightId) return send(ws, { type: 'error', message: 'One of you is fighting a monster.' });
+      if (me.fcRunId || fromP.fcRunId) return send(ws, { type: 'error', message: 'One of you is in the Fight Caves.' });
       const myItems = sanitizeItems(m.items);
       // Re-check purses AND backpacks at accept time — escrow only happens now.
       if (db.users[ch.from].profile.gold < ch.stake || profile.gold < ch.stake) return send(ws, { type: 'error', message: 'Someone no longer has the gold.' });
@@ -1429,6 +1817,10 @@ wss.on('connection', (ws, req) => {
     if (me && me.npcFightId) {
       const f = npcFights.get(me.npcFightId);
       if (f) finishNpcFight(f, 'disconnect'); // goblin keeps its HP and is free again
+    }
+    if (me && me.fcRunId) {
+      const r = fcRuns.get(me.fcRunId);
+      if (r) endFcRun(r, 'disconnect'); // records settle silently; the run is gone
     }
     online.delete(key);
     broadcast({ type: 'chat', from: 'Game', text: `${profile.username} left the plaza.` });
