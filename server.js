@@ -24,6 +24,17 @@
 // lightable fires (60s, Firemaking XP) and cooking on them (burn chance
 // falls with Cooking level). Gathered resources are sell-only stock:
 // shops buy them at a fixed price but never sell them.
+//
+// Stage 3 (catch-up) adds: the Emberfall Mine & Smithy (north-east) —
+// nine mine rocks up to Runite (Mining 85), pickaxes from Pickaxe Pete
+// (a carried pickaxe shortens the Mining action cooldown and improves
+// the odds), furnace smelting of all eight bars, and RS3-style anvil
+// smithing: start a piece from a bar, hammer it while it is hot (heat
+// fades over time and with every hit, slowing progress), reheat at the
+// furnace, and upgrade finished pieces +1 to +4 with more bars. The
+// unfinished piece on the anvil is SESSION-ONLY state — it is lost if
+// you log out. Note: smelting gold ore yields `bars`, the existing
+// Gold bars Exchange good — one gold-bar item, traded on the Exchange.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -116,7 +127,66 @@ for (const [id, name, sellOnly, extra] of [
 ]) {
   ITEMS[id] = { name, kind: 'resource', sellOnly, ...extra };
 }
-const SHOPS = ['Potion', 'Weapon', 'Armour', 'Food & Supplies'];
+// Stage 3: Emberfall ores + smelted bars. Sell-only resources, like
+// Stage 2's. (The eighth bar, gold, is the `bars` Exchange good above.)
+for (const [id, name, sellOnly] of [
+  ['silver_ore', 'Silver ore', 15],
+  ['gold_ore', 'Gold ore', 30],
+  ['mithril_ore', 'Mithril ore', 60],
+  ['adamantite_ore', 'Adamantite ore', 120],
+  ['runite_ore', 'Runite ore', 300],
+  ['bronze_bar', 'Bronze bar', 12],
+  ['iron_bar', 'Iron bar', 25],
+  ['silver_bar', 'Silver bar', 30],
+  ['steel_bar', 'Steel bar', 45],
+  ['mithril_bar', 'Mithril bar', 110],
+  ['adamant_bar', 'Adamant bar', 220],
+  ['rune_bar', 'Rune bar', 500],
+]) {
+  ITEMS[id] = { name, kind: 'resource', sellOnly };
+}
+// Stage 3: pickaxes, sold by Pickaxe Pete. A pickaxe works just by
+// being carried: the best one in the backpack speeds up Mining gathers
+// (see the gather handler). `speed` is the multiplier (1.0 = no help).
+for (const [tier, buy, speed] of [
+  ['bronze', 60, 1.0], ['iron', 250, 1.15], ['steel', 900, 1.3],
+  ['mithril', 3200, 1.5], ['adamant', 9000, 1.75], ['rune', 24000, 2.0], ['dragon', 60000, 2.5],
+]) {
+  ITEMS[`${tier}_pickaxe`] = { name: `${cap(tier)} pickaxe`, kind: 'tool', buy, speed, shop: 'Pickaxe Pete' };
+}
+// Stage 3: smithed gear — a sword and a platebody per metal, each in a
+// base version plus +1..+4 upgrades (60 items, generated). Names read
+// "Rune sword +2 (smithed)" / "Bronze platebody (smithed)". Never sold
+// by shops (no `buy`); shops buy them back at `sellOnly` (the shop
+// tier's floor, +25% per upgrade). Each upgrade adds +0.01 accuracy
+// and +1 max hit (sword) or +0.01 damage reduction (platebody).
+const SMITH_METALS = {
+  bronze:  { level: 1,  bar: 'bronze_bar',  sword: { acc: 0.02, max: 1,  xp: 50,  sell: 30 },   body: { red: 0.03, xp: 75,  sell: 54 } },
+  iron:    { level: 15, bar: 'iron_bar',    sword: { acc: 0.04, max: 2,  xp: 80,  sell: 72 },   body: { red: 0.04, xp: 120, sell: 110 } },
+  steel:   { level: 30, bar: 'steel_bar',   sword: { acc: 0.06, max: 4,  xp: 120, sell: 180 },  body: { red: 0.06, xp: 180, sell: 225 } },
+  mithril: { level: 55, bar: 'mithril_bar', sword: { acc: 0.08, max: 6,  xp: 200, sell: 480 },  body: { red: 0.08, xp: 300, sell: 600 } },
+  adamant: { level: 70, bar: 'adamant_bar', sword: { acc: 0.10, max: 8,  xp: 300, sell: 900 },  body: { red: 0.09, xp: 450, sell: 1100 } },
+  rune:    { level: 85, bar: 'rune_bar',    sword: { acc: 0.12, max: 10, xp: 450, sell: 1500 }, body: { red: 0.10, xp: 675, sell: 1800 } },
+}; // body XP is the sword XP x 1.5, per Derek's smithy spec
+const SMITH_RECIPES = {}; // base item id -> { metal, kind, level, bar, xp }
+for (const [metal, md] of Object.entries(SMITH_METALS)) {
+  for (const kindName of ['sword', 'platebody']) {
+    const baseId = `smith_${metal}_${kindName}`;
+    const st = kindName === 'sword' ? md.sword : md.body;
+    SMITH_RECIPES[baseId] = { metal, kind: kindName, level: md.level, bar: md.bar, xp: st.xp };
+    for (let u = 0; u <= 4; u++) {
+      const id = u === 0 ? baseId : `${baseId}_u${u}`;
+      const name = `${cap(metal)} ${kindName}${u ? ' +' + u : ''} (smithed)`;
+      const sellOnly = Math.round(st.sell * (1 + 0.25 * u));
+      if (kindName === 'sword') {
+        ITEMS[id] = { name, kind: 'weapon', slot: 'weapon', sellOnly, accBonus: Math.round((st.acc + 0.01 * u) * 100) / 100, maxBonus: st.max + u, smithMetal: metal, smithUpgrade: u, smithBase: baseId };
+      } else {
+        ITEMS[id] = { name, kind: 'armour', slot: 'body', sellOnly, reduction: Math.round((st.red + 0.01 * u) * 100) / 100, smithMetal: metal, smithUpgrade: u, smithBase: baseId };
+      }
+    }
+  }
+}
+const SHOPS = ['Potion', 'Weapon', 'Armour', 'Food & Supplies', 'Pickaxe Pete'];
 const exchangePrices = {};
 for (const g of GOODS) exchangePrices[g.id] = g.base;
 
@@ -135,6 +205,7 @@ function catalogList() {
     id, name: d.name, kind: d.kind, slot: d.slot || null, shop: d.shop || null, buy: d.buy || 0, sell: sellPrice(id),
     heal: d.heal || 0, prayerRestore: d.prayerRestore || 0,
     accBonus: d.accBonus || 0, maxBonus: d.maxBonus || 0, reduction: d.reduction || 0,
+    speed: d.speed || 0, // Stage 3: pickaxe speed multiplier (0 for non-tools)
   }));
 }
 function goodsList() {
@@ -365,6 +436,7 @@ const AREAS = {
   training: { name: 'Training Cave', spawn: { x: 400, y: 360 } },
   gathering: { name: 'Gathering Cave', spawn: { x: 400, y: 225 } },
   cove: { name: 'Fishing Cove', spawn: { x: 90, y: 225 } },
+  mine: { name: 'Emberfall Mine & Smithy', spawn: { x: 400, y: 380 } },
 };
 const NPC_RANGE = 150; // server units — attack / stay-in-combat range (15 tiles at 10 units/tile)
 
@@ -699,6 +771,19 @@ defNode('defence_dummy', 'training', 'station', 'Defence dummy', 'defence', 1, n
 defNode('ranged_target', 'training', 'station', 'Ranged target', 'ranged', 1, null, 12, Infinity, 0, 440, 225);
 defNode('magic_dummy', 'training', 'station', 'Magic dummy', 'magic', 1, null, 12, Infinity, 0, 540, 225);
 defNode('prayer_altar', 'training', 'station', 'Prayer altar', 'prayer', 1, null, 6, Infinity, 0, 640, 225);
+// Emberfall Mine (Stage 3) — nine rocks across the west/north half;
+// the south-east quadrant stays clear for the furnace + anvil (actions,
+// not nodes). Iron is Mining 10 here per Derek's mine spec (the
+// Gathering Cave's iron rock keeps its 15).
+defNode('copper_rock_m', 'mine', 'rock', 'Copper rock', 'mining', 1, 'copper_ore', 18, 4, 8000, 120, 90);
+defNode('tin_rock_m', 'mine', 'rock', 'Tin rock', 'mining', 1, 'tin_ore', 18, 4, 8000, 120, 200);
+defNode('iron_rock_m', 'mine', 'rock', 'Iron rock', 'mining', 10, 'iron_ore', 35, 3, 12000, 120, 320);
+defNode('silver_rock', 'mine', 'rock', 'Silver rock', 'mining', 20, 'silver_ore', 40, 3, 15000, 250, 90);
+defNode('coal_rock_m', 'mine', 'rock', 'Coal rock', 'mining', 30, 'coal', 50, 3, 18000, 250, 200);
+defNode('gold_rock', 'mine', 'rock', 'Gold rock', 'mining', 40, 'gold_ore', 65, 2, 20000, 380, 90);
+defNode('mithril_rock', 'mine', 'rock', 'Mithril rock', 'mining', 55, 'mithril_ore', 80, 2, 25000, 380, 200);
+defNode('adamantite_rock', 'mine', 'rock', 'Adamantite rock', 'mining', 70, 'adamantite_ore', 100, 2, 30000, 510, 90);
+defNode('runite_rock', 'mine', 'rock', 'Runite rock', 'mining', 85, 'runite_ore', 125, 1, 40000, 510, 200);
 
 function nodesMsg(area) {
   const now = Date.now();
@@ -760,11 +845,47 @@ const COOKABLE = {
 };
 // Shared per-player action cooldown for gather / cook / light_fire.
 // Returns true (and does NOT stamp) when the player is acting too fast.
-function actionOnCooldown(sess) {
+// `ms` lets a caller use a shorter/longer gap (Stage 3 pickaxes shorten
+// the Mining gap); the default is unchanged for everything else.
+function actionOnCooldown(sess, ms = ACTION_COOLDOWN_MS) {
   const now = Date.now();
-  if (now - (sess.lastActionAt || 0) < ACTION_COOLDOWN_MS) return true;
+  if (now - (sess.lastActionAt || 0) < ms) return true;
   sess.lastActionAt = now;
   return false;
+}
+
+// ---------- Smithy (Stage 3): smelting recipes + smithing helpers ----------
+// Furnace recipes: bar -> ores consumed per bar, Smithing level, XP per
+// bar. Smelting gold ore yields `bars` — the existing Gold bars Exchange
+// good (deliberate: there is one gold-bar item in the game, and it is
+// the one the Exchange trades).
+const BAR_RECIPES = {
+  bronze_bar:  { ores: { copper_ore: 1, tin_ore: 1 }, level: 1, xp: 6 },
+  iron_bar:    { ores: { iron_ore: 1 }, level: 15, xp: 13 },
+  silver_bar:  { ores: { silver_ore: 1 }, level: 20, xp: 14 },
+  steel_bar:   { ores: { iron_ore: 1, coal: 2 }, level: 30, xp: 18 },
+  bars:        { ores: { gold_ore: 1 }, level: 40, xp: 23 }, // Gold bars (Exchange good)
+  mithril_bar: { ores: { mithril_ore: 1, coal: 4 }, level: 55, xp: 30 },
+  adamant_bar: { ores: { adamantite_ore: 1, coal: 6 }, level: 70, xp: 38 },
+  rune_bar:    { ores: { runite_ore: 1, coal: 8 }, level: 85, xp: 50 },
+};
+function recipeText(ores) {
+  return Object.entries(ores).map(([id, n]) => `${n} ${ITEMS[id].name}`).join(' + ');
+}
+// The best pickaxe speed multiplier in a backpack (0 = no pickaxe).
+function bestPickaxeSpeed(profile) {
+  let best = 0;
+  for (const s of profile.backpack) {
+    const def = ITEMS[s.item];
+    if (def && def.kind === 'tool' && def.speed > best) best = def.speed;
+  }
+  return best;
+}
+// Smithing heat right now: the stored heat minus 1 point per 2 seconds
+// elapsed since it was last stamped (hits and reheats re-stamp it).
+function smithHeatNow(sm) {
+  if (!sm) return 0;
+  return Math.max(0, sm.heat - Math.floor((Date.now() - sm.heatAt) / 2000));
 }
 
 // Gold Exchange prices drift on a random walk inside each good's band.
@@ -806,7 +927,7 @@ wss.on('connection', (ws, req) => {
   const profile = db.users[key].profile;
   ensureV2(profile);
   // Everyone logs into the plaza (area is session-only, never saved).
-  online.set(key, { ws, profile, x: 100 + Math.random() * 500, y: 100 + Math.random() * 250, area: 'plaza', duelId: null, npcFightId: null, lastActionAt: 0 });
+  online.set(key, { ws, profile, x: 100 + Math.random() * 500, y: 100 + Math.random() * 250, area: 'plaza', duelId: null, npcFightId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0 });
   send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot('plaza'), area: 'plaza' });
   send(ws, { type: 'catalog', items: catalogList(), shops: SHOPS });
   send(ws, { type: 'exchange_prices', goods: goodsList() });
@@ -845,6 +966,11 @@ wss.on('connection', (ws, req) => {
       // (empty lists for areas that have none).
       send(ws, nodesMsg(to));
       send(ws, firesMsg(to));
+      // Stage 3: an unfinished smithing piece (session-only) is still
+      // on the anvil when you come back to the mine — remind the client.
+      if (to === 'mine' && me.smithing) {
+        send(ws, { type: 'smith_state', item: me.smithing.item, progress: me.smithing.progress, heat: smithHeatNow(me.smithing) });
+      }
       broadcastState();
       return;
     }
@@ -880,11 +1006,21 @@ wss.on('connection', (ws, req) => {
       if (node.depletedUntil > Date.now()) return send(ws, { type: 'error', message: `${node.name} is used up — it will grow back shortly.` });
       const level = levelForXp((profile.xp && profile.xp[node.skill]) || 0);
       if (level < node.levelReq) return send(ws, { type: 'error', message: `You need ${cap(node.skill)} level ${node.levelReq} for the ${node.name} (you are level ${level}).` });
-      if (actionOnCooldown(me)) return send(ws, { type: 'error', message: 'Too fast — one action at a time.' });
+      // Pickaxe bonus (Stage 3): the best pickaxe carried speeds up
+      // Mining only — a shorter action cooldown and slightly better
+      // odds. Other skills keep the standard shared cooldown.
+      let cooldownMs = ACTION_COOLDOWN_MS;
+      let pickBonus = 0;
+      if (node.skill === 'mining') {
+        const speed = bestPickaxeSpeed(profile);
+        if (speed > 0) { cooldownMs = ACTION_COOLDOWN_MS / speed; pickBonus = (speed - 1) * 0.1; }
+      }
+      if (actionOnCooldown(me, cooldownMs)) return send(ws, { type: 'error', message: 'Too fast — one action at a time.' });
       // Success chance: 55% at the required level, +2% per level above
-      // it, capped at 95%. A failed attempt uses the action (cooldown)
-      // but no node charge and grants no XP.
-      const chance = Math.max(0.55, Math.min(0.95, 0.55 + 0.02 * (level - node.levelReq)));
+      // it, capped at 95% (a carried pickaxe adds up to +0.15 for
+      // Mining). A failed attempt uses the action (cooldown) but no
+      // node charge and grants no XP.
+      const chance = Math.max(0.55, Math.min(0.95, 0.55 + 0.02 * (level - node.levelReq) + pickBonus));
       if (Math.random() > chance) return send(ws, { type: 'gather_result', nodeId: node.id, ok: false });
       if (node.chargesLeft !== Infinity) { // stations never deplete
         node.chargesLeft -= 1;
@@ -937,6 +1073,131 @@ wss.on('connection', (ws, req) => {
       if (xp) addXp(key, { cooking: xp });
       save(key);
       send(ws, { type: 'cook_result', ok: !burnt, item: resultItem, xp });
+      return sendProfile(key);
+    }
+
+    // ----- Smelting (Stage 3): the Emberfall furnace -----
+    if (m.type === 'smelt') {
+      const bar = String(m.bar || '');
+      const recipe = BAR_RECIPES[bar];
+      if (!recipe) return send(ws, { type: 'error', message: 'The furnace can\'t make that.' });
+      if (me.area !== 'mine') return send(ws, { type: 'error', message: 'You need the furnace at the Emberfall Mine & Smithy to smelt ore.' });
+      if (me.duelId || me.npcFightId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
+      const level = levelForXp((profile.xp && profile.xp.smithing) || 0);
+      if (level < recipe.level) return send(ws, { type: 'error', message: `You need Smithing level ${recipe.level} to smelt ${ITEMS[bar].name} (you are level ${level}).` });
+      // How many bars the backpack's ore can pay for, and which ore runs out first.
+      let maxQty = Infinity, limitingOre = null;
+      for (const [ore, n] of Object.entries(recipe.ores)) {
+        const can = Math.floor(stackQty(profile.backpack, ore) / n);
+        if (can < maxQty) { maxQty = can; limitingOre = ore; }
+      }
+      if (maxQty < 1) return send(ws, { type: 'error', message: `Not enough ${ITEMS[limitingOre].name} — ${ITEMS[bar].name} needs ${recipeText(recipe.ores)} per bar.` });
+      let qty;
+      if (m.qty === 'all') qty = maxQty;
+      else qty = Math.max(1, Math.min(999, Math.floor(+m.qty || 1)));
+      if (qty > maxQty) return send(ws, { type: 'error', message: `You only have ore for ${maxQty} x ${ITEMS[bar].name} (${recipeText(recipe.ores)} per bar).` });
+      if (actionOnCooldown(me)) return send(ws, { type: 'error', message: 'Too fast — one action at a time.' });
+      for (const [ore, n] of Object.entries(recipe.ores)) removeStacks(profile.backpack, ore, n * qty);
+      const leftover = addStacks(profile.backpack, bar, qty, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(profile.bank, bar, leftover); // full pack: bank it, never lose a smelt
+      const xp = recipe.xp * qty;
+      addXp(key, { smithing: xp });
+      save(key);
+      send(ws, { type: 'smelt_result', bar, qty, xp });
+      return sendProfile(key);
+    }
+
+    // ----- Smithing (Stage 3): the Emberfall anvil, RS3 heat loop -----
+    // The unfinished piece lives on the SESSION (me.smithing), never in
+    // the saved profile: log out with a piece on the anvil and the bar
+    // is lost. It does survive walking between areas in one session.
+    if (m.type === 'smith_start') {
+      const item = String(m.item || '');
+      const rec = SMITH_RECIPES[item];
+      if (!rec) return send(ws, { type: 'error', message: 'That is not something you can smith.' });
+      if (me.area !== 'mine') return send(ws, { type: 'error', message: 'You need the anvil at the Emberfall Mine & Smithy to smith.' });
+      if (me.duelId || me.npcFightId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
+      if (me.smithing) return send(ws, { type: 'error', message: `Your unfinished ${ITEMS[me.smithing.item].name} is still on the anvil — finish it first. (Anvil work is session-only: log out and the piece, and its bar, are lost.)` });
+      const level = levelForXp((profile.xp && profile.xp.smithing) || 0);
+      if (level < rec.level) return send(ws, { type: 'error', message: `You need Smithing level ${rec.level} to smith ${ITEMS[item].name} (you are level ${level}).` });
+      if (stackQty(profile.backpack, rec.bar) < 1) return send(ws, { type: 'error', message: `You need 1 x ${ITEMS[rec.bar].name} in your backpack to start a ${ITEMS[item].name}.` });
+      removeStacks(profile.backpack, rec.bar, 1);
+      me.smithing = { item, progress: 0, heat: 100, heatAt: Date.now() };
+      save(key);
+      send(ws, { type: 'smith_state', item, progress: 0, heat: 100, note: 'Work it at the anvil while it is hot — heat fades and cold metal barely moves. Unfinished work is session-only: finish before you log out or the bar is lost.' });
+      return sendProfile(key);
+    }
+    if (m.type === 'smith_hit') {
+      if (me.area !== 'mine') return send(ws, { type: 'error', message: 'You need the anvil at the Emberfall Mine & Smithy to work the metal.' });
+      if (me.duelId || me.npcFightId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
+      const sm = me.smithing;
+      if (!sm) return send(ws, { type: 'error', message: 'Nothing on the anvil — start a piece first (smith_start).' });
+      // Hammer hits are fast-tappable: a 300ms floor, not the 1.4s
+      // shared action cooldown.
+      const now = Date.now();
+      if (now - (me.lastSmithHitAt || 0) < 300) return send(ws, { type: 'error', message: 'Too fast — one swing at a time.' });
+      me.lastSmithHitAt = now;
+      const heat = smithHeatNow(sm);
+      // Hot metal moves: +12..18 at heat 66+, +7..11 at 33+, +3..6 cold.
+      const gain = heat >= 66 ? 12 + Math.floor(Math.random() * 7)
+        : heat >= 33 ? 7 + Math.floor(Math.random() * 5)
+        : 3 + Math.floor(Math.random() * 4);
+      sm.progress = Math.min(100, sm.progress + gain);
+      sm.heat = Math.max(0, heat - (6 + Math.floor(Math.random() * 5))); // each hit also cools it 6..10
+      sm.heatAt = now;
+      if (sm.progress >= 100) {
+        const rec = SMITH_RECIPES[sm.item];
+        const doneItem = sm.item;
+        me.smithing = null;
+        const leftover = addStacks(profile.backpack, doneItem, 1, BACKPACK_MAX_STACKS);
+        if (leftover > 0) addStacks(profile.bank, doneItem, leftover);
+        addXp(key, { smithing: rec.xp });
+        save(key);
+        send(ws, { type: 'smith_state', done: true, item: doneItem, xp: rec.xp });
+        return sendProfile(key);
+      }
+      return send(ws, { type: 'smith_state', item: sm.item, progress: sm.progress, heat: sm.heat });
+    }
+    if (m.type === 'smith_reheat') {
+      if (me.area !== 'mine') return send(ws, { type: 'error', message: 'You need the furnace at the Emberfall Mine & Smithy to reheat the metal.' });
+      const sm = me.smithing;
+      if (!sm) return send(ws, { type: 'error', message: 'Nothing on the anvil to reheat.' });
+      const now = Date.now();
+      if (now - (me.lastReheatAt || 0) < 1000) return send(ws, { type: 'error', message: 'Too fast — the metal is still heating.' });
+      me.lastReheatAt = now;
+      sm.heat = 100;
+      sm.heatAt = now;
+      return send(ws, { type: 'smith_state', item: sm.item, progress: sm.progress, heat: 100 });
+    }
+    if (m.type === 'smith_upgrade') {
+      const item = String(m.item || '');
+      const def = ITEMS[item];
+      if (!def || !def.smithMetal) return send(ws, { type: 'error', message: 'That is not a smithed item.' });
+      if (me.area !== 'mine') return send(ws, { type: 'error', message: 'You need the anvil at the Emberfall Mine & Smithy to upgrade gear.' });
+      if (me.duelId || me.npcFightId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
+      const u = def.smithUpgrade || 0;
+      if (u >= 4) return send(ws, { type: 'error', message: `${def.name} is already +4 — fully upgraded.` });
+      const md = SMITH_METALS[def.smithMetal];
+      const level = levelForXp((profile.xp && profile.xp.smithing) || 0);
+      if (level < md.level) return send(ws, { type: 'error', message: `You need Smithing level ${md.level} to work ${cap(def.smithMetal)} (you are level ${level}).` });
+      if (stackQty(profile.backpack, item) < 1) return send(ws, { type: 'error', message: `No ${def.name} in your backpack.` });
+      if (stackQty(profile.backpack, md.bar) < 1) return send(ws, { type: 'error', message: `Upgrading needs 1 x ${ITEMS[md.bar].name} in your backpack.` });
+      removeStacks(profile.backpack, md.bar, 1); // the bar is spent either way
+      // Success odds fall per step: +1 always lands, then 85 / 70 / 55%.
+      const chance = [1, 0.85, 0.7, 0.55][u];
+      const ok = Math.random() < chance;
+      let resultItem = item;
+      let xp = 0;
+      if (ok) {
+        resultItem = `${def.smithBase}_u${u + 1}`;
+        removeStacks(profile.backpack, item, 1);
+        const leftover = addStacks(profile.backpack, resultItem, 1, BACKPACK_MAX_STACKS);
+        if (leftover > 0) addStacks(profile.bank, resultItem, leftover);
+        xp = 15 * (u + 1);
+        addXp(key, { smithing: xp });
+      }
+      save(key);
+      send(ws, { type: 'upgrade_result', ok, item: resultItem, xp });
       return sendProfile(key);
     }
 
