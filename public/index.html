@@ -166,6 +166,7 @@
   <button class="rbtn" data-panel="prayers" title="Prayers">🙏</button>
   <button class="rbtn" data-panel="players" title="Players">👥</button>
   <button class="rbtn" data-panel="skills" title="Skills">📊</button>
+  <button class="rbtn" data-panel="smithy" title="Smithy">🔥</button>
   <button class="rbtn" data-panel="teleport" title="Teleport">🌀</button>
   <button class="rbtn" data-panel="settings" title="Settings">🎛️</button>
  </div>
@@ -209,7 +210,7 @@
  <input id="pass" type="password" placeholder="Password (6+)" autocomplete="current-password">
  <div style="display:flex;gap:8px;margin-top:6px"><button class="act" id="reg">Create account</button><button class="act" id="login">Sign in</button></div>
  <div id="authmsg"></div>
- <p class="note">Stage 2: Training &amp; Gathering caves, Fishing Cove — chop, light a fire, fish &amp; cook. Plus skills &amp; XP, Goblin Camp, twin sticks, rotating minimap, settings, quick sets.</p>
+ <p class="note">Stage 3: Emberfall Mine &amp; Smithy — mine 9 ores, smelt bars at the furnace, smith &amp; upgrade gear at the anvil. Plus Training &amp; Gathering caves, Fishing Cove, skills &amp; XP, Goblin Camp, twin sticks, rotating minimap, settings, quick sets.</p>
 </div></div>
 
 <div id="loaderror"><div><h2 style="color:#ffd75e">Couldn't load 3D 😕</h2><p>The 3D library (Three.js) failed to load, so the plaza can't be drawn.<br>Check your connection and reload the page.</p></div></div>
@@ -228,8 +229,10 @@ const ICONS={restore_potion:'🍷',prayer_potion:'🌟',ration:'🍗',bronze_swo
  bronze_platelegs:'👖',steel_platelegs:'👖',dragon_platelegs:'👖',bronze_shield:'🛡️',steel_shield:'🛡️',dragon_shield:'🛡️',
  bones:'🦴',herbs:'🌿',gems:'💎',bars:'🟨',runes:'🔮',charms:'🧿',
  copper_ore:'🟠',tin_ore:'⚪',iron_ore:'🔘',coal:'⚫',uncut_gem:'🔷',logs:'🪵',oak_logs:'🪵',
- raw_shrimps:'🦐',raw_trout:'🐠',cooked_trout:'🐟',cooked_shrimps:'🍤',burnt_fish:'🖤'};
-const KIND_ICON={potion:'🧪',food:'🍗',weapon:'⚔️',armour:'🛡️',good:'📦'};
+ raw_shrimps:'🦐',raw_trout:'🐠',cooked_trout:'🐟',cooked_shrimps:'🍤',burnt_fish:'🖤',
+ silver_ore:'🤍',gold_ore:'🟡',mithril_ore:'🔵',adamantite_ore:'🟢',runite_ore:'💠',
+ bronze_bar:'🟫',iron_bar:'⬜',silver_bar:'🥈',steel_bar:'⬛',mithril_bar:'🟦',adamant_bar:'🟩',rune_bar:'🟪'};
+const KIND_ICON={potion:'🧪',food:'🍗',weapon:'⚔️',armour:'🛡️',good:'📦',tool:'⛏️'};
 function iconOf(id){ if(ICONS[id])return ICONS[id]; const d=catalog[id]; return d? (KIND_ICON[d.kind]||'📦') : '📦'; }
 function nameOf(id){ if(catalog[id])return catalog[id].name; if(goods[id])return goods[id].name; return id; }
 function stackQtyOf(stacks,id){ const s=(stacks||[]).find(x=>x.item===id); return s?s.qty:0; }
@@ -301,7 +304,7 @@ window.useQuick=function(n){
 $('quick1').onclick=()=>useQuick(1);
 $('quick2').onclick=()=>useQuick(2);
 
- /* ================= auth & websocket ================= */
+/* ================= auth & websocket ================= */
 async function auth(path){
  const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('name').value,password:$('pass').value})});
  const d=await r.json(); if(!r.ok){ $('authmsg').textContent=d.error||'Sign-in failed.'; return; }
@@ -337,6 +340,9 @@ function onMsg(m){
  if(m.type==='gather_result'){ onGatherResult(m); }
  if(m.type==='fire_lit'){ toast('🔥 Fire lit (60s)'); }
  if(m.type==='cook_result'){ if(m.ok) toast(`🍳 Cooked! +1 ${nameOf(m.item)}`); else toast('🔥 Burnt it…'); }
+ if(m.type==='smelt_result'){ toast(`🔥 Smelted ${m.qty} × ${nameOf(m.bar)} (+${m.xp} Smithing XP)`); logLine(`🔥 Smelted ${m.qty} × ${nameOf(m.bar)} (+${m.xp} Smithing XP)`); if(drawerPanel==='smithy') renderDrawer(); }
+ if(m.type==='smith_state'){ onSmithState(m); }
+ if(m.type==='upgrade_result'){ if(m.ok){ toast(`⬆️ Upgraded to ${nameOf(m.item)}!`); logLine(`⬆️ Upgraded to ${nameOf(m.item)} (+${m.xp||0} Smithing XP)`); } else { toast('⬆️ The upgrade failed — the bar was lost, your item is unharmed.'); logLine('⬆️ Upgrade failed — bar lost, item unharmed.'); } }
  if(m.type==='xp'){ onXpDrop(m); }
  if(m.type==='profile'){ me=m.profile; renderAll(); }
  if(m.type==='chat'){ logLine(`${m.from}: ${m.text}`); showBubble(m.from,m.text); }
@@ -419,12 +425,11 @@ function onXpDrop(m){
  if(drawerPanel==='skills') renderDrawer();
 }
 
- /* ================= 3D world ================= */
+/* ================= 3D world ================= */
 const W2S=10; // world units -> server coords
 const sx2w=x=>x/W2S-40, sy2w=y=>y/W2S-22.5; // server -> world
 const wx2s=x=>(x+40)*W2S, wz2s=z=>(z+22.5)*W2S; // world -> server
-
- const BANK_POS={x:400,y:225};
+const BANK_POS={x:400,y:225};
 const SHOP_SPOTS=[ // server coords
  {shop:'Potion',x:170,y:110,color:0x7a4fd0},
  {shop:'Weapon',x:630,y:110,color:0xb03a2e},
@@ -503,6 +508,7 @@ function buildPlaza(root){
    box(0.7,0.7,0.7,0xd4af37,-0.8,1.15,0.3,g,act); box(0.6,0.6,0.6,0xb03a2e,0.7,1.1,0.3,g,act); // goods on counter
    const lb=textSprite(s.shop,'#ffffff','rgba(23,19,12,0.85)'); lb.position.set(0,3.6,0); g.add(lb);
  }
+ // duel board
  const bg=new THREE.Group(); bg.position.set(sx2w(BOARD_POS.x),0,sy2w(BOARD_POS.y)); scene.add(bg);
  box(0.18,2.4,0.18,0x5a4020,-1.1,1.2,0,bg); box(0.18,2.4,0.18,0x5a4020,1.1,1.2,0,bg);
  box(2.8,1.7,0.12,0x8a6d1f,0,1.7,0,bg);
@@ -698,12 +704,62 @@ function buildFishingCove(root){
  box(1.4,0.22,0.26,0x5a4020,0,0.12,0,ringC);
  const cl=box(1.4,0.22,0.26,0x5a4020,0,0.12,0,ringC); cl.rotation.y=1.57;
 }
+function buildMine(root){
+ const S=root;
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({color:0x3f3a33}));
+ floor.rotation.x=-Math.PI/2; S.add(floor);
+ // rock walls, gap at the SOUTH gate (walk out to return to the plaza)
+ rockWallRun(S,-40,-22.5,40,-22.5); // north
+ rockWallRun(S,-40,22.5,-3.5,22.5); rockWallRun(S,3.5,22.5,40,22.5); // south, gap at gate
+ rockWallRun(S,-40,-22.5,-40,22.5); // west
+ rockWallRun(S,40,-22.5,40,22.5); // east
+ gatePosts(S,0,22.5);
+ buildTorch(S,-14,-20); buildTorch(S,14,-20); buildTorch(S,36,-6);
+ // signpost by the south gate (the rocks themselves render from node data)
+ box(0.18,2.2,0.18,0x5a4020,5.5,1.1,19.5,S);
+ const sp=textSprite('⛏️🔥 Emberfall','#ffd75e','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,19.5); S.add(sp);
+ // FURNACE — south-east: stone body, dark mouth facing west, flames inside, chimney
+ const furn=new THREE.Group(); furn.position.set(31,0,13); S.add(furn);
+ box(3.2,2.2,2.6,0x6b675e,0,1.1,0,furn); // body
+ box(3.6,0.3,3.0,0x55555e,0,2.35,0,furn); // top slab
+ box(0.9,2.4,0.9,0x55555e,0.7,3.4,-0.5,furn); // chimney
+ box(0.25,1.15,1.6,0x140d06,-1.65,0.85,0,furn); // dark mouth (west face)
+ const ffl=new THREE.Mesh(new THREE.ConeGeometry(0.42,1.1,6),new THREE.MeshBasicMaterial({color:0xff7b24})); ffl.rotation.z=Math.PI/2; ffl.position.set(-1.95,0.85,0); furn.add(ffl);
+ const ffl2=new THREE.Mesh(new THREE.ConeGeometry(0.24,0.7,6),new THREE.MeshBasicMaterial({color:0xffd75e})); ffl2.rotation.z=Math.PI/2; ffl2.position.set(-1.9,0.85,0); furn.add(ffl2);
+ const flb=textSprite('🔥 Furnace','#ffd75e','rgba(23,19,12,0.85)'); flb.position.set(31,3.6,13); S.add(flb);
+ // ANVIL — next to the furnace
+ const anv=new THREE.Group(); anv.position.set(25,0,16.5); S.add(anv);
+ box(1.5,0.5,0.9,0x2e2e33,0,0.25,0,anv); // base
+ box(0.7,0.5,0.6,0x3a3a41,0,0.75,0,anv); // waist
+ box(2.0,0.35,0.75,0x4a4a52,0,1.18,0,anv); // top plate
+ const horn=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.26,1.0,8),new THREE.MeshLambertMaterial({color:0x4a4a52})); horn.rotation.z=Math.PI/2; horn.position.set(1.35,1.18,0); anv.add(horn);
+ const alb=textSprite('🔨 Anvil','#ffd75e','rgba(23,19,12,0.85)'); alb.position.set(25,2.6,16.5); S.add(alb);
+ // Pickaxe Pete — miner standing by the smithy (his pickaxes are in the Shops panel)
+ const pete=new THREE.Group(); pete.position.set(27,0,7); S.add(pete);
+ box(0.24,0.7,0.24,0x3a2c1c,-0.16,0.35,0,pete); box(0.24,0.7,0.24,0x3a2c1c,0.16,0.35,0,pete); // legs
+ box(0.7,0.8,0.4,0x6e4a1f,0,1.1,0,pete); // body
+ box(0.44,0.44,0.44,0xd9a066,0,1.75,0,pete); // head
+ const hbrim=new THREE.Mesh(new THREE.CylinderGeometry(0.44,0.44,0.07,12),new THREE.MeshLambertMaterial({color:0xf2c230})); hbrim.position.set(0,1.99,0); pete.add(hbrim); // hard-hat brim
+ const hdome=new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.34,0.26,12),new THREE.MeshLambertMaterial({color:0xf2c230})); hdome.position.set(0,2.13,0); pete.add(hdome); // hard-hat dome
+ const pick=box(0.06,1.6,0.06,0x5a4020,0.7,1.5,0.2,pete); pick.rotation.z=-0.6; // pickaxe handle
+ box(0.7,0.09,0.09,0x9aa2ad,0.95,2.15,0.2,pete); // pickaxe head
+ const plabel=document.createElement('div'); plabel.className='plabel';
+ plabel.innerHTML=`<div class="nname">⛏️ Pickaxe Pete</div>`;
+ $('labels').appendChild(plabel);
+ worldLabels.push({el:plabel,x:27,y:3.1,z:7,area:'mine',kind:'static'});
+ // scattered decor rocks (nodes render separately, from data)
+ for(const [rx,rz] of [[-34,16],[-8,18],[14,18],[36,4],[-36,-4]]){
+   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.6),new THREE.MeshLambertMaterial({color:0x5d574c}));
+   rock.position.set(rx,0.35,rz); S.add(rock);
+ }
+}
 function buildAreas(){
  areaGroups.plaza=new THREE.Group(); scene.add(areaGroups.plaza); buildPlaza(areaGroups.plaza);
  areaGroups.goblins=new THREE.Group(); scene.add(areaGroups.goblins); buildGoblinCamp(areaGroups.goblins);
  areaGroups.training=new THREE.Group(); scene.add(areaGroups.training); buildTrainingCave(areaGroups.training);
  areaGroups.gathering=new THREE.Group(); scene.add(areaGroups.gathering); buildGatheringCave(areaGroups.gathering);
  areaGroups.cove=new THREE.Group(); scene.add(areaGroups.cove); buildFishingCove(areaGroups.cove);
+ areaGroups.mine=new THREE.Group(); scene.add(areaGroups.mine); buildMine(areaGroups.mine);
  applyAreaVisibility();
 }
 function applyAreaVisibility(){
@@ -727,13 +783,12 @@ function setArea(a){
  }
  drawMinimap();
 }
-const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1};
+const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1};
 function makeKnight(isMe,name){
  const g=new THREE.Group();
  // The local player wears red dragon-plate (red body, dark red limbs, gold trim);
  // everyone else stays steel.
  const main=isMe?0xb03a2e:0x77808e, dark=isMe?0x6e1408:0x4a4f58, trim=isMe?0xd4af37:0x77808e;
- const main2=main;
  box(0.26,0.75,0.26,dark,-0.18,0.38,0,g); box(0.26,0.75,0.26,dark,0.18,0.38,0,g); // legs
  box(0.78,0.85,0.45,main,0,1.18,0,g); // body
  box(0.24,0.7,0.24,main,-0.52,1.2,0,g); box(0.24,0.7,0.24,main,0.52,1.2,0,g); // arms
@@ -773,8 +828,7 @@ function showBubble(name,text){
  const a=avatars[name]; if(!a) return;
  a.bubbleEl.textContent=text; a.bubbleEl.style.display='block'; a.bubbleUntil=Date.now()+3000;
 }
-
- /* ---- NPC goblins ---- */
+/* ---- NPC goblins ---- */
 function makeGoblin(n){
  const g=new THREE.Group();
  const skin=0x4c9440, dark=0x356b24;
@@ -827,7 +881,8 @@ let worldLabels=[]; // {el,x,y,z,area,kind,nodeId?} — positioned by updateLabe
 let activeNode=null; // node def being auto-gathered
 let pendingNode=null; // node def to walk to, then auto-gather on arrival
 let gatherTimer=null;
-const ROCK_TINT={copper_ore:0xb87333,tin_ore:0xcfd4d8,iron_ore:0x8a5a4a,coal:0x2b2b2b,uncut_gem:0x9b59d0};
+const ROCK_TINT={copper_ore:0xb87333,tin_ore:0xcfd4d8,iron_ore:0x8a5a4a,coal:0x2b2b2b,uncut_gem:0x9b59d0,
+ silver_ore:0xd8dde2,gold_ore:0xf2c230,mithril_ore:0x7f9fb0,adamantite_ore:0x5e7a52,runite_ore:0x9fd8e8};
 const GATHER_VERB={rock:['⛏️','Mining'],tree:['🪓','Chopping'],fish:['🎣','Fishing'],station:['🏋️','Training']};
 function makeNodeProp(n){
  const g=new THREE.Group();
@@ -846,7 +901,8 @@ function makeNodeProp(n){
    ring.rotation.x=-Math.PI/2; ring.position.y=0.09; g.add(ring);
    const dot=new THREE.Mesh(new THREE.CircleGeometry(0.3,16),new THREE.MeshBasicMaterial({color:0xdff2ff,transparent:true,opacity:0.9}));
    dot.rotation.x=-Math.PI/2; dot.position.y=0.09; g.add(dot); labelY=1.3;
- } else if(n.kind==='station'){   if(n.id==='ranged_target'){
+ } else if(n.kind==='station'){
+   if(n.id==='ranged_target'){
      box(0.18,1.9,0.18,0x5a4020,0,0.95,0,g);
      const board=new THREE.Mesh(new THREE.CircleGeometry(0.85,20),new THREE.MeshBasicMaterial({color:0xf3ead2})); board.position.set(0,1.9,0.06); g.add(board);
      const bull=new THREE.Mesh(new THREE.CircleGeometry(0.38,16),new THREE.MeshBasicMaterial({color:0xb03a2e})); bull.position.set(0,1.9,0.08); g.add(bull);
@@ -1000,7 +1056,7 @@ function updateLabels(now){
  });
 }
 
- /* ================= controls & movement ================= */
+/* ================= controls & movement ================= */
 let camYaw=0.7, camDist=21;
 let camPitch=0.92; // camera elevation angle (right stick / settings adjust it)
 let localRot=0; // local knight facing (world radians, atan2(x,z) convention)
@@ -1128,6 +1184,7 @@ function checkGates(){
    // corners first, then edges
    if(myPos.x>=790&&myPos.y>=430){ go('training','🚪 South-east gate → Training Cave…'); return; }
    if(myPos.x<=10&&myPos.y>=430){ go('gathering','🚪 South-west gate → Gathering Cave…'); return; }
+   if(myPos.x>=790&&myPos.y<=20){ go('mine','🚪 North-east gate → Emberfall Mine & Smithy…'); return; }
    if(myPos.x>=795){ go('goblins','🚪 East gate → Goblin Camp…'); return; }
    if(myPos.x<=5){ go('cove','🚪 West gate → Fishing Cove…'); return; }
  }
@@ -1135,6 +1192,7 @@ function checkGates(){
  else if(curArea==='cove'&&myPos.x<=5){ go('plaza','🚪 West gate → Plaza…'); }
  else if(curArea==='training'&&myPos.y>=445){ go('plaza','🚪 South gate → Plaza…'); }
  else if(curArea==='gathering'&&myPos.y<=5){ go('plaza','🚪 North gate → Plaza…'); }
+ else if(curArea==='mine'&&myPos.y>=445){ go('plaza','🚪 South gate → Plaza…'); }
 }
 function checkPendingAttack(){
  if(!pendingAttack||!myPos) return;
@@ -1206,7 +1264,7 @@ function drawMinimap(){
  g.save();
  g.translate(cx,cy); g.rotate(th); g.scale(MM_S,MM_S); g.translate(-myPos.x,-myPos.y);
  // ground + area features (drawn in server coords, rotated by the transform)
- const caveBg=(curArea==='training'||curArea==='gathering');
+ const caveBg=(curArea==='training'||curArea==='gathering'||curArea==='mine');
  g.fillStyle= caveBg? '#2b2b30' : (curArea==='goblins')? '#55702f' : '#2e4a2a'; g.fillRect(0,0,800,450);
  if(curArea==='plaza'){
    g.fillStyle='#6e675a'; g.fillRect(400-210,225-135,420,270); // stone centre
@@ -1224,6 +1282,8 @@ function drawMinimap(){
    g.fillStyle='#3d3d44'; g.fillRect(400-310,225-70,620,140); // station hall floor
  } else if(curArea==='gathering'){
    g.fillStyle='#2e6db0'; g.fillRect(580,0,220,450); // pool, east side
+ } else if(curArea==='mine'){
+   g.fillStyle='#ff7b24'; g.fillRect(688,333,44,44); // furnace & anvil, south-east
  }
  // resource node + fire dots for the current area
  for(const n of (nodesByArea[curArea]||[])){
@@ -1319,9 +1379,10 @@ function initThree(){
  return true;
 }
 initThree();
+
 /* ================= drawer panels ================= */
 let drawerPanel=null, shopTab='Potion', shopMode='buy', bankQty='1', selStack=null, packSorted=false;
-const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',players:'👥 Players online',skills:'📊 Skills',teleport:'🌀 Teleport',settings:'🎛️ Settings'};
+const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',players:'👥 Players online',skills:'📊 Skills',smithy:'🔥 Emberfall Smithy',teleport:'🌀 Teleport',settings:'🎛️ Settings'};
 function togglePanel(name){ drawerPanel===(name)? closeDrawer() : openPanel(name); }
 function openPanel(name){ drawerPanel=name; selStack=null; if(name==='backpack') packSorted=false; $('drawer').classList.add('open'); renderDrawer();
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.toggle('on',b.dataset.panel===name)); }
@@ -1344,6 +1405,7 @@ function renderDrawer(){
  if(drawerPanel==='prayers') b.innerHTML=pPrayers();
  if(drawerPanel==='players') b.innerHTML=pPlayers();
  if(drawerPanel==='skills') b.innerHTML=pSkills();
+ if(drawerPanel==='smithy') b.innerHTML=pSmithy();
  if(drawerPanel==='teleport') b.innerHTML=pTeleport();
  if(drawerPanel==='settings') b.innerHTML=pSettings();
 }
@@ -1378,16 +1440,22 @@ function pBackpack(){
    const s=me.backpack.find(x=>x.item===selStack), d=catalog[selStack];
    if(s){
      h+=`<div class="detail"><b>${iconOf(s.item)} ${esc(nameOf(s.item))}</b> x${s.qty}`;
-     if(d) h+=`<div class="note">${d.kind}${d.slot?` · worn: ${d.slot}`:''}${d.heal?` · heals ${d.heal} HP`:''}${d.prayerRestore?` · restores ${d.prayerRestore} prayer`:''}${d.maxBonus?` · +${d.maxBonus} max hit`:''}${d.reduction?` · −${Math.round(d.reduction*100)}% damage taken`:''}</div>`;
+     if(d) h+=`<div class="note">${d.kind}${d.slot?` · worn: ${d.slot}`:''}${d.heal?` · heals ${d.heal} HP`:''}${d.prayerRestore?` · restores ${d.prayerRestore} prayer`:''}${d.maxBonus?` · +${d.maxBonus} max hit`:''}${d.reduction?` · −${Math.round(d.reduction*100)}% damage taken`:''}${d.speed?` · ⛏️ pickaxe speed ×${d.speed}`:''}</div>`;
      h+=`<div class="btns">`;
      if(d&&(d.kind==='food'||d.kind==='potion')) h+=`<button class="act" onclick="send({type:'use',item:'${s.item}'})">Use</button>`;
      if(d&&d.slot) h+=`<button class="act" onclick="send({type:'equip',item:'${s.item}'})">Equip</button>`;
      if(s.item==='logs') h+=`<button class="act" onclick="lightFire()">🔥 Light fire</button>`;
      if(s.item==='raw_trout'||s.item==='raw_shrimps') h+=`<button class="act" onclick="cookItem('${s.item}')">🍳 Cook on fire</button>`;
+     const smithM=s.item.startsWith('smith_')? s.item.match(/^smith_([a-z]+)_(?:sword|platebody)(?:_u(\d))?$/) : null;
+     if(smithM&&(+ (smithM[2]||0))<4) h+=`<button class="act" onclick="send({type:'smith_upgrade',item:'${s.item}'})">⬆️ Upgrade (+1)</button>`;
      h+=`<button class="ghost" onclick="setQuick(1)">Set Quick 1</button>`;
      h+=`<button class="ghost" onclick="setQuick(2)">Set Quick 2</button>`;
      h+=`<button class="ghost" onclick="openPanel('bank')">Deposit in bank →</button>`;
-     h+=`</div></div>`;
+     h+=`</div>`;
+     if(smithM){ const u=+(smithM[2]||0);
+       h+=`<div class="note" style="margin-top:6px">${u>=4?'Already +4 — fully upgraded.':`⬆️ Upgrade uses 1 ${esc(nameOf(smithM[1]+'_bar'))} · only at the Emberfall anvil`}</div>`;
+     }
+     h+=`</div>`;
    }
  }
  return h;
@@ -1486,6 +1554,83 @@ function pSkills(){
  h+=`<p class="note">Combat XP lands as you fight — watch for the blue drops by the orbs.</p>`;
  return h;
 }
+/* ---- Smithy (Stage 3) ---- */
+// Mirrors of the server's BAR_RECIPES / SMITH_METALS (server.js) — the
+// server stays authoritative; these only drive labels, counts and buttons.
+const BAR_RECIPES_CLIENT={
+ bronze_bar:{ores:{copper_ore:1,tin_ore:1},level:1,xp:6},
+ iron_bar:{ores:{iron_ore:1},level:15,xp:13},
+ silver_bar:{ores:{silver_ore:1},level:20,xp:14},
+ steel_bar:{ores:{iron_ore:1,coal:2},level:30,xp:18},
+ bars:{ores:{gold_ore:1},level:40,xp:23}, // Gold bars — the Exchange good
+ mithril_bar:{ores:{mithril_ore:1,coal:4},level:55,xp:30},
+ adamant_bar:{ores:{adamantite_ore:1,coal:6},level:70,xp:38},
+ rune_bar:{ores:{runite_ore:1,coal:8},level:85,xp:50},
+};
+const SMITH_RECIPES_CLIENT={
+ smith_bronze_sword:{bar:'bronze_bar',level:1,xp:50},
+ smith_bronze_platebody:{bar:'bronze_bar',level:1,xp:75},
+ smith_iron_sword:{bar:'iron_bar',level:15,xp:80},
+ smith_iron_platebody:{bar:'iron_bar',level:15,xp:120},
+ smith_steel_sword:{bar:'steel_bar',level:30,xp:120},
+ smith_steel_platebody:{bar:'steel_bar',level:30,xp:180},
+ smith_mithril_sword:{bar:'mithril_bar',level:55,xp:200},
+ smith_mithril_platebody:{bar:'mithril_bar',level:55,xp:300},
+ smith_adamant_sword:{bar:'adamant_bar',level:70,xp:300},
+ smith_adamant_platebody:{bar:'adamant_bar',level:70,xp:450},
+ smith_rune_sword:{bar:'rune_bar',level:85,xp:450},
+ smith_rune_platebody:{bar:'rune_bar',level:85,xp:675},
+};
+let smithState=null; // {item,progress,heat,at} — the piece on the anvil (server session state)
+function onSmithState(m){
+ if(m.done){
+   smithState=null;
+   toast(`🔨 Finished: ${nameOf(m.item)}! (+${m.xp||0} Smithing XP)`);
+   logLine(`🔨 Finished smithing: ${nameOf(m.item)} (+${m.xp||0} Smithing XP)`);
+ } else {
+   smithState={item:m.item,progress:m.progress||0,heat:(typeof m.heat==='number'?m.heat:100),at:Date.now()};
+ }
+ if(drawerPanel==='smithy') renderDrawer();
+}
+// The server cools heat 1 point per 2s; mirror that locally for the bar.
+function smithHeatShown(){
+ if(!smithState) return 0;
+ return Math.max(0, smithState.heat - Math.floor((Date.now()-smithState.at)/2000));
+}
+function pSmithy(){
+ const lvl=(me.levels&&me.levels.smithing)||1;
+ let h='';
+ if(curArea!=='mine'){
+   h+=`<p class="note" style="margin-bottom:6px">The furnace and anvil are at the <b>Emberfall Mine &amp; Smithy</b> — walk out of the plaza's north-east corner, or teleport. Smelting and smithing only work there; you can check your ore and bar counts here.</p>`;
+   h+=`<button class="act" onclick="doTravel('mine')">🌀 Teleport to the Emberfall Mine</button>`;
+ }
+ h+=`<h4 style="margin:10px 0 5px;color:#ffd75e">🔥 Furnace — smelt ore into bars</h4>`;
+ h+=`<div class="note" style="margin-bottom:6px">Your Smithing level: <b style="color:#ffd75e">${lvl}</b></div>`;
+ for(const [bar,rec] of Object.entries(BAR_RECIPES_CLIENT)){
+   const needs=Object.entries(rec.ores).map(([ore,n])=>`${n}× ${esc(nameOf(ore))} (have ${myQty(ore)})`).join(' + ');
+   h+=`<div class="rowline"><span class="ic">${iconOf(bar)}</span><span class="grow"><b>${esc(nameOf(bar))}</b> <span class="sub">(have ${myQty(bar)})</span><br><span class="sub">needs ${needs} · Lvl ${rec.level} Smithing${lvl<rec.level?` (you: ${lvl})`:''} · ${rec.xp} XP each</span></span>
+   <button class="act" onclick="send({type:'smelt',bar:'${bar}',qty:1})">Smelt 1</button><button class="ghost" onclick="send({type:'smelt',bar:'${bar}',qty:5})">5</button><button class="ghost" onclick="send({type:'smelt',bar:'${bar}',qty:'all'})">All</button></div>`;
+ }
+ h+=`<h4 style="margin:10px 0 5px;color:#ffd75e">🔨 Anvil — smith bars into gear</h4>`;
+ if(smithState){
+   const heat=smithHeatShown();
+   const heatCol=heat>=66?'#ff5a3c':heat>=33?'#ff9d3c':'#8a8578';
+   h+=`<div class="detail"><b>${iconOf(smithState.item)} ${esc(nameOf(smithState.item))}</b> — on the anvil
+   <div class="note" style="margin-top:5px">Progress ${smithState.progress}/100</div>
+   <div class="bar" style="margin:2px 0 6px"><div style="width:${clamp(smithState.progress,0,100)}%;background:#ffd75e"></div></div>
+   <div class="note">Heat ${heat}/100</div>
+   <div class="bar" style="margin:2px 0 6px"><div style="width:${clamp(heat,0,100)}%;background:${heatCol}"></div></div>
+   <div class="btns"><button class="act" onclick="send({type:'smith_hit'})">🔨 Hit the metal</button><button class="ghost" onclick="send({type:'smith_reheat'})">🔥 Reheat</button></div>
+   <div class="note" style="margin-top:6px">Heat fades over time — cold metal barely moves. Reheat at the furnace.</div></div>`;
+ } else {
+   for(const [baseId,rec] of Object.entries(SMITH_RECIPES_CLIENT)){
+     h+=`<div class="rowline"><span class="ic">${iconOf(baseId)}</span><span class="grow"><b>${esc(nameOf(baseId))}</b><br><span class="sub">1× ${esc(nameOf(rec.bar))} (have ${myQty(rec.bar)}) · Lvl ${rec.level} Smithing${lvl<rec.level?` (you: ${lvl})`:''} · ${rec.xp} XP</span></span>
+     <button class="act" onclick="send({type:'smith_start',item:'${baseId}'})">Start</button></div>`;
+   }
+   h+=`<p class="note">An unfinished piece stays on the anvil while you're signed in — signing out loses it.</p>`;
+ }
+ return h;
+}
 /* ---- Teleport ---- */
 window.doTravel=function(to){
  if(to===curArea){ toast('You are already here.'); return; }
@@ -1494,16 +1639,17 @@ window.doTravel=function(to){
 };
 function pTeleport(){
  const here=(a)=>a===curArea;
- let h=`<p class="note" style="margin-bottom:8px">Teleporting is the shortcut — every place stays walkable too: Goblin Camp (plaza east gate), Fishing Cove (west gate), Training Cave (south-east corner), Gathering Cave (south-west corner).</p>`;
+ let h=`<p class="note" style="margin-bottom:8px">Teleporting is the shortcut — every place stays walkable too: Goblin Camp (plaza east gate), Fishing Cove (west gate), Training Cave (south-east corner), Gathering Cave (south-west corner), Emberfall Mine &amp; Smithy (north-east corner).</p>`;
  h+=`<div class="rowline"><span class="ic">🏰</span><span class="grow"><b>Plaza</b><br><span class="sub">Shops, bank, duels</span></span>${here('plaza')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('plaza')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">👺</span><span class="grow"><b>Goblin Camp</b><br><span class="sub">East gate · fight goblins for drops &amp; XP</span></span>${here('goblins')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('goblins')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">🏋️</span><span class="grow"><b>Training Cave</b><br><span class="sub">South-east corner · safe skill training</span></span>${here('training')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('training')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">⛏️</span><span class="grow"><b>Gathering Cave</b><br><span class="sub">South-west corner · mine, fish, chop</span></span>${here('gathering')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('gathering')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">🎣</span><span class="grow"><b>Fishing Cove</b><br><span class="sub">West gate · chop, light a fire, fish &amp; cook trout</span></span>${here('cove')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('cove')">Teleport</button>`}</div>`;
+ h+=`<div class="rowline"><span class="ic">⛏️🔥</span><span class="grow"><b>Emberfall Mine &amp; Smithy</b><br><span class="sub">North-east corner · mine 9 ores, smelt &amp; smith</span></span>${here('mine')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('mine')">Teleport</button>`}</div>`;
  return h;
 }
 /* ---- Settings ---- */
-const PANEL_LIST=[['backpack','🎒 Backpack'],['worn','🗡️ Worn items'],['shop','🏪 Shops'],['bank','🏦 Bank'],['exchange','💱 Gold Exchange'],['prayers','🙏 Prayers'],['players','👥 Players'],['skills','📊 Skills'],['teleport','🌀 Teleport'],['settings','🎛️ Settings']];
+const PANEL_LIST=[['backpack','🎒 Backpack'],['worn','🗡️ Worn items'],['shop','🏪 Shops'],['bank','🏦 Bank'],['exchange','💱 Gold Exchange'],['prayers','🙏 Prayers'],['players','👥 Players'],['skills','📊 Skills'],['smithy','🔥 Smithy'],['teleport','🌀 Teleport'],['settings','🎛️ Settings']];
 function pSettings(){
  let h=`<div class="setrow"><span class="grow">📷 Camera drag speed<br><span class="note">Screen-drag rotation &amp; camera stick</span></span><input type="range" min="0.25" max="3" step="0.25" value="${settings.camSpeed}" oninput="setCamSpeed(this.value)"><b id="camspeedval" style="color:#ffd75e;min-width:34px;text-align:right">${settings.camSpeed}×</b></div>`;
  h+=`<div class="setrow"><span class="grow">👆 Ground tap mode</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.tapMode==='walk'?'on':''}" onclick="setTapMode('walk')">🚶 Walk</button><button class="${settings.tapMode==='face'?'on':''}" onclick="setTapMode('face')">🧭 Face</button></div>`;
@@ -1687,5 +1833,8 @@ $('chathead').onclick=()=>{ const b=$('chatbox'); b.classList.toggle('closed'); 
 logLine('Welcome to nallystake online. Create an account or sign in to enter the plaza.');
 applySettings();
 renderQuickButtons();
+// While a piece is on the anvil, refresh the Smithy panel once a second so
+// the heat bar visibly cools (the server fades heat 1 point per 2 seconds).
+setInterval(()=>{ if(smithState&&drawerPanel==='smithy') renderDrawer(); },1000);
 </script>
 </body></html>
