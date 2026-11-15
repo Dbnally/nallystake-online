@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: nallystake-online
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        sync: false # Derek pastes the Neon connection string in the Render dashboard
+      - key: NODE_ENV
+        value: production
