@@ -55,6 +55,15 @@
 // (backpack items dropped as per-area ground piles anyone can pick
 // up), and the Muse-game style boosts (Accurate extra hits,
 // Aggressive power hits, Defensive / Controlled defender blocks).
+//
+// Stage 6 adds: Tree Guardians — an {type:'awaken_tree'} request turns
+// the nearest living tree (Gathering Cave / Fishing Cove) into a
+// session-only NPC ally: the tree node is consumed (60s regrow), and
+// the guardian follows its owner between areas, swings at the owner's
+// target every 2nd tick in the three NPC engines (goblins, Barrows,
+// Fight Caves — never in PvP duels, and it waits outside the arena
+// while its owner duels), and sometimes takes a hit meant for its
+// owner. Nothing about guardians is saved: logging out removes yours.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -686,6 +695,7 @@ function endDuel(duel, winnerKey, reason) {
       send(p.ws, { type: 'duel_end', winner: winner.username, reason, pot: duel.pot, itemsWon, profile: publicProfile(db.users[k].profile) });
       send(p.ws, { type: 'area', area: 'plaza' });
       send(p.ws, pilesMsg('plaza'));
+      send(p.ws, alliesMsg('plaza')); // Stage 6: your guardian waited for you in the plaza
     }
   }
   broadcast({ type: 'chat', from: 'Duel Master', text: `${winner.username} beat ${loser.username} for ${duel.pot}g (${reason}).` });
@@ -812,6 +822,7 @@ function respawnPlayer(key, note) {
   sess.x = AREAS.plaza.spawn.x; sess.y = AREAS.plaza.spawn.y;
   send(sess.ws, { type: 'area', area: 'plaza' });
   send(sess.ws, pilesMsg('plaza'));
+  send(sess.ws, alliesMsg('plaza')); // Stage 6: guardians standing in the plaza (yours follows you here)
   send(sess.ws, { type: 'chat', from: 'Game', text: note });
   broadcastState();
 }
@@ -821,7 +832,7 @@ function startNpcFight(key, npc) {
   const id = crypto.randomBytes(6).toString('hex');
   // Fight HP pool = the player's Hitpoints level (duels keep their 99 pool).
   const maxHpYou = Math.max(1, levelForXp(profile.xp.hitpoints));
-  const fight = { id, playerKey: key, npcId: npc.id, hpYou: maxHpYou, maxHpYou, specialQueued: false, done: false, timer: null };
+  const fight = { id, playerKey: key, npcId: npc.id, hpYou: maxHpYou, maxHpYou, specialQueued: false, done: false, timer: null, tickCount: 0 };
   npcFights.set(id, fight);
   sess.npcFightId = id;
   npc.fightId = id;
@@ -838,6 +849,7 @@ function npcTick(fight) {
   const profile = sess.profile;
   // Walking too far from the goblin breaks off the fight.
   if (sess.area !== npc.area || Math.hypot(sess.x - npc.x, sess.y - npc.y) > NPC_RANGE) { finishNpcFight(fight, 'range'); return; }
+  fight.tickCount = (fight.tickCount || 0) + 1;
   const useSpec = fight.specialQueued; fight.specialQueued = false;
   if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
   // Player swing: the duel roll (style + worn weapon vs no armour),
@@ -859,7 +871,24 @@ function npcTick(fight) {
     const raw = 1 + Math.floor(Math.random() * npc.maxHit);
     npcHit = Math.floor(raw * (1 - armourReduction(profile)));
   }
+  // Stage 6: a Tree Guardian fighting beside its owner sometimes
+  // takes the goblin's hit instead — only a hit that actually got
+  // through (a prayer-blocked hit is already 0 by this point).
+  const ally = helperAlly(fight.playerKey, sess.area);
+  if (ally && npcHit > 0 && Math.random() < 0.35) {
+    ally.hp -= npcHit;
+    npcHit = 0;
+    tickNotes.push(`🌳 Your ${ally.name} takes the hit for you!`);
+    if (ally.hp <= 0) killAlly(ally);
+  }
   npc.hp -= youHit;
+  // ... and the guardian swings at the goblin itself every 2nd tick,
+  // right after its owner's swing lands. Its damage grants no XP.
+  if (ally && allies.get(fight.playerKey) === ally && fight.tickCount % 2 === 0) {
+    const allyDmg = allyDamage(ally);
+    npc.hp -= allyDmg;
+    tickNotes.push(`🌳 ${ally.name} hits for ${allyDmg}!`);
+  }
   fight.hpYou -= npcHit;
   if (youHit > 0) {
     profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
@@ -1035,6 +1064,14 @@ function barrowsTick(fight) {
   const youHit = atkRes.dmg;
   notes.push(...atkRes.notes);
   fight.hpNpc -= youHit;
+  // Stage 6: a Tree Guardian fighting beside its owner swings at the
+  // brother every 2nd tick, right after its owner's swing. No XP.
+  const ally = helperAlly(fight.playerKey, sess.area);
+  if (ally && fight.tickCount % 2 === 0) {
+    const allyDmg = allyDamage(ally);
+    fight.hpNpc -= allyDmg;
+    notes.push(`🌳 ${ally.name} hits for ${allyDmg}!`);
+  }
   if (youHit > 0) {
     profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
     addXp(fight.playerKey, combatXpGains(profile.style, youHit));
@@ -1077,6 +1114,16 @@ function barrowsTick(fight) {
         notes.push(`Guthan's warspear glows green — he heals for ${npcHit}!`);
       }
     }
+  }
+  // Stage 6: the guardian sometimes takes a connecting brother hit
+  // instead — only a hit that actually got through (the matching
+  // Protect prayer leaves npcHit at 0, and there is nothing to take).
+  // (Guthan's heal above keys off the rolled hit, redirect or not.)
+  if (ally && npcHit > 0 && Math.random() < 0.35) {
+    ally.hp -= npcHit;
+    npcHit = 0;
+    notes.push(`🌳 Your ${ally.name} takes the hit for you!`);
+    if (ally.hp <= 0) killAlly(ally);
   }
   fight.hpYou -= npcHit;
 
@@ -1256,7 +1303,7 @@ function startFcRun(key) {
   const maxHpYou = Math.max(1, levelForXp(profile.xp.hitpoints));
   const run = {
     id, playerKey: key, wave: 0, monsters: new Map(), targetId: null,
-    hpYou: maxHpYou, maxHpYou, specialQueued: false, done: false,
+    hpYou: maxHpYou, maxHpYou, specialQueued: false, done: false, tickCount: 0,
     timer: null, waveTimer: null, startedAt: Date.now(), kills: 0,
     spawnSeq: 0, betweenWaves: false, rosterChanged: false,
     jadPending: null, // { style, from } — telegraphed last tick, lands now
@@ -1297,6 +1344,9 @@ function fcTick(run) {
   if (!sess) { endFcRun(run, 'disconnect'); return; }
   if (sess.area !== 'fightcaves') { endFcRun(run, 'left'); return; } // safety net; travel ends runs itself
   const profile = sess.profile;
+  run.tickCount = (run.tickCount || 0) + 1;
+  // Stage 6: the runner's Tree Guardian, if it followed them in.
+  let ally = helperAlly(run.playerKey, sess.area);
   const hitsTaken = [];
   let note = null;
 
@@ -1348,6 +1398,22 @@ function fcTick(run) {
       }
       if (target.hp <= 0) killFcMonster(run, target);
       else if (target.kind === 'jad') maybeSpawnFcHealers(run);
+      // Stage 6: the guardian swings at the same target every 2nd
+      // tick, through the same kill path — Tz-Kek splits and Jad's
+      // healer trigger process normally, and Jad is a valid target.
+      // Its damage grants no XP. If the owner's swing just killed
+      // the target, the guardian holds off until the next target.
+      if (ally && run.tickCount % 2 === 0) {
+        const cur = run.monsters.get(run.targetId);
+        if (cur && cur.alive) {
+          const allyDmg = allyDamage(ally);
+          cur.hp -= allyDmg;
+          const allyNote = `🌳 ${ally.name} hits for ${allyDmg}!`;
+          note = note ? `${note} ${allyNote}` : allyNote;
+          if (cur.hp <= 0) killFcMonster(run, cur);
+          else if (cur.kind === 'jad') maybeSpawnFcHealers(run);
+        }
+      }
     }
   }
 
@@ -1397,6 +1463,16 @@ function fcTick(run) {
         const raw = 1 + Math.floor(Math.random() * mon.maxHit);
         dmg = Math.floor(raw * (1 - armourReduction(profile)));
       }
+    }
+    // Stage 6: the guardian sometimes takes a monster's hit instead.
+    // Jad never reaches this loop — his telegraphed hits resolve in
+    // step 1 and are NEVER redirected (the prayer game stays pure).
+    if (ally && dmg > 0 && Math.random() < 0.35) {
+      ally.hp -= dmg;
+      const redirNote = `🌳 Your ${ally.name} takes the hit for you!`;
+      note = note ? `${note} ${redirNote}` : redirNote;
+      if (ally.hp <= 0) { killAlly(ally); ally = null; }
+      dmg = 0;
     }
     run.hpYou -= dmg;
     hitsTaken.push({ from: mon.id, kind: mon.kind, dmg, blocked: prayerBlocked || styleBlocked });
@@ -1593,6 +1669,84 @@ setInterval(() => {
   for (const a of touched) broadcastPiles(a);
 }, 5000);
 
+// ---------- Tree Guardians (Stage 6) ----------
+// Derek's Stage 6 ask: a button that attacks the nearest tree and the
+// tree becomes an NPC ally — it teams with you, follows you and
+// protects you. Awakening CONSUMES the tree: its node is depleted for
+// 60s, then grows back on the usual node sweep. Guardians are
+// session-only world state, like piles and fires: one per player,
+// keyed by owner key, NEVER saved to the profile — logging out
+// removes yours. They fight beside their owner in the three NPC
+// engines (goblins, Barrows brothers, Fight Caves monsters) and
+// NEVER in PvP duels; while the owner duels, the guardian waits
+// where it was instead of following into the arena.
+const allies = new Map(); // ownerKey -> ally
+let allySeq = 0;
+function alliesMsg(area) {
+  return {
+    type: 'allies', area,
+    allies: [...allies.values()].filter((a) => a.area === area)
+      .map((a) => ({ id: a.id, owner: a.owner, name: a.name, oak: a.oak, x: Math.round(a.x), y: Math.round(a.y), hp: Math.max(0, a.hp), maxHp: a.maxHp })),
+  };
+}
+function broadcastAllies(area) {
+  const msg = alliesMsg(area);
+  for (const p of online.values()) if (p.area === area) send(p.ws, msg);
+}
+// The guardian that can help this player in a fight right now: alive
+// and standing in the same area as the fight.
+function helperAlly(key, area) {
+  const ally = allies.get(key);
+  return ally && ally.hp > 0 && ally.area === area ? ally : null;
+}
+// One guardian swing's damage: 1-6 for a Tree Guardian, 2-8 for an
+// Oak Guardian. Guardian damage grants no XP (callers only ever add
+// it to the target's HP loss, never to an addXp call).
+function allyDamage(ally) {
+  return ally.oak ? 2 + Math.floor(Math.random() * 7) : 1 + Math.floor(Math.random() * 6);
+}
+// The one place a guardian dies: out of the map, its area hears about
+// it, and the owner gets the dedicated message. After a death the
+// player is free to awaken another tree.
+function killAlly(ally) {
+  if (allies.get(ally.ownerKey) !== ally) return; // already gone
+  allies.delete(ally.ownerKey);
+  broadcastAllies(ally.area);
+  const sess = online.get(ally.ownerKey);
+  if (sess) {
+    send(sess.ws, { type: 'ally_died', name: ally.name });
+    send(sess.ws, { type: 'chat', from: 'Game', text: `🌳 Your ${ally.name} has fallen!` });
+  }
+}
+// Follow loop (the combat tick): guardians trail their owner at ~70
+// units, hop to the owner's area when the owner travels, wait out
+// duels in place, and vanish when the owner goes offline.
+setInterval(() => {
+  if (!allies.size) return;
+  const touched = new Set();
+  for (const [ownerKey, ally] of [...allies]) {
+    const sess = online.get(ownerKey);
+    if (!sess) { allies.delete(ownerKey); touched.add(ally.area); continue; }
+    if (sess.duelId) continue; // duelling: the guardian waits outside the arena
+    if (ally.area !== sess.area) {
+      touched.add(ally.area);
+      ally.area = sess.area;
+      ally.x = Math.max(0, sess.x - 40); ally.y = sess.y;
+      touched.add(ally.area);
+      continue;
+    }
+    const d = Math.hypot(sess.x - ally.x, sess.y - ally.y);
+    if (d > 70) {
+      const step = Math.min(26, d - 70);
+      ally.x += ((sess.x - ally.x) / d) * step;
+      ally.y += ((sess.y - ally.y) / d) * step;
+      touched.add(ally.area);
+    }
+  }
+  for (const a of allies.values()) touched.add(a.area);
+  for (const a of touched) broadcastAllies(a);
+}, TICK_MS);
+
 // Cooking recipes: raw item -> cooked item + Cooking XP on success.
 // Burn chance (%) = clamp(55 - cookingLevel * 1.2, 8, 55): 53.8% at
 // level 1, falling as Cooking rises, never below 8%.
@@ -1687,6 +1841,7 @@ wss.on('connection', (ws, req) => {
   online.set(key, { ws, profile, x: 100 + Math.random() * 500, y: 100 + Math.random() * 250, area: 'plaza', duelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsPuzzleSolved: false });
   send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot('plaza'), area: 'plaza' });
   send(ws, pilesMsg('plaza')); // Stage 5: any drop piles waiting in the plaza
+  send(ws, alliesMsg('plaza')); // Stage 6: any Tree Guardians standing in the plaza
   send(ws, { type: 'catalog', items: catalogList(), shops: SHOPS });
   send(ws, { type: 'exchange_prices', goods: goodsList() });
   broadcast({ type: 'chat', from: 'Game', text: `${profile.username} entered the plaza.` }, key);
@@ -1703,6 +1858,16 @@ wss.on('connection', (ws, req) => {
     if (m.type === 'chat') {
       const text = String(m.text || '').slice(0, 140).trim();
       if (text) broadcast({ type: 'chat', from: profile.username, text });
+    }
+    // ----- Jump relay (Stage 6): cosmetic only — tell everyone else in
+    // this area so their client plays the same hop/flip on this knight.
+    // Rate-limited to one relay per 500ms per session.
+    if (m.type === 'jump') {
+      const now = Date.now();
+      if (now - (me.lastJumpAt || 0) >= 500) {
+        me.lastJumpAt = now;
+        for (const p of online.values()) if (p !== me && p.area === me.area) send(p.ws, { type: 'player_jump', username: profile.username });
+      }
     }
     if (m.type === 'style') {
       if (STYLES[m.style]) { profile.style = m.style; save(key); send(ws, { type: 'profile', profile: publicProfile(profile) }); }
@@ -1731,6 +1896,7 @@ wss.on('connection', (ws, req) => {
       // Stage 5: every area entry also brings its drop piles, and the
       // Barrows areas bring the saved run state.
       send(ws, pilesMsg(to));
+      send(ws, alliesMsg(to)); // Stage 6: guardians already standing there
       if (to === 'barrows' || to === 'barrows_tunnels') send(ws, barrowsStateMsg(me));
       // Stage 3: an unfinished smithing piece (session-only) is still
       // on the anvil when you come back to the mine — remind the client.
@@ -1809,6 +1975,7 @@ wss.on('connection', (ws, req) => {
         send(ws, nodesMsg('barrows_tunnels'));
         send(ws, firesMsg('barrows_tunnels'));
         send(ws, pilesMsg('barrows_tunnels'));
+        send(ws, alliesMsg('barrows_tunnels'));
         send(ws, barrowsStateMsg(me));
         broadcastState();
         return send(ws, { type: 'chat', from: 'Game', text: 'You climb down into the Barrows tunnels. The reward chest waits at the centre, behind a puzzle door.' });
@@ -1866,6 +2033,7 @@ wss.on('connection', (ws, req) => {
       send(ws, nodesMsg('barrows'));
       send(ws, firesMsg('barrows'));
       send(ws, pilesMsg('barrows'));
+      send(ws, alliesMsg('barrows'));
       send(ws, barrowsStateMsg(me));
       broadcastState();
       return;
@@ -1885,6 +2053,7 @@ wss.on('connection', (ws, req) => {
       send(ws, nodesMsg('barrows'));
       send(ws, firesMsg('barrows'));
       send(ws, pilesMsg('barrows'));
+      send(ws, alliesMsg('barrows'));
       send(ws, barrowsStateMsg(me));
       broadcastState();
       return;
@@ -1917,6 +2086,35 @@ wss.on('connection', (ws, req) => {
       save(key);
       broadcastPiles(me.area);
       return sendProfile(key);
+    }
+
+    // ----- Tree Guardians (Stage 6): awaken the nearest tree -----
+    if (m.type === 'awaken_tree') {
+      if (me.duelId) return send(ws, { type: 'error', message: 'You cannot awaken a tree during a duel.' });
+      if (allies.has(key)) return send(ws, { type: 'error', message: 'Your Tree Guardian still stands.' });
+      // The nearest living tree in this area, within 300 units.
+      let best = null, bestDist = Infinity;
+      for (const n of NODES.values()) {
+        if (n.kind !== 'tree' || n.area !== me.area || n.chargesLeft <= 0) continue;
+        const d = Math.hypot(me.x - n.x, me.y - n.y);
+        if (d <= 300 && d < bestDist) { best = n; bestDist = d; }
+      }
+      if (!best) return send(ws, { type: 'error', message: 'No tree nearby to awaken.' });
+      // The tree is consumed: depleted for 60s, then it grows back
+      // on the node sweep like any other gathered-out node.
+      best.chargesLeft = 0;
+      best.depletedUntil = Date.now() + 60000;
+      broadcastNodes(me.area);
+      const oak = best.name.includes('Oak');
+      const ally = {
+        id: 'tg' + (++allySeq), ownerKey: key, owner: profile.username,
+        name: oak ? 'Oak Guardian' : 'Tree Guardian', oak,
+        x: best.x, y: best.y, area: best.area,
+        hp: oak ? 80 : 50, maxHp: oak ? 80 : 50,
+      };
+      allies.set(key, ally);
+      broadcastAllies(me.area);
+      return send(ws, { type: 'chat', from: 'Game', text: `🌳 The ${best.name.toLowerCase()} rises as your ${ally.name}! It will follow you and fight beside you.` });
     }
 
     // ----- Gathering (Stage 2): work a resource node / training station -----
@@ -2409,6 +2607,8 @@ wss.on('connection', (ws, req) => {
       const r = fcRuns.get(me.fcRunId);
       if (r) endFcRun(r, 'disconnect'); // records settle silently; the run is gone
     }
+    // Stage 6: a Tree Guardian is session-only — it goes when you do.
+    if (allies.has(key)) { const ally = allies.get(key); allies.delete(key); broadcastAllies(ally.area); }
     online.delete(key);
     broadcast({ type: 'chat', from: 'Game', text: `${profile.username} left the plaza.` });
     broadcastState();
