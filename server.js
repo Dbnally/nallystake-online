@@ -84,6 +84,38 @@
 // un-confirms both, and the swap re-validates against current
 // holdings at confirm time so nothing can be pulled mid-trade).
 // Challenge and Follow from that menu need no server work here.
+//
+// Stage 7D (server only) adds: admin/owner-only world editing — a
+// custom item editor (an admin clones a base weapon/armour, sets its
+// name, icon and stat bonuses, and the result is a NEW item with its
+// own permanent item number; every copy in the world shares the one
+// definition, so editing it re-tunes all copies at once), reference
+// lists (item # / npc # / object # for everything the server really
+// defines), and placeable decorative objects (tree / rock / flowers /
+// stage light / chest) that persist in the world. Storage follows the
+// store's per-user shape: custom definitions live on their CREATOR's
+// profile (profile.customItems) and placed objects on their PLACER's
+// profile (profile.placedObjects); at boot both are aggregated into
+// runtime registries (see buildStage7DRegistry), and every item-id
+// lookup that can meet a player-held id goes through itemDef() so
+// custom items survive login, banking, trading, staking, dropping
+// and equipping exactly like base items. Custom items are never
+// shop-sellable and never on the Gold Exchange.
+//
+// Stage 8 (server only) adds: melee adjacency — Derek's rule that
+// you have to walk NEXT to something to hit it with a melee swing.
+// In every fight engine, a melee attacker beyond MELEE_REACH (42
+// units) does not swing that tick: the tick is a CLOSING tick (hit
+// fields null, `closing: true`, and a `moveTo` point for the local
+// player to walk to). Server-owned melee monsters (goblins, Fight
+// Caves melee monsters) step APPROACH_STEP toward the player each
+// tick until they are in reach; Barrows brothers stay at their
+// anchor (Karil/Ahrim keep hitting at range — only melee swings are
+// gated); duels start toe-to-toe and the closing rule governs the
+// rest of the fight. Jad is unchanged. Stage 8 also extends the
+// Stage 7D custom item editor: an admin can set a `color` tint
+// (#rrggbb) and drawn `art` (a capped PNG data URL) on a custom
+// item; both ride on the def, the catalog and the reference lists.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -263,14 +295,125 @@ for (const [id, name, accBonus, maxBonus] of [
 // official-fight winner earns, exchangeable to an admin for 250g.
 ITEMS.nc = { name: 'NC', icon: '🪙', kind: 'token', sellOnly: 0 };
 ITEMS.certificate = { name: 'Certificate', icon: '📜', kind: 'token', sellOnly: 0 };
+
+// ---------- Stage 7D: custom items + placed objects (registries) ----------
+// Base items are numbered 1..BASE_ITEM_COUNT in ITEMS definition
+// order; that count is the floor for custom item numbers.
+const BASE_ITEM_COUNT = Object.keys(ITEMS).length;
+// Runtime registry of admin-created item definitions, aggregated at
+// boot from every profile's customItems (see buildStage7DRegistry).
+// The Map values are the SAME objects stored on the creators'
+// profiles, so an edit mutates the saved definition in place — the
+// caller still has to save the creator's profile (customOwner).
+const customItems = new Map(); // customId -> def
+const customOwner = new Map(); // customId -> creator's db key
+let customSeq = BASE_ITEM_COUNT; // last custom item number handed out (seeded at boot)
+let objectSeq = 0; // last placed-object sequence handed out (seeded at boot)
+// Placed decorative objects, aggregated at boot from every profile's
+// placedObjects. Runtime entries carry two extra fields the saved
+// shape does not: `by` (placer's username, for display) and
+// `ownerKey` (whose profile holds it, so removal can save it).
+const placedObjectsAll = []; // { id, area, kind, x, y, by, ownerKey }
+// The ONE lookup for "what is this item id": a custom definition if
+// the id is registered, else the base catalog. Every code path that
+// can meet a player-held id (backpack / bank / worn / stakes /
+// offers) must go through here — a raw ITEMS[id] would make custom
+// items invisible, unsellable-by-accident or silently deleted.
+function itemDef(id) {
+  if (!id) return null;
+  const c = customItems.get(id);
+  if (c) return c;
+  return ITEMS[id] || null;
+}
+// Icons an admin may give a custom item.
+const CUSTOM_ICONS = ['🗡️', '⚔️', '🔪', '🏹', '🪄', '🛡️', '⛑️', '🦺', '👑', '💎', '🔥', '⭐'];
+// Placeable decorative prop kinds (Stage 7D feature 3).
+const PROP_DEFS = [
+  { kind: 'tree', label: 'Tree', icon: '🌳' },
+  { kind: 'rock', label: 'Rock', icon: '🪨' },
+  { kind: 'flowers', label: 'Flowers', icon: '🌸' },
+  { kind: 'light', label: 'Stage light', icon: '💡' },
+  { kind: 'chest', label: 'Chest', icon: '🧰' },
+];
+const PROP_KINDS = PROP_DEFS.map((p) => p.kind);
+// The catalog-shaped view of a custom def (same fields catalogList
+// emits for base items, plus the Stage 7D identity fields).
+function customCatalogEntry(def) {
+  return {
+    id: def.id, name: def.name, kind: def.kind, slot: def.slot || null, shop: null, buy: 0, sell: 0,
+    heal: 0, prayerRestore: 0,
+    accBonus: def.accBonus || 0, maxBonus: def.maxBonus || 0, reduction: def.reduction || 0,
+    speed: 0, icon: def.icon || null,
+    custom: true, num: def.num, base: def.base, by: def.by,
+    color: def.color || null, art: def.art || null, // Stage 8: admin tint + drawn art
+  };
+}
+// Stage 8: custom item color + drawn art. A color is only ever a
+// #rrggbb tint (stored lowercased); any other value sent for the
+// color field means "no tint" (null) — it never rejects. Art is a
+// PNG data URL the admin drew in the editor, capped at 32768 chars
+// total; a present-but-invalid art value rejects the whole
+// create/edit (see the handlers). Both helpers follow the same
+// presence rule: a field the message does not carry keeps the
+// existing value; art sent as '' (or null) clears the drawing.
+const CUSTOM_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const CUSTOM_ART_PREFIX = 'data:image/png;base64,';
+const CUSTOM_ART_MAX = 32768;
+function customColorFrom(m, existing) {
+  if (!Object.prototype.hasOwnProperty.call(m, 'color')) return existing;
+  return typeof m.color === 'string' && CUSTOM_COLOR_RE.test(m.color) ? m.color.toLowerCase() : null;
+}
+// Returns { ok: true, value } or { ok: false } (present but invalid).
+function customArtFrom(m, existing) {
+  if (!Object.prototype.hasOwnProperty.call(m, 'art')) return { ok: true, value: existing };
+  if (m.art === '' || m.art === null) return { ok: true, value: null };
+  if (typeof m.art === 'string' && m.art.startsWith(CUSTOM_ART_PREFIX) && m.art.length <= CUSTOM_ART_MAX) return { ok: true, value: m.art };
+  return { ok: false };
+}
+// Boot aggregation (called from store.init, BEFORE the server starts
+// listening): pull every user's saved custom items and placed
+// objects into the runtime registries and seed the id/number
+// counters from the maxima already in use, so numbers are never
+// reused across restarts.
+function buildStage7DRegistry() {
+  customItems.clear();
+  customOwner.clear();
+  placedObjectsAll.length = 0;
+  let maxNum = BASE_ITEM_COUNT;
+  let maxObj = 0;
+  for (const [k, u] of Object.entries(db.users)) {
+    if (!u || !u.profile) continue;
+    const p = u.profile;
+    if (p.customItems && typeof p.customItems === 'object') {
+      for (const [id, def] of Object.entries(p.customItems)) {
+        if (!def || typeof def !== 'object') continue;
+        customItems.set(id, def);
+        customOwner.set(id, k);
+        if (typeof def.num === 'number' && def.num > maxNum) maxNum = def.num;
+      }
+    }
+    if (Array.isArray(p.placedObjects)) {
+      for (const o of p.placedObjects) {
+        if (!o || typeof o.id !== 'string') continue;
+        placedObjectsAll.push({ id: o.id, area: o.area, kind: o.kind, x: o.x, y: o.y, by: p.username, ownerKey: k });
+        const n = parseInt(o.id.slice(4), 10); // 'obj_<n>'
+        if (Number.isFinite(n) && n > maxObj) maxObj = n;
+      }
+    }
+  }
+  customSeq = maxNum;
+  objectSeq = maxObj;
+}
+
 const SHOPS = ['Potion', 'Weapon', 'Armour', 'Food & Supplies', 'Pickaxe Pete'];
 const exchangePrices = {};
 for (const g of GOODS) exchangePrices[g.id] = g.base;
 
 function sellPrice(itemId) {
-  const def = ITEMS[itemId];
+  const def = itemDef(itemId);
   if (!def) return 0;
   if (def.kind === 'token') return 0; // Stage 7A: tokens are never sellable
+  if (def.custom) return 0; // Stage 7D: custom items are never sellable
   if (def.buy) return Math.max(1, Math.floor(def.buy * SHOP_SELLBACK));
   if (def.sellOnly) return def.sellOnly; // Stage 2 resources: fixed buy-back
   return 0;
@@ -279,13 +422,17 @@ function catalogList() {
   // Buyable stock plus sell-only resources (buy: 0, shop: null — the
   // client filters buy lists by shop name, so resources never show as
   // buyable, but sell mode and name lookups can see them).
-  return Object.entries(ITEMS).filter(([, d]) => d.buy || d.sellOnly).map(([id, d]) => ({
+  const list = Object.entries(ITEMS).filter(([, d]) => d.buy || d.sellOnly).map(([id, d]) => ({
     id, name: d.name, kind: d.kind, slot: d.slot || null, shop: d.shop || null, buy: d.buy || 0, sell: sellPrice(id),
     heal: d.heal || 0, prayerRestore: d.prayerRestore || 0,
     accBonus: d.accBonus || 0, maxBonus: d.maxBonus || 0, reduction: d.reduction || 0,
     speed: d.speed || 0, // Stage 3: pickaxe speed multiplier (0 for non-tools)
     icon: d.icon || null, // Stage 7A: token icons (null for older items)
   }));
+  // Stage 7D: custom items ride along after the base catalog,
+  // regardless of the buy/sellOnly filter above (they have neither).
+  for (const def of [...customItems.values()].sort((a, b) => (a.num || 0) - (b.num || 0))) list.push(customCatalogEntry(def));
+  return list;
 }
 function goodsList() {
   return GOODS.map((g) => ({ id: g.id, name: g.name, price: exchangePrices[g.id] }));
@@ -365,6 +512,12 @@ function newProfile(username) {
     // the mod certification flag. The 'owner' role is never stored —
     // it is computed from the username (see effectiveRole).
     role: 'player', certified: false,
+    // Stage 7D: item definitions this player created as an admin
+    // ({ customId: def }) and decorative objects this player placed
+    // ([{ id, area, kind, x, y }]). The store only persists per-user
+    // records, so world-shared data rides on its owner's profile and
+    // is aggregated into runtime registries at boot.
+    customItems: {}, placedObjects: [],
   };
 }
 // Migration: Phase 1 accounts gain the v2 fields with defaults. Existing
@@ -413,6 +566,20 @@ function ensureV2(p) {
   // role falls back to 'player'; certification is a plain boolean.
   if (p.role !== 'player' && p.role !== 'mod' && p.role !== 'admin') { p.role = 'player'; changed = true; }
   if (typeof p.certified !== 'boolean') { p.certified = false; changed = true; }
+  // Stage 7D migration: custom item definitions + placed objects.
+  // Definitions are server-created and trusted as stored — only the
+  // container shapes are enforced here, and placed objects are
+  // cleaned down to well-formed entries with known prop kinds. The
+  // stacks in backpack / bank / worn are deliberately NOT filtered
+  // against the item table anywhere in this migration: a custom id
+  // is a real item as long as its def is in the boot registry.
+  if (!p.customItems || typeof p.customItems !== 'object' || Array.isArray(p.customItems)) { p.customItems = {}; changed = true; }
+  if (!Array.isArray(p.placedObjects)) { p.placedObjects = []; changed = true; }
+  else {
+    const clean = p.placedObjects.filter((o) => o && typeof o.id === 'string' && typeof o.area === 'string'
+      && PROP_KINDS.includes(o.kind) && Number.isFinite(+o.x) && Number.isFinite(+o.y));
+    if (clean.length !== p.placedObjects.length) { p.placedObjects = clean; changed = true; }
+  }
   return changed;
 }
 // Stage 7A: the EFFECTIVE role of a session ({profile}), a profile,
@@ -517,7 +684,7 @@ function sanitizeItems(list) {
   for (const e of list.slice(0, 28)) {
     const item = String((e && e.item) || '');
     const qty = Math.floor(+(e && e.qty) || 0);
-    if (!ITEMS[item] || qty < 1) continue;
+    if (!itemDef(item) || qty < 1) continue; // Stage 7D: custom ids are valid stakes too
     merged.set(item, (merged.get(item) || 0) + qty);
   }
   return [...merged.entries()].map(([item, qty]) => ({ item, qty }));
@@ -647,6 +814,41 @@ const AREAS = {
   arena: { name: 'Duel Arena', spawn: { x: 400, y: 225 } },
 };
 const NPC_RANGE = 150; // server units — attack / stay-in-combat range (15 tiles at 10 units/tile)
+
+// ---------- Stage 8: melee adjacency ----------
+// Derek's rule: a melee swing only lands when the attacker is
+// standing NEXT to the target. MELEE_REACH is that distance;
+// APPROACH_STEP is how far a server-owned melee monster walks
+// toward the player per tick while it is closing in. Player
+// positions are client-driven, so a closing PLAYER is never moved
+// by the server — the fight message carries `moveTo` (see
+// approachPoint) and the client walks them there.
+const MELEE_REACH = 42; // ~4 tiles at 10 units/tile
+const APPROACH_STEP = 34; // units per tick for a closing monster
+// The point a client should walk its player to so they end up next
+// to a target: MELEE_REACH*0.75 from the target, on the line from
+// the player toward it, clamped to the area bounds (0..800 x 0..450).
+function approachPoint(px, py, tx, ty) {
+  const dx = tx - px, dy = ty - py;
+  const d = Math.hypot(dx, dy);
+  if (d === 0) return { x: Math.max(0, Math.min(800, Math.round(tx))), y: Math.max(0, Math.min(450, Math.round(ty))) };
+  const back = MELEE_REACH * 0.75;
+  return {
+    x: Math.max(0, Math.min(800, Math.round(tx - (dx / d) * back))),
+    y: Math.max(0, Math.min(450, Math.round(ty - (dy / d) * back))),
+  };
+}
+// Step a server-owned monster (any object with x/y) toward a point
+// by up to `step` units. Returns true if it actually moved.
+function stepToward(obj, tx, ty, step) {
+  const dx = tx - obj.x, dy = ty - obj.y;
+  const d = Math.hypot(dx, dy);
+  if (d === 0) return false;
+  const s = Math.min(step, d);
+  obj.x += (dx / d) * s;
+  obj.y += (dy / d) * s;
+  return s > 0;
+}
 
 // ---------- NPCs (Stage 1): Goblin Camp ----------
 // Goblins are stationary at their spawn points this stage (no wandering).
@@ -875,13 +1077,13 @@ const STYLES = {
 // Aggressive a 25% chance of a power hit (+25% damage), Controlled
 // 12% for each effect independently.
 function weaponBonus(p) {
-  const def = p.worn && p.worn.weapon ? ITEMS[p.worn.weapon] : null;
+  const def = p.worn && p.worn.weapon ? itemDef(p.worn.weapon) : null;
   return def && def.kind === 'weapon' ? def : null;
 }
 function armourReduction(p) {
   let r = 0, filled = 0;
   for (const slot of ['head', 'body', 'legs', 'shield']) {
-    const def = p.worn && p.worn[slot] ? ITEMS[p.worn[slot]] : null;
+    const def = p.worn && p.worn[slot] ? itemDef(p.worn[slot]) : null;
     if (def && def.kind === 'armour') { r += def.reduction; filled += 1; }
   }
   if (filled === 4) r += 0.05; // full-set bonus
@@ -897,7 +1099,7 @@ function rollHit(attackerProfile, defenderProfile, useSpecial = false) {
   let max = s.max + (w ? w.maxBonus : 0);
   // Stage 5: a worn cape (the Fire cape) adds its own small bonuses,
   // exactly like a weapon's — it is the only cape-slot item so far.
-  const capeDef = attackerProfile.worn && attackerProfile.worn.cape ? ITEMS[attackerProfile.worn.cape] : null;
+  const capeDef = attackerProfile.worn && attackerProfile.worn.cape ? itemDef(attackerProfile.worn.cape) : null;
   if (capeDef) { acc += capeDef.accBonus || 0; max += capeDef.maxBonus || 0; }
   if (useSpecial) { acc += 0.05; max = Math.floor(max * 1.5); } // Dragon Slash
   if (Math.random() > Math.min(acc, 0.98)) return 0;
@@ -979,6 +1181,7 @@ function endDuel(duel, winnerKey, reason) {
       send(p.ws, { type: 'area', area: 'plaza' });
       send(p.ws, pilesMsg('plaza'));
       send(p.ws, alliesMsg('plaza')); // Stage 6: your guardian waited for you in the plaza
+      send(p.ws, objectsMsg('plaza')); // Stage 7D: placed objects in the plaza
     }
   }
   broadcast({ type: 'chat', from: 'Duel Master', text: `${winner.username} beat ${loser.username} for ${duel.pot}g (${reason}).` });
@@ -1023,8 +1226,12 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null)
   duels.set(id, duel);
   const sessA = online.get(aKey), sessB = online.get(bKey);
   sessA.duelId = id; sessB.duelId = id;
-  sessA.area = 'arena'; sessA.x = 300; sessA.y = 225;
-  sessB.area = 'arena'; sessB.x = 500; sessB.y = 225;
+  // Stage 8: a duel starts toe-to-toe — the fighters spawn within
+  // melee reach of each other (380 vs 420, 40 apart). From then on
+  // the closing rule in the tick governs: run apart and the swings
+  // stop until someone walks back in.
+  sessA.area = 'arena'; sessA.x = 380; sessA.y = 225;
+  sessB.area = 'arena'; sessB.x = 420; sessB.y = 225;
   for (const k of [aKey, bKey]) {
     const p = online.get(k);
     send(p.ws, { type: 'area', area: 'arena' });
@@ -1033,6 +1240,28 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null)
   broadcast({ type: 'chat', from: 'Duel Master', text: `${a.username} vs ${b.username} — now fighting in the ${arenaDef.name}!` });
   broadcastState();
   duel.timer = setInterval(() => {
+    // Stage 8: melee adjacency. Every duel attack is melee-type, so
+    // if the fighters are not standing next to each other this tick
+    // is a CLOSING tick: no specials are consumed, no attacks are
+    // rolled and nobody takes damage — each fighter is told where
+    // to walk (moveTo, toward their opponent) to get back in reach.
+    // Hit fields are null (not 0) so the client can tell "no swing"
+    // apart from a swing that missed or was blocked.
+    const posA = online.get(aKey), posB = online.get(bKey);
+    if (posA && posB && Math.hypot(posA.x - posB.x, posA.y - posB.y) > MELEE_REACH) {
+      for (const k of [aKey, bKey]) {
+        const p = online.get(k);
+        if (!p) continue;
+        const opp = k === aKey ? posB : posA;
+        send(p.ws, {
+          type: 'duel_tick', hpYou: duel.hp[k], hpOpponent: duel.hp[k === aKey ? bKey : aKey],
+          youHit: null, oppHit: null, youSpecial: false, oppSpecial: false,
+          energyYou: db.users[k].profile.specialEnergy,
+          closing: true, moveTo: approachPoint(p.x, p.y, opp.x, opp.y),
+        });
+      }
+      return;
+    }
     // Both attacks due this tick resolve, then deaths are checked (OSRS tick rule).
     const aSpecial = duel.specialQueued[aKey], bSpecial = duel.specialQueued[bKey];
     duel.specialQueued[aKey] = false; duel.specialQueued[bKey] = false;
@@ -1121,6 +1350,7 @@ function respawnPlayer(key, note) {
   send(sess.ws, { type: 'area', area: 'plaza' });
   send(sess.ws, pilesMsg('plaza'));
   send(sess.ws, alliesMsg('plaza')); // Stage 6: guardians standing in the plaza (yours follows you here)
+  send(sess.ws, objectsMsg('plaza')); // Stage 7D: placed objects in the plaza
   send(sess.ws, { type: 'chat', from: 'Game', text: note });
   broadcastState();
 }
@@ -1147,6 +1377,24 @@ function npcTick(fight) {
   const profile = sess.profile;
   // Walking too far from the goblin breaks off the fight.
   if (sess.area !== npc.area || Math.hypot(sess.x - npc.x, sess.y - npc.y) > NPC_RANGE) { finishNpcFight(fight, 'range'); return; }
+  // Stage 8: melee adjacency. Beyond MELEE_REACH (but still inside
+  // NPC_RANGE, checked above) this is a CLOSING tick: the goblin
+  // steps toward the player, nobody swings either way, a queued
+  // special stays queued, and the Tree Guardian holds off (its
+  // behaviour below only runs on fighting ticks). Hit fields are
+  // null so the client can tell "no swing" from a missed swing.
+  if (Math.hypot(sess.x - npc.x, sess.y - npc.y) > MELEE_REACH) {
+    stepToward(npc, sess.x, sess.y, APPROACH_STEP);
+    send(sess.ws, {
+      type: 'npc_fight', phase: 'tick', npcId: npc.id,
+      hpYou: Math.max(0, fight.hpYou), maxHpYou: fight.maxHpYou,
+      hpNpc: Math.max(0, npc.hp), maxHpNpc: npc.maxHp,
+      youHit: null, npcHit: null, youSpecial: false, energyYou: profile.specialEnergy,
+      closing: true, moveTo: approachPoint(sess.x, sess.y, npc.x, npc.y),
+    });
+    broadcastNpcState();
+    return;
+  }
   fight.tickCount = (fight.tickCount || 0) + 1;
   const useSpec = fight.specialQueued; fight.specialQueued = false;
   if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
@@ -1354,42 +1602,58 @@ function barrowsTick(fight) {
   fight.tickCount += 1;
   const notes = [];
 
-  // Player swing (every tick): the shared player attack — style boosts
-  // included — with combat XP on the total damage, like goblin fights.
-  const useSpec = fight.specialQueued; fight.specialQueued = false;
-  if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
-  const atkRes = rollPlayerAttack(profile, NPC_DEFENDER, useSpec);
-  const youHit = atkRes.dmg;
-  notes.push(...atkRes.notes);
-  fight.hpNpc -= youHit;
-  // Stage 6: a Tree Guardian fighting beside its owner swings at the
-  // brother every 2nd tick, right after its owner's swing. No XP.
+  // Stage 8: melee adjacency. The brother stays at his anchor; if
+  // the player is not standing next to it, the player's swing cannot
+  // happen this tick (a CLOSING tick for the player: youHit null, a
+  // queued special stays queued, the guardian holds off, and the
+  // tick tells the player where to walk). A melee brother is gated
+  // the same way below; Karil (missiles) and Ahrim (magic) keep
+  // hitting at any range inside NPC_RANGE, as they always have.
+  const closing = Math.hypot(sess.x - fight.anchorX, sess.y - fight.anchorY) > MELEE_REACH;
   const ally = helperAlly(fight.playerKey, sess.area);
-  if (ally && fight.tickCount % 2 === 0) {
-    const allyDmg = allyDamage(ally);
-    fight.hpNpc -= allyDmg;
-    notes.push(`🌳 ${ally.name} hits for ${allyDmg}!`);
-  }
-  if (youHit > 0) {
-    profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
-    addXp(fight.playerKey, combatXpGains(profile.style, youHit));
-  }
-  // Dharok's rage: warn once at each HP threshold he falls through.
-  if (def.id === 'dharok' && fight.hpNpc > 0) {
-    const frac = fight.hpNpc / fight.maxHpNpc;
-    for (const t of [0.75, 0.5, 0.25]) {
-      if (frac <= t && !fight.rageFlags[t]) {
-        fight.rageFlags[t] = true;
-        notes.push(`⚠️ Dharok the Wretched is enraged (${Math.round(t * 100)}% health) — he hits harder as his health falls!`);
+  let useSpec = false;
+  let youHit = null; // null on a closing tick: the player never swung
+  if (!closing) {
+    // Player swing (every tick): the shared player attack — style
+    // boosts included — with combat XP on the total damage, like
+    // goblin fights.
+    useSpec = fight.specialQueued; fight.specialQueued = false;
+    if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
+    const atkRes = rollPlayerAttack(profile, NPC_DEFENDER, useSpec);
+    youHit = atkRes.dmg;
+    notes.push(...atkRes.notes);
+    fight.hpNpc -= youHit;
+    // Stage 6: a Tree Guardian fighting beside its owner swings at
+    // the brother every 2nd tick, right after its owner's swing. No XP.
+    if (ally && fight.tickCount % 2 === 0) {
+      const allyDmg = allyDamage(ally);
+      fight.hpNpc -= allyDmg;
+      notes.push(`🌳 ${ally.name} hits for ${allyDmg}!`);
+    }
+    if (youHit > 0) {
+      profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
+      addXp(fight.playerKey, combatXpGains(profile.style, youHit));
+    }
+    // Dharok's rage: warn once at each HP threshold he falls through.
+    if (def.id === 'dharok' && fight.hpNpc > 0) {
+      const frac = fight.hpNpc / fight.maxHpNpc;
+      for (const t of [0.75, 0.5, 0.25]) {
+        if (frac <= t && !fight.rageFlags[t]) {
+          fight.rageFlags[t] = true;
+          notes.push(`⚠️ Dharok the Wretched is enraged (${Math.round(t * 100)}% health) — he hits harder as his health falls!`);
+        }
       }
     }
   }
 
   // Brother swing, on his own cadence (every `attackEvery` ticks). He
   // swings even on the tick the player kills him (the goblin rule:
-  // both sides resolve, then deaths are checked).
-  let npcHit = 0;
-  if (fight.tickCount % def.attackEvery === 0) {
+  // both sides resolve, then deaths are checked). Stage 8: a MELEE
+  // brother cannot swing at a player who has not walked up to him —
+  // his hit field is null on a closing tick (he never swung).
+  const brotherGated = closing && def.attackType === 'melee';
+  let npcHit = brotherGated ? null : 0;
+  if (!brotherGated && fight.tickCount % def.attackEvery === 0) {
     if (profile.activePrayer === def.attackType) {
       npcHit = 0; // the matching Protect prayer FULLY prevents it — Verac included, no bypass
     } else {
@@ -1423,7 +1687,7 @@ function barrowsTick(fight) {
     notes.push(`🌳 Your ${ally.name} takes the hit for you!`);
     if (ally.hp <= 0) killAlly(ally);
   }
-  fight.hpYou -= npcHit;
+  fight.hpYou -= npcHit || 0; // npcHit is null when a melee brother was gated (Stage 8)
 
   send(sess.ws, {
     type: 'npc_fight', phase: 'tick', npcId: fight.brother, kind: 'barrows',
@@ -1431,6 +1695,8 @@ function barrowsTick(fight) {
     hpNpc: Math.max(0, fight.hpNpc), maxHpNpc: fight.maxHpNpc,
     youHit, npcHit, youSpecial: useSpec, energyYou: profile.specialEnergy,
     note: notes.length ? notes.join(' ') : undefined,
+    // Stage 8: on a closing tick, where to walk to reach the brother.
+    ...(closing ? { closing: true, moveTo: approachPoint(sess.x, sess.y, fight.anchorX, fight.anchorY) } : {}),
   });
 
   if (fight.hpNpc <= 0) {
@@ -1538,8 +1804,9 @@ const FC_WAVES = [null,
   [0,0,1,1,1],[1,0,1,1,1],[2,0,1,1,1],[0,1,1,1,1],[1,1,1,1,1],[2,1,1,1,1],[0,2,1,1,1],[0,0,2,1,1],[0,0,0,2,1],[0,0,0,0,2],
 ]; // index = wave number (1..62)
 // Deterministic spawn grid across the cave's north two-thirds (the
-// entrance is at the south, y=400). Monsters are stationary, like the
-// Goblin Camp: melee monsters only reach a player within FC_RANGE.
+// entrance is at the south, y=400). Since Stage 8 the melee monsters
+// walk toward the player (see the approach pass in fcTick); the
+// ranged monsters, healers and Jad stay where they spawn.
 const FC_SPAWN_POINTS = [
   [400, 90], [250, 90], [550, 90], [120, 150], [680, 150],
   [250, 170], [550, 170], [400, 170], [120, 240], [680, 240],
@@ -1678,13 +1945,28 @@ function fcTick(run) {
     target = [...run.monsters.values()].find((m) => m.alive) || null;
     run.targetId = target ? target.id : null;
   }
-  const useSpec = run.specialQueued; run.specialQueued = false;
-  if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
+  // Stage 8: melee adjacency for the player's swing. The online
+  // Fight Caves has NO ranged weapon mode (checked: neither the
+  // server nor the client stores one — the Melee/Ranged switch only
+  // exists in the old Muse game), so every player attack here is a
+  // melee swing: a target beyond MELEE_REACH cannot be hit, the
+  // swing is held, a queued special stays queued, and the tick
+  // reports closing + moveTo so the client walks the player in.
+  // The ONE exception is Jad himself — his fight is unchanged
+  // (Stage 4 rules), so swings at Jad keep the old FC_RANGE reach.
+  let useSpec = false;
   let youHit = 0;
+  let fcClosing = false;
   if (target && !run.betweenWaves) {
-    if (Math.hypot(sess.x - target.x, sess.y - target.y) > FC_RANGE) {
-      note = `Too far away from the ${target.name} — walk closer.`;
+    const tDist = Math.hypot(sess.x - target.x, sess.y - target.y);
+    const inReach = target.kind === 'jad' ? tDist <= FC_RANGE : tDist <= MELEE_REACH;
+    if (!inReach) {
+      fcClosing = true;
+      youHit = null; // no swing happened (null, not 0 — see the closing contract)
+      if (tDist > FC_RANGE) note = `Too far away from the ${target.name} — walk closer.`;
     } else {
+      useSpec = run.specialQueued; run.specialQueued = false;
+      if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
       // Stage 5: style boosts ride along on the player's swing.
       const atkRes = rollPlayerAttack(profile, NPC_DEFENDER, useSpec);
       youHit = atkRes.dmg;
@@ -1719,6 +2001,19 @@ function fcTick(run) {
   if (run.jadDead) { endFcRun(run, 'complete'); return; }
   if (run.hpYou <= 0) { endFcRun(run, 'death'); return; }
 
+  // Stage 8: the approach pass — melee monsters (Tz-Kih, Tz-Kek,
+  // Tz-Kek small, Yt-MejKot) step toward the player EVERY tick until
+  // they are within MELEE_REACH. Tok-Xil (missiles), Ket-Zek
+  // (magic), the Yt-HurKot healers and Jad never move. Positions
+  // ride to the client on the fc_state resend at the end of the
+  // tick (movement marks the roster changed).
+  for (const mon of run.monsters.values()) {
+    if (!mon.alive || mon.attackType !== 'melee') continue;
+    if (Math.hypot(sess.x - mon.x, sess.y - mon.y) > MELEE_REACH) {
+      if (stepToward(mon, sess.x, sess.y, APPROACH_STEP)) run.rosterChanged = true;
+    }
+  }
+
   // 3) The surviving monsters act on their own cadences.
   let anyStyleBlock = false;
   for (const mon of run.monsters.values()) {
@@ -1741,14 +2036,17 @@ function fcTick(run) {
       send(sess.ws, { type: 'fc_telegraph', style, wave: run.wave });
       continue;
     }
-    // Yt-MejKot: 25% of its attack ticks it heals itself instead.
+    // Stage 8: melee monsters only swing within MELEE_REACH (they
+    // walked in during the approach pass above); ranged monsters
+    // (Tok-Xil / Ket-Zek) attack at any range, as they always have.
+    if (mon.attackType === 'melee' && Math.hypot(sess.x - mon.x, sess.y - mon.y) > MELEE_REACH) continue;
+    // Yt-MejKot: 25% of its attack ticks it heals itself instead —
+    // only when it would actually attack (in reach, checked above).
     if (mon.kind === 'ytmejkot' && mon.hp < mon.maxHp && Math.random() < 0.25) {
       mon.hp = Math.min(mon.maxHp, mon.hp + 10);
       if (!note) note = 'The Yt-MejKot heals itself!';
       continue;
     }
-    // Melee monsters are stationary: they can only reach a nearby player.
-    if (mon.attackType === 'melee' && Math.hypot(sess.x - mon.x, sess.y - mon.y) > FC_RANGE) continue;
     const styleBlocked = !!(STYLES[profile.style] && STYLES[profile.style].block && Math.random() < STYLES[profile.style].block);
     if (styleBlocked) anyStyleBlock = true;
     const prayerBlocked = profile.activePrayer === mon.attackType;
@@ -1802,6 +2100,8 @@ function fcTick(run) {
     youHit, hitsTaken, energyYou: profile.specialEnergy,
     monsters: [...run.monsters.values()].filter((m) => m.alive).map((m) => ({ id: m.id, hp: Math.max(0, m.hp) })),
     note,
+    // Stage 8: on a closing tick, where to walk to reach the target.
+    ...(fcClosing && target ? { closing: true, moveTo: approachPoint(sess.x, sess.y, target.x, target.y) } : {}),
   });
 }
 // End a run and settle the saved records. bestWave is the highest wave
@@ -1959,6 +2259,25 @@ function broadcastPiles(area) {
   const msg = pilesMsg(area);
   for (const p of online.values()) if (p.area === area) send(p.ws, msg);
 }
+
+// ---------- Placed objects (Stage 7D) ----------
+// Decorative props an admin placed in the world (tree / rock /
+// flowers / stage light / chest). Unlike piles they PERSIST: the
+// saved copies live on the placers' profiles and the runtime list
+// (placedObjectsAll, built at boot) is what gets broadcast, on the
+// piles pattern — the full per-area list on placement, removal and
+// area entry. Decorative only this stage: no gathering, no blocking.
+function objectsMsg(area) {
+  return {
+    type: 'objects', area,
+    objects: placedObjectsAll.filter((o) => o.area === area)
+      .map((o) => ({ id: o.id, kind: o.kind, x: Math.round(o.x), y: Math.round(o.y), by: o.by })),
+  };
+}
+function broadcastObjects(area) {
+  const msg = objectsMsg(area);
+  for (const p of online.values()) if (p.area === area) send(p.ws, msg);
+}
 // Pile sweep: expired piles vanish and their area hears about it.
 setInterval(() => {
   const now = Date.now();
@@ -2085,7 +2404,7 @@ function recipeText(ores) {
 function bestPickaxeSpeed(profile) {
   let best = 0;
   for (const s of profile.backpack) {
-    const def = ITEMS[s.item];
+    const def = itemDef(s.item);
     if (def && def.kind === 'tool' && def.speed > best) best = def.speed;
   }
   return best;
@@ -2140,6 +2459,7 @@ wss.on('connection', (ws, req) => {
   send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot('plaza'), area: 'plaza' });
   send(ws, pilesMsg('plaza')); // Stage 5: any drop piles waiting in the plaza
   send(ws, alliesMsg('plaza')); // Stage 6: any Tree Guardians standing in the plaza
+  send(ws, objectsMsg('plaza')); // Stage 7D: any placed objects in the plaza
   send(ws, { type: 'catalog', items: catalogList(), shops: SHOPS });
   send(ws, { type: 'exchange_prices', goods: goodsList() });
   broadcast({ type: 'chat', from: 'Game', text: `${profile.username} entered the plaza.` }, key);
@@ -2195,6 +2515,7 @@ wss.on('connection', (ws, req) => {
       // Barrows areas bring the saved run state.
       send(ws, pilesMsg(to));
       send(ws, alliesMsg(to)); // Stage 6: guardians already standing there
+      send(ws, objectsMsg(to)); // Stage 7D: placed objects in the new area
       if (to === 'barrows' || to === 'barrows_tunnels') send(ws, barrowsStateMsg(me));
       // Stage 3: an unfinished smithing piece (session-only) is still
       // on the anvil when you come back to the mine — remind the client.
@@ -2274,6 +2595,7 @@ wss.on('connection', (ws, req) => {
         send(ws, firesMsg('barrows_tunnels'));
         send(ws, pilesMsg('barrows_tunnels'));
         send(ws, alliesMsg('barrows_tunnels'));
+        send(ws, objectsMsg('barrows_tunnels'));
         send(ws, barrowsStateMsg(me));
         broadcastState();
         return send(ws, { type: 'chat', from: 'Game', text: 'You climb down into the Barrows tunnels. The reward chest waits at the centre, behind a puzzle door.' });
@@ -2332,6 +2654,7 @@ wss.on('connection', (ws, req) => {
       send(ws, firesMsg('barrows'));
       send(ws, pilesMsg('barrows'));
       send(ws, alliesMsg('barrows'));
+      send(ws, objectsMsg('barrows'));
       send(ws, barrowsStateMsg(me));
       broadcastState();
       return;
@@ -2352,6 +2675,7 @@ wss.on('connection', (ws, req) => {
       send(ws, firesMsg('barrows'));
       send(ws, pilesMsg('barrows'));
       send(ws, alliesMsg('barrows'));
+      send(ws, objectsMsg('barrows'));
       send(ws, barrowsStateMsg(me));
       broadcastState();
       return;
@@ -2360,7 +2684,7 @@ wss.on('connection', (ws, req) => {
     // ----- Drop piles (Stage 5): drop / pick up backpack items -----
     if (m.type === 'drop') {
       const item = String(m.item || '');
-      const def = ITEMS[item];
+      const def = itemDef(item);
       const qty = Math.max(1, Math.min(9999, Math.floor(+m.qty || 1)));
       if (!def) return send(ws, { type: 'error', message: 'Unknown item. (Gold is not an item — it cannot be dropped.)' });
       if (me.duelId) return send(ws, { type: 'error', message: 'You cannot drop items during a duel.' });
@@ -2599,7 +2923,7 @@ wss.on('connection', (ws, req) => {
     }
     if (m.type === 'smith_upgrade') {
       const item = String(m.item || '');
-      const def = ITEMS[item];
+      const def = itemDef(item);
       if (!def || !def.smithMetal) return send(ws, { type: 'error', message: 'That is not a smithed item.' });
       if (me.area !== 'mine') return send(ws, { type: 'error', message: 'You need the anvil at the Emberfall Mine & Smithy to upgrade gear.' });
       if (me.duelId || me.npcFightId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
@@ -2632,7 +2956,7 @@ wss.on('connection', (ws, req) => {
     // ----- Shops (one catalog; the shop name is display metadata only) -----
     if (m.type === 'shop_buy') {
       const item = String(m.item || '');
-      const def = ITEMS[item];
+      const def = itemDef(item);
       const qty = Math.max(1, Math.min(999, Math.floor(+m.qty || 1)));
       if (!def || !def.buy) return send(ws, { type: 'error', message: 'That is not sold in the shops.' });
       const cost = def.buy * qty;
@@ -2645,10 +2969,11 @@ wss.on('connection', (ws, req) => {
     }
     if (m.type === 'shop_sell') {
       const item = String(m.item || '');
-      const def = ITEMS[item];
+      const def = itemDef(item);
       const qty = Math.max(1, Math.min(999, Math.floor(+m.qty || 1)));
       if (!def) return send(ws, { type: 'error', message: 'Unknown item.' });
       if (def.kind === 'token') return send(ws, { type: 'error', message: "That can't be sold." });
+      if (def.custom) return send(ws, { type: 'error', message: "That can't be sold." }); // Stage 7D: customs, same treatment as tokens
       // Shops buy anything with a sell price: their own stock at 60%
       // back, and Stage 2 gathered resources at their fixed sellOnly.
       if (!sellPrice(item)) return send(ws, { type: 'error', message: 'The shops don\'t buy that — try the Gold Exchange.' });
@@ -2663,7 +2988,7 @@ wss.on('connection', (ws, req) => {
     // ----- Equip / unequip (tap-to-wear: wearing swaps with the slot) -----
     if (m.type === 'equip') {
       const item = String(m.item || '');
-      const def = ITEMS[item];
+      const def = itemDef(item);
       if (!def || !def.slot) return send(ws, { type: 'error', message: 'That can\'t be worn.' });
       if (stackQty(profile.backpack, item) < 1) return send(ws, { type: 'error', message: `No ${def.name} in your backpack.` });
       const old = profile.worn[def.slot];
@@ -2694,7 +3019,7 @@ wss.on('connection', (ws, req) => {
     // ----- Use a consumable -----
     if (m.type === 'use') {
       const item = String(m.item || '');
-      const def = ITEMS[item];
+      const def = itemDef(item);
       if (!def || (def.kind !== 'food' && def.kind !== 'potion')) return send(ws, { type: 'error', message: 'That can\'t be used.' });
       if (stackQty(profile.backpack, item) < 1) return send(ws, { type: 'error', message: `No ${def.name} in your backpack.` });
       if (def.prayerRestore) {
@@ -2777,7 +3102,7 @@ wss.on('connection', (ws, req) => {
     // ----- Bank of Gielinor (items only; gold stays a profile number) -----
     if (m.type === 'bank_deposit' || m.type === 'bank_withdraw') {
       const item = String(m.item || '');
-      const def = ITEMS[item];
+      const def = itemDef(item);
       const qty = Math.max(1, Math.min(9999, Math.floor(+m.qty || 1)));
       if (!def) return send(ws, { type: 'error', message: 'Unknown item.' });
       if (m.type === 'bank_deposit') {
@@ -2797,7 +3122,7 @@ wss.on('connection', (ws, req) => {
       // Stage 7A: tokens are never Exchange goods — a sell attempt
       // gets the token error, not the generic unknown-good one.
       const wantedGood = String(m.good || '');
-      if (ITEMS[wantedGood] && ITEMS[wantedGood].kind === 'token') return send(ws, { type: 'error', message: "That can't be sold." });
+      if (itemDef(wantedGood) && itemDef(wantedGood).kind === 'token') return send(ws, { type: 'error', message: "That can't be sold." });
       const good = GOODS.find((g) => g.id === wantedGood);
       const qty = Math.max(1, Math.min(999, Math.floor(+m.qty || 1)));
       if (!good) return send(ws, { type: 'error', message: 'Unknown exchange good.' });
@@ -2945,7 +3270,8 @@ wss.on('connection', (ws, req) => {
     if (m.type === 'spawn_item') {
       if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'You do not have permission to do that.' });
       const item = String(m.item || '');
-      if (!ITEMS[item]) return send(ws, { type: 'error', message: 'Unknown item.' });
+      const spawnDef = itemDef(item); // Stage 7D: custom ids are spawnable too
+      if (!spawnDef) return send(ws, { type: 'error', message: 'Unknown item.' });
       const qty = Math.max(1, Math.min(99, Math.floor(+m.qty || 1)));
       const targetKey = m.target ? userKeyFor(m.target) : key;
       const targetUser = db.users[targetKey];
@@ -2957,11 +3283,11 @@ wss.on('connection', (ws, req) => {
       if (targetSess) {
         sendProfile(targetKey);
         if (targetKey !== key) {
-          send(targetSess.ws, { type: 'chat', from: 'Game', text: `You received ${qty} x ${ITEMS[item].name}.` });
-          send(targetSess.ws, { type: 'admin_note', text: `You received ${qty} x ${ITEMS[item].name}.` });
+          send(targetSess.ws, { type: 'chat', from: 'Game', text: `You received ${qty} x ${spawnDef.name}.` });
+          send(targetSess.ws, { type: 'admin_note', text: `You received ${qty} x ${spawnDef.name}.` });
         }
       }
-      const note = `Spawned ${qty} x ${ITEMS[item].name} for ${targetUser.profile.username}.`;
+      const note = `Spawned ${qty} x ${spawnDef.name} for ${targetUser.profile.username}.`;
       send(ws, { type: 'admin_note', text: note });
       if (targetKey !== key) send(ws, { type: 'chat', from: 'Game', text: note });
       return;
@@ -3109,6 +3435,151 @@ wss.on('connection', (ws, req) => {
       send(ws, { type: 'chat', from: 'Game', text: `📜 ${requesterProfile.username} exchanged a Certificate with you for 250g.` });
       broadcast({ type: 'chat', from: 'Game', text: `📜 ${requesterProfile.username} exchanged a Certificate with ${profile.username} for 250g.` });
       return;
+    }
+
+    // ----- Stage 7D: custom item editor, reference lists, placed objects -----
+    // Everything in this section is admin/owner only — mods and
+    // players get the standard permission error.
+    if (m.type === 'create_custom') {
+      if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'You do not have permission to do that.' });
+      const baseId = String(m.base || '');
+      const baseDef = ITEMS[baseId]; // base catalog ONLY: a custom id (or a token) is not a valid base
+      if (!baseDef || (baseDef.kind !== 'weapon' && baseDef.kind !== 'armour')) {
+        return send(ws, { type: 'error', message: 'Pick a base weapon or armour item to clone.' });
+      }
+      const name = String(m.name || '').trim();
+      if (name.length < 1 || name.length > 30) return send(ws, { type: 'error', message: 'Custom items need a name of 1-30 characters.' });
+      // Stage 8: the drawn art is validated before anything is
+      // created — a bad image rejects the whole create (and does
+      // not consume an item number).
+      const artIn = customArtFrom(m, null);
+      if (!artIn.ok) return send(ws, { type: 'error', message: 'That image is too big or not a PNG drawing.' });
+      const isWeapon = baseDef.kind === 'weapon';
+      const icon = CUSTOM_ICONS.includes(m.icon) ? m.icon : (baseDef.icon || (isWeapon ? '🗡️' : '🛡️'));
+      // A stat the admin supplied wins (clamped); an omitted stat is
+      // cloned from the base item. Fields irrelevant to the base kind
+      // are zeroed (a sword has no reduction; armour has no bonuses).
+      const statOr = (v, hi, fallback) => {
+        const n = +v;
+        return Number.isFinite(n) ? Math.round(Math.max(0, Math.min(hi, n)) * 100) / 100 : fallback;
+      };
+      const num = ++customSeq;
+      const def = {
+        id: `custom_${num}`, num, base: baseId, name, icon,
+        kind: baseDef.kind, slot: baseDef.slot,
+        accBonus: isWeapon ? statOr(m.accBonus, 0.50, baseDef.accBonus || 0) : 0,
+        maxBonus: isWeapon ? Math.round(statOr(m.maxBonus, 30, baseDef.maxBonus || 0)) : 0,
+        reduction: isWeapon ? 0 : statOr(m.reduction, 0.45, baseDef.reduction || 0),
+        custom: true, by: profile.username, buy: 0, sellOnly: 0,
+        // Stage 8: the admin's tint + drawn art (null when unset).
+        color: customColorFrom(m, null), art: artIn.value,
+      };
+      ensureV2(profile);
+      profile.customItems[def.id] = def; // the def lives on MY profile (see the storage note at the top)
+      customItems.set(def.id, def);
+      customOwner.set(def.id, key);
+      addItemToProfile(profile, def.id, 1); // the creator receives the first copy
+      save(key);
+      sendProfile(key);
+      broadcast({ type: 'catalog', items: catalogList(), shops: SHOPS }); // everyone sees the new item at once
+      send(ws, { type: 'admin_note', text: `Created custom item #${def.num}: ${def.name} (${def.id}).` });
+      return send(ws, { type: 'custom_created', item: customCatalogEntry(def) });
+    }
+    if (m.type === 'edit_custom') {
+      if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'You do not have permission to do that.' });
+      const def = customItems.get(String(m.id || ''));
+      if (!def) return send(ws, { type: 'error', message: 'No such custom item.' });
+      // Stage 8: a present-but-invalid drawn image rejects the
+      // whole edit before anything changes.
+      const artIn = customArtFrom(m, def.art || null);
+      if (!artIn.ok) return send(ws, { type: 'error', message: 'That image is too big or not a PNG drawing.' });
+      if (m.name !== undefined) {
+        const name = String(m.name || '').trim();
+        if (name.length < 1 || name.length > 30) return send(ws, { type: 'error', message: 'Custom items need a name of 1-30 characters.' });
+        def.name = name;
+      }
+      if (m.icon !== undefined) {
+        if (!CUSTOM_ICONS.includes(m.icon)) return send(ws, { type: 'error', message: 'That icon is not allowed for custom items.' });
+        def.icon = m.icon;
+      }
+      // Only the fields relevant to the def's kind can change; every
+      // copy in the world shares this one def, so the edit re-tunes
+      // them all at once (the intended design).
+      if (def.kind === 'weapon') {
+        if (m.accBonus !== undefined && Number.isFinite(+m.accBonus)) def.accBonus = Math.round(Math.max(0, Math.min(0.50, +m.accBonus)) * 100) / 100;
+        if (m.maxBonus !== undefined && Number.isFinite(+m.maxBonus)) def.maxBonus = Math.round(Math.max(0, Math.min(30, +m.maxBonus)));
+      }
+      if (def.kind === 'armour') {
+        if (m.reduction !== undefined && Number.isFinite(+m.reduction)) def.reduction = Math.round(Math.max(0, Math.min(0.45, +m.reduction)) * 100) / 100;
+      }
+      // Stage 8: color / art apply only when the message carries the
+      // field — an absent field keeps the existing value, art sent
+      // as '' clears the drawing, and an invalid color clears the
+      // tint (customColorFrom / customArtFrom hold the rules).
+      def.color = customColorFrom(m, def.color || null);
+      def.art = artIn.value;
+      // The def lives on its creator's profile — save THAT profile.
+      const ownerKey = customOwner.get(def.id);
+      if (ownerKey && db.users[ownerKey]) save(ownerKey);
+      broadcast({ type: 'catalog', items: catalogList(), shops: SHOPS });
+      send(ws, { type: 'admin_note', text: `Edited custom item #${def.num}: ${def.name}.` });
+      return send(ws, { type: 'custom_edited', item: customCatalogEntry(def) });
+    }
+    if (m.type === 'ref_lists') {
+      if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'You do not have permission to do that.' });
+      // Items: base catalog in definition order (num = 1-based
+      // position), then every custom in number order.
+      const items = Object.keys(ITEMS).map((id, i) => ({ num: i + 1, id, name: ITEMS[id].name, kind: ITEMS[id].kind }));
+      for (const def of [...customItems.values()].sort((a, b) => (a.num || 0) - (b.num || 0))) {
+        items.push({ num: def.num, id: def.id, name: def.name, kind: def.kind, custom: true, color: def.color || null, art: def.art || null }); // Stage 8: tint + drawn art
+      }
+      // NPCs: only what the server really defines — the one shared
+      // goblin def behind the six Goblin Camp spawns, the six
+      // Barrows brothers, the Fight Caves monster table (the small
+      // Tz-Kek is its own def), and the Tree Guardian allies.
+      const npcs = [];
+      const addNpc = (npcName, area) => npcs.push({ num: npcs.length + 1, name: npcName, area });
+      addNpc(GOBLIN_DEF.name, 'goblins');
+      for (const b of Object.values(BARROWS_BROTHERS)) addNpc(b.name, 'barrows');
+      for (const [kind, d] of Object.entries(FC_DEFS)) addNpc(kind === 'tzkek_small' ? 'Tz-Kek (small)' : d.name, 'fightcaves');
+      addNpc('Tree Guardian', 'anywhere');
+      addNpc('Oak Guardian', 'anywhere');
+      const objects = PROP_DEFS.map((p, i) => ({ num: i + 1, kind: p.kind, label: p.label, icon: p.icon }));
+      return send(ws, { type: 'ref_lists', items, npcs, objects });
+    }
+    if (m.type === 'place_object') {
+      if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'You do not have permission to do that.' });
+      const pd = PROP_DEFS.find((p) => p.kind === String(m.kind || ''));
+      if (!pd) return send(ws, { type: 'error', message: 'Unknown object kind.' });
+      // Coordinates clamp inside my current area (0..800 x 0..450);
+      // a missing/invalid coordinate falls back to where I stand.
+      let px = Math.floor(+m.x); if (!Number.isFinite(px)) px = Math.round(me.x);
+      let py = Math.floor(+m.y); if (!Number.isFinite(py)) py = Math.round(me.y);
+      px = Math.max(0, Math.min(800, px));
+      py = Math.max(0, Math.min(450, py));
+      ensureV2(profile);
+      const entry = { id: `obj_${++objectSeq}`, area: me.area, kind: pd.kind, x: px, y: py };
+      profile.placedObjects.push(entry); // saved on MY profile (see the storage note at the top)
+      placedObjectsAll.push({ ...entry, by: profile.username, ownerKey: key });
+      save(key);
+      broadcastObjects(me.area);
+      return send(ws, { type: 'admin_note', text: `Placed a ${pd.label} in the ${AREAS[me.area].name} (${entry.id}).` });
+    }
+    if (m.type === 'remove_object') {
+      if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'You do not have permission to do that.' });
+      const id = String(m.id || '');
+      const idx = placedObjectsAll.findIndex((o) => o.id === id);
+      if (idx < 0) return send(ws, { type: 'error', message: 'No such object.' });
+      const [obj] = placedObjectsAll.splice(idx, 1);
+      // The saved copy lives on its placer's profile — remove + save it there.
+      const ownerUser = db.users[obj.ownerKey];
+      if (ownerUser) {
+        ensureV2(ownerUser.profile);
+        ownerUser.profile.placedObjects = ownerUser.profile.placedObjects.filter((o) => o.id !== id);
+        save(obj.ownerKey);
+      }
+      broadcastObjects(obj.area);
+      return send(ws, { type: 'admin_note', text: `Removed the placed object ${id}.` });
     }
 
     // ----- Stage 7B: Talk (whispers) -----
@@ -3286,7 +3757,7 @@ wss.on('connection', (ws, req) => {
       for (const e of rawItems.slice(0, 28)) {
         const item = String((e && e.item) || '');
         const qty = Math.floor(+(e && e.qty) || 0);
-        if (!ITEMS[item]) return send(ws, { type: 'error', message: 'Unknown item.' });
+        if (!itemDef(item)) return send(ws, { type: 'error', message: 'Unknown item.' }); // Stage 7D: customs are tradeable
         if (qty < 1) return send(ws, { type: 'error', message: 'Invalid item quantity.' });
         merged.set(item, (merged.get(item) || 0) + qty);
       }
@@ -3413,6 +3884,11 @@ store.init().then((users) => {
   for (const [k, u] of Object.entries(db.users)) {
     if (u && u.profile && ensureV2(u.profile)) save(k);
   }
+  // Stage 7D: aggregate every user's custom item definitions and
+  // placed objects into the runtime registries BEFORE anyone can
+  // connect, so the first login's catalog and item validation
+  // already know every custom id.
+  buildStage7DRegistry();
   const mode = process.env.DATABASE_URL ? 'Postgres database' : 'local file (test mode)';
   server.listen(PORT, () => console.log(`nallystake-online listening on :${PORT} (gold-only, saving: ${mode})`));
 }).catch((e) => { console.error('Could not open the saving database:', e.message); process.exit(1); });
