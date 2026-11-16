@@ -53,6 +53,8 @@
  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
  .cell{background:#1d0b22;border:1px solid #5b2a6e;border-radius:8px;min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:3px;position:relative}
  .cell.sel{border-color:#ff4fa3;background:#3d1440}
+ .cell.hl{border-color:#ffd75e;box-shadow:0 0 7px #ffd75e99}
+ .cell .hlb{position:absolute;top:2px;left:5px;font-size:11px}
  .cell .ic{font-size:24px;line-height:1}
  .cell .nm{font-size:9px;text-align:center;color:#e8c8f0;margin-top:2px;line-height:1.1}
  .cell .q{position:absolute;top:2px;right:5px;font-size:11px;font-weight:800;color:#ff8fd0;text-shadow:0 1px 2px #000}
@@ -327,7 +329,7 @@ const ICONS={restore_potion:'🍷',prayer_potion:'🌟',ration:'🍗',bronze_swo
  nc:'🪙',certificate:'📜'};
 const KIND_ICON={potion:'🧪',food:'🍗',weapon:'⚔️',armour:'🛡️',good:'📦',tool:'⛏️',trophy:'🏆',token:'🪙'};
 function iconOf(id){ if(ICONS[id])return ICONS[id]; const d=catalog[id]; if(d&&d.icon) return d.icon; return d? (KIND_ICON[d.kind]||'📦') : '📦'; }
-function nameOf(id){ if(catalog[id])return catalog[id].name; if(goods[id])return goods[id].name; return id; }
+function nameOf(id){ if(catalog[id])return catalog[id].name; if(goods[id])return goods[id].name; if(id==='nc')return 'NC'; if(id==='certificate')return 'Certificate'; return id; }
 function stackQtyOf(stacks,id){ const s=(stacks||[]).find(x=>x.item===id); return s?s.qty:0; }
 function myQty(id){ return me? stackQtyOf(me.backpack,id):0; }
 function send(o){ if(ws&&ws.readyState===1) ws.send(JSON.stringify(o)); }
@@ -405,6 +407,22 @@ window.useQuick=function(n){
 };
 $('quick1').onclick=()=>useQuick(1);
 $('quick2').onclick=()=>useQuick(2);
+
+/* ================= item highlights + examine (Stage 7C, localStorage) ================= */
+const HIGHLIGHT_KEY='nallystake_highlights_v1';
+let highlights=new Set();
+try{ const hv=JSON.parse(localStorage.getItem(HIGHLIGHT_KEY)||'[]'); if(Array.isArray(hv)) highlights=new Set(hv.filter(x=>typeof x==='string')); }catch(e){}
+function saveHighlights(){ try{ localStorage.setItem(HIGHLIGHT_KEY,JSON.stringify([...highlights])); }catch(e){} }
+window.toggleHighlight=function(item){
+ if(highlights.has(item)) highlights.delete(item); else highlights.add(item);
+ saveHighlights(); renderDrawer();
+};
+let examineStack=null; // backpack item id whose Examine block is open in the detail sheet
+window.toggleExamine=function(item){ examineStack=(examineStack===item)?null:item; renderDrawer(); };
+// The server catalog never lists the two tokens (no buy price, sellOnly 0),
+// so recognise them by id as well as by catalog kind.
+const TOKEN_IDS={nc:1,certificate:1};
+function isTokenItem(item,d){ return !!((d&&d.kind==='token')||TOKEN_IDS[item]); }
 $('awakenbtn').onclick=()=>{ send({type:'awaken_tree'}); };
 $('jumpbtn').onclick=()=>{ const a=me?avatars[me.username]:null; if(a) startJump(a,true); };
 
@@ -474,6 +492,8 @@ function onMsg(m){
  if(m.type==='fc_telegraph'){ onFcTelegraph(m); }
  if(m.type==='fc_end'){ onFcEnd(m); }
  if(m.type==='challenge_incoming'){ openIncoming(m); }
+ if(m.type==='challenging'){ if(m.area===curArea&&m.from) challengeMarks[m.from]={to:m.to||null,expires:Date.now()+30000}; }
+ if(m.type==='challenge_clear'){ if(m.from){ delete challengeMarks[m.from]; if(incomingCh&&incomingCh.from===m.from) incomingCh=null; if(drawerPanel==='players') renderDrawer(); } }
  if(m.type==='admin_note'){ toast(m.text); logLine(`👑 Admin: ${m.text}`); }
  if(m.type==='admin_list'){ lastAdminList=m.players||[]; if(drawerPanel==='admin') renderDrawer(); }
  if(m.type==='online_list'){ lastOnlineList=m.players||[]; if(drawerPanel==='admin') renderDrawer(); }
@@ -1279,6 +1299,7 @@ function setArea(a){
      clearFcMonsters();
    }
    pendingMound=null; pendingPile=null; pendingChest=null;
+   challengeMarks={}; // ❗ marks belong to the area they were seen in
    puzzleSolved=false; puzzleAnswer=[]; $('puzzlemodal').classList.remove('open');
    clearAllies(); // guardians re-sync from the new area's 'allies' message
    for(const id of Object.keys(npcAvatars)) if(npcAvatars[id].isBrother){ scene.remove(npcAvatars[id].group); npcAvatars[id].label.remove(); delete npcAvatars[id]; }
@@ -1324,12 +1345,29 @@ function makeKnight(isMe,name){
  const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.28}));
  sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
  const label=document.createElement('div'); label.className='plabel';
- label.innerHTML=`<div class="bubble"></div><span class="rbadge"></span><span class="badge"></span> <span class="nm">${esc(name)}</span>`;
+ label.innerHTML=`<div class="bubble"></div><span class="rbadge"></span><span class="badge"></span><span class="abadge"></span><span class="cbadge"></span> <span class="nm">${esc(name)}</span>`;
  $('labels').appendChild(label);
- return {group:g,pivot,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),roleEl:label.querySelector('.rbadge'),
+ return {group:g,pivot,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),roleEl:label.querySelector('.rbadge'),actEl:label.querySelector('.abadge'),chalEl:label.querySelector('.cbadge'),
    x:0,z:0,tx:0,tz:0,rot:0,jump:null,prayer:null,bubbleUntil:0,bob:Math.random()*6,isMe};
 }
 const PRAYER_BADGE={melee:'🛡️',missiles:'🏹',magic:'🔮'};
+/* ================= Stage 7C: activity markers + challenger ❗ ================= */
+// `act` arrives on every state entry (server-computed): 'duel', 'fight',
+// a gathering skill id, or a combat skill id for training stations.
+const ACT_EMOJI={duel:'🥊',fight:'⚔️',mining:'⛏️',woodcutting:'🪓',fishing:'🎣',cooking:'🍳',firemaking:'🔥',smithing:'🔨'};
+const ACT_LABEL={duel:'🥊 In a duel',fight:'⚔️ Fighting',mining:'⛏️ Mining',woodcutting:'🪓 Woodcutting',fishing:'🎣 Fishing',cooking:'🍳 Cooking',firemaking:'🔥 Firemaking',smithing:'🔨 Smithing'};
+function actEmoji(act){ if(!act) return ''; return ACT_EMOJI[act]||'🏋️'; } // unknown ids are training skills
+function actLabel(act){ if(!act) return ''; return ACT_LABEL[act]||'🏋️ Training'; }
+// Derek's rule: the ❗ sits over the CHALLENGER, not the person challenged.
+// Fed by 'challenging' / 'challenge_clear' broadcasts for my current area.
+let challengeMarks={}; // username -> {to, expires}
+function chalMark(name){ const cm=challengeMarks[name]; return !!(cm&&cm.expires>Date.now()); }
+function refreshChalBadges(){
+ let dirty=false;
+ for(const k of Object.keys(challengeMarks)) if(challengeMarks[k].expires<=Date.now()){ delete challengeMarks[k]; dirty=true; }
+ for(const [name,a] of Object.entries(avatars)){ if(a.chalEl) a.chalEl.textContent=chalMark(name)?'❗':''; }
+ if(dirty&&drawerPanel==='players') renderDrawer();
+}
 function syncAvatars(){
  if(!scene||!me) return;
  const seen=new Set();
@@ -1347,6 +1385,9 @@ function syncAvatars(){
    a.prayer=p.activePrayer||null;
    a.badgeEl.textContent=a.prayer?PRAYER_BADGE[a.prayer]:'';
    if(a.roleEl) a.roleEl.textContent=roleBadge(p.role)? roleBadge(p.role)+' ':'';
+   a.act=p.act||null;
+   if(a.actEl) a.actEl.textContent=a.act? actEmoji(a.act)+' ':'';
+   if(a.chalEl) a.chalEl.textContent=chalMark(p.username)?'❗':'';
  }
  for(const name of Object.keys(avatars)){
    if(!seen.has(name)){ scene.remove(avatars[name].group); avatars[name].label.remove(); delete avatars[name]; }
@@ -1985,7 +2026,16 @@ function handleTap(cx,cy){
    const d=Math.hypot(s.x-cx,s.y-cy);
    if(d<44 && d<bestD){ best=name; bestD=d; }
  }
- if(best){ if(best!==me.username) openPlayerMenu(best); return; }
+ if(best){
+   if(best!==me.username){
+     // Derek's rule: a challenger wears the ❗. Tapping them while THEIR
+     // challenge to me is still pending reopens the duel-rules sheet
+     // (the terms both sides agree to) instead of the player menu.
+     if(chalMark(best)&&incomingCh&&incomingCh.from===best) $('incomingmodal').classList.add('open');
+     else openPlayerMenu(best);
+   }
+   return;
+ }
  // ground -> walk there (or just face it, in Face tap mode)
  const groundRoot=areaGroups[curArea];
  const gh=groundRoot? raycaster.intersectObjects(groundRoot.children.filter(o=>o.geometry&&o.geometry.type==='PlaneGeometry'),false)[0] : null;
@@ -2269,7 +2319,8 @@ function closeDrawer(){ drawerPanel=null; $('drawer').classList.remove('open');
 document.querySelectorAll('.rbtn').forEach(b=>b.onclick=()=>{ togglePanel(b.dataset.panel); railOpen=false; applyRailVisibility(); });
 $('drawerx').onclick=closeDrawer;
 function itemCell(s,onclick,extra){
- return `<div class="cell ${extra||''}" onclick="${onclick}"><span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${iconOf(s.item)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
+ const hl=highlights.has(s.item);
+ return `<div class="cell ${extra||''}${hl?' hl':''}" onclick="${onclick}">${hl?'<span class="hlb">⭐</span>':''}<span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${iconOf(s.item)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
 }
 function renderDrawer(){
  if(!drawerPanel||!me) return;
@@ -2290,13 +2341,43 @@ function renderDrawer(){
  if(drawerPanel==='bank') applyBankFilter();
 }
 /* ---- Backpack ---- */
-window.selBp=function(item){ selStack=selStack===item?null:item; renderDrawer(); };
+window.selBp=function(item){ selStack=selStack===item?null:item; examineStack=null; renderDrawer(); };
 window.lightFire=function(){ send({type:'light_fire'}); };
 window.cookItem=function(item){
  if(!fireNearby()){ toast('No fire nearby — light one with Logs first'); return; }
  send({type:'cook',item});
 };
 window.packBackpack=function(){ packSorted=true; renderDrawer(); toast('🎒 Packed — everything pulled to the top, in order.'); };
+/* ---- Stage 7C: Examine block (built from catalog data, no server call) ---- */
+const KIND_LABEL={food:'Food',potion:'Potion',weapon:'Weapon',armour:'Armour',tool:'Tool',resource:'Resource',good:'Trade good',token:'Token',trophy:'Trophy'};
+const KIND_DESC={food:'Eat it to heal.',potion:'Drink it to restore yourself.',weapon:'Wield it to fight with it.',armour:'Wear it to protect yourself in a fight.',tool:'A tool — it speeds up the work it is made for.',resource:'A raw material — cook it, smelt it, smith with it, or sell it.',good:'A trade good — its price drifts on the Gold Exchange.',trophy:'A hard-won trophy. Wear it to show what you beat.'};
+const ITEM_NAME_FALLBACK={nc:'NC',certificate:'Certificate'};
+function examineHTML(item){
+ const d=catalog[item];
+ const kind=d? d.kind : (TOKEN_IDS[item]? 'token' : null);
+ let desc=KIND_DESC[kind]||'A useful item.';
+ if(item==='certificate') desc='Exchange this with an admin for 250g — use the 👑 Admin panel.';
+ else if(item==='nc') desc='Mods spend NC to run official fights.';
+ else if(item==='logs'||item.endsWith('_logs')) desc='Use it to light a fire, then cook on the fire.';
+ const stats=[];
+ if(d){
+   if(d.accBonus) stats.push(`+${Math.round(d.accBonus*100)}% accuracy`);
+   if(d.maxBonus) stats.push(`+${d.maxBonus} max hit`);
+   if(d.reduction) stats.push(`−${Math.round(d.reduction*100)}% damage taken`);
+   if(d.heal) stats.push(`heals ${d.heal} HP`);
+   if(d.prayerRestore) stats.push(`restores ${d.prayerRestore} prayer`);
+   if(d.speed) stats.push(`⛏️ speed ×${d.speed}`);
+ }
+ let price='';
+ if(isTokenItem(item,d)) price=`Tokens can't be bought or sold.`;
+ else if(d&&(d.buy>0||d.sell>0)) price=`${d.buy>0?`Shops sell it for ${d.buy}g`:''}${d.buy>0&&d.sell>0?' · ':''}${d.sell>0?`shops buy it for ${d.sell}g each`:''}`;
+ else if(goods[item]) price=`On the Gold Exchange — around ${goods[item].price}g right now.`;
+ return `<div class="detail" style="margin-top:6px"><b>🔍 ${esc((d&&d.name)||ITEM_NAME_FALLBACK[item]||nameOf(item))}</b>
+ <div class="note" style="margin-top:3px">Type: ${KIND_LABEL[kind]||'Item'}${d&&d.slot?` · worn in the ${d.slot} slot`:''}</div>
+ ${stats.length?`<div class="note">Stats: ${stats.join(' · ')}</div>`:''}
+ ${price?`<div class="note">${price}</div>`:''}
+ <div style="margin-top:4px">${desc}</div></div>`;
+}
 function pBackpack(){
  let h=`<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px"><button class="act" onclick="packBackpack()">🎒 Pack</button><span class="note">Pulls all your stacks to the top, in order.</span></div>`;
  if(!me.backpack.length){
@@ -2321,23 +2402,36 @@ function pBackpack(){
    if(s){
      h+=`<div class="detail"><b>${iconOf(s.item)} ${esc(nameOf(s.item))}</b> x${s.qty}`;
      if(d) h+=`<div class="note">${d.kind}${d.slot?` · worn: ${d.slot}`:''}${d.heal?` · heals ${d.heal} HP`:''}${d.prayerRestore?` · restores ${d.prayerRestore} prayer`:''}${d.maxBonus?` · +${d.maxBonus} max hit`:''}${d.reduction?` · −${Math.round(d.reduction*100)}% damage taken`:''}${d.speed?` · ⛏️ pickaxe speed ×${d.speed}`:''}</div>`;
-     if(d&&d.kind==='token'){
+     if(isTokenItem(s.item,d)){
        if(s.item==='certificate') h+=`<div class="note" style="margin-top:4px">📜 Exchange this with an admin for 250g — use the 👑 Admin panel.</div>`;
        else if(s.item==='nc') h+=`<div class="note" style="margin-top:4px">🪙 Mods spend NC to run official fights.</div>`;
        h+=`<div class="note" style="margin-top:4px">Tokens can't be bought or sold.</div>`;
      }
+     // Stage 7C tap-item menu: ONLY the actions that fit this item —
+     // food is eaten, potions drunk, weapons wielded, armour worn, logs
+     // used (to light a fire). Tokens get none of these, and no Drop.
+     const isTok=isTokenItem(s.item,d);
+     const isLogs=s.item==='logs'||s.item.endsWith('_logs');
      h+=`<div class="btns">`;
-     if(d&&(d.kind==='food'||d.kind==='potion')) h+=`<button class="act" onclick="send({type:'use',item:'${s.item}'})">Use</button>`;
-     if(d&&d.slot) h+=`<button class="act" onclick="send({type:'equip',item:'${s.item}'})">Equip</button>`;
-     if(s.item==='logs') h+=`<button class="act" onclick="lightFire()">🔥 Light fire</button>`;
+     if(d&&d.kind==='food') h+=`<button class="act" onclick="send({type:'use',item:'${s.item}'})">🍗 Eat</button>`;
+     if(d&&d.kind==='potion') h+=`<button class="act" onclick="send({type:'use',item:'${s.item}'})">🧪 Drink</button>`;
+     if(d&&d.slot) h+=`<button class="act" onclick="send({type:'equip',item:'${s.item}'})">${d.kind==='weapon'?'⚔️ Wield':d.kind==='armour'?'🛡️ Wear':'Equip'}</button>`;
+     if(isLogs) h+=`<button class="act" onclick="lightFire()">🔥 Use — light fire</button>`;
      if(s.item==='raw_trout'||s.item==='raw_shrimps') h+=`<button class="act" onclick="cookItem('${s.item}')">🍳 Cook on fire</button>`;
      const smithM=s.item.startsWith('smith_')? s.item.match(/^smith_([a-z]+)_(?:sword|platebody)(?:_u(\d))?$/) : null;
      if(smithM&&(+ (smithM[2]||0))<4) h+=`<button class="act" onclick="send({type:'smith_upgrade',item:'${s.item}'})">⬆️ Upgrade (+1)</button>`;
+     h+=`<button class="ghost" onclick="toggleHighlight('${s.item}')">⭐ Highlights: ${highlights.has(s.item)?'On':'Off'}</button>`;
+     h+=`<button class="ghost" onclick="toggleExamine('${s.item}')">🔍 Examine</button>`;
+     h+=`</div>`;
+     if(examineStack===s.item) h+=examineHTML(s.item);
+     h+=`<div class="btns">`;
      h+=`<button class="ghost" onclick="setQuick(1)">Set Quick 1</button>`;
      h+=`<button class="ghost" onclick="setQuick(2)">Set Quick 2</button>`;
      h+=`<button class="ghost" onclick="openPanel('bank')">Deposit in bank →</button>`;
-     h+=`<button class="ghost" onclick="dropItem('${s.item}',1)">⬇️ Drop 1</button>`;
-     if(s.qty>1) h+=`<button class="ghost" onclick="dropItem('${s.item}',${s.qty})">⬇️ Drop all</button>`;
+     if(!isTok){
+       h+=`<button class="ghost" onclick="dropItem('${s.item}',1)">⬇️ Drop 1</button>`;
+       h+=`<button class="ghost" onclick="dropItem('${s.item}',${s.qty})">⬇️ Drop all</button>`;
+     }
      h+=`</div>`;
      if(smithM){ const u=+(smithM[2]||0);
        h+=`<div class="note" style="margin-top:6px">${u>=4?'Already +4 — fully upgraded.':`⬆️ Upgrade uses 1 ${esc(nameOf(smithM[1]+'_bar'))} · only at the Emberfall anvil`}</div>`;
@@ -2468,7 +2562,10 @@ function pPlayers(){
    h+=`<p>Just you in this area so far.<br><span class="note">Share the link — when a friend signs in, they'll appear here and in the world. Tap their knight (or the Menu button here) to invite, challenge, trade, follow, talk or examine them.</span></p>`;
    return h;
  }
- h+=others.map(p=>`<div class="rowline"><span class="ic">🧍</span><span class="grow"><b>${myParty.includes(p.username)?'👥 ':''}${rolePrefix(p.role)}${esc(p.username)}</b> ${p.activePrayer?PRAYER_BADGE[p.activePrayer]:''}<br><span class="sub">${p.inDuel?'in a duel':'in the plaza'}</span></span>${p.inDuel?'':`<button class="act" onclick="openPlayerMenu('${esc(p.username)}')">Menu</button>`}</div>`).join('');
+ h+=others.map(p=>{
+   const sub=p.act? actLabel(p.act) : (p.inDuel?'in a duel':'in the plaza');
+   return `<div class="rowline"><span class="ic">🧍</span><span class="grow"><b>${myParty.includes(p.username)?'👥 ':''}${rolePrefix(p.role)}${esc(p.username)}</b>${chalMark(p.username)?' ❗':''} ${p.activePrayer?PRAYER_BADGE[p.activePrayer]:''}<br><span class="sub">${sub}</span></span>${p.inDuel?'':`<button class="act" onclick="openPlayerMenu('${esc(p.username)}')">Menu</button>`}</div>`;
+ }).join('');
  return h;
 }
 /* ---- Admin (Stage 7A) ---- */
@@ -2538,7 +2635,8 @@ function pAdmin(){
        h+=`</div>`;
      }
    }
-   const itemOpts=catalogArr.map(it=>`<option value="${esc(it.id)}" ${it.id===spawnItemSel?'selected':''}>${esc(it.name)} (${esc(it.id)})</option>`).join('');
+   const itemOpts=catalogArr.map(it=>`<option value="${esc(it.id)}" ${it.id===spawnItemSel?'selected':''}>${esc(it.name)} (${esc(it.id)})</option>`).join('')
+     +(catalogArr.some(it=>it.id==='nc')?'':`<option value="nc" ${spawnItemSel==='nc'?'selected':''}>NC (nc)</option><option value="certificate" ${spawnItemSel==='certificate'?'selected':''}>Certificate (certificate)</option>`);
    const dl=(lastOnlineList||[]).map(p=>`<option value="${esc(p.username)}">`).join('');
    h+=`<h4 style="margin:12px 0 5px;color:#ff8fd0">✨ Make items</h4>`;
    h+=`<div class="rowline"><span class="grow">Item</span><select id="spawnitem" onchange="spawnField()">${itemOpts}</select></div>`;
@@ -3217,7 +3315,7 @@ applySettings();
 renderQuickButtons();
 // While a piece is on the anvil, refresh the Smithy panel once a second so
 // the heat bar visibly cools (the server fades heat 1 point per 2 seconds).
-setInterval(()=>{ if(smithState&&drawerPanel==='smithy') renderDrawer(); },1000);
+setInterval(()=>{ if(smithState&&drawerPanel==='smithy') renderDrawer(); refreshChalBadges(); },1000);
 // Stage 7B: follow mode steering (checks 3× a second; stepMovement does the walking).
 setInterval(followTick,300);
 </script>
