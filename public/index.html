@@ -5,7 +5,7 @@
 <style>
  :root{--uia:.78}
  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
- html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#160a1a;color:#ffe9f6;font-family:system-ui,sans-serif}
+ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#100c08;color:#e8d9b0;font-family:system-ui,sans-serif}
  #scene{position:fixed;inset:0;touch-action:none}
  #scene canvas{display:block}
  #labels,#splats{position:fixed;inset:0;pointer-events:none;overflow:hidden}
@@ -14,179 +14,180 @@
  .plabel .badge{font-size:13px}
  .plabel .bubble{display:none;background:#fff;color:#111;border-radius:10px;padding:3px 8px;font-weight:600;font-size:12px;margin-bottom:3px;white-space:normal;max-width:170px;box-shadow:0 2px 6px rgba(0,0,0,.5)}
  .splat{position:absolute;transform:translate(-50%,-50%);font-weight:900;font-size:19px;color:#ff3b30;text-shadow:0 0 4px #000,0 2px 2px #000;opacity:0}
- .splat.zero{color:#7ec3ff}.splat.spec{color:#ff8fd0;font-size:23px}
- .splat.love{color:#ff6ec7;font-size:27px;text-shadow:0 0 8px #ff4fa3,0 2px 2px #000}
+ .splat.zero{color:#7ec3ff}.splat.spec{color:#e3c766;font-size:23px}
+ .splat.love{color:#ffb03a;font-size:27px;text-shadow:0 0 8px #c9a227,0 2px 2px #000}
  .splat.good{color:#7dff8a;font-size:16px}
  /* node labels (Stage 2) */
- .plabel .nname{color:#ffd9f2}
+ .plabel .nname{color:#f0dfae}
  .plabel .nsub{font-size:10px;color:#cfe6ff;font-weight:600}
  .plabel .ndep{font-size:10px;color:#ff9d8a;font-weight:700}
  /* top HUD */
- #topbar{position:fixed;top:0;left:0;right:0;z-index:30;display:flex;gap:10px;align-items:center;padding:6px 10px;background:rgba(24,10,26,var(--uia));border-bottom:2px solid #ff4fa3;font-size:13px}
- .sparkle{display:inline-block;animation:sparkpulse 1.6s ease-in-out infinite}
- @keyframes sparkpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.4)}}
- #topbar b{color:#ff8fd0}
+ #topbar{position:fixed;top:0;left:0;right:0;z-index:30;display:flex;gap:10px;align-items:center;padding:6px 10px;background:rgba(23,19,16,var(--uia));border-bottom:2px solid #c9a227;font-size:13px}
+ #topbar b{color:#e3c766}
  #topbar .grow{flex:1}
  /* minimap + orbs */
  #mapwrap{position:fixed;top:40px;right:8px;z-index:20;text-align:center}
- #minimap{background:#2e4a2a;border:2px solid #ff4fa3;border-radius:8px}
+ #minimap{background:#241d15;border:2px solid #c9a227;border-radius:8px}
  #orbs{display:flex;gap:6px;justify-content:center;margin-top:5px}
- .orb{width:52px;height:52px;border-radius:50%;border:2px solid #ff4fa3;position:relative;overflow:hidden;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.6)}
+ .orb{width:52px;height:52px;border-radius:50%;border:2px solid #c9a227;position:relative;overflow:hidden;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.6)}
  .orb .fill{position:absolute;left:0;right:0;bottom:0}
  .orb .txt{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;text-shadow:0 1px 2px #000;line-height:1.1;z-index:2}
  .orb.hp .fill{background:#c1271b}.orb.hp{background:#3d0a06}
  .orb.pr .fill{background:#2456c8}.orb.pr{background:#0a1740}
  .orb.sp .fill{background:#c9a227}.orb.sp{background:#40340a}
- .orb.sp.ready{box-shadow:0 0 12px 3px #ff4fa3}
+ .orb.sp.ready{box-shadow:0 0 12px 3px #c9a227}
  /* right rail */
  #rail{position:fixed;right:6px;top:190px;z-index:30;display:flex;flex-direction:column;gap:6px}
- .rbtn{width:46px;height:46px;border-radius:10px;background:rgba(24,10,26,var(--uia));border:2px solid #8b5cf6;color:#ffe9f6;font-size:20px;cursor:pointer}
- .rbtn.on{border-color:#ff4fa3;background:#3d1440}
- #gearbtn{width:46px;height:46px;border-radius:10px;background:linear-gradient(135deg,#ff4fa3,#8b5cf6);border:2px solid #ff8fd0;color:#fff;font-size:22px;cursor:pointer;box-shadow:0 0 10px #ff4fa355;flex:none}
+ .rbtn{width:46px;height:46px;border-radius:10px;background:rgba(23,19,16,var(--uia));border:2px solid #7a6748;color:#e8d9b0;font-size:20px;cursor:pointer}
+ .rbtn.on{border-color:#c9a227;background:#3a2c1c}
+ #gearbtn{width:46px;height:46px;border-radius:10px;background:linear-gradient(135deg,#c9a227,#7a6748);border:2px solid #e3c766;color:#fff;font-size:22px;cursor:pointer;box-shadow:0 0 10px #c9a22755;flex:none}
  #railset{display:none;flex-direction:column;gap:6px}
  #railset.open{display:flex}
  /* drawer */
- #drawer{position:fixed;top:40px;right:58px;z-index:40;width:min(330px,80vw);max-height:calc(100dvh - 210px);overflow-y:auto;background:rgba(24,10,26,var(--uia));border:2px solid #ff4fa3;border-radius:12px;padding:10px;display:none}
+ #drawer{position:fixed;top:40px;right:58px;z-index:40;width:min(330px,80vw);max-height:calc(100dvh - 210px);overflow-y:auto;background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:12px;padding:10px;display:none}
  #drawer.open{display:block}
- #drawer h3{margin:2px 0 8px;color:#ff8fd0;font-size:16px;display:flex;justify-content:space-between;align-items:center}
- #drawer h3 .x{background:none;border:0;color:#ffe9f6;font-size:18px;cursor:pointer}
+ #drawer h3{margin:2px 0 8px;color:#e3c766;font-size:16px;display:flex;justify-content:space-between;align-items:center}
+ #drawer h3 .x{background:none;border:0;color:#e8d9b0;font-size:18px;cursor:pointer}
  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
- .cell{background:#1d0b22;border:1px solid #5b2a6e;border-radius:8px;min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:3px;position:relative}
- .cell.sel{border-color:#ff4fa3;background:#3d1440}
+ .cell{background:#221a13;border:1px solid #4a3a28;border-radius:8px;min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:3px;position:relative}
+ .cell.sel{border-color:#c9a227;background:#3a2c1c}
  .cell.hl{border-color:#ffd75e;box-shadow:0 0 7px #ffd75e99}
  .cell .hlb{position:absolute;top:2px;left:5px;font-size:11px}
  .cell .ic{font-size:24px;line-height:1}
- .cell .nm{font-size:9px;text-align:center;color:#e8c8f0;margin-top:2px;line-height:1.1}
- .cell .q{position:absolute;top:2px;right:5px;font-size:11px;font-weight:800;color:#ff8fd0;text-shadow:0 1px 2px #000}
- .rowline{display:flex;align-items:center;gap:8px;background:#1d0b22;border:1px solid #5b2a6e;border-radius:8px;padding:6px 8px;margin-bottom:6px;font-size:13px}
+ .cell .nm{font-size:9px;text-align:center;color:#d8c9a3;margin-top:2px;line-height:1.1}
+ .cell .q{position:absolute;top:2px;right:5px;font-size:11px;font-weight:800;color:#e3c766;text-shadow:0 1px 2px #000}
+ .rowline{display:flex;align-items:center;gap:8px;background:#221a13;border:1px solid #4a3a28;border-radius:8px;padding:6px 8px;margin-bottom:6px;font-size:13px}
  .rowline .ic{font-size:22px}
  .rowline .grow{flex:1}
- .rowline .sub{font-size:11px;color:#c9a0d8}
- button.act{background:linear-gradient(135deg,#ff4fa3,#e0388a);color:#fff;border:0;border-radius:7px;padding:6px 9px;font-weight:700;font-size:12px;cursor:pointer}
+ .rowline .sub{font-size:11px;color:#b8a888}
+ button.act{background:linear-gradient(135deg,#c9a227,#8e2f32);color:#fff;border:0;border-radius:7px;padding:6px 9px;font-weight:700;font-size:12px;cursor:pointer}
  button.act:disabled{opacity:.45}
- button.ghost{background:#2a1033;color:#ffe9f6;border:1px solid #8b5cf6;border-radius:7px;padding:6px 9px;font-weight:700;font-size:12px;cursor:pointer}
- .detail{background:#2a1033;border:1px solid #8b5cf6;border-radius:8px;padding:8px;margin-top:8px;font-size:13px}
+ button.ghost{background:#2b2118;color:#e8d9b0;border:1px solid #7a6748;border-radius:7px;padding:6px 9px;font-weight:700;font-size:12px;cursor:pointer}
+ .detail{background:#2b2118;border:1px solid #7a6748;border-radius:8px;padding:8px;margin-top:8px;font-size:13px}
  .detail .btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
  .seg{display:flex;gap:4px;margin:6px 0}
- .seg button{flex:1;background:#1d0b22;color:#ffe9f6;border:1px solid #5b2a6e;border-radius:7px;padding:6px;font-weight:700;cursor:pointer}
- .seg button.on{background:#ff4fa3;color:#fff;border-color:#ff8fd0}
+ .seg button{flex:1;background:#221a13;color:#e8d9b0;border:1px solid #4a3a28;border-radius:7px;padding:6px;font-weight:700;cursor:pointer}
+ .seg button.on{background:#c9a227;color:#171310;border-color:#e3c766}
  .tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
- .tabs button{background:#1d0b22;color:#ffe9f6;border:1px solid #5b2a6e;border-radius:7px;padding:5px 8px;font-weight:700;font-size:12px;cursor:pointer}
- .tabs button.on{background:#ff4fa3;color:#fff;border-color:#ff8fd0}
- .praybtn{flex:1;background:#1d0b22;border:2px solid #5b2a6e;border-radius:10px;color:#ffe9f6;padding:10px 4px;font-size:13px;font-weight:800;cursor:pointer}
- .praybtn.on{border-color:#ff4fa3;background:#3d1440;box-shadow:0 0 10px #ff4fa366}
- .bar{height:12px;background:#12060f;border:1px solid #5b2a6e;border-radius:6px;overflow:hidden}
+ .tabs button{background:#221a13;color:#e8d9b0;border:1px solid #4a3a28;border-radius:7px;padding:5px 8px;font-weight:700;font-size:12px;cursor:pointer}
+ .tabs button.on{background:#c9a227;color:#171310;border-color:#e3c766}
+ .praybtn{flex:1;background:#221a13;border:2px solid #4a3a28;border-radius:10px;color:#e8d9b0;padding:10px 4px;font-size:13px;font-weight:800;cursor:pointer}
+ .praybtn.on{border-color:#c9a227;background:#3a2c1c;box-shadow:0 0 10px #c9a22766}
+ .bar{height:12px;background:#171310;border:1px solid #4a3a28;border-radius:6px;overflow:hidden}
  .bar>div{height:100%}
- input,select{background:#12060f;color:#ffe9f6;border:1px solid #8b5cf6;border-radius:6px;padding:7px;font-size:14px}
+ input,select{background:#171310;color:#e8d9b0;border:1px solid #7a6748;border-radius:6px;padding:7px;font-size:14px}
  input[type=number]{width:76px}
  /* joystick */
- #joy{position:fixed;left:18px;bottom:86px;width:112px;height:112px;border-radius:50%;background:rgba(24,10,26,.55);border:2px solid rgba(139,92,246,.8);z-index:30;touch-action:none;opacity:var(--uia)}
- #knob{position:absolute;left:50%;top:50%;width:50px;height:50px;border-radius:50%;background:rgba(255,79,163,.75);border:2px solid #8b5cf6;transform:translate(-50%,-50%)}
- #camstick{position:fixed;right:16px;bottom:196px;width:104px;height:104px;border-radius:50%;background:rgba(24,10,26,.55);border:2px solid rgba(34,211,238,.7);z-index:30;touch-action:none;opacity:var(--uia)}
- #camknob{position:absolute;left:50%;top:50%;width:46px;height:46px;border-radius:50%;background:rgba(34,211,238,.75);border:2px solid #0e7490;transform:translate(-50%,-50%)}
+ #joy{position:fixed;left:18px;bottom:86px;width:112px;height:112px;border-radius:50%;background:rgba(23,19,16,.55);border:2px solid rgba(122,103,72,.85);z-index:30;touch-action:none;opacity:var(--uia)}
+ #knob{position:absolute;left:50%;top:50%;width:50px;height:50px;border-radius:50%;background:rgba(201,162,39,.75);border:2px solid #7a6748;transform:translate(-50%,-50%)}
+ #camstick{position:fixed;right:16px;bottom:196px;width:104px;height:104px;border-radius:50%;background:rgba(23,19,16,.55);border:2px solid rgba(176,141,79,.7);z-index:30;touch-action:none;opacity:var(--uia)}
+ #camknob{position:absolute;left:50%;top:50%;width:46px;height:46px;border-radius:50%;background:rgba(176,141,79,.75);border:2px solid #6e5a3e;transform:translate(-50%,-50%)}
  #camstick .sticklbl{position:absolute;left:0;right:0;bottom:6px;text-align:center;font-size:10px;color:#cfe6ff;pointer-events:none}
  /* quick-set buttons */
  #quickbar{position:fixed;left:146px;bottom:108px;z-index:30;display:flex;gap:8px}
- .qbtn{width:54px;height:54px;border-radius:50%;background:rgba(24,10,26,var(--uia));border:2px solid #8b5cf6;color:#ffe9f6;font-size:24px;cursor:pointer;position:relative}
- .qbtn .qnum{position:absolute;top:-5px;right:-5px;background:#ff4fa3;border:1px solid #ff8fd0;border-radius:50%;width:19px;height:19px;font-size:11px;font-weight:800;color:#fff;display:flex;align-items:center;justify-content:center}
+ .qbtn{width:54px;height:54px;border-radius:50%;background:rgba(23,19,16,var(--uia));border:2px solid #7a6748;color:#e8d9b0;font-size:24px;cursor:pointer;position:relative}
+ .qbtn .qnum{position:absolute;top:-5px;right:-5px;background:#c9a227;border:1px solid #e3c766;border-radius:50%;width:19px;height:19px;font-size:11px;font-weight:800;color:#fff;display:flex;align-items:center;justify-content:center}
  .qbtn.actbtn{font-size:21px;line-height:1}
- .qbtn .qlbl{position:absolute;left:0;right:0;bottom:3px;font-size:8px;font-weight:800;color:#ffb3dd;text-align:center;pointer-events:none}
+ .qbtn .qlbl{position:absolute;left:0;right:0;bottom:3px;font-size:8px;font-weight:800;color:#e0cfa0;text-align:center;pointer-events:none}
  .plabel .aname{color:#a5ff9e;font-weight:800}
  /* XP drops */
  #xpdrops{position:relative;height:0;text-align:center}
- .xpdrop{position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:13px;font-weight:800;color:#ff8fd0;text-shadow:0 1px 3px #000;animation:xprise 1.6s ease-out forwards;pointer-events:none}
+ .xpdrop{position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:13px;font-weight:800;color:#e3c766;text-shadow:0 1px 3px #000;animation:xprise 1.6s ease-out forwards;pointer-events:none}
  @keyframes xprise{0%{opacity:0;margin-top:6px}15%{opacity:1}100%{opacity:0;margin-top:-34px}}
  /* goblin label HP bar */
  .plabel .hpwrap{display:none;width:64px;height:7px;background:#400;border:1px solid #200;border-radius:4px;margin:2px auto 0;overflow:hidden}
  .plabel .hpfill{height:100%;background:#4caf50}
  .plabel .gname{color:#b6ffb0}
  /* settings + skills rows */
- .setrow{display:flex;align-items:center;gap:8px;background:#1d0b22;border:1px solid #5b2a6e;border-radius:8px;padding:7px 8px;margin-bottom:6px;font-size:13px}
+ .setrow{display:flex;align-items:center;gap:8px;background:#221a13;border:1px solid #4a3a28;border-radius:8px;padding:7px 8px;margin-bottom:6px;font-size:13px}
  .setrow .grow{flex:1}
- .setrow input[type=range]{flex:1;accent-color:#ff4fa3}
- .skillrow{display:flex;align-items:center;gap:8px;background:#1d0b22;border:1px solid #5b2a6e;border-radius:8px;padding:5px 8px;margin-bottom:4px;font-size:13px}
+ .setrow input[type=range]{flex:1;accent-color:#c9a227}
+ .skillrow{display:flex;align-items:center;gap:8px;background:#221a13;border:1px solid #4a3a28;border-radius:8px;padding:5px 8px;margin-bottom:4px;font-size:13px}
  .skillrow .ic{font-size:19px}
  .skillrow .grow{flex:1}
- .skillrow .lvl{font-weight:900;color:#ff8fd0;font-size:15px}
- .skillrow .xp{font-size:11px;color:#c9a0d8}
+ .skillrow .lvl{font-weight:900;color:#e3c766;font-size:15px}
+ .skillrow .xp{font-size:11px;color:#b8a888}
  .cell.empty{cursor:default;background:rgba(29,11,34,.5)}
+ /* admin tools reference lists (Stage 7D) */
+ .reflist{max-height:190px;overflow-y:auto;border:1px solid #4a3a28;border-radius:8px;padding:4px;background:#100c08;margin-bottom:6px}
+ .reflist .rowline{margin-bottom:4px}
  /* chat */
- #chatbox{position:fixed;right:6px;bottom:6px;z-index:30;width:min(370px,64vw);background:rgba(24,10,26,var(--uia));border:2px solid #ff4fa3;border-radius:10px;overflow:hidden}
- #chathead{padding:5px 9px;font-size:12px;font-weight:800;color:#ff8fd0;cursor:pointer;display:flex;justify-content:space-between}
+ #chatbox{position:fixed;right:6px;bottom:6px;z-index:30;width:min(370px,64vw);background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:10px;overflow:hidden}
+ #chathead{padding:5px 9px;font-size:12px;font-weight:800;color:#e3c766;cursor:pointer;display:flex;justify-content:space-between}
  #chatbody{display:block}
  #chatbox.closed #chatbody{display:none}
  #log{height:104px;overflow-y:auto;font-size:12px;white-space:pre-wrap;padding:4px 8px}
  #chatrow{display:flex;gap:5px;padding:5px}
  #chatrow input{flex:1;min-width:0}
  /* duel banner */
- #duelbar{position:fixed;top:42px;left:50%;transform:translateX(-50%);z-index:45;width:min(440px,94vw);background:rgba(24,10,26,var(--uia));border:2px solid #e0388a;border-radius:12px;padding:8px 10px;display:none}
+ #duelbar{position:fixed;top:42px;left:50%;transform:translateX(-50%);z-index:45;width:min(440px,94vw);background:rgba(23,19,16,var(--uia));border:2px solid #8e2f32;border-radius:12px;padding:8px 10px;display:none}
  #duelbar.open{display:block}
- #duelbar .t{font-weight:900;color:#ff8fd0;text-align:center;font-size:14px;margin-bottom:5px}
+ #duelbar .t{font-weight:900;color:#e3c766;text-align:center;font-size:14px;margin-bottom:5px}
  .hprow{display:flex;align-items:center;gap:7px;font-size:12px;margin:3px 0}
  .hprow .nm{width:86px;text-align:right;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .hpbar{flex:1;height:13px;background:#400;border:1px solid #200;border-radius:6px;overflow:hidden}
  .hpbar>div{height:100%;background:#4caf50;transition:width .25s}
  #duelquick{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;align-items:center}
- #specbtn.ready{box-shadow:0 0 12px 3px #ff4fa3;background:#e0388a}
+ #specbtn.ready{box-shadow:0 0 12px 3px #c9a227;background:#8e2f32}
  /* modals */
  .modal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:14px}
  .modal.open{display:flex}
- .sheet{background:rgba(24,10,26,var(--uia));border:2px solid #ff4fa3;border-radius:14px;padding:14px;width:min(430px,94vw);max-height:86dvh;overflow-y:auto}
- .sheet h3{margin:0 0 8px;color:#ff8fd0}
+ .sheet{background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:14px;padding:14px;width:min(430px,94vw);max-height:86dvh;overflow-y:auto}
+ .sheet h3{margin:0 0 8px;color:#e3c766}
  .sheet .btns{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
- .pickrow{display:flex;align-items:center;gap:7px;font-size:13px;padding:4px 0;border-bottom:1px solid #3d1440}
+ .pickrow{display:flex;align-items:center;gap:7px;font-size:13px;padding:4px 0;border-bottom:1px solid #3a2c1c}
  .pickrow .grow{flex:1}
  .pickrow input{width:58px;padding:4px}
  .sheet.wide{width:min(580px,96vw)}
  button.ghost:disabled{opacity:.45}
  /* Stage 7B: follow chip */
- #followchip{position:fixed;left:146px;bottom:170px;z-index:30;background:rgba(24,10,26,var(--uia));border:2px solid #8b5cf6;border-radius:10px;padding:6px 8px;font-size:12px;font-weight:700;display:none;align-items:center;gap:7px}
+ #followchip{position:fixed;left:146px;bottom:170px;z-index:30;background:rgba(23,19,16,var(--uia));border:2px solid #7a6748;border-radius:10px;padding:6px 8px;font-size:12px;font-weight:700;display:none;align-items:center;gap:7px}
  #followchip.on{display:flex}
  /* auth + errors */
- #auth{position:fixed;inset:0;z-index:60;background:linear-gradient(160deg,#2a0a33,#160a2e 55%,#0d1b2e);display:flex;align-items:center;justify-content:center;padding:16px}
- #auth .card{background:#1d0b22;border:2px solid #ff4fa3;border-radius:14px;padding:18px;width:min(400px,94vw);box-shadow:0 0 34px #ff4fa333}
- #auth h1{font-size:21px;color:#ff8fd0;margin:0 0 4px}
+ #auth{position:fixed;inset:0;z-index:60;background:linear-gradient(160deg,#241a10,#171310 55%,#0f0d0a);display:flex;align-items:center;justify-content:center;padding:16px}
+ #auth .card{background:#221a13;border:2px solid #c9a227;border-radius:14px;padding:18px;width:min(400px,94vw);box-shadow:0 0 34px #c9a22733}
+ #auth h1{font-size:21px;color:#e3c766;margin:0 0 4px}
  #auth input{display:block;width:100%;margin:7px 0}
  #authmsg{color:#ff8a80;font-size:13px;min-height:18px}
- #loaderror{position:fixed;inset:0;z-index:70;background:#160a1a;display:none;align-items:center;justify-content:center;padding:20px;text-align:center}
- #toast{position:fixed;top:44px;left:50%;transform:translateX(-50%);z-index:55;background:rgba(61,20,64,var(--uia));border:2px solid #ff4fa3;color:#ffe9f6;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:700;display:none;max-width:92vw;text-align:center}
+ #loaderror{position:fixed;inset:0;z-index:70;background:#100c08;display:none;align-items:center;justify-content:center;padding:20px;text-align:center}
+ #toast{position:fixed;top:44px;left:50%;transform:translateX(-50%);z-index:55;background:rgba(43,33,24,var(--uia));border:2px solid #c9a227;color:#e8d9b0;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:700;display:none;max-width:92vw;text-align:center}
  /* Fight Caves (Stage 4) */
  .plabel .fcname{color:#ffc9a8}
- #fcbar{position:fixed;top:42px;left:50%;transform:translateX(-50%);z-index:45;width:min(440px,94vw);background:rgba(24,10,26,var(--uia));border:2px solid #ff7b24;border-radius:12px;padding:8px 10px;display:none}
+ #fcbar{position:fixed;top:42px;left:50%;transform:translateX(-50%);z-index:45;width:min(440px,94vw);background:rgba(23,19,16,var(--uia));border:2px solid #ff7b24;border-radius:12px;padding:8px 10px;display:none}
  #fcbar.open{display:block}
  #fcbar .t{font-weight:900;color:#ffb03a;text-align:center;font-size:14px;margin-bottom:5px}
  #fcquick{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;align-items:center}
- #fcspecbtn.ready{box-shadow:0 0 12px 3px #ff4fa3;background:#e0388a}
+ #fcspecbtn.ready{box-shadow:0 0 12px 3px #c9a227;background:#8e2f32}
  #fcprayers{display:flex;gap:5px;margin-top:7px}
- .fcpray{flex:1;background:#1d0b22;border:2px solid #5b2a6e;border-radius:9px;color:#ffe9f6;padding:7px 2px;font-size:12px;font-weight:800;cursor:pointer}
- .fcpray.on{border-color:#ff4fa3;background:#3d1440;box-shadow:0 0 10px #ff4fa366}
+ .fcpray{flex:1;background:#221a13;border:2px solid #4a3a28;border-radius:9px;color:#e8d9b0;padding:7px 2px;font-size:12px;font-weight:800;cursor:pointer}
+ .fcpray.on{border-color:#c9a227;background:#3a2c1c;box-shadow:0 0 10px #c9a22766}
  .fcpray.flash{animation:fcflash .28s ease-in-out infinite alternate}
- @keyframes fcflash{from{border-color:#ff3b30;background:#5a1408;box-shadow:0 0 6px #ff3b30}to{border-color:#ff8fd0;background:#7a2a08;box-shadow:0 0 18px #ff7b24}}
+ @keyframes fcflash{from{border-color:#ff3b30;background:#5a1408;box-shadow:0 0 6px #ff3b30}to{border-color:#e3c766;background:#7a2a08;box-shadow:0 0 18px #ff7b24}}
  #jadwarn{position:fixed;top:26%;left:50%;transform:translateX(-50%);z-index:56;width:min(430px,92vw);background:rgba(90,16,4,.94);border:3px solid #ff7b24;border-radius:14px;padding:14px 12px;text-align:center;display:none;cursor:pointer;box-shadow:0 0 30px #ff5a1f88;animation:fcflash .28s ease-in-out infinite alternate}
- #jadwarntxt{font-size:21px;font-weight:900;color:#ffd9f2;text-shadow:0 2px 4px #000}
+ #jadwarntxt{font-size:21px;font-weight:900;color:#f0dfae;text-shadow:0 2px 4px #000}
  #jadwarnhint{font-size:12px;color:#ffd9c2;margin-top:5px}
- .note{font-size:11px;color:#c9a0d8}
+ .note{font-size:11px;color:#b8a888}
  /* Barrows (Stage 5) */
  .plabel .bname{color:#e3d5ff}
  .plabel .bsub{font-size:10px;color:#b8a8e8;font-weight:600}
- #barrowsbar{position:fixed;top:44px;left:8px;z-index:44;width:min(320px,74vw);background:rgba(24,10,26,var(--uia));border:2px solid #8b5cf6;border-radius:12px;padding:8px 10px;display:none}
+ #barrowsbar{position:fixed;top:44px;left:8px;z-index:44;width:min(320px,74vw);background:rgba(23,19,16,var(--uia));border:2px solid #7a6748;border-radius:12px;padding:8px 10px;display:none}
  #barrowsbar.open{display:block}
  #barrowsbar .t{font-weight:900;color:#d8b4fe;text-align:center;font-size:14px;margin-bottom:5px}
- #barrowsbar .x{background:none;border:0;color:#ffe9f6;font-size:15px;cursor:pointer;float:right}
- .bchip{display:inline-block;background:#1d0b22;border:1px solid #5b2a6e;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700;margin:0 3px 4px 0;color:#c9a0d8}
+ #barrowsbar .x{background:none;border:0;color:#e8d9b0;font-size:15px;cursor:pointer;float:right}
+ .bchip{display:inline-block;background:#221a13;border:1px solid #4a3a28;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700;margin:0 3px 4px 0;color:#b8a888}
  .bchip.slain{color:#7dff8a;border-color:#2e6b24}
- .bchip.tun{border-color:#ff4fa3;color:#ffb3dd}
+ .bchip.tun{border-color:#c9a227;color:#e0cfa0}
  .puzseq{font-size:34px;text-align:center;letter-spacing:8px;margin:8px 0}
- .puzans{font-size:26px;text-align:center;letter-spacing:6px;min-height:34px;margin:4px 0;color:#ff8fd0}
+ .puzans{font-size:26px;text-align:center;letter-spacing:6px;min-height:34px;margin:4px 0;color:#e3c766}
  .puzbtns{display:flex;gap:6px;justify-content:center;margin:8px 0}
- .puzbtn{font-size:24px;background:#1d0b22;border:2px solid #5b2a6e;border-radius:10px;padding:6px 12px;cursor:pointer}
- .puzbtn:active{border-color:#ff4fa3}
+ .puzbtn{font-size:24px;background:#221a13;border:2px solid #4a3a28;border-radius:10px;padding:6px 12px;cursor:pointer}
+ .puzbtn:active{border-color:#c9a227}
 </style></head><body>
 <div id="scene"></div>
 <div id="labels"></div>
 <div id="splats"></div>
 
-<div id="topbar"><b>💖 nallystake <span class="sparkle">✨</span></b><span id="hudname">—</span><span>🪙 <b id="hudgold">0</b>g</span><span>⭐ <b id="hudrating">1000</b></span><span id="hudwl">0W/0L</span><span id="hudcombat">⚔️ Combat lvl 3</span><span class="grow"></span><span class="note">gold only · no real money</span></div>
+<div id="topbar"><b>⚔️ nallystake 🏰</b><span id="hudname">—</span><span>🪙 <b id="hudgold">0</b>g</span><span>⭐ <b id="hudrating">1000</b></span><span id="hudwl">0W/0L</span><span id="hudcombat">⚔️ Combat lvl 3</span><span class="grow"></span><span class="note">gold only · no real money</span></div>
 
 <div id="mapwrap">
  <canvas id="minimap" width="128" height="72"></canvas>
@@ -209,6 +210,7 @@
   <button class="rbtn" data-panel="prayers" title="Prayers">🙏</button>
   <button class="rbtn" data-panel="players" title="Players">👥</button>
   <button class="rbtn" data-panel="admin" title="Admin">👑</button>
+  <button class="rbtn" data-panel="tools" id="toolsbtn" title="Admin tools" style="display:none">🛠️</button>
   <button class="rbtn" data-panel="skills" title="Skills">📊</button>
   <button class="rbtn" data-panel="smithy" title="Smithy">🔥</button>
   <button class="rbtn" data-panel="teleport" title="Teleport">🌀</button>
@@ -296,16 +298,16 @@
 <div id="jadwarn"><div id="jadwarntxt"></div><div id="jadwarnhint"></div></div>
 
 <div id="auth"><div class="card">
- <h1>💖 nallystake — Online ✨</h1>
+ <h1>⚔️ nallystake — Online 🏰</h1>
  <p style="margin:2px 0 8px">Gold only. No real money. Real players, server-run duels, saving on the server.</p>
  <input id="name" placeholder="Player name" maxlength="16" autocomplete="username">
  <input id="pass" type="password" placeholder="Password (6+)" autocomplete="current-password">
  <div style="display:flex;gap:8px;margin-top:6px"><button class="act" id="reg">Create account</button><button class="act" id="login">Sign in</button></div>
  <div id="authmsg"></div>
- <p class="note">Stage 6: 🌳 Awaken a tree into a Tree Guardian who follows you and fights beside you — and a 🤸 Jump button: jump while moving to flip in the direction you're travelling! Stage 5: Barrows, duel arenas, drop piles — now with a full K-pop theme: concert stage, idol outfits, sparkles. Plus the Fight Caves, Emberfall Mine &amp; Smithy, Training &amp; Gathering caves, Fishing Cove, skills &amp; XP, Goblin Camp, twin sticks, rotating minimap, settings, quick sets.</p>
+ <p class="note">Stage 6: 🌳 Awaken a tree into a Tree Guardian who follows you and fights beside you — and a 🤸 Jump button: jump while moving to flip in the direction you're travelling! Stage 5: Barrows, duel arenas, drop piles. Stage 8: a medieval realm — tournament dais, knight armour, walk-up melee with weapon swings and hitsplats. Plus the Fight Caves, Emberfall Mine &amp; Smithy, Training &amp; Gathering caves, Fishing Cove, skills &amp; XP, Goblin Camp, twin sticks, rotating minimap, settings, quick sets.</p>
 </div></div>
 
-<div id="loaderror"><div><h2 style="color:#ff8fd0">Couldn't load 3D 😕</h2><p>The 3D library (Three.js) failed to load, so the plaza can't be drawn.<br>Check your connection and reload the page.</p></div></div>
+<div id="loaderror"><div><h2 style="color:#e3c766">Couldn't load 3D 😕</h2><p>The 3D library (Three.js) failed to load, so the plaza can't be drawn.<br>Check your connection and reload the page.</p></div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.158.0/three.min.js"></script>
 <script>
@@ -329,6 +331,15 @@ const ICONS={restore_potion:'🍷',prayer_potion:'🌟',ration:'🍗',bronze_swo
  nc:'🪙',certificate:'📜'};
 const KIND_ICON={potion:'🧪',food:'🍗',weapon:'⚔️',armour:'🛡️',good:'📦',tool:'⛏️',trophy:'🏆',token:'🪙'};
 function iconOf(id){ if(ICONS[id])return ICONS[id]; const d=catalog[id]; if(d&&d.icon) return d.icon; return d? (KIND_ICON[d.kind]||'📦') : '📦'; }
+/* Stage 8: an item's face in DOM UI — the admin's drawn art if the def
+   has any, else its emoji, on a tint chip when the def carries a color
+   (custom items only; base items just get their emoji as before). */
+function itemIconHTML(item,size){
+ const d=catalog[item], sz=size||24;
+ if(d&&d.art) return `<img src="${d.art}" alt="" style="width:${sz}px;height:${sz}px;border-radius:6px;vertical-align:middle;object-fit:cover">`;
+ if(d&&d.color) return `<span style="display:inline-block;background:${d.color};border:1px solid rgba(0,0,0,.5);border-radius:6px;padding:0 3px;font-size:${Math.max(12,sz-3)}px;line-height:1.25;vertical-align:middle">${iconOf(item)}</span>`;
+ return iconOf(item);
+}
 function nameOf(id){ if(catalog[id])return catalog[id].name; if(goods[id])return goods[id].name; if(id==='nc')return 'NC'; if(id==='certificate')return 'Certificate'; return id; }
 function stackQtyOf(stacks,id){ const s=(stacks||[]).find(x=>x.item===id); return s?s.qty:0; }
 function myQty(id){ return me? stackQtyOf(me.backpack,id):0; }
@@ -361,6 +372,15 @@ function applyRailVisibility(){
  const rs=$('railset'); if(rs) rs.classList.toggle('open',railOpen);
  const gb=$('gearbtn'); if(gb) gb.textContent=railOpen?'✕':'⚙';
  document.querySelectorAll('#railset .rbtn').forEach(b=>{ b.style.display=settings.hidden[b.dataset.panel]?'none':''; });
+ refreshToolsBtn();
+}
+/* Stage 7D: the 🛠️ Tools button exists only for admins/owners (and
+   still obeys the Settings visibility toggle). Re-checked whenever the
+   rail is drawn and on every profile refresh, so a promotion (or
+   demotion) shows/hides it without a reload. */
+function refreshToolsBtn(){
+ const tb=$('toolsbtn'); if(!tb) return;
+ tb.style.display=(isAdminOrOwner()&&!settings.hidden.tools)?'':'none';
 }
 function applySettings(){
  document.documentElement.style.setProperty('--uia',settings.uiAlpha);
@@ -497,6 +517,10 @@ function onMsg(m){
  if(m.type==='admin_note'){ toast(m.text); logLine(`👑 Admin: ${m.text}`); }
  if(m.type==='admin_list'){ lastAdminList=m.players||[]; if(drawerPanel==='admin') renderDrawer(); }
  if(m.type==='online_list'){ lastOnlineList=m.players||[]; if(drawerPanel==='admin') renderDrawer(); }
+ if(m.type==='objects'){ objectsByArea[m.area]=m.objects||[]; if(m.area===curArea) rebuildObjects(); if(drawerPanel==='tools') renderDrawer(); }
+ if(m.type==='ref_lists'){ lastRefLists=m; if(drawerPanel==='tools') renderDrawer(); }
+ if(m.type==='custom_created'){ toolArtDirty=false; if(drawerPanel==='tools') renderDrawer(); }
+ if(m.type==='custom_edited'){ toolArtDirty=false; if(drawerPanel==='tools') renderDrawer(); }
  if(m.type==='fight_offer'){ openFightOffer(m); }
  if(m.type==='cert_request'){ openCertRequest(m); }
  if(m.type==='whisper'){ if(m.to) logLine(`💬 you → ${m.to}: ${m.text}`); else logLine(`💬 ${m.from} → you: ${m.text}`); }
@@ -513,7 +537,7 @@ function onMsg(m){
 }
 
 /* ================= HUD / orbs ================= */
-function renderAll(){ renderHUD(); renderOrbs(); if(drawerPanel) renderDrawer(); if(fcRun) renderFcBar(); drawMinimap(); }
+function renderAll(){ renderHUD(); renderOrbs(); refreshToolsBtn(); if(drawerPanel) renderDrawer(); if(fcRun) renderFcBar(); drawMinimap(); }
 function renderHUD(){
  if(!me) return;
  $('hudname').textContent=me.username;
@@ -567,13 +591,13 @@ function onXpDrop(m){
      const d=document.createElement('div');
      d.className='xpdrop';
      d.style.top=(boxEl.children.length*17)+'px';
-     d.textContent=`✨ +${delta} ${SKILL_ICON[m.skill]||'✨'} ${SKILL_NAME[m.skill]||m.skill} ✨`;
+     d.textContent=`+${delta} ${SKILL_ICON[m.skill]||'✨'} ${SKILL_NAME[m.skill]||m.skill} XP`;
      boxEl.appendChild(d);
      while(boxEl.children.length>4) boxEl.removeChild(boxEl.firstChild);
      setTimeout(()=>{ if(d.parentNode) d.parentNode.removeChild(d); },1650);
    }
  }
- if(m.level>prevLevel){ toast(`🎤✨ Level up! ${SKILL_ICON[m.skill]||''} ${SKILL_NAME[m.skill]||m.skill} is now level ${m.level}`); logLine(`🎤✨ Level up! ${SKILL_NAME[m.skill]||m.skill} is now level ${m.level}.`); }
+ if(m.level>prevLevel){ toast(`⚔️ Level up! ${SKILL_ICON[m.skill]||''} ${SKILL_NAME[m.skill]||m.skill} is now level ${m.level}`); logLine(`⚔️ Level up! ${SKILL_NAME[m.skill]||m.skill} is now level ${m.level}.`); }
  renderHUD();
  if(drawerPanel==='skills') renderDrawer();
 }
@@ -616,16 +640,38 @@ function textSprite(text,fg,bg){
  sp.scale.set(7,1.75,1);
  return sp;
 }
-function stoneTexture(){
+/* Cobblestone (Stage 8 medieval pass): dark mortar, rounded stones. */
+function stoneTexture(rx,ry){
  const c=document.createElement('canvas'); c.width=c.height=256; const g=c.getContext('2d');
- g.fillStyle='#8d8577'; g.fillRect(0,0,256,256);
- for(let i=0;i<4;i++) for(let j=0;j<4;j++){
-   g.fillStyle=['#948c7c','#867e6e','#9a927f'][((i+j)%3)];
-   g.fillRect(i*64+2,j*64+2,60,60);
+ g.fillStyle='#2e2a24'; g.fillRect(0,0,256,256); // mortar
+ const shades=['#5d574c','#655e52','#524c42','#6b6355','#59534a'];
+ let k=0;
+ for(let j=0;j<4;j++) for(let i=0;i<4;i++){
+   const cx=i*64+(j%2? 10:-4)+32, cy=j*64+32;
+   g.fillStyle=shades[(k++)%shades.length];
+   g.beginPath(); g.ellipse(cx,cy,29,25,((i*7+j*13)%5-2)*0.06,0,Math.PI*2); g.fill();
+   g.fillStyle='rgba(255,240,200,0.10)';
+   g.beginPath(); g.ellipse(cx-7,cy-8,15,9,-0.4,0,Math.PI*2); g.fill(); // worn highlight
+   g.fillStyle='rgba(0,0,0,0.18)';
+   g.beginPath(); g.ellipse(cx+5,cy+11,17,8,0.3,0,Math.PI*2); g.fill(); // grime
  }
- g.strokeStyle='#5d574c'; g.lineWidth=3;
- for(let i=0;i<=4;i++){ g.beginPath(); g.moveTo(i*64,0); g.lineTo(i*64,256); g.stroke(); g.beginPath(); g.moveTo(0,i*64); g.lineTo(256,i*64); g.stroke(); }
- const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(6,4); return t;
+ const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(rx||6,ry||4); return t;
+}
+/* Wood planks (Stage 8): stalls, the tournament dais, the dock. */
+function woodTexture(base){
+ const c=document.createElement('canvas'); c.width=c.height=128; const g=c.getContext('2d');
+ g.fillStyle=base||'#6e4a1f'; g.fillRect(0,0,128,128);
+ for(let p=0;p<4;p++){
+   const y=p*32;
+   g.fillStyle=p%2?'rgba(0,0,0,0.10)':'rgba(255,235,190,0.05)'; g.fillRect(0,y,128,32);
+   g.strokeStyle='rgba(30,18,6,0.85)'; g.lineWidth=2;
+   g.beginPath(); g.moveTo(0,y+1); g.lineTo(128,y+1); g.stroke();
+   g.strokeStyle='rgba(40,24,8,0.35)'; g.lineWidth=1;
+   for(let s=0;s<3;s++){ const gy=y+8+s*8+((p*5+s*3)%4); g.beginPath(); g.moveTo(0,gy); g.bezierCurveTo(40,gy+2,90,gy-2,128,gy+1); g.stroke(); } // grain
+   g.fillStyle='rgba(20,12,4,0.7)';
+   g.beginPath(); g.arc(10,y+16,2.4,0,7); g.fill(); g.beginPath(); g.arc(118,y+16,2.4,0,7); g.fill(); // nails
+ }
+ const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; return t;
 }
 /* Subtle noise texture (Stage 5 texture pass) — base colour + flecks. */
 function noiseTexture(base,flecks,rx,ry){
@@ -648,14 +694,28 @@ function box(w,h,d,color,x,y,z,parent,act){
  if(act){ m.userData.act=act; interactives.push(m); }
  return m;
 }
+/* box() with a ready material (Stage 8 textured wood/stone). */
+function boxM(w,h,d,mat,x,y,z,parent,act){
+ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+ m.position.set(x,y,z); (parent||scene).add(m);
+ if(act){ m.userData.act=act; interactives.push(m); }
+ return m;
+}
+/* Stage 8 shadows: everything solid in a group casts; grounds receive
+   (applied per-mesh where they're built). */
+function shadowify(root){
+ root.traverse(o=>{ if(o.isMesh&&o.material&&o.material.isMeshLambertMaterial) o.castShadow=true; });
+}
+/* Flickering brazier lights on the tournament dais (Stage 8). */
+let flickerLights=[];
 function buildPlaza(root){
  const scene=root; // build into the plaza area group (box()/add calls below target it)
- // ground: grass (subtle noise texture, Stage 5)
- const grass=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({map:noiseTexture('#3e7d33',['#356e2c','#4a8f3c','#2f6629'],8,5)}));
- grass.rotation.x=-Math.PI/2; scene.add(grass);
- // stone-paved centre
- const stone=new THREE.Mesh(new THREE.PlaneGeometry(42,27),new THREE.MeshLambertMaterial({map:stoneTexture()}));
- stone.rotation.x=-Math.PI/2; stone.position.y=0.02; scene.add(stone);
+ // ground: dark grass (subtle noise texture)
+ const grass=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({map:noiseTexture('#3a5230',['#324628','#425c34','#2c4024'],8,5)}));
+ grass.rotation.x=-Math.PI/2; grass.receiveShadow=true; scene.add(grass);
+ // cobblestone-paved centre
+ const stone=new THREE.Mesh(new THREE.PlaneGeometry(42,27),new THREE.MeshLambertMaterial({map:stoneTexture(9,6)}));
+ stone.rotation.x=-Math.PI/2; stone.position.y=0.02; stone.receiveShadow=true; scene.add(stone);
  // bank chest on a stone dais (centre)
  const dais=new THREE.Mesh(new THREE.CylinderGeometry(3.4,3.8,0.5,8),new THREE.MeshLambertMaterial({color:0x7c7565}));
  dais.position.set(sx2w(BANK_POS.x),0.25,sy2w(BANK_POS.y)); scene.add(dais);
@@ -664,7 +724,7 @@ function buildPlaza(root){
  box(2.6,0.5,1.8,0x59390f,0,1.5,0,bankG,{type:'bank'});
  box(2.65,0.22,1.85,0xd4af37,0,1.18,0,bankG,{type:'bank'}); // gold band
  box(0.5,0.5,0.15,0xffd75e,0,0.75,0.85,bankG,{type:'bank'}); // gold clasp
- const bl=textSprite('🏦 BANK','#ff8fd0','rgba(23,19,12,0.85)'); bl.position.set(0,3.1,0); bankG.add(bl);
+ const bl=textSprite('🏦 BANK','#e3c766','rgba(23,19,12,0.85)'); bl.position.set(0,3.1,0); bankG.add(bl);
  // shop stalls
  for(const s of SHOP_SPOTS){
    const g=new THREE.Group(); g.position.set(sx2w(s.x),0,sy2w(s.y)); scene.add(g);
@@ -673,7 +733,7 @@ function buildPlaza(root){
    box(0.18,2.2,0.18,0x5a4020,-1.4,1.1,0.9,g,act); box(0.18,2.2,0.18,0x5a4020,1.4,1.1,0.9,g,act);
    const awn=new THREE.Mesh(new THREE.BoxGeometry(3.4,0.18,2.4),new THREE.MeshLambertMaterial({map:stripeTexture(s.color)})); // striped awning
    awn.position.set(0,2.35,0); awn.userData.act=act; interactives.push(awn); g.add(awn);
-   box(3.0,0.8,1.4,0x74552a,0,0.4,0.3,g,act); // counter
+   boxM(3.0,0.8,1.4,new THREE.MeshLambertMaterial({map:woodTexture('#74552a')}),0,0.4,0.3,g,act); // wooden counter
    box(0.7,0.7,0.7,0xd4af37,-0.8,1.15,0.3,g,act); box(0.6,0.6,0.6,0xb03a2e,0.7,1.1,0.3,g,act); // goods on counter
    const lb=textSprite(s.shop,'#ffffff','rgba(23,19,12,0.85)'); lb.position.set(0,3.6,0); g.add(lb);
  }
@@ -681,42 +741,53 @@ function buildPlaza(root){
  const bg=new THREE.Group(); bg.position.set(sx2w(BOARD_POS.x),0,sy2w(BOARD_POS.y)); scene.add(bg);
  box(0.18,2.4,0.18,0x5a4020,-1.1,1.2,0,bg); box(0.18,2.4,0.18,0x5a4020,1.1,1.2,0,bg);
  box(2.8,1.7,0.12,0x8a6d1f,0,1.7,0,bg,{type:'players'});
- const dbl=textSprite('⚔️ DUEL BOARD','#ff8fd0','rgba(23,19,12,0.85)'); dbl.position.set(0,3.2,0); bg.add(dbl);
+ const dbl=textSprite('⚔️ DUEL BOARD','#e3c766','rgba(23,19,12,0.85)'); dbl.position.set(0,3.2,0); bg.add(dbl);
  // Duel Master — static figure standing by the board (Fisher Wren pattern)
  const dm=new THREE.Group(); dm.position.set(11.5,0,2.8); scene.add(dm);
- box(0.24,0.7,0.24,0x2a1033,-0.16,0.35,0,dm); box(0.24,0.7,0.24,0x2a1033,0.16,0.35,0,dm); // legs
- box(0.7,0.8,0.4,0x8b5cf6,0,1.1,0,dm); // purple robe body
+ box(0.24,0.7,0.24,0x241a12,-0.16,0.35,0,dm); box(0.24,0.7,0.24,0x241a12,0.16,0.35,0,dm); // legs
+ box(0.7,0.8,0.4,0x6b4a7a,0,1.1,0,dm); // purple robe body
  box(0.44,0.44,0.44,0xd9a066,0,1.75,0,dm); // head
- box(0.52,0.2,0.52,0xff4fa3,0,2.08,0,dm); // pink circlet
+ box(0.52,0.2,0.52,0xc9a227,0,2.08,0,dm); // gold circlet
  const dmSw=box(0.07,1.1,0.14,0xd9dee6,0.62,1.5,0,dm); dmSw.rotation.z=-0.5; // raised sword
  const dmlabel=document.createElement('div'); dmlabel.className='plabel';
  dmlabel.innerHTML=`<div class="nname">⚔️ Duel Master</div>`;
  $('labels').appendChild(dmlabel);
  worldLabels.push({el:dmlabel,x:11.5,y:3.1,z:2.8,area:'plaza',kind:'static'});
- // 🎤 K-POP CONCERT STAGE — north side, centred server (400,70); its
- // front edge sits at server y≈45, clear of the north gate strip (y<40).
+ // ⚔️ TOURNAMENT DAIS (Stage 8, replaces the concert stage) — north
+ // side, centred server (400,70); its front edge sits at server y≈45,
+ // clear of the north gate strip (y<40). Same footprint as before.
  const stage=new THREE.Group(); stage.position.set(sx2w(400),0,sy2w(70)); scene.add(stage);
- box(14,0.8,5,0xc2255c,0,0.4,0,stage); // pink platform
- box(14.6,0.25,5.6,0xff4fa3,0,0.92,0,stage); // glowing stage lip
- box(14,5,0.4,0x2a1033,0,3.3,-2.4,stage); // backdrop panel
- box(14.4,0.3,0.5,0x22d3ee,0,5.9,-2.4,stage); // cyan top trim
- const stgT=textSprite('🎤 K-POP STAGE ✨','#ffffff','rgba(194,37,92,0.9)'); stgT.scale.set(11,2.75,1); stgT.position.set(0,4.4,-2.1); stage.add(stgT);
- for(const sx of [-6.6,6.6]){ // light towers with glowing cones
-   box(0.3,5.4,0.3,0x3a3a41,sx,2.7,-1.8,stage);
-   const cone=new THREE.Mesh(new THREE.ConeGeometry(1.15,2.6,10),new THREE.MeshBasicMaterial({color:sx<0?0xff4fa3:0x22d3ee,transparent:true,opacity:0.4}));
-   cone.position.set(sx,3.4,0.4); cone.rotation.x=0.7; stage.add(cone);
-   const lamp=new THREE.Mesh(new THREE.SphereGeometry(0.3,10,8),new THREE.MeshBasicMaterial({color:sx<0?0xff8fd0:0x9be9ff})); lamp.position.set(sx,5.4,-1.8); stage.add(lamp);
+ boxM(14,0.8,5,new THREE.MeshLambertMaterial({map:woodTexture('#5d4020')}),0,0.4,0,stage); // wooden platform
+ box(14.6,0.25,5.6,0x55504a,0,0.92,0,stage); // stone front step
+ box(14.4,0.3,0.5,0x4a443c,0,1.12,0,stage); // stone lip
+ // banner poles + crossbar across the back, deep-red banners hanging
+ box(0.22,5.6,0.22,0x3a2a16,-5.5,2.8,-2.3,stage); box(0.22,5.6,0.22,0x3a2a16,5.5,2.8,-2.3,stage);
+ box(11.4,0.18,0.18,0x3a2a16,0,5.35,-2.3,stage); // crossbar
+ for(const bx of [-3.4,3.4]){
+   box(1.9,2.9,0.07,0x8e2f32,bx,3.8,-2.25,stage); // deep-red banner cloth
+   box(1.9,0.22,0.09,0xc9a227,bx,2.42,-2.25,stage); // gold hem
+   const fin=new THREE.Mesh(new THREE.SphereGeometry(0.16,8,8),new THREE.MeshLambertMaterial({color:0xc9a227})); fin.position.set(bx,5.0,-2.25); stage.add(fin);
  }
- for(const sx of [-5.2,5.2]){ // speaker stacks
-   box(1.3,1.6,1.0,0x17121c,sx,0.8,1.6,stage); box(1.1,1.2,0.9,0x241a2e,sx,2.2,1.6,stage);
+ const stgT=textSprite('⚔️ TOURNAMENT ⚔️','#e8d9b0','rgba(23,19,12,0.9)'); stgT.scale.set(11,2.75,1); stgT.position.set(0,4.6,-2.0); stage.add(stgT);
+ // braziers at the front corners: stone bowl, emissive flame, real light
+ for(const sx of [-6.4,6.4]){
+   const bowl=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.3,0.5,10),new THREE.MeshLambertMaterial({color:0x55504a}));
+   bowl.position.set(sx,1.25,2.3); stage.add(bowl);
+   box(0.16,1.0,0.16,0x3a3a41,sx,0.5,2.3,stage); // stand
+   const flame=new THREE.Mesh(new THREE.ConeGeometry(0.42,1.1,7),new THREE.MeshBasicMaterial({color:0xff7b24})); flame.position.set(sx,1.95,2.3); stage.add(flame);
+   const flame2=new THREE.Mesh(new THREE.ConeGeometry(0.22,0.7,7),new THREE.MeshBasicMaterial({color:0xffd75e})); flame2.position.set(sx,1.9,2.3); stage.add(flame2);
+   const pl=new THREE.PointLight(0xff9a3c,0.85,20); pl.position.set(sx,2.3,2.3); stage.add(pl);
+   flickerLights.push({light:pl,flame,flame2,phase:Math.random()*10});
  }
- for(let i=0;i<8;i++){ // light sticks along the front edge
-   const lx=-5.25+i*1.5, tipCol=i%2? 0x22d3ee : 0xff4fa3;
-   box(0.07,0.85,0.07,0xf5f5f5,lx,1.35,2.75,stage);
-   const tip=new THREE.Mesh(new THREE.SphereGeometry(0.17,8,8),new THREE.MeshBasicMaterial({color:tipCol})); tip.position.set(lx,1.9,2.75); stage.add(tip);
+ // crossed-sword posts along the front edge
+ for(let i=0;i<4;i++){
+   const lx=-4.5+i*3;
+   const p1=box(0.07,1.15,0.07,0xd9dee6,lx,1.5,2.78,stage); p1.rotation.z=0.5;
+   const p2=box(0.07,1.15,0.07,0xd9dee6,lx,1.5,2.78,stage); p2.rotation.z=-0.5;
  }
+ shadowify(stage);
  const stglabel=document.createElement('div'); stglabel.className='plabel';
- stglabel.innerHTML=`<div class="nname">🎤 Concert Stage</div>`;
+ stglabel.innerHTML=`<div class="nname">⚔️ Tournament Dais</div>`;
  $('labels').appendChild(stglabel);
  worldLabels.push({el:stglabel,x:sx2w(400),y:6.9,z:sy2w(70),area:'plaza',kind:'static'});
  // perimeter fences with gaps at the four gates
@@ -789,7 +860,7 @@ function buildGoblinCamp(root){
  box(0.6,0.4,5.7,0xd4af37,-40,3.3,0,S);
  // signpost by the west gate
  box(0.18,2.2,0.18,0x5a4020,-36,1.1,4.2,S);
- const sp=textSprite('👺 Goblin Camp','#ff8fd0','rgba(23,19,12,0.85)'); sp.position.set(-36,3.0,4.2); S.add(sp);
+ const sp=textSprite('👺 Goblin Camp','#e3c766','rgba(23,19,12,0.85)'); sp.position.set(-36,3.0,4.2); S.add(sp);
  // trees + rocks
  for(const [tx,tz] of [[-30,-16],[-21,15],[27,16],[33,-8],[-8,-19],[14,20]]){
    box(0.35,1.4,0.35,0x5a4020,tx,0.7,tz,S);
@@ -840,7 +911,7 @@ function buildTrainingCave(root){
  buildTorch(S,-14,-20); buildTorch(S,14,-20);
  // signpost by the south gate (stations themselves render from node data)
  box(0.18,2.2,0.18,0x5a4020,5.5,1.1,19.5,S);
- const sp=textSprite('🏋️ Training Cave','#ff8fd0','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,19.5); S.add(sp);
+ const sp=textSprite('🏋️ Training Cave','#e3c766','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,19.5); S.add(sp);
 }
 function buildGatheringCave(root){
  const S=root;
@@ -862,12 +933,12 @@ function buildGatheringCave(root){
    rock.position.set(rx,0.35,rz); S.add(rock);
  }
  box(0.18,2.2,0.18,0x5a4020,5.5,1.1,-19.5,S);
- const sp=textSprite('⛏️ Gathering Cave','#ff8fd0','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,-19.5); S.add(sp);
+ const sp=textSprite('⛏️ Gathering Cave','#e3c766','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,-19.5); S.add(sp);
 }
 function buildFishingCove(root){
  const S=root;
- const grass=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({color:0x3e7d33}));
- grass.rotation.x=-Math.PI/2; S.add(grass);
+ const grass=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({color:0x3a5230}));
+ grass.rotation.x=-Math.PI/2; grass.receiveShadow=true; S.add(grass);
  // lake covering the east third (world x +13..+40)
  const lake=new THREE.Mesh(new THREE.PlaneGeometry(27,45),new THREE.MeshLambertMaterial({color:0x2e6db0}));
  lake.rotation.x=-Math.PI/2; lake.position.set(26.5,0.02,0); S.add(lake);
@@ -889,7 +960,7 @@ function buildFishingCove(root){
  gatePosts(S,-40,0);
  // signpost by the west gate
  box(0.18,2.2,0.18,0x5a4020,-36,1.1,4.2,S);
- const sp=textSprite('🎣 Fishing Cove','#ff8fd0','rgba(23,19,12,0.85)'); sp.position.set(-36,3.0,4.2); S.add(sp);
+ const sp=textSprite('🎣 Fishing Cove','#e3c766','rgba(23,19,12,0.85)'); sp.position.set(-36,3.0,4.2); S.add(sp);
  // Fisher Wren — decorative angler on the shore by the dock
  const wren=new THREE.Group(); wren.position.set(-8,0,6); S.add(wren);
  box(0.24,0.7,0.24,0x4a3520,-0.16,0.35,0,wren); box(0.24,0.7,0.24,0x4a3520,0.16,0.35,0,wren); // legs
@@ -923,7 +994,7 @@ function buildMine(root){
  buildTorch(S,-14,-20); buildTorch(S,14,-20); buildTorch(S,36,-6);
  // signpost by the south gate (the rocks themselves render from node data)
  box(0.18,2.2,0.18,0x5a4020,5.5,1.1,19.5,S);
- const sp=textSprite('⛏️🔥 Emberfall','#ff8fd0','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,19.5); S.add(sp);
+ const sp=textSprite('⛏️🔥 Emberfall','#e3c766','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,19.5); S.add(sp);
  // FURNACE — south-east: stone body, dark mouth facing west, flames inside, chimney
  const furn=new THREE.Group(); furn.position.set(31,0,13); S.add(furn);
  box(3.2,2.2,2.6,0x6b675e,0,1.1,0,furn); // body
@@ -932,14 +1003,14 @@ function buildMine(root){
  box(0.25,1.15,1.6,0x140d06,-1.65,0.85,0,furn); // dark mouth (west face)
  const ffl=new THREE.Mesh(new THREE.ConeGeometry(0.42,1.1,6),new THREE.MeshBasicMaterial({color:0xff7b24})); ffl.rotation.z=Math.PI/2; ffl.position.set(-1.95,0.85,0); furn.add(ffl);
  const ffl2=new THREE.Mesh(new THREE.ConeGeometry(0.24,0.7,6),new THREE.MeshBasicMaterial({color:0xffd75e})); ffl2.rotation.z=Math.PI/2; ffl2.position.set(-1.9,0.85,0); furn.add(ffl2);
- const flb=textSprite('🔥 Furnace','#ff8fd0','rgba(23,19,12,0.85)'); flb.position.set(31,3.6,13); S.add(flb);
+ const flb=textSprite('🔥 Furnace','#e3c766','rgba(23,19,12,0.85)'); flb.position.set(31,3.6,13); S.add(flb);
  // ANVIL — next to the furnace
  const anv=new THREE.Group(); anv.position.set(25,0,16.5); S.add(anv);
  box(1.5,0.5,0.9,0x2e2e33,0,0.25,0,anv); // base
  box(0.7,0.5,0.6,0x3a3a41,0,0.75,0,anv); // waist
  box(2.0,0.35,0.75,0x4a4a52,0,1.18,0,anv); // top plate
  const horn=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.26,1.0,8),new THREE.MeshLambertMaterial({color:0x4a4a52})); horn.rotation.z=Math.PI/2; horn.position.set(1.35,1.18,0); anv.add(horn);
- const alb=textSprite('🔨 Anvil','#ff8fd0','rgba(23,19,12,0.85)'); alb.position.set(25,2.6,16.5); S.add(alb);
+ const alb=textSprite('🔨 Anvil','#e3c766','rgba(23,19,12,0.85)'); alb.position.set(25,2.6,16.5); S.add(alb);
  // Pickaxe Pete — miner standing by the smithy (his pickaxes are in the Shops panel)
  const pete=new THREE.Group(); pete.position.set(27,0,7); S.add(pete);
  box(0.24,0.7,0.24,0x3a2c1c,-0.16,0.35,0,pete); box(0.24,0.7,0.24,0x3a2c1c,0.16,0.35,0,pete); // legs
@@ -1128,7 +1199,7 @@ function buildArena(root){
    crack.position.set(lx,0.05,lz); crack.rotation.y=lx*0.7; S.add(crack); arenaDecor.ember.push(crack);
  }
  // azure / violet: coloured banners on the north wall
- for(const [key,col] of [['azure',0x2e7fd9],['violet',0x8b5cf6]]){
+ for(const [key,col] of [['azure',0x2e7fd9],['violet',0x6b4a7a]]){
    for(const bx of [-16,0,16]){
      const pole=box(0.14,3.4,0.14,0x5a4020,bx,1.7,-21.6,S);
      const ban=box(1.5,1.9,0.08,col,bx,2.2,-21.5,S);
@@ -1249,19 +1320,23 @@ function makeBrother(m){
  const g=new THREE.Group();
  const tint=b.tint, dark=0x2a2a30;
  box(0.26,0.7,0.26,dark,-0.17,0.35,0,g); box(0.26,0.7,0.26,dark,0.17,0.35,0,g); // legs
- box(0.8,0.95,0.46,tint,0,1.15,0,g); // armoured body
- box(0.24,0.75,0.24,tint,-0.54,1.2,0,g); box(0.24,0.75,0.24,tint,0.54,1.2,0,g); // arms
- box(0.46,0.46,0.46,0x8a7a5e,0,1.9,0,g); // head
- box(0.54,0.22,0.54,dark,0,2.18,0,g); // helm
- const wp=box(0.09,1.2,0.16,0xb9c1cc,0.68,1.4,0,g); wp.rotation.z=-0.4; // weapon
- const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.3}));
+ const bbody=new THREE.Mesh(new THREE.CylinderGeometry(0.36,0.44,0.95,10),new THREE.MeshLambertMaterial({color:tint})); bbody.position.y=1.15; g.add(bbody); // rounded armoured body
+ box(0.24,0.75,0.24,tint,-0.54,1.2,0,g); // left arm
+ // right arm on a shoulder pivot — the weapon arm (swings in fights)
+ const armR=new THREE.Group(); armR.position.set(0.54,1.55,0); g.add(armR);
+ box(0.24,0.75,0.24,tint,0,-0.35,0,armR);
+ const wp=box(0.09,1.2,0.16,0xb9c1cc,0,-1.0,0.05,armR); wp.rotation.z=-0.4; // weapon in hand
+ const bhead=new THREE.Mesh(new THREE.SphereGeometry(0.26,12,10),new THREE.MeshLambertMaterial({color:0x8a7a5e})); bhead.position.y=1.92; g.add(bhead); // round head
+ const bhelm=new THREE.Mesh(new THREE.SphereGeometry(0.30,12,8,0,Math.PI*2,0,Math.PI/2),new THREE.MeshLambertMaterial({color:dark})); bhelm.position.y=1.97; g.add(bhelm); // helm cap
+ shadowify(g);
+ const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
  sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
  const label=document.createElement('div'); label.className='plabel';
  label.innerHTML=`<div class="gname">${esc(b.name||m.name)} · lvl ${b.lvl||m.combatLevel||''}</div><div class="hpwrap"><div class="hpfill"></div></div>`;
  $('labels').appendChild(label);
  const anchor=(curArea==='barrows_tunnels')? {x:400,y:225} : {x:b.x,y:b.y};
- return {group:g,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),
-   x:sx2w(anchor.x),z:sy2w(anchor.y),hp:100,maxHp:100,isBrother:true};
+ return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),
+   x:sx2w(anchor.x),z:sy2w(anchor.y),hp:100,maxHp:100,isBrother:true,swingStart:0,splatY:2.9};
 }
 function buildAreas(){
  areaGroups.plaza=new THREE.Group(); scene.add(areaGroups.plaza); buildPlaza(areaGroups.plaza);
@@ -1307,48 +1382,76 @@ function setArea(a){
    rebuildNodes();
    rebuildFires();
    rebuildPiles();
+   rebuildObjects();
    syncAllies();
    if(a==='fightcaves'&&me&&!fcRun) openFcStart();
  }
  drawMinimap();
 }
 const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_tunnels:1,arena:1};
-/* Idol outfits (K-pop theme): YOU wear hot pink with purple limbs, cyan
-   trim and bright-pink hair; everyone else wears a pastel set picked by a
-   hash of their name, with a matching hair block. Swords stay — it's a
-   fighting game — but your blade is tinted neon cyan. */
-const IDOL_PASTELS=[
- {main:0x7fe3b0,dark:0x3d9e72,trim:0xd8fff0,hair:0x2f7d5c}, // mint
- {main:0xc4a8ff,dark:0x7c5cc9,trim:0xefe6ff,hair:0x5b3fa8}, // lavender
- {main:0x8fd0ff,dark:0x4a8fc9,trim:0xe6f5ff,hair:0x2c5f9e}, // sky blue
- {main:0xffc39e,dark:0xd98a52,trim:0xfff0e0,hair:0xa85f2c}, // peach
- {main:0xffe98a,dark:0xd9b93d,trim:0xfffbe0,hair:0x9e8a1f}  // lemon
+/* Knight armour (Stage 8 medieval theme): rounded bodies — sphere
+   head under a steel helmet cap, tapered-cylinder torso, cylinder
+   limbs on shoulder/hip pivots (the right shoulder pivot is the weapon
+   arm: swings animate it, the walk cycle counter-swings it). YOU wear
+   steel with a deep-red tabard and gold trim; everyone else gets a
+   muted heraldic tabard colour by name hash, with steel limbs. */
+const HERALDIC=[
+ {main:0x8e2f32,trim:0xc9a227}, // deep red
+ {main:0x2e5233,trim:0xc9a227}, // forest green
+ {main:0x27364f,trim:0xb8b0a0}, // navy
+ {main:0x8a6d1f,trim:0x3a2c1c}, // ochre
+ {main:0x5a5266,trim:0xc9a227}  // plum-grey
 ];
+/* A limb that hangs from a pivot at its top: tapered cylinder + a
+   sphere joint at the pivot, so rotating the pivot swings it. */
+function limbPart(r,len,mat){
+ const grp=new THREE.Group();
+ const m=new THREE.Mesh(new THREE.CylinderGeometry(r*0.8,r,len,10),mat);
+ m.position.y=-len/2; grp.add(m);
+ const j=new THREE.Mesh(new THREE.SphereGeometry(r*1.05,10,8),mat); grp.add(j);
+ const hand=new THREE.Mesh(new THREE.SphereGeometry(r*0.9,8,8),mat); hand.position.y=-len; grp.add(hand);
+ return grp;
+}
 function makeKnight(isMe,name){
  const g=new THREE.Group();
  // Stage 6: the body rides on an inner pivot so a jump can lift it
  // (pivot.position.y) and flip it (pivot.rotation.x/z) without moving
  // the group's ground position, facing (rotation.y) or shadow.
  const pivot=new THREE.Group(); g.add(pivot);
- let pal;
- if(isMe) pal={main:0xff4fa3,dark:0x8b5cf6,trim:0x22d3ee,hair:0xff2e93};
- else { let h=0; const nm=name||''; for(let i=0;i<nm.length;i++) h=(h*31+nm.charCodeAt(i))>>>0; pal=IDOL_PASTELS[h%IDOL_PASTELS.length]; }
- const main=pal.main, dark=pal.dark, trim=pal.trim;
- box(0.26,0.75,0.26,dark,-0.18,0.38,0,pivot); box(0.26,0.75,0.26,dark,0.18,0.38,0,pivot); // legs
- box(0.78,0.85,0.45,main,0,1.18,0,pivot); // body
- box(0.24,0.7,0.24,main,-0.52,1.2,0,pivot); box(0.24,0.7,0.24,main,0.52,1.2,0,pivot); // arms
- box(0.46,0.46,0.46,0xd9a066,0,1.85,0,pivot); // head
- box(0.52,0.2,0.52,pal.hair,0,2.14,0,pivot); // idol hair (top)
- box(0.52,0.52,0.1,pal.hair,0,1.86,0.24,pivot); // idol hair (back)
- const sword=new THREE.Group(); sword.position.set(0.62,1.35,0); pivot.add(sword);
- box(0.07,0.85,0.14,isMe? 0x9be9ff : 0xd9dee6,0,0.35,0,sword); box(0.3,0.08,0.2,trim,0,-0.1,0,sword);
- const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.28}));
+ let main, trim;
+ if(isMe){ main=0x8e2f32; trim=0xc9a227; } // deep-red tabard, gold trim
+ else { let h=0; const nm=name||''; for(let i=0;i<nm.length;i++) h=(h*31+nm.charCodeAt(i))>>>0; const p=HERALDIC[h%HERALDIC.length]; main=p.main; trim=p.trim; }
+ const steelMat=new THREE.MeshLambertMaterial({color:0x8a8f96});
+ const steelDarkMat=new THREE.MeshLambertMaterial({color:0x5d6167});
+ const mainMat=new THREE.MeshLambertMaterial({color:main});
+ const trimMat=new THREE.MeshLambertMaterial({color:trim});
+ // legs on hip pivots (walk cycle swings them)
+ const legL=limbPart(0.13,0.72,steelDarkMat); legL.position.set(-0.18,0.80,0); pivot.add(legL);
+ const legR=limbPart(0.13,0.72,steelDarkMat); legR.position.set(0.18,0.80,0); pivot.add(legR);
+ // torso: tapered cylinder of steel, heraldic tabard down the front
+ const torso=new THREE.Mesh(new THREE.CylinderGeometry(0.30,0.41,0.85,12),steelMat); torso.position.y=1.22; pivot.add(torso);
+ box(0.46,0.66,0.07,main,0,1.18,0.31,pivot); // tabard
+ const belt=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.43,0.10,12),trimMat); belt.position.y=0.84; pivot.add(belt);
+ // arms on shoulder pivots; the RIGHT arm is the weapon arm
+ const armL=limbPart(0.11,0.64,steelMat); armL.position.set(-0.47,1.58,0); pivot.add(armL);
+ const armR=limbPart(0.11,0.64,steelMat); armR.position.set(0.47,1.58,0); pivot.add(armR);
+ const sword=new THREE.Group(); sword.position.set(0,-0.68,0.05); armR.add(sword);
+ box(0.07,0.85,0.14,0xd9dee6,0,0.32,0,sword); // blade
+ box(0.3,0.08,0.2,trim,0,-0.12,0,sword); // crossguard (trim metal)
+ box(0.09,0.24,0.09,0x5a4020,0,-0.28,0,sword); // grip
+ // head: sphere, with a steel helmet cap (half-sphere) + gold band
+ const head=new THREE.Mesh(new THREE.SphereGeometry(0.27,14,12),new THREE.MeshLambertMaterial({color:0xd9a066})); head.position.y=1.94; pivot.add(head);
+ const helm=new THREE.Mesh(new THREE.SphereGeometry(0.305,14,10,0,Math.PI*2,0,Math.PI/2),steelMat); helm.position.y=1.99; pivot.add(helm);
+ const band=new THREE.Mesh(new THREE.CylinderGeometry(0.315,0.315,0.07,14),trimMat); band.position.y=2.0; pivot.add(band);
+ shadowify(pivot);
+ const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
  sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
  const label=document.createElement('div'); label.className='plabel';
  label.innerHTML=`<div class="bubble"></div><span class="rbadge"></span><span class="badge"></span><span class="abadge"></span><span class="cbadge"></span> <span class="nm">${esc(name)}</span>`;
  $('labels').appendChild(label);
- return {group:g,pivot,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),roleEl:label.querySelector('.rbadge'),actEl:label.querySelector('.abadge'),chalEl:label.querySelector('.cbadge'),
-   x:0,z:0,tx:0,tz:0,rot:0,jump:null,prayer:null,bubbleUntil:0,bob:Math.random()*6,isMe};
+ return {group:g,pivot,legL,legR,armL,armR,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),roleEl:label.querySelector('.rbadge'),actEl:label.querySelector('.abadge'),chalEl:label.querySelector('.cbadge'),
+   x:0,z:0,tx:0,tz:0,rot:0,jump:null,prayer:null,bubbleUntil:0,bob:Math.random()*6,isMe,
+   swingStart:0,phase:Math.random()*6,moveAmt:0,px:0,pz:0,splatY:2.95};
 }
 const PRAYER_BADGE={melee:'🛡️',missiles:'🏹',magic:'🔮'};
 /* ================= Stage 7C: activity markers + challenger ❗ ================= */
@@ -1498,25 +1601,47 @@ function easeRot(a,target,dt){
  else { a.rot=(a.rot||0)+d*(1-Math.exp(-15*dt)); }
  a.group.rotation.y=a.rot;
 }
+/* Walk cycle (Stage 8): legs swing against each other, arms
+   counter-swing, all phased by distance actually travelled; the
+   moveAmt envelope eases in/out so stopping settles into the rest
+   pose instead of snapping. The weapon arm is left to applySwing
+   while a swing is playing. */
+function poseWalk(a,dist,dt){
+ if(!a.legL) return; // only knights have articulated limbs
+ a.phase=(a.phase||0)+dist*2.4;
+ const target=dist>0.002?1:0;
+ a.moveAmt=(a.moveAmt||0)+(target-(a.moveAmt||0))*Math.min(1,dt*10);
+ const m=a.moveAmt||0, s=Math.sin(a.phase||0);
+ a.legL.rotation.x=s*0.55*m;
+ a.legR.rotation.x=-s*0.55*m;
+ if(a.armL) a.armL.rotation.x=-s*0.42*m;
+ if(a.armR&&!a.swingStart) a.armR.rotation.x=s*0.42*m;
+}
 /* ---- NPC goblins ---- */
 function makeGoblin(n){
  const g=new THREE.Group();
  const skin=0x4c9440, dark=0x356b24;
+ const skinMat=new THREE.MeshLambertMaterial({color:skin});
  box(0.2,0.45,0.2,dark,-0.14,0.23,0,g); box(0.2,0.45,0.2,dark,0.14,0.23,0,g); // legs
- box(0.58,0.6,0.38,dark,0,0.75,0,g); // body
- box(0.18,0.5,0.18,skin,-0.4,0.8,0,g); box(0.18,0.5,0.18,skin,0.4,0.8,0,g); // arms
- box(0.5,0.45,0.45,skin,0,1.28,0,g); // head
+ const body=new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.33,0.62,10),new THREE.MeshLambertMaterial({color:dark})); body.position.y=0.76; g.add(body); // rounded body
+ box(0.18,0.5,0.18,skin,-0.4,0.8,0,g); // left arm
+ // right arm on a shoulder pivot — the weapon arm (swings in fights)
+ const armR=new THREE.Group(); armR.position.set(0.4,1.02,0); g.add(armR);
+ const armMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.09,0.5,8),skinMat); armMesh.position.y=-0.25; armR.add(armMesh);
+ box(0.09,0.55,0.09,0x6e4a1f,0,-0.62,0.05,armR); // crude club
+ const head=new THREE.Mesh(new THREE.SphereGeometry(0.27,12,10),skinMat); head.position.y=1.3; g.add(head); // round head
  const earGeo=new THREE.ConeGeometry(0.09,0.44,5);
  const earMat=new THREE.MeshLambertMaterial({color:skin});
- const earL=new THREE.Mesh(earGeo,earMat); earL.position.set(-0.4,1.36,0); earL.rotation.z=1.85; g.add(earL);
- const earR=new THREE.Mesh(earGeo,earMat); earR.position.set(0.4,1.36,0); earR.rotation.z=-1.85; g.add(earR);
- const sh=new THREE.Mesh(new THREE.CircleGeometry(0.5,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.28}));
+ const earL=new THREE.Mesh(earGeo,earMat); earL.position.set(-0.36,1.38,0); earL.rotation.z=1.85; g.add(earL);
+ const earR=new THREE.Mesh(earGeo,earMat); earR.position.set(0.36,1.38,0); earR.rotation.z=-1.85; g.add(earR);
+ shadowify(g);
+ const sh=new THREE.Mesh(new THREE.CircleGeometry(0.5,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
  sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
  const label=document.createElement('div'); label.className='plabel';
  label.innerHTML=`<div class="gname">Goblin · lvl 5</div><div class="hpwrap"><div class="hpfill"></div></div>`;
  $('labels').appendChild(label);
- return {group:g,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),
-   x:sx2w(n.x),z:sy2w(n.y),hp:n.hp,maxHp:n.maxHp};
+ return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),
+   x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:1.95,hp:n.hp,maxHp:n.maxHp};
 }
 function syncNpcs(){
  if(!scene) return;
@@ -1526,6 +1651,7 @@ function syncNpcs(){
      seen.add(n.id);
      let a=npcAvatars[n.id];
      if(!a){ a=makeGoblin(n); a.group.position.set(a.x,0,a.z); npcAvatars[n.id]=a; scene.add(a.group); }
+     a.tx=sx2w(n.x); a.tz=sy2w(n.y); // Stage 8: goblins walk now — ease toward this
      a.hp=n.hp; a.maxHp=n.maxHp;
      a.hpFill.style.width=clamp(n.hp/Math.max(1,n.maxHp)*100,0,100)+'%';
      a.hpWrap.style.display=(n.hp<n.maxHp)?'block':'none';
@@ -1588,7 +1714,7 @@ function makeFcMonster(m){
    box(0.2,0.5,0.2,0x2e6b24,-0.15,0.25,0,g); box(0.2,0.5,0.2,0x2e6b24,0.15,0.25,0,g); // legs
    box(0.6,0.65,0.4,0x3f8a35,0,0.85,0,g); // body
    box(0.45,0.45,0.45,0x69b34c,0,1.45,0,g); // head
-   const cross=box(0.1,0.42,0.1,0x7dff8a,0.45,1.35,0.2,g); // little healer cross-ish sparkle post
+   const cross=box(0.1,0.42,0.1,0x7dff8a,0.45,1.35,0.2,g); // little healer cross post
    labelY=2.1;
  } else if(m.kind==='jad'){ // TzTok-Jad — HUGE dark rock monster with lava cracks
    const body=new THREE.Mesh(new THREE.DodecahedronGeometry(2.3),new THREE.MeshLambertMaterial({color:0x3a2c22}));
@@ -1609,8 +1735,10 @@ function makeFcMonster(m){
  const label=document.createElement('div'); label.className='plabel';
  label.innerHTML=`<div class="fcname">${esc(m.name)} · lvl ${m.combatLevel}</div><div class="hpwrap"><div class="hpfill"></div></div>`;
  $('labels').appendChild(label);
+ shadowify(g);
  return {group:g,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),
-   labelY,hp:m.hp,maxHp:m.maxHp,kind:m.kind};
+   labelY,hp:m.hp,maxHp:m.maxHp,kind:m.kind,
+   tx:sx2w(m.x),tz:sy2w(m.y),swingStart:0,splatY:labelY+0.5};
 }
 function syncFcMonsters(){
  if(!scene) return;
@@ -1620,6 +1748,7 @@ function syncFcMonsters(){
      seen.add(m.id);
      let a=fcAvatars[m.id];
      if(!a){ a=makeFcMonster(m); fcAvatars[m.id]=a; scene.add(a.group); }
+     a.tx=sx2w(m.x); a.tz=sy2w(m.y); // Stage 8: melee monsters walk toward you — ease toward this
      a.hp=m.hp; a.maxHp=m.maxHp;
      a.hpFill.style.width=clamp(m.hp/Math.max(1,m.maxHp)*100,0,100)+'%';
      a.hpWrap.style.display=(m.hp<m.maxHp)?'block':'none';
@@ -1797,6 +1926,62 @@ function checkPendingPile(){
  if(!p){ pendingPile=null; return; }
  if(Math.hypot(myPos.x-p.x,myPos.y-p.y)<=140){ pendingPile=null; tapTarget=null; send({type:'pickup',pileId:p.id}); }
 }
+/* ---- Stage 7D: admin-placed objects (decorative props) ---- */
+let objectsByArea={}; // area -> [obj] from 'objects' messages
+let objectGroups={}; // area -> THREE.Group holding that area's placed props
+const PROP_KINDS_CLIENT=[
+ {kind:'tree',label:'Tree',icon:'🌳'},
+ {kind:'rock',label:'Rock',icon:'🪨'},
+ {kind:'flowers',label:'Flowers',icon:'🌸'},
+ {kind:'light',label:'Stage light',icon:'💡'},
+ {kind:'chest',label:'Chest',icon:'🧰'},
+];
+function propDef(kind){ return PROP_KINDS_CLIENT.find(p=>p.kind===kind)||{kind,label:kind,icon:'📦'}; }
+function makeProp(o){
+ const g=new THREE.Group();
+ g.position.set(sx2w(o.x),0,sy2w(o.y));
+ if(o.kind==='tree'){ // mirror the node trees: trunk + cone canopy
+   box(0.35,1.5,0.35,0x5a4020,0,0.75,0,g);
+   const cone=new THREE.Mesh(new THREE.ConeGeometry(1.7,3.4,7),new THREE.MeshLambertMaterial({color:0x2c5e26}));
+   cone.position.y=3.1; g.add(cone);
+ } else if(o.kind==='rock'){ // mirror the node rocks, plain grey
+   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.95),new THREE.MeshLambertMaterial({color:0x8a8578}));
+   rock.position.y=0.55; g.add(rock);
+ } else if(o.kind==='flowers'){ // a little patch of tiny coloured heads on a green bed
+   const bed=new THREE.Mesh(new THREE.CircleGeometry(0.85,14),new THREE.MeshLambertMaterial({color:0x2f6629}));
+   bed.rotation.x=-Math.PI/2; bed.position.y=0.06; g.add(bed);
+   const cols=[0xd94f6a,0xffffff,0xffd75e,0x8a7ab8,0xff8fa3,0xc9a227,0xfff3a0,0x8fd0ff];
+   for(let i=0;i<8;i++){ // fixed layout (angle/radius from the index) so rebuilds look identical
+     const a=i*2.4, r=0.22+(i%3)*0.22;
+     const stem=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.3,5),new THREE.MeshLambertMaterial({color:0x2c7a35}));
+     stem.position.set(Math.cos(a)*r,0.15,Math.sin(a)*r); g.add(stem);
+     const head=new THREE.Mesh(new THREE.SphereGeometry(0.14,7,6),new THREE.MeshLambertMaterial({color:cols[i%cols.length]}));
+     head.position.set(Math.cos(a)*r,0.36,Math.sin(a)*r); g.add(head);
+   }
+ } else if(o.kind==='light'){ // dark pole + warm torch flame (Stage 8)
+   box(0.14,2.6,0.14,0x23202b,0,1.3,0,g);
+   box(0.5,0.12,0.5,0x23202b,0,0.06,0,g); // base
+   const halo=new THREE.Mesh(new THREE.SphereGeometry(0.58,10,8),new THREE.MeshBasicMaterial({color:0xff9a3c,transparent:true,opacity:0.22}));
+   halo.position.y=2.85; g.add(halo);
+   const bulb=new THREE.Mesh(new THREE.SphereGeometry(0.34,10,8),new THREE.MeshLambertMaterial({color:0xffc98a,emissive:0xff9a3c,emissiveIntensity:1}));
+   bulb.position.y=2.85; g.add(bulb);
+ } else if(o.kind==='chest'){ // mirror the Barrows reward chest + a gold band
+   box(1.8,0.9,1.1,0x6b4a1f,0,0.45,0,g);
+   box(1.9,0.35,1.2,0x8a6d1f,0,1.05,0,g);
+   box(1.92,0.16,1.22,0xd4af37,0,0.88,0,g); // gold band
+   box(0.35,0.4,0.12,0xffd75e,0,0.75,0.58,g); // gold clasp
+ } else {
+   box(0.7,0.7,0.7,0x8a8578,0,0.35,0,g);
+ }
+ return g;
+}
+function rebuildObjects(){
+ const area=curArea, root=areaGroups[area];
+ if(!root||!scene) return;
+ if(objectGroups[area]) root.remove(objectGroups[area]);
+ const grp=new THREE.Group(); root.add(grp); objectGroups[area]=grp;
+ for(const o of (objectsByArea[area]||[])) grp.add(makeProp(o));
+}
 window.dropItem=(item,qty)=>{ send({type:'drop',item,qty}); };
 function onGatherResult(m){
  const n=(nodesByArea[curArea]||[]).find(x=>x.id===m.nodeId)||activeNode;
@@ -1811,17 +1996,87 @@ function onGatherResult(m){
    logLine('No luck that swing');
  }
 }
-/* hitsplats */
-let splats=[];
+/* hitsplats — Stage 8: OSRS-style canvas starburst sprites in the 3D
+   world: red for damage, blue for a 0 / blocked hit, a bigger gold-red
+   burst for specials, the number in bold white. (spawnTextSplat below
+   stays DOM — it's for gather results and guardian floaters.) */
+let splats=[]; // DOM text splats (spawnTextSplat only)
+const splatTexCache=new Map();
+function splatTexture(kind,dmg){
+ const key=kind+':'+dmg;
+ if(splatTexCache.has(key)) return splatTexCache.get(key);
+ const c=document.createElement('canvas'); c.width=c.height=128;
+ const g=c.getContext('2d');
+ g.beginPath();
+ for(let i=0;i<24;i++){ const r=i%2? 36:57, a=i/24*Math.PI*2-Math.PI/2;
+   const x=64+Math.cos(a)*r, y=64+Math.sin(a)*r; i?g.lineTo(x,y):g.moveTo(x,y); }
+ g.closePath();
+ g.fillStyle= kind==='zero'? '#3a6fd8' : kind==='spec'? '#e8862a' : '#c0271b';
+ g.fill();
+ g.lineWidth=5; g.strokeStyle='rgba(20,5,0,0.65)'; g.stroke();
+ g.font='900 52px system-ui'; g.textAlign='center'; g.textBaseline='middle';
+ g.lineWidth=8; g.strokeStyle='rgba(0,0,0,0.55)'; g.strokeText(String(dmg),64,67);
+ g.fillStyle='#fff'; g.fillText(String(dmg),64,67);
+ const tex=new THREE.CanvasTexture(c);
+ if(splatTexCache.size>80) splatTexCache.clear();
+ splatTexCache.set(key,tex);
+ return tex;
+}
+let liveSplats=[]; // {sp,av,born,baseY} — 3D damage splats
+const MAX_SPLATS=24; // phone performance cap
 function spawnSplatOn(a,dmg,special){
- if(!a) return;
- const el=document.createElement('div');
- el.className='splat'+(dmg===0?' zero':'')+(special?' spec love':'');
- el.textContent=special?`💖 ${dmg}`:String(dmg);
- $('splats').appendChild(el);
- splats.push({el,av:a,born:performance.now()});
+ if(!a||!a.group||!scene) return;
+ if(dmg===null||dmg===undefined) return; // closing tick: nobody swung — no splat
+ dmg=Math.max(0,Math.round(dmg));
+ const kind=special?'spec':(dmg===0?'zero':'hit');
+ if(liveSplats.length>=MAX_SPLATS){ const old=liveSplats.shift(); scene.remove(old.sp); old.sp.material.dispose(); }
+ const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:splatTexture(kind,dmg),transparent:true,depthWrite:false}));
+ const sc=special?2.15:1.45; sp.scale.set(sc,sc,1);
+ sp.position.copy(a.group.position); sp.position.y=(a.splatY||2.6);
+ scene.add(sp);
+ liveSplats.push({sp,av:a,born:performance.now(),baseY:sp.position.y});
 }
 function spawnSplat(name,dmg,special){ spawnSplatOn(avatars[name],dmg,special); }
+function updateLiveSplats(now){
+ liveSplats=liveSplats.filter(s=>{
+   const age=now-s.born;
+   if(age>900){ scene.remove(s.sp); s.sp.material.dispose(); return false; }
+   s.sp.position.x=s.av.group.position.x; s.sp.position.z=s.av.group.position.z; // follow the target
+   s.sp.position.y=s.baseY+age/900*1.05; // rise…
+   s.sp.material.opacity= age<70? age/70 : 1-(age-70)/830; // …and fade
+   return true;
+ });
+}
+/* ---- Stage 8: weapon swings ---- */
+function startSwing(a){ if(a) a.swingStart=performance.now(); }
+/* Swing pose: the weapon-arm pivot chops from raised to struck over
+   ~120ms, then recovers over ~200ms. Entries with no arm pivot (most
+   cave monsters) rock their whole mesh forward a little instead. For
+   knights this runs AFTER the walk cycle each frame, so a swing
+   overrides the arm's counter-swing while it plays. */
+function applySwing(a,now){
+ if(!a||!a.swingStart) return;
+ const t=(now-a.swingStart)/320;
+ if(t>=1){ a.swingStart=0; if(a.armR) a.armR.rotation.x=0; else if(a.group) a.group.rotation.x=0; return; }
+ const ang= t<0.375 ? -2.05*(t/0.375) : -2.05*(1-(t-0.375)/0.625);
+ if(a.armR) a.armR.rotation.x=ang;
+ else if(a.group) a.group.rotation.x=-ang*0.10;
+}
+/* ---- Stage 8: closing / walk-to-hit ---- */
+let lastManualTapAt=0; // set by handleTap + the minimap walk
+function stickActive(){
+ return Math.hypot(joyVec.x,joyVec.y)>0.25 || !!(keys.w||keys.a||keys.s||keys.d||keys.arrowup||keys.arrowdown||keys.arrowleft||keys.arrowright);
+}
+/* On a closing tick the server says where to walk (moveTo). Walk there
+   via the normal tap-to-move — unless the player is steering with a
+   stick/key right now, or tapped somewhere themselves in the last
+   ~600ms (their own tap wins). */
+function applyClosing(m){
+ if(!m||!m.closing||!m.moveTo) return;
+ if(stickActive()) return;
+ if(Date.now()-lastManualTapAt<600) return;
+ tapTarget={x:m.moveTo.x,y:m.moveTo.y};
+}
 function spawnTextSplat(a,text,cls){
  if(!a) return;
  const el=document.createElement('div');
@@ -1943,6 +2198,7 @@ addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
  el.addEventListener('wheel',e=>{ e.preventDefault(); camDist=clamp(camDist+e.deltaY*0.02,10,42); },{passive:false});
 })();
 function handleTap(cx,cy){
+ lastManualTapAt=Date.now(); // Stage 8: a fresh manual tap beats fight closing auto-walk for ~600ms
  stopGather(); // tapping anywhere interrupts auto-gather (a node tap below may restart it)
  const mouse=new THREE.Vector2((cx/innerWidth)*2-1,-(cy/innerHeight)*2+1);
  raycaster.setFromCamera(mouse,camera);
@@ -2148,11 +2404,12 @@ function drawMinimap(){
  g.fillStyle= curArea==='barrows'? '#333a2a'
    : curArea==='barrows_tunnels'? '#0d0a12'
    : curArea==='arena'? ARENA_VARIANTS[arenaVariant].css
-   : caveBg? (curArea==='fightcaves'? '#241a12' : '#2b2b30') : (curArea==='goblins')? '#55702f' : '#2e4a2a'; g.fillRect(0,0,800,450);
+   : caveBg? (curArea==='fightcaves'? '#241a12' : '#2b2b30') : (curArea==='goblins')? '#55702f' : '#241d15'; g.fillRect(0,0,800,450);
  if(curArea==='plaza'){
-   g.fillStyle='#a87e94'; g.fillRect(400-210,225-135,420,270); // stone centre (pink-tinted)
-   g.fillStyle='#ff4fa3'; g.fillRect(400-70,70-25,140,50); // concert stage
-   g.fillStyle='#ff8fd0'; g.fillRect(BANK_POS.x-14,BANK_POS.y-14,28,28); // bank
+   g.fillStyle='#8a7a5f'; g.fillRect(400-210,225-135,420,270); // cobblestone centre
+   g.fillStyle='#6e4a1f'; g.fillRect(400-70,70-25,140,50); // tournament dais (wood)
+   g.fillStyle='#8e2f32'; g.fillRect(400-58,70-19,116,38); // dais banners (deep red)
+   g.fillStyle='#e3c766'; g.fillRect(BANK_POS.x-14,BANK_POS.y-14,28,28); // bank
    for(const s of SHOP_SPOTS){ g.fillStyle='#'+s.color.toString(16).padStart(6,'0'); g.fillRect(s.x-12,s.y-12,24,24); }
    g.fillStyle='#fff'; g.fillRect(BOARD_POS.x-8,BOARD_POS.y-8,16,16);
  } else if(curArea==='barrows'){
@@ -2163,7 +2420,7 @@ function drawMinimap(){
      if(barrowsState.tunnel===id){ g.strokeStyle='#b26bff'; g.lineWidth=5; g.beginPath(); g.arc(b.x,b.y,19,0,7); g.stroke(); }
    }
  } else if(curArea==='barrows_tunnels'){
-   g.fillStyle='#ff8fd0'; g.fillRect(400-14,225-14,28,28); // reward chest
+   g.fillStyle='#e3c766'; g.fillRect(400-14,225-14,28,28); // reward chest
  } else if(curArea==='goblins'){
    g.fillStyle='#77683f'; g.fillRect(400-240,225-155,480,310); // dirt patch
    g.fillStyle='#ff7b24'; g.fillRect(420-10,255-10,20,20); // campfire
@@ -2188,12 +2445,12 @@ function drawMinimap(){
  // resource node + fire dots for the current area
  for(const n of (nodesByArea[curArea]||[])){
    g.fillStyle= n.depleted? 'rgba(150,150,150,0.5)'
-     : n.kind==='rock'? '#a08b6d' : n.kind==='tree'? '#3f9e4d' : n.kind==='fish'? '#7ec3ff' : '#ff8fd0';
+     : n.kind==='rock'? '#a08b6d' : n.kind==='tree'? '#3f9e4d' : n.kind==='fish'? '#7ec3ff' : '#e3c766';
    g.beginPath(); g.arc(n.x,n.y,9,0,7); g.fill();
  }
  g.fillStyle='#ff7b24';
  for(const f of (firesByArea[curArea]||[])){ g.beginPath(); g.arc(f.x,f.y,8,0,7); g.fill(); }
- g.fillStyle='#ffd9f2';
+ g.fillStyle='#f0dfae';
  for(const p of (pilesByArea[curArea]||[])){ g.beginPath(); g.arc(p.x,p.y,7,0,7); g.fill(); } // drop piles
  g.fillStyle='#51ff6e';
  for(const al of (alliesByArea[curArea]||[])){ g.beginPath(); g.arc(al.x,al.y,8,0,7); g.fill(); } // Tree Guardians
@@ -2219,17 +2476,18 @@ function drawMinimap(){
    }
  }
  // player dot, always centred, with a facing tick pointing up
- g.fillStyle='#ff8fd0'; g.beginPath(); g.arc(cx,cy,3.4,0,7); g.fill();
- g.strokeStyle='#ff8fd0'; g.lineWidth=2; g.beginPath(); g.moveTo(cx,cy-4); g.lineTo(cx,cy-9); g.stroke();
+ g.fillStyle='#e3c766'; g.beginPath(); g.arc(cx,cy,3.4,0,7); g.fill();
+ g.strokeStyle='#e3c766'; g.lineWidth=2; g.beginPath(); g.moveTo(cx,cy-4); g.lineTo(cx,cy-9); g.stroke();
  // "N" indicator: where north (server -y) ended up after the rotation
  const nx=Math.sin(th), ny=-Math.cos(th);
  g.fillStyle='#fff'; g.font='bold 11px system-ui'; g.textAlign='center'; g.textBaseline='middle';
  g.fillText('N', cx+nx*(Math.min(W,H)/2-9), cy+ny*(Math.min(W,H)/2-9));
- g.strokeStyle='#ff4fa3'; g.lineWidth=2; g.strokeRect(0,0,W,H);
+ g.strokeStyle='#c9a227'; g.lineWidth=2; g.strokeRect(0,0,W,H);
 }
 /* Tapping the minimap walks to that spot (inverse of the draw transform). */
 $('minimap').addEventListener('pointerdown',e=>{
  if(!me||!myPos) return;
+ lastManualTapAt=Date.now();
  const r=e.target.getBoundingClientRect();
  const dx=(e.clientX-r.left)*(e.target.width/r.width)-e.target.width/2;
  const dy=(e.clientY-r.top)*(e.target.height/r.height)-e.target.height/2;
@@ -2254,31 +2512,63 @@ function animate(){
  }
  if(now-lastMapDraw>150){ lastMapDraw=now; drawMinimap(); }
  stepMovement(dt);
- // Avatars ease toward their targets (Stage 6 smoothing): the local
- // knight's group glides toward the authoritative a.x/a.z instead of
- // snapping to it, and every facing eases along the shortest arc.
+ // Avatars ease toward their targets: frame-rate-independent easing
+ // (Stage 8: a touch snappier for remote players), teleports snap,
+ // facings ease along the shortest arc, and the walk cycle's phase is
+ // driven by the distance actually travelled this frame.
  for(const [name,a] of Object.entries(avatars)){
+   const gx0=a.group.position.x, gz0=a.group.position.z;
    if(me && name===me.username){
      const k=1-Math.exp(-18*dt); // tight: smooth but never laggy
      const dx=a.x-a.group.position.x, dz=a.z-a.group.position.z;
      if(Math.hypot(dx,dz)>6){ a.group.position.x=a.x; a.group.position.z=a.z; } // teleports snap, steps glide
      else { a.group.position.x+=dx*k; a.group.position.z+=dz*k; }
-     a.group.position.y=Math.abs(Math.sin(a.bob))*0.09;
      easeRot(a,localRot,dt);
    }
    else {
-     const k=1-Math.exp(-9*dt);
-     const moving=Math.hypot(a.tx-a.x,a.tz-a.z)>0.05;
+     const k=1-Math.exp(-12*dt);
      a.x+=(a.tx-a.x)*k; a.z+=(a.tz-a.z)*k;
-     if(moving) a.bob+=dt*9;
-     a.group.position.set(a.x,moving?Math.abs(Math.sin(a.bob))*0.09:0,a.z);
+     a.group.position.x=a.x; a.group.position.z=a.z;
      // face movement direction roughly (toward target), eased
      const dx=a.tx-a.x, dz=a.tz-a.z;
      if(Math.hypot(dx,dz)>0.05) easeRot(a,Math.atan2(dx,dz),dt);
      else a.group.rotation.y=a.rot||0;
    }
+   const dist=Math.hypot(a.group.position.x-gx0,a.group.position.z-gz0);
+   poseWalk(a,dist,dt);
+   a.group.position.y=Math.abs(Math.sin(a.phase||0))*0.07*(a.moveAmt||0);
+   applySwing(a,now);
    updateJump(a,now);
  }
+ // NPC meshes ease the same way (Stage 8: goblins and cave monsters
+ // walk toward you server-side; brothers hold their anchor — no tx).
+ for(const a of Object.values(npcAvatars)){
+   if(a.tx!==undefined){
+     const k=1-Math.exp(-12*dt);
+     a.x+=(a.tx-a.x)*k; a.z+=(a.tz-a.z)*k;
+     a.group.position.x=a.x; a.group.position.z=a.z;
+     const dx=a.tx-a.x, dz=a.tz-a.z;
+     if(Math.hypot(dx,dz)>0.05) easeRot(a,Math.atan2(dx,dz),dt);
+   }
+   applySwing(a,now);
+ }
+ for(const a of Object.values(fcAvatars)){
+   if(a.tx!==undefined){
+     const k=1-Math.exp(-12*dt);
+     a.group.position.x+=(a.tx-a.group.position.x)*k;
+     a.group.position.z+=(a.tz-a.group.position.z)*k;
+     const dx=a.tx-a.group.position.x, dz=a.tz-a.group.position.z;
+     if(Math.hypot(dx,dz)>0.05) easeRot(a,Math.atan2(dx,dz),dt);
+   }
+   applySwing(a,now);
+ }
+ // Brazier flames flicker (tournament dais)
+ for(const f of flickerLights){
+   f.light.intensity=0.75+0.3*Math.sin(now*0.021+f.phase*7)+0.12*Math.sin(now*0.047+f.phase*3);
+   const fs=1+0.10*Math.sin(now*0.03+f.phase*5);
+   f.flame.scale.set(fs,1+0.16*Math.sin(now*0.041+f.phase),fs);
+ }
+ updateLiveSplats(now);
  // Tree Guardians trail their owners with the same easing
  for(const a of Object.values(allyAvatars)){
    const k=1-Math.exp(-9*dt);
@@ -2308,15 +2598,34 @@ function initThree(){
  }catch(e){ $('loaderror').style.display='flex'; $('auth').style.display='none'; return false; }
  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
  renderer.setSize(innerWidth,innerHeight);
+ // Stage 8: real shadows — soft, one directional light for the world.
+ renderer.shadowMap.enabled=true;
+ renderer.shadowMap.type=THREE.PCFSoftShadowMap;
  $('scene').appendChild(renderer.domElement);
  scene=new THREE.Scene();
- scene.background=new THREE.Color(0x87b5d9);
- scene.fog=new THREE.Fog(0x87b5d9,55,110);
+ scene.background=new THREE.Color(0x232830); // dark slate sky
+ scene.fog=new THREE.Fog(0x232830,55,110);
  camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.1,300);
  raycaster=new THREE.Raycaster();
- scene.add(new THREE.AmbientLight(0xffffff,0.75));
- const sun=new THREE.DirectionalLight(0xfff2cc,0.9); sun.position.set(30,50,20); scene.add(sun);
+ scene.add(new THREE.AmbientLight(0xffe2b8,0.5)); // warmer, dimmer fill
+ const sun=new THREE.DirectionalLight(0xffd9a0,1.0); sun.position.set(30,50,20);
+ sun.castShadow=true;
+ sun.shadow.mapSize.set(2048,2048);
+ // The shadow camera covers the WHOLE play area: every area shares the
+ // same 80x45-world-unit footprint, so one fixed box fits them all (no
+ // need for the smaller ~500-server-unit fallback).
+ sun.shadow.camera.left=-46; sun.shadow.camera.right=46;
+ sun.shadow.camera.top=32; sun.shadow.camera.bottom=-32;
+ sun.shadow.camera.near=5; sun.shadow.camera.far=140;
+ sun.shadow.bias=-0.0006;
+ scene.add(sun); scene.add(sun.target);
  buildAreas();
+ // Static scenery: grounds receive shadows, solid props cast them.
+ for(const a of Object.values(areaGroups)) a.traverse(o=>{
+   if(!o.isMesh) return;
+   if(o.geometry&&o.geometry.type==='PlaneGeometry'){ o.receiveShadow=true; }
+   else if(o.material&&o.material.isMeshLambertMaterial){ o.castShadow=true; o.receiveShadow=true; }
+ });
  addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
  animate();
  return true;
@@ -2325,18 +2634,19 @@ initThree();
 
 /* ================= drawer panels ================= */
 let drawerPanel=null, shopTab='Potion', shopMode='buy', bankQty='1', selStack=null, packSorted=false;
-const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',players:'👥 Players online',admin:'👑 Admin',skills:'📊 Skills',smithy:'🔥 Emberfall Smithy',teleport:'🌀 Teleport',settings:'🎛️ Settings'};
+const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',players:'👥 Players online',admin:'👑 Admin',tools:'🛠️ Admin Tools',skills:'📊 Skills',smithy:'🔥 Emberfall Smithy',teleport:'🌀 Teleport',settings:'🎛️ Settings'};
 function togglePanel(name){ drawerPanel===(name)? closeDrawer() : openPanel(name); }
 function openPanel(name){ drawerPanel=name; selStack=null; if(name==='backpack') packSorted=false; $('drawer').classList.add('open'); renderDrawer();
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.toggle('on',b.dataset.panel===name));
- if(name==='admin') refreshAdminLists(); }
+ if(name==='admin') refreshAdminLists();
+ if(name==='tools'&&isAdminOrOwner()) send({type:'ref_lists'}); }
 function closeDrawer(){ drawerPanel=null; $('drawer').classList.remove('open');
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.remove('on')); }
 document.querySelectorAll('.rbtn').forEach(b=>b.onclick=()=>{ togglePanel(b.dataset.panel); railOpen=false; applyRailVisibility(); });
 $('drawerx').onclick=closeDrawer;
 function itemCell(s,onclick,extra){
  const hl=highlights.has(s.item);
- return `<div class="cell ${extra||''}${hl?' hl':''}" onclick="${onclick}">${hl?'<span class="hlb">⭐</span>':''}<span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${iconOf(s.item)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
+ return `<div class="cell ${extra||''}${hl?' hl':''}" onclick="${onclick}">${hl?'<span class="hlb">⭐</span>':''}<span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${itemIconHTML(s.item,24)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
 }
 function renderDrawer(){
  if(!drawerPanel||!me) return;
@@ -2350,11 +2660,13 @@ function renderDrawer(){
  if(drawerPanel==='prayers') b.innerHTML=pPrayers();
  if(drawerPanel==='players') b.innerHTML=pPlayers();
  if(drawerPanel==='admin') b.innerHTML=pAdmin();
+ if(drawerPanel==='tools') b.innerHTML=pTools();
  if(drawerPanel==='skills') b.innerHTML=pSkills();
  if(drawerPanel==='smithy') b.innerHTML=pSmithy();
  if(drawerPanel==='teleport') b.innerHTML=pTeleport();
  if(drawerPanel==='settings') b.innerHTML=pSettings();
  if(drawerPanel==='bank') applyBankFilter();
+ if(drawerPanel==='tools') initToolCanvas(); // Stage 8: restore the drawing canvas after every tools render
 }
 /* ---- Backpack ---- */
 window.selBp=function(item){ selStack=selStack===item?null:item; examineStack=null; renderDrawer(); };
@@ -2368,6 +2680,13 @@ window.packBackpack=function(){ packSorted=true; renderDrawer(); toast('🎒 Pac
 const KIND_LABEL={food:'Food',potion:'Potion',weapon:'Weapon',armour:'Armour',tool:'Tool',resource:'Resource',good:'Trade good',token:'Token',trophy:'Trophy'};
 const KIND_DESC={food:'Eat it to heal.',potion:'Drink it to restore yourself.',weapon:'Wield it to fight with it.',armour:'Wear it to protect yourself in a fight.',tool:'A tool — it speeds up the work it is made for.',resource:'A raw material — cook it, smelt it, smith with it, or sell it.',good:'A trade good — its price drifts on the Gold Exchange.',trophy:'A hard-won trophy. Wear it to show what you beat.'};
 const ITEM_NAME_FALLBACK={nc:'NC',certificate:'Certificate'};
+/* Stage 7D: the identity line for admin-made custom items — every copy
+   of the item carries the maker's name and the base it was cloned from. */
+function customLineHTML(item){
+ const d=catalog[item];
+ if(!d||!d.custom) return '';
+ return `<div class="note" style="margin-top:4px">✨ Custom #${d.num} — made by ${esc(d.by||'?')} · based on ${esc(nameOf(d.base))}${d.color?` · <span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${d.color};vertical-align:middle"></span> tinted`:''}${d.art?' · 🎨 has drawn art':''}</div>`;
+}
 function examineHTML(item){
  const d=catalog[item];
  const kind=d? d.kind : (TOKEN_IDS[item]? 'token' : null);
@@ -2388,10 +2707,11 @@ function examineHTML(item){
  if(isTokenItem(item,d)) price=`Tokens can't be bought or sold.`;
  else if(d&&(d.buy>0||d.sell>0)) price=`${d.buy>0?`Shops sell it for ${d.buy}g`:''}${d.buy>0&&d.sell>0?' · ':''}${d.sell>0?`shops buy it for ${d.sell}g each`:''}`;
  else if(goods[item]) price=`On the Gold Exchange — around ${goods[item].price}g right now.`;
- return `<div class="detail" style="margin-top:6px"><b>🔍 ${esc((d&&d.name)||ITEM_NAME_FALLBACK[item]||nameOf(item))}</b>
+ return `<div class="detail" style="margin-top:6px"><b>🔍 ${itemIconHTML(item,22)} ${esc((d&&d.name)||ITEM_NAME_FALLBACK[item]||nameOf(item))}</b>
  <div class="note" style="margin-top:3px">Type: ${KIND_LABEL[kind]||'Item'}${d&&d.slot?` · worn in the ${d.slot} slot`:''}</div>
  ${stats.length?`<div class="note">Stats: ${stats.join(' · ')}</div>`:''}
  ${price?`<div class="note">${price}</div>`:''}
+ ${customLineHTML(item)}
  <div style="margin-top:4px">${desc}</div></div>`;
 }
 function pBackpack(){
@@ -2416,8 +2736,9 @@ function pBackpack(){
  if(selStack){
    const s=me.backpack.find(x=>x.item===selStack), d=catalog[selStack];
    if(s){
-     h+=`<div class="detail"><b>${iconOf(s.item)} ${esc(nameOf(s.item))}</b> x${s.qty}`;
-     if(d) h+=`<div class="note">${d.kind}${d.slot?` · worn: ${d.slot}`:''}${d.heal?` · heals ${d.heal} HP`:''}${d.prayerRestore?` · restores ${d.prayerRestore} prayer`:''}${d.maxBonus?` · +${d.maxBonus} max hit`:''}${d.reduction?` · −${Math.round(d.reduction*100)}% damage taken`:''}${d.speed?` · ⛏️ pickaxe speed ×${d.speed}`:''}</div>`;
+     h+=`<div class="detail"><b>${itemIconHTML(s.item,22)} ${esc(nameOf(s.item))}</b> x${s.qty}`;
+     if(d) h+=`<div class="note">${d.kind}${d.slot?` · worn: ${d.slot}`:''}${d.heal?` · heals ${d.heal} HP`:''}${d.prayerRestore?` · restores ${d.prayerRestore} prayer`:''}${d.accBonus?` · +${Math.round(d.accBonus*100)}% accuracy`:''}${d.maxBonus?` · +${d.maxBonus} max hit`:''}${d.reduction?` · −${Math.round(d.reduction*100)}% damage taken`:''}${d.speed?` · ⛏️ pickaxe speed ×${d.speed}`:''}</div>`;
+     h+=customLineHTML(s.item);
      if(isTokenItem(s.item,d)){
        if(s.item==='certificate') h+=`<div class="note" style="margin-top:4px">📜 Exchange this with an admin for 250g — use the 👑 Admin panel.</div>`;
        else if(s.item==='nc') h+=`<div class="note" style="margin-top:4px">🪙 Mods spend NC to run official fights.</div>`;
@@ -2467,7 +2788,7 @@ function pWorn(){
  let h='';
  for(const [slot,label,emptyIcon] of SLOT_DEFS){
    const it=me.worn[slot];
-   h+=`<div class="rowline"><span class="ic">${it?iconOf(it):emptyIcon}</span><span class="grow"><b>${label}</b><br><span class="sub">${it?esc(nameOf(it)):'Empty'}</span></span>${it?`<button class="act" onclick="send({type:'unequip',slot:'${slot}'})">Unequip</button>`:''}</div>`;
+   h+=`<div class="rowline"><span class="ic">${it?itemIconHTML(it,24):emptyIcon}</span><span class="grow"><b>${label}</b><br><span class="sub">${it?esc(nameOf(it)):'Empty'}</span></span>${it?`<button class="act" onclick="send({type:'unequip',slot:'${slot}'})">Unequip</button>`:''}</div>`;
  }
  h+=`<p class="note">Worn gear boosts your duels: weapons raise accuracy / max hit, armour cuts damage taken (full set +5% extra, capped at 45%). The cape slot holds your Fight Caves fire cape 🔥.</p>`;
  return h;
@@ -2478,7 +2799,7 @@ window.setShopMode=function(m){ shopMode=m; renderDrawer(); };
 function pShop(){
  let h=`<div class="tabs">${shopNames.map(s=>`<button class="${s===shopTab?'on':''}" onclick="setShopTab('${s}')">${esc(s)}</button>`).join('')}</div>`;
  h+=`<div class="seg"><button class="${shopMode==='buy'?'on':''}" onclick="setShopMode('buy')">Buy</button><button class="${shopMode==='sell'?'on':''}" onclick="setShopMode('sell')">Sell (60% back)</button></div>`;
- h+=`<div class="note" style="margin-bottom:6px">Your gold: <b style="color:#ff8fd0">${me.gold}g</b></div>`;
+ h+=`<div class="note" style="margin-bottom:6px">Your gold: <b style="color:#e3c766">${me.gold}g</b></div>`;
  if(shopMode==='buy'){
    const items=catalogArr.filter(i=>i.shop===shopTab);
    if(!items.length) h+=`<p class="note">Nothing here yet.</p>`;
@@ -2516,7 +2837,7 @@ window.bankSearchInput=function(v){ bankSearch=v||''; applyBankFilter(); };
 function bankValue(){ return (me?me.bank:[]).reduce((t,s)=>{ const d=catalog[s.item]; const v=d? d.buy : (goods[s.item]? goods[s.item].price : 0); return t+v*s.qty; },0); }
 function qtyFor(owned){ if(bankQty==='all') return owned; if(bankQty==='x') return Math.min(owned,bankXQty); return Math.min(owned, bankQty==='10'?10 : bankQty==='5'?5 : 1); }
 function bankCell(s,onclick){
- return `<div class="cell" data-cat="${bankCat(s.item)}" data-name="${esc(nameOf(s.item)).toLowerCase()}" onclick="${onclick}"><span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${iconOf(s.item)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
+ return `<div class="cell" data-cat="${bankCat(s.item)}" data-name="${esc(nameOf(s.item)).toLowerCase()}" onclick="${onclick}"><span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${itemIconHTML(s.item,24)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
 }
 function applyBankFilter(){
  if(drawerPanel!=='bank') return;
@@ -2529,18 +2850,18 @@ function applyBankFilter(){
 }
 function pBank(){
  let h=`<div class="note">Quantity:</div><div class="seg">${['1','5','10','x','all'].map(q=>`<button class="${bankQty===q?'on':''}" onclick="setBankQty('${q}')">${q==='all'?'All':q==='x'?`X (${bankXQty})`:q}</button>`).join('')}</div>`;
- h+=`<div class="note" style="margin:4px 0">Bank value: <b style="color:#ff8fd0">${bankValue()}g</b> · items only — gold stays in your purse.</div>`;
+ h+=`<div class="note" style="margin:4px 0">Bank value: <b style="color:#e3c766">${bankValue()}g</b> · items only — gold stays in your purse.</div>`;
  h+=`<div class="tabs">${BANK_TABS.map(([id,lb])=>`<button class="${bankTab===id?'on':''}" onclick="setBankTab('${id}')">${lb}</button>`).join('')}</div>`;
  h+=`<input placeholder="🔍 Search items…" value="${esc(bankSearch)}" oninput="bankSearchInput(this.value)" style="width:100%;box-sizing:border-box;margin-bottom:8px">`;
- h+=`<h4 style="margin:8px 0 5px;color:#ff8fd0">Backpack — tap to deposit</h4>`;
+ h+=`<h4 style="margin:8px 0 5px;color:#e3c766">Backpack — tap to deposit</h4>`;
  h+= me.backpack.length? `<div class="grid">${me.backpack.map(s=>bankCell(s,`send({type:'bank_deposit',item:'${s.item}',qty:${qtyFor(s.qty)}})`)).join('')}</div>` : `<p class="note">Backpack is empty.</p>`;
- h+=`<h4 style="margin:10px 0 5px;color:#ff8fd0">Bank — tap to withdraw</h4>`;
+ h+=`<h4 style="margin:10px 0 5px;color:#e3c766">Bank — tap to withdraw</h4>`;
  h+= me.bank.length? `<div class="grid">${me.bank.map(s=>bankCell(s,`send({type:'bank_withdraw',item:'${s.item}',qty:${qtyFor(s.qty)}})`)).join('')}</div>` : `<p class="note">Bank is empty.</p>`;
  return h;
 }
 /* ---- Gold Exchange ---- */
 function pExchange(){
- let h=`<div class="note" style="margin-bottom:6px">Prices drift over time. The Exchange buys back at 97%. Your gold: <b style="color:#ff8fd0">${me.gold}g</b></div>`;
+ let h=`<div class="note" style="margin-bottom:6px">Prices drift over time. The Exchange buys back at 97%. Your gold: <b style="color:#e3c766">${me.gold}g</b></div>`;
  const list=Object.values(goods);
  if(!list.length) h+=`<p class="note">Waiting for prices…</p>`;
  for(const g of list){
@@ -2554,7 +2875,7 @@ function pExchange(){
 /* ---- Prayers ---- */
 function pPrayers(){
  const pct=clamp(me.prayerPoints/me.prayerMax*100,0,100);
- let h=`<div class="note">Prayer points: <b style="color:#ff8fd0">${Math.floor(me.prayerPoints)} / ${me.prayerMax}</b> — an active prayer drains slowly and switches off at 0.</div>
+ let h=`<div class="note">Prayer points: <b style="color:#e3c766">${Math.floor(me.prayerPoints)} / ${me.prayerMax}</b> — an active prayer drains slowly and switches off at 0.</div>
  <div class="bar" style="margin:6px 0 10px"><div style="width:${pct}%;background:#2456c8"></div></div>
  <div style="display:flex;gap:6px">
   <button class="praybtn ${me.activePrayer==='melee'?'on':''}" onclick="send({type:'prayer',prayer:'melee'})">🛡️<br>Protect<br>Melee</button>
@@ -2569,7 +2890,7 @@ function pPrayers(){
 function pPlayers(){
  let h='';
  if(myParty.length>=2){
-   h+=`<h4 style="margin:2px 0 5px;color:#ff8fd0">🎉 Your party</h4>`;
+   h+=`<h4 style="margin:2px 0 5px;color:#e3c766">🎉 Your party</h4>`;
    h+=`<div class="rowline"><span class="grow">${myParty.map(n=>esc(n)).join(' · ')}</span><button class="ghost" onclick="send({type:'party_leave'})">Leave party</button></div>`;
    h+=`<p class="note" style="margin-bottom:8px">Party is just for grouping up — no shared rewards yet.</p>`;
  }
@@ -2613,10 +2934,10 @@ window.adminSpawn=function(){
 };
 function pAdmin(){
  const role=myRole();
- let h=`<div class="setrow"><span class="grow"><b>My role</b></span><b style="color:#ff8fd0">${ROLE_LABEL[role]||'Player'}</b></div>`;
- if(role==='mod') h+=`<div class="setrow"><span class="grow">Certification</span><b style="color:#ff8fd0">${me.certified?'⭐ Certified':'Not certified yet'}</b></div>`;
- h+=`<div class="setrow"><span class="grow">🪙 NC</span><b style="color:#ff8fd0">${myQty('nc')}</b></div>`;
- h+=`<div class="setrow"><span class="grow">📜 Certificates</span><b style="color:#ff8fd0">${myQty('certificate')}</b></div>`;
+ let h=`<div class="setrow"><span class="grow"><b>My role</b></span><b style="color:#e3c766">${ROLE_LABEL[role]||'Player'}</b></div>`;
+ if(role==='mod') h+=`<div class="setrow"><span class="grow">Certification</span><b style="color:#e3c766">${me.certified?'⭐ Certified':'Not certified yet'}</b></div>`;
+ h+=`<div class="setrow"><span class="grow">🪙 NC</span><b style="color:#e3c766">${myQty('nc')}</b></div>`;
+ h+=`<div class="setrow"><span class="grow">📜 Certificates</span><b style="color:#e3c766">${myQty('certificate')}</b></div>`;
  if(myQty('certificate')>=1){
    h+=`<button class="act" style="width:100%;margin:4px 0" onclick="send({type:'exchange_cert'})">📜 Exchange Certificate → 250g</button>`;
    h+=`<p class="note">An admin must be online to approve the exchange.</p>`;
@@ -2625,7 +2946,7 @@ function pAdmin(){
  if(canRun){
    const onlineOthers=(lastOnlineList||[]).filter(p=>!me||p.username!==me.username);
    const opts=(sel)=>onlineOthers.map(p=>`<option value="${esc(p.username)}" ${p.username===sel?'selected':''}>${rolePrefix(p.role)}${esc(p.username)}</option>`).join('');
-   h+=`<h4 style="margin:12px 0 5px;color:#ff8fd0">🏆 Run official fight</h4>`;
+   h+=`<h4 style="margin:12px 0 5px;color:#e3c766">🏆 Run official fight</h4>`;
    if(lastOnlineList===null) h+=`<p class="note">Loading online players…</p>`;
    else if(onlineOthers.length<2) h+=`<p class="note">You need at least two other players online to run a fight.</p>`;
    h+=`<div class="rowline"><span class="grow">Fighter 1</span><select id="fighta" onchange="fightSelA=this.value"><option value="">— pick —</option>${opts(fightSelA)}</select></div>`;
@@ -2633,10 +2954,10 @@ function pAdmin(){
    h+=`<div style="display:flex;gap:6px"><button class="act" style="flex:1" onclick="adminRunFight()">🏆 Run fight</button><button class="ghost" onclick="refreshAdminLists()">↻ Refresh</button></div>`;
    h+=`<p class="note" style="margin-top:5px">Costs 1 NC, charged only when both fighters accept. Winner earns a Certificate.</p>`;
  } else if(role==='mod'){
-   h+=`<h4 style="margin:12px 0 5px;color:#ff8fd0">🏆 Run official fight</h4><p class="note">You need to be certified by an admin before you can run official fights.</p>`;
+   h+=`<h4 style="margin:12px 0 5px;color:#e3c766">🏆 Run official fight</h4><p class="note">You need to be certified by an admin before you can run official fights.</p>`;
  }
  if(isAdminOrOwner()){
-   h+=`<h4 style="margin:12px 0 5px;color:#ff8fd0">Players &amp; roles</h4>`;
+   h+=`<h4 style="margin:12px 0 5px;color:#e3c766">Players &amp; roles</h4>`;
    if(lastAdminList===null) h+=`<p class="note">Loading players…</p>`;
    else {
      for(const p of lastAdminList){
@@ -2654,11 +2975,241 @@ function pAdmin(){
    const itemOpts=catalogArr.map(it=>`<option value="${esc(it.id)}" ${it.id===spawnItemSel?'selected':''}>${esc(it.name)} (${esc(it.id)})</option>`).join('')
      +(catalogArr.some(it=>it.id==='nc')?'':`<option value="nc" ${spawnItemSel==='nc'?'selected':''}>NC (nc)</option><option value="certificate" ${spawnItemSel==='certificate'?'selected':''}>Certificate (certificate)</option>`);
    const dl=(lastOnlineList||[]).map(p=>`<option value="${esc(p.username)}">`).join('');
-   h+=`<h4 style="margin:12px 0 5px;color:#ff8fd0">✨ Make items</h4>`;
+   h+=`<h4 style="margin:12px 0 5px;color:#e3c766">✨ Make items</h4>`;
    h+=`<div class="rowline"><span class="grow">Item</span><select id="spawnitem" onchange="spawnField()">${itemOpts}</select></div>`;
    h+=`<div class="rowline"><span class="grow">Quantity (1–99)</span><input type="number" id="spawnqty" min="1" max="99" value="${spawnQtyVal}" onchange="spawnField()"></div>`;
    h+=`<div class="rowline"><span class="grow">Give to</span><input id="spawntarget" list="onlinenames" placeholder="Your name (or leave blank for yourself)" value="${esc(spawnTargetVal)}" onchange="spawnField()" oninput="spawnField()"></div><datalist id="onlinenames">${dl}</datalist>`;
    h+=`<button class="act" style="width:100%" onclick="adminSpawn()">✨ Create</button>`;
+ }
+ return h;
+}
+/* ---- Admin Tools (Stage 7D) ---- */
+let lastRefLists=null; // last {type:'ref_lists'} reply {items, npcs, objects}
+const CUSTOM_ICONS_CLIENT=['🗡️','⚔️','🔪','🏹','🪄','🛡️','⛑️','🦺','👑','💎','🔥','⭐'];
+// Editor field state, preserved across re-renders like the 7A spawn fields.
+let toolBase='', toolName='', toolIcon='🗡️', toolAcc='', toolMax='', toolRed='';
+let toolEditId='', toolEditName='', toolEditIcon='🗡️', toolEditAcc='', toolEditMax='', toolEditRed='';
+let toolPropKind='tree';
+/* Stage 8: tint + drawn art state. The tint is an on/off flag + a hex
+   (a colour input always shows SOME value, so the flag is the truth).
+   The drawing lives in module vars exactly like the text fields: the
+   canvas element is rebuilt on every drawer render, so on pointer-up
+   the drawing is saved to toolArtData and restored by initToolCanvas. */
+let toolColor='', toolColorOn=false;
+let toolEditColor='', toolEditColorOn=false;
+let toolBrush='#c0271b', toolErase=false;
+let toolArtData=null, toolArtDirty=false;
+const ART_BRUSHES=['#c0271b','#e8862a','#e3c766','#2e7d32','#2456c8','#6b4a7a','#171310','#ffffff'];
+window.toolsField=function(){
+ const b=$('toolbase'),n=$('toolname'),i=$('toolicon'),a=$('toolacc'),x=$('toolmax'),r=$('toolred'),tc=$('toolcolor');
+ if(b) toolBase=b.value; if(n) toolName=n.value; if(i) toolIcon=i.value;
+ if(a) toolAcc=a.value; if(x) toolMax=x.value; if(r) toolRed=r.value;
+ if(tc) toolColor=tc.value;
+};
+window.toolsEditField=function(){
+ const n=$('tooleditname'),i=$('toolediticon'),a=$('tooleditacc'),x=$('tooleditmax'),r=$('tooleditred'),tc=$('tooleditcolor');
+ if(n) toolEditName=n.value; if(i) toolEditIcon=i.value;
+ if(a) toolEditAcc=a.value; if(x) toolEditMax=x.value; if(r) toolEditRed=r.value;
+ if(tc) toolEditColor=tc.value;
+};
+window.toolColorInput=function(v){ toolColor=v; toolColorOn=true; const el=$('toolcolortxt'); if(el) el.textContent=v; };
+window.toolColorClear=function(){ toolsField(); toolColorOn=false; renderDrawer(); };
+window.toolEditColorInput=function(v){ toolEditColor=v; toolEditColorOn=true; const el=$('tooleditcolortxt'); if(el) el.textContent=v; };
+window.toolEditColorClear=function(){ toolsEditField(); toolEditColorOn=false; renderDrawer(); };
+window.toolBaseChange=function(v){
+ toolBase=v;
+ const d=catalog[v]; // prefill the stats with the base item's own — the server's clone defaults
+ if(d){ toolAcc=String(Math.round((d.accBonus||0)*100)); toolMax=String(d.maxBonus||0); toolRed=String(Math.round((d.reduction||0)*100)); }
+ toolArtData=null; toolArtDirty=false; // the drawing canvas restarts from the new base's picture
+ renderDrawer();
+};
+window.toolEditPick=function(id){
+ toolEditId=id;
+ const d=catalog[id];
+ if(d){
+   toolEditName=d.name||''; toolEditIcon=d.icon||'🗡️'; toolEditAcc=String(Math.round((d.accBonus||0)*100)); toolEditMax=String(d.maxBonus||0); toolEditRed=String(Math.round((d.reduction||0)*100));
+   toolEditColor=d.color||''; toolEditColorOn=!!d.color; // Stage 8: load its tint…
+   toolArtData=d.art||null; toolArtDirty=false; // …and its drawing (or its icon as the guide)
+ }
+ renderDrawer();
+};
+/* The art payload for a save: the live canvas when it's on screen,
+   downscaled 96→64→48 until it fits the server's cap. */
+function currentArtPayload(){
+ const cv=$('toolcanvas');
+ if(!cv) return toolArtData;
+ let url=cv.toDataURL('image/png');
+ if(url.length<=32000) return url;
+ for(const s of [64,48]){
+   const oc=document.createElement('canvas'); oc.width=oc.height=s;
+   oc.getContext('2d').drawImage(cv,0,0,s,s);
+   url=oc.toDataURL('image/png');
+   if(url.length<=32000) return url;
+ }
+ return url;
+}
+function artGuideEmoji(){
+ if(toolEditId){ const d=catalog[toolEditId]; if(d) return d.icon||iconOf(toolEditId); }
+ if(toolBase) return iconOf(toolBase);
+ return '🗡️';
+}
+/* (Re)build the shared drawing canvas after a tools render: restore
+   the saved drawing, or paint the guide emoji (the base item's picture
+   when creating, the custom's icon when editing one with no art). */
+function initToolCanvas(){
+ const cv=$('toolcanvas'); if(!cv) return;
+ const g=cv.getContext('2d');
+ g.clearRect(0,0,96,96);
+ if(toolArtData){
+   const img=new Image();
+   img.onload=()=>{ g.clearRect(0,0,96,96); g.drawImage(img,0,0,96,96); };
+   img.src=toolArtData;
+ } else if(!toolArtDirty){
+   g.save(); g.globalAlpha=0.85; g.font='62px serif'; g.textAlign='center'; g.textBaseline='middle';
+   g.fillText(artGuideEmoji(),48,52); g.restore();
+ }
+ // dirty + no data = the admin cleared it on purpose: leave it blank.
+ if(cv.dataset.wired) return; cv.dataset.wired='1';
+ let drawing=false,last=null;
+ const pos=e=>{ const r=cv.getBoundingClientRect(); return {x:(e.clientX-r.left)*96/r.width, y:(e.clientY-r.top)*96/r.height}; };
+ const strokeTo=p=>{
+   g.lineCap='round'; g.lineJoin='round'; g.lineWidth=5;
+   if(toolErase){ g.globalCompositeOperation='destination-out'; g.strokeStyle='rgba(0,0,0,1)'; }
+   else { g.globalCompositeOperation='source-over'; g.strokeStyle=toolBrush; }
+   g.beginPath(); g.moveTo(last.x,last.y); g.lineTo(p.x,p.y); g.stroke();
+   g.globalCompositeOperation='source-over'; last=p;
+ };
+ cv.addEventListener('pointerdown',e=>{ e.preventDefault(); drawing=true; last=pos(e); try{ cv.setPointerCapture(e.pointerId); }catch(err){} strokeTo(pos(e)); });
+ cv.addEventListener('pointermove',e=>{ if(drawing) strokeTo(pos(e)); });
+ const end=()=>{ if(!drawing) return; drawing=false; toolArtData=cv.toDataURL('image/png'); toolArtDirty=true; };
+ cv.addEventListener('pointerup',end); cv.addEventListener('pointercancel',end);
+}
+window.toolBrushPick=function(c){ toolBrush=c; toolErase=false; renderDrawer(); };
+window.toolEraser=function(){ toolErase=!toolErase; renderDrawer(); };
+window.toolArtClear=function(){
+ const cv=$('toolcanvas'); if(cv) cv.getContext('2d').clearRect(0,0,96,96);
+ toolArtData=null; toolArtDirty=true; // cleared IS a change: a save sends the blank canvas
+};
+window.adminRemoveArt=function(){
+ toolsEditField();
+ if(!toolEditId){ toast('Pick a custom item to edit first.'); return; }
+ toolArtData=null; toolArtDirty=false;
+ send({type:'edit_custom', id:toolEditId, art:''}); // '' clears the drawing server-side
+ initToolCanvas(); // back to the icon guide locally
+};
+window.adminCreateCustom=function(){
+ toolsField();
+ if(!toolBase){ toast('Pick a base item first.'); return; }
+ if(!toolName.trim()){ toast('Give the custom item a name first.'); return; }
+ const o={type:'create_custom', base:toolBase, name:toolName.trim(), icon:toolIcon,
+   accBonus:clamp(parseFloat(toolAcc)||0,0,50)/100,
+   maxBonus:clamp(Math.round(parseFloat(toolMax)||0),0,30),
+   reduction:clamp(parseFloat(toolRed)||0,0,45)/100};
+ if(toolColorOn&&toolColor) o.color=toolColor; // Stage 8: tint only when one is set
+ if(toolArtDirty){ const art=currentArtPayload(); if(art) o.art=art; } // Stage 8: the drawing, if drawn
+ send(o);
+};
+window.adminEditCustom=function(){
+ toolsEditField();
+ if(!toolEditId){ toast('Pick a custom item to edit first.'); return; }
+ if(!toolEditName.trim()){ toast('The item needs a name.'); return; }
+ const o={type:'edit_custom', id:toolEditId, name:toolEditName.trim(), icon:toolEditIcon,
+   accBonus:clamp(parseFloat(toolEditAcc)||0,0,50)/100,
+   maxBonus:clamp(Math.round(parseFloat(toolEditMax)||0),0,30),
+   reduction:clamp(parseFloat(toolEditRed)||0,0,45)/100,
+   color:toolEditColorOn? toolEditColor : null}; // Stage 8: the tint, or null when cleared
+ if(toolArtDirty){ const art=currentArtPayload(); if(art) o.art=art; } // absent art field = keep the old drawing
+ send(o);
+};
+window.refAddItem=function(id){ send({type:'spawn_item', item:id, qty:1}); };
+window.adminPlaceObject=function(){
+ if(!myPos){ toast('You are not in the world yet.'); return; }
+ const kind=($('toolprop')||{}).value||toolPropKind;
+ // In front of me, in SERVER coords: localRot is my facing in the
+ // atan2(dx,dy) convention over server deltas (the faceToward /
+ // stepMovement convention — server deltas scale 1:1 with world
+ // deltas), so the facing unit vector is (sin(rot), cos(rot)).
+ const x=Math.round(clamp(myPos.x+Math.sin(localRot)*45,0,800));
+ const y=Math.round(clamp(myPos.y+Math.cos(localRot)*45,0,450));
+ send({type:'place_object', kind, x, y});
+};
+window.adminRemoveObject=function(id){ send({type:'remove_object', id}); };
+function pTools(){
+ if(!isAdminOrOwner()) return `<p class="note">Admin tools are for admins and the owner only.</p>`;
+ let h='';
+ // (a) Item editor — clone a base weapon/armour into a custom item.
+ const bases=catalogArr.filter(it=>(it.kind==='weapon'||it.kind==='armour')&&!it.custom);
+ const iconOpts=(sel)=>CUSTOM_ICONS_CLIENT.map(ic=>`<option value="${ic}" ${ic===sel?'selected':''}>${ic}</option>`).join('');
+ h+=`<h4 style="margin:2px 0 5px;color:#e3c766">✨ Item editor — make a custom item</h4>`;
+ h+=`<div class="rowline"><span class="grow">Base item</span><select id="toolbase" onchange="toolBaseChange(this.value)"><option value="">— pick a weapon or armour —</option>${bases.map(it=>`<option value="${esc(it.id)}" ${it.id===toolBase?'selected':''}>${iconOf(it.id)} ${esc(it.name)}</option>`).join('')}</select></div>`;
+ h+=`<div class="rowline"><span class="grow">Name</span><input id="toolname" maxlength="30" placeholder="Item name" value="${esc(toolName)}" oninput="toolsField()"></div>`;
+ h+=`<div class="rowline"><span class="grow">Icon</span><select id="toolicon" onchange="toolsField()">${iconOpts(toolIcon)}</select></div>`;
+ h+=`<div class="rowline"><span class="grow">Tint colour</span><input type="color" id="toolcolor" value="${esc(toolColor||'#c9a227')}" oninput="toolColorInput(this.value)"><button class="ghost" onclick="toolColorClear()">No tint</button></div>`;
+ h+=`<p class="note" style="margin:-2px 0 4px">Tint now: <b id="toolcolortxt">${toolColorOn?esc(toolColor):'none'}</b> — a tint shows behind the item's picture in backpacks, banks and trade.</p>`;
+ h+=`<div class="rowline"><span class="grow">Accuracy bonus % (0–50)</span><input type="number" id="toolacc" min="0" max="50" step="1" value="${esc(toolAcc)}" oninput="toolsField()"></div>`;
+ h+=`<div class="rowline"><span class="grow">Max-hit bonus (0–30)</span><input type="number" id="toolmax" min="0" max="30" step="1" value="${esc(toolMax)}" oninput="toolsField()"></div>`;
+ h+=`<div class="rowline"><span class="grow">Damage reduction % (0–45)</span><input type="number" id="toolred" min="0" max="45" step="1" value="${esc(toolRed)}" oninput="toolsField()"></div>`;
+ h+=`<p class="note">Only the stats that fit the base item apply (weapons: accuracy/max-hit; armour: reduction). You receive the first copy — it keeps these properties wherever it goes.</p>`;
+ h+=`<button class="act" style="width:100%" onclick="adminCreateCustom()">✨ Create custom item</button>`;
+ // (b) Edit an existing custom item — one shared def, every copy changes.
+ const customs=catalogArr.filter(it=>it.custom);
+ h+=`<h4 style="margin:12px 0 5px;color:#e3c766">✏️ Edit a custom item</h4>`;
+ if(!customs.length) h+=`<p class="note">No custom items yet.</p>`;
+ else {
+   h+=`<div class="rowline"><span class="grow">Custom item</span><select id="tooleditsel" onchange="toolEditPick(this.value)"><option value="">— pick —</option>${customs.map(it=>`<option value="${esc(it.id)}" ${it.id===toolEditId?'selected':''}>#${it.num} ${iconOf(it.id)} ${esc(it.name)}</option>`).join('')}</select></div>`;
+   h+=`<div class="rowline"><span class="grow">Name</span><input id="tooleditname" maxlength="30" placeholder="Item name" value="${esc(toolEditName)}" oninput="toolsEditField()"></div>`;
+   h+=`<div class="rowline"><span class="grow">Icon</span><select id="toolediticon" onchange="toolsEditField()">${iconOpts(toolEditIcon)}</select></div>`;
+   h+=`<div class="rowline"><span class="grow">Tint colour</span><input type="color" id="tooleditcolor" value="${esc(toolEditColor||'#c9a227')}" oninput="toolEditColorInput(this.value)"><button class="ghost" onclick="toolEditColorClear()">No tint</button></div>`;
+   h+=`<p class="note" style="margin:-2px 0 4px">Tint now: <b id="tooleditcolortxt">${toolEditColorOn?esc(toolEditColor):'none'}</b></p>`;
+   h+=`<div class="rowline"><span class="grow">Accuracy bonus % (0–50)</span><input type="number" id="tooleditacc" min="0" max="50" step="1" value="${esc(toolEditAcc)}" oninput="toolsEditField()"></div>`;
+   h+=`<div class="rowline"><span class="grow">Max-hit bonus (0–30)</span><input type="number" id="tooleditmax" min="0" max="30" step="1" value="${esc(toolEditMax)}" oninput="toolsEditField()"></div>`;
+   h+=`<div class="rowline"><span class="grow">Damage reduction % (0–45)</span><input type="number" id="tooleditred" min="0" max="45" step="1" value="${esc(toolEditRed)}" oninput="toolsEditField()"></div>`;
+   h+=`<p class="note">Editing changes every copy of that item in the game at once.</p>`;
+   h+=`<div style="display:flex;gap:6px"><button class="act" style="flex:1" onclick="adminEditCustom()">💾 Save changes</button><button class="ghost" onclick="adminRemoveArt()">🎨 Remove drawing</button></div>`;
+ }
+ // (b2) Stage 8: the shared drawing canvas — one canvas serves both
+ // Create (draw on the base item's picture) and Edit (draw on the
+ // custom's existing art, or its icon when it has none).
+ h+=`<h4 style="margin:12px 0 5px;color:#e3c766">🎨 Draw on the item</h4>`;
+ h+=`<p class="note" style="margin-bottom:5px">Draw over the item's picture — the drawing becomes its icon in backpacks, banks and trade. It is sent with the next ✨ Create or 💾 Save above.</p>`;
+ h+=`<div style="display:flex;gap:8px;align-items:flex-start">
+  <canvas id="toolcanvas" width="96" height="96" style="width:144px;height:144px;flex:none;background:repeating-conic-gradient(#3a2c1c 0% 25%, #2b2118 0% 50%) 0 0/24px 24px;border:2px solid #4a3a28;border-radius:8px;touch-action:none"></canvas>
+  <div style="flex:1">
+   <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px">${ART_BRUSHES.map(c=>`<button style="width:30px;height:30px;border-radius:7px;border:2px solid ${toolBrush===c&&!toolErase?'#e3c766':'#4a3a28'};background:${c};cursor:pointer" onclick="toolBrushPick('${c}')">${toolBrush===c&&!toolErase?'✓':''}</button>`).join('')}</div>
+   <div style="display:flex;gap:5px;flex-wrap:wrap"><button class="ghost" onclick="toolEraser()">🧽 Eraser: ${toolErase?'ON':'off'}</button><button class="ghost" onclick="toolArtClear()">🗑️ Clear</button></div>
+   <p class="note" style="margin-top:5px">Clear wipes the canvas (the guide picture comes back when you re-pick the base or the custom item).</p>
+  </div>
+ </div>`;
+ // (c) Reference lists — item # / NPC # / object #.
+ h+=`<h4 style="margin:12px 0 5px;color:#e3c766">📖 Reference lists</h4>`;
+ if(!lastRefLists) h+=`<p class="note">Loading reference lists…</p><button class="ghost" onclick="send({type:'ref_lists'})">↻ Reload</button>`;
+ else {
+   h+=`<div class="note" style="margin-bottom:3px">Items (${lastRefLists.items.length}) — [+ Add] puts one in your backpack, to trade to others:</div><div class="reflist">`;
+   for(const it of lastRefLists.items){
+     const ic=catalog[it.id]? itemIconHTML(it.id,22) : (KIND_ICON[it.kind]||'📦');
+     h+=`<div class="rowline"><span class="ic">${ic}</span><span class="grow"><b>#${it.num}</b> ${esc(it.name)}${it.custom?' <span class="sub">✨ custom</span>':''}<br><span class="sub">${esc(it.id)} · ${esc(it.kind)}</span></span><button class="act" onclick="refAddItem('${esc(it.id)}')">+ Add</button></div>`;
+   }
+   h+=`</div><div class="note" style="margin-bottom:3px">NPCs (${lastRefLists.npcs.length}):</div><div class="reflist">`;
+   for(const n of lastRefLists.npcs){
+     h+=`<div class="rowline"><span class="grow"><b>#${n.num}</b> ${esc(n.name)}<br><span class="sub">${AREA_LABELS[n.area]||esc(n.area)}</span></span></div>`;
+   }
+   h+=`</div><div class="note" style="margin-bottom:3px">Objects (${lastRefLists.objects.length}):</div><div class="reflist">`;
+   for(const o of lastRefLists.objects){
+     h+=`<div class="rowline"><span class="ic">${esc(o.icon||'📦')}</span><span class="grow"><b>#${o.num}</b> ${esc(o.label)}<br><span class="sub">${esc(o.kind)}</span></span></div>`;
+   }
+   h+=`</div>`;
+ }
+ // (d) Place an object in front of me + what's placed in this area.
+ h+=`<h4 style="margin:12px 0 5px;color:#e3c766">📍 Place object</h4>`;
+ h+=`<div class="rowline"><span class="grow">Object</span><select id="toolprop" onchange="toolPropKind=this.value">${PROP_KINDS_CLIENT.map(p=>`<option value="${p.kind}" ${p.kind===toolPropKind?'selected':''}>${p.icon} ${p.label}</option>`).join('')}</select></div>`;
+ h+=`<button class="act" style="width:100%" onclick="adminPlaceObject()">📍 Place in front of me</button>`;
+ h+=`<p class="note" style="margin-top:5px">Lands 45 units ahead of where your knight is facing, here in ${AREA_LABELS[curArea]||esc(curArea)}. Placed objects stay in the world.</p>`;
+ const here=objectsByArea[curArea]||[];
+ h+=`<div class="note" style="margin:6px 0 3px">Placed in this area (${here.length}):</div>`;
+ if(!here.length) h+=`<p class="note">Nothing placed here yet.</p>`;
+ for(const o of here){
+   const pd=propDef(o.kind);
+   h+=`<div class="rowline"><span class="ic">${pd.icon}</span><span class="grow"><b>#${esc(String(o.id).replace(/^obj_/,''))}</b> ${esc(pd.label)}<br><span class="sub">placed by ${esc(o.by||'?')}</span></span><button class="ghost" onclick="adminRemoveObject('${esc(o.id)}')">Remove</button></div>`;
  }
  return h;
 }
@@ -2669,8 +3220,8 @@ function pSkills(){
  for(const [id,ic,nm] of SKILL_DEFS){
    h+=`<div class="skillrow"><span class="ic">${ic}</span><span class="grow">${nm}<br><span class="xp">${(xp[id]||0).toLocaleString()} XP</span></span><span class="lvl">${lv[id]||1}</span></div>`;
  }
- h+=`<div class="setrow" style="margin-top:8px"><span class="grow"><b>Total Level</b></span><b style="color:#ff8fd0">${me.totalLevel||0}</b></div>`;
- h+=`<div class="setrow"><span class="grow"><b>Combat Level</b></span><b style="color:#ff8fd0">${Math.floor(me.combatLevel||3)}</b></div>`;
+ h+=`<div class="setrow" style="margin-top:8px"><span class="grow"><b>Total Level</b></span><b style="color:#e3c766">${me.totalLevel||0}</b></div>`;
+ h+=`<div class="setrow"><span class="grow"><b>Combat Level</b></span><b style="color:#e3c766">${Math.floor(me.combatLevel||3)}</b></div>`;
  h+=`<p class="note">Combat XP lands as you fight — watch for the blue drops by the orbs.</p>`;
  return h;
 }
@@ -2724,20 +3275,20 @@ function pSmithy(){
    h+=`<p class="note" style="margin-bottom:6px">The furnace and anvil are at the <b>Emberfall Mine &amp; Smithy</b> — walk out of the plaza's north-east corner, or teleport. Smelting and smithing only work there; you can check your ore and bar counts here.</p>`;
    h+=`<button class="act" onclick="doTravel('mine')">🌀 Teleport to the Emberfall Mine</button>`;
  }
- h+=`<h4 style="margin:10px 0 5px;color:#ff8fd0">🔥 Furnace — smelt ore into bars</h4>`;
- h+=`<div class="note" style="margin-bottom:6px">Your Smithing level: <b style="color:#ff8fd0">${lvl}</b></div>`;
+ h+=`<h4 style="margin:10px 0 5px;color:#e3c766">🔥 Furnace — smelt ore into bars</h4>`;
+ h+=`<div class="note" style="margin-bottom:6px">Your Smithing level: <b style="color:#e3c766">${lvl}</b></div>`;
  for(const [bar,rec] of Object.entries(BAR_RECIPES_CLIENT)){
    const needs=Object.entries(rec.ores).map(([ore,n])=>`${n}× ${esc(nameOf(ore))} (have ${myQty(ore)})`).join(' + ');
    h+=`<div class="rowline"><span class="ic">${iconOf(bar)}</span><span class="grow"><b>${esc(nameOf(bar))}</b> <span class="sub">(have ${myQty(bar)})</span><br><span class="sub">needs ${needs} · Lvl ${rec.level} Smithing${lvl<rec.level?` (you: ${lvl})`:''} · ${rec.xp} XP each</span></span>
    <button class="act" onclick="send({type:'smelt',bar:'${bar}',qty:1})">Smelt 1</button><button class="ghost" onclick="send({type:'smelt',bar:'${bar}',qty:5})">5</button><button class="ghost" onclick="send({type:'smelt',bar:'${bar}',qty:'all'})">All</button></div>`;
  }
- h+=`<h4 style="margin:10px 0 5px;color:#ff8fd0">🔨 Anvil — smith bars into gear</h4>`;
+ h+=`<h4 style="margin:10px 0 5px;color:#e3c766">🔨 Anvil — smith bars into gear</h4>`;
  if(smithState){
    const heat=smithHeatShown();
    const heatCol=heat>=66?'#ff5a3c':heat>=33?'#ff9d3c':'#8a8578';
    h+=`<div class="detail"><b>${iconOf(smithState.item)} ${esc(nameOf(smithState.item))}</b> — on the anvil
    <div class="note" style="margin-top:5px">Progress ${smithState.progress}/100</div>
-   <div class="bar" style="margin:2px 0 6px"><div style="width:${clamp(smithState.progress,0,100)}%;background:#ff8fd0"></div></div>
+   <div class="bar" style="margin:2px 0 6px"><div style="width:${clamp(smithState.progress,0,100)}%;background:#e3c766"></div></div>
    <div class="note">Heat ${heat}/100</div>
    <div class="bar" style="margin:2px 0 6px"><div style="width:${clamp(heat,0,100)}%;background:${heatCol}"></div></div>
    <div class="btns"><button class="act" onclick="send({type:'smith_hit'})">🔨 Hit the metal</button><button class="ghost" onclick="send({type:'smith_reheat'})">🔥 Reheat</button></div>
@@ -2771,13 +3322,13 @@ function pTeleport(){
  return h;
 }
 /* ---- Settings ---- */
-const PANEL_LIST=[['backpack','🎒 Backpack'],['worn','🗡️ Worn items'],['shop','🏪 Shops'],['bank','🏦 Bank'],['exchange','💱 Gold Exchange'],['prayers','🙏 Prayers'],['players','👥 Players'],['admin','👑 Admin'],['skills','📊 Skills'],['smithy','🔥 Smithy'],['teleport','🌀 Teleport'],['settings','🎛️ Settings']];
+const PANEL_LIST=[['backpack','🎒 Backpack'],['worn','🗡️ Worn items'],['shop','🏪 Shops'],['bank','🏦 Bank'],['exchange','💱 Gold Exchange'],['prayers','🙏 Prayers'],['players','👥 Players'],['admin','👑 Admin'],['tools','🛠️ Admin Tools'],['skills','📊 Skills'],['smithy','🔥 Smithy'],['teleport','🌀 Teleport'],['settings','🎛️ Settings']];
 function pSettings(){
- let h=`<div class="setrow"><span class="grow">📷 Camera drag speed<br><span class="note">Screen-drag rotation &amp; camera stick</span></span><input type="range" min="0.25" max="3" step="0.25" value="${settings.camSpeed}" oninput="setCamSpeed(this.value)"><b id="camspeedval" style="color:#ff8fd0;min-width:34px;text-align:right">${settings.camSpeed}×</b></div>`;
+ let h=`<div class="setrow"><span class="grow">📷 Camera drag speed<br><span class="note">Screen-drag rotation &amp; camera stick</span></span><input type="range" min="0.25" max="3" step="0.25" value="${settings.camSpeed}" oninput="setCamSpeed(this.value)"><b id="camspeedval" style="color:#e3c766;min-width:34px;text-align:right">${settings.camSpeed}×</b></div>`;
  h+=`<div class="setrow"><span class="grow">👆 Ground tap mode</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.tapMode==='walk'?'on':''}" onclick="setTapMode('walk')">🚶 Walk</button><button class="${settings.tapMode==='face'?'on':''}" onclick="setTapMode('face')">🧭 Face</button></div>`;
  h+=`<p class="note" style="margin:2px 0 8px">Walk: tapping the ground walks there. Face: tapping just turns your knight to face that spot.</p>`;
  h+=`<div class="setrow"><span class="grow">🔅 Interface transparency<br><span class="note">Sticks, panels &amp; buttons</span></span><input type="range" min="0.3" max="1" step="0.02" value="${settings.uiAlpha}" oninput="setUiAlpha(this.value)"></div>`;
- h+=`<h4 style="margin:10px 0 5px;color:#ff8fd0">Menu buttons (⚙)</h4>`;
+ h+=`<h4 style="margin:10px 0 5px;color:#e3c766">Menu buttons (⚙)</h4>`;
  for(const [p,label] of PANEL_LIST){
    h+=`<div class="setrow"><span class="grow">${label}</span><input type="checkbox" ${settings.hidden[p]?'':'checked'} onchange="setBtnVisible('${p}',this.checked)"></div>`;
  }
@@ -2787,7 +3338,7 @@ function pSettings(){
 /* ================= challenge cards ================= */
 function pickerHTML(prefix){
  if(!me||!me.backpack.length) return `<p class="note">Your backpack is empty — gold-only stake.</p>`;
- return me.backpack.map((s,i)=>`<div class="pickrow"><span>${iconOf(s.item)}</span><span class="grow">${esc(nameOf(s.item))} <span class="sub">(have ${s.qty})</span></span><input type="number" id="${prefix}${i}" min="0" max="${s.qty}" value="0" data-item="${s.item}"></div>`).join('');
+ return me.backpack.map((s,i)=>`<div class="pickrow"><span>${itemIconHTML(s.item,20)}</span><span class="grow">${esc(nameOf(s.item))} <span class="sub">(have ${s.qty})</span></span><input type="number" id="${prefix}${i}" min="0" max="${s.qty}" value="0" data-item="${s.item}"></div>`).join('');
 }
 function readPicker(prefix){
  const out=[];
@@ -2820,7 +3371,7 @@ function openIncoming(m){
  incomingCh=m;
  const itemsTxt=(m.items&&m.items.length)? m.items.map(s=>`${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}`).join(', ') : 'no items';
  $('incomingsheet').innerHTML=`<h3>⚔️ ${esc(m.from)} challenges you!</h3>
- <p>Gold stake: <b style="color:#ff8fd0">${m.stake}g</b> each<br>Their items: ${itemsTxt}</p>
+ <p>Gold stake: <b style="color:#e3c766">${m.stake}g</b> each<br>Their items: ${itemsTxt}</p>
  <p class="note">Add your own items to match (winner takes all):</p>
  ${pickerHTML('inp')}
  <p class="note" id="incount"></p>
@@ -2854,7 +3405,7 @@ function openFightOffer(m){
 }
 function openCertRequest(m){
  $('certreqsheet').innerHTML=`<h3>📜 Certificate exchange</h3>
- <p><b>${esc(m.from)}</b> wants to exchange a Certificate for <b style="color:#ff8fd0">250g</b>.</p>
+ <p><b>${esc(m.from)}</b> wants to exchange a Certificate for <b style="color:#e3c766">250g</b>.</p>
  <div class="btns"><button class="act" id="crapprove">Approve — pay 250g</button><button class="ghost" id="crdecline">Decline</button></div>`;
  $('certreqmodal').classList.add('open');
  $('crapprove').onclick=()=>{ send({type:'cert_reply',from:m.from,accept:true}); closeModal('certreqmodal'); };
@@ -2901,15 +3452,15 @@ function openExamine(m){
  const p=m.player; if(!p) return;
  const wornRows=SLOT_DEFS.filter(([slot])=>p.worn&&p.worn[slot]).map(([slot,label])=>`<div class="rowline"><span class="ic">${iconOf(p.worn[slot])}</span><span class="grow"><b>${label}</b><br><span class="sub">${esc(nameOf(p.worn[slot]))}</span></span></div>`).join('');
  $('examinesheet').innerHTML=`<h3>${rolePrefix(p.role)}${esc(p.username)}</h3>
- <div class="setrow"><span class="grow">Role</span><b style="color:#ff8fd0">${ROLE_LABEL[p.role]||'Player'}</b></div>
- <div class="setrow"><span class="grow">⚔️ Combat level</span><b style="color:#ff8fd0">${p.combatLevel}</b></div>
- <div class="setrow"><span class="grow">📊 Total level</span><b style="color:#ff8fd0">${p.totalLevel}</b></div>
- <div class="setrow"><span class="grow">🏆 Duels</span><b style="color:#ff8fd0">${p.wins}W – ${p.losses}L</b></div>
- <div class="setrow"><span class="grow">⭐ Rating</span><b style="color:#ff8fd0">${p.rating}</b></div>
- <div class="setrow"><span class="grow">🥊 Style</span><b style="color:#ff8fd0">${esc(p.style||'')}</b></div>
- <div class="setrow"><span class="grow">📍 Area</span><b style="color:#ff8fd0">${AREA_LABELS[p.area]||esc(p.area||'')}</b></div>
- ${p.inDuel?`<div class="setrow"><span class="grow">⚔️ Status</span><b style="color:#ff8fd0">In a duel right now</b></div>`:''}
- <h4 style="margin:10px 0 5px;color:#ff8fd0">🗡️ Worn</h4>
+ <div class="setrow"><span class="grow">Role</span><b style="color:#e3c766">${ROLE_LABEL[p.role]||'Player'}</b></div>
+ <div class="setrow"><span class="grow">⚔️ Combat level</span><b style="color:#e3c766">${p.combatLevel}</b></div>
+ <div class="setrow"><span class="grow">📊 Total level</span><b style="color:#e3c766">${p.totalLevel}</b></div>
+ <div class="setrow"><span class="grow">🏆 Duels</span><b style="color:#e3c766">${p.wins}W – ${p.losses}L</b></div>
+ <div class="setrow"><span class="grow">⭐ Rating</span><b style="color:#e3c766">${p.rating}</b></div>
+ <div class="setrow"><span class="grow">🥊 Style</span><b style="color:#e3c766">${esc(p.style||'')}</b></div>
+ <div class="setrow"><span class="grow">📍 Area</span><b style="color:#e3c766">${AREA_LABELS[p.area]||esc(p.area||'')}</b></div>
+ ${p.inDuel?`<div class="setrow"><span class="grow">⚔️ Status</span><b style="color:#e3c766">In a duel right now</b></div>`:''}
+ <h4 style="margin:10px 0 5px;color:#e3c766">🗡️ Worn</h4>
  ${wornRows||'<p class="note">Wearing nothing.</p>'}
  <div class="btns"><button class="act" onclick="closeModal('examinemodal')">Close</button></div>`;
  $('examinemodal').classList.add('open');
@@ -2972,7 +3523,7 @@ function openTrade(m){
 function offerList(o){
  const parts=[];
  if(o&&o.gold>0) parts.push(`🪙 ${o.gold}g`);
- for(const s of ((o&&o.items)||[])) parts.push(`${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}`);
+ for(const s of ((o&&o.items)||[])) parts.push(`${itemIconHTML(s.item,18)} ${esc(nameOf(s.item))} x${s.qty}`);
  return parts.length? parts.join('<br>') : '<span class="sub">Nothing</span>';
 }
 function renderTradeState(){
@@ -3071,11 +3622,19 @@ function duelTickUI(m){
  if(!duel) return;
  duel.hpYou=m.hpYou; duel.hpOpponent=m.hpOpponent; duel.energyYou=m.energyYou;
  if(me) me.specialEnergy=m.energyYou;
- if(m.youHit!==undefined && (m.youHit>0||m.oppHit>0||m.note)) { /* splats below */ }
- spawnSplat(duel.opponent,m.youHit,m.youSpecial);
- spawnSplat(me.username,m.oppHit,m.oppSpecial);
- let last=`You hit ${m.youHit}${m.youSpecial?' (DRAGON SLASH!)':''} · they hit ${m.oppHit}${m.oppSpecial?' (special!)':''}`;
- if(m.note) last=m.note;
+ applyClosing(m); // Stage 8: on a closing tick, walk into reach (moveTo)
+ const closing=!!m.closing||typeof m.youHit!=='number';
+ if(!closing){
+   // Swings + hitsplats only on real swings (null hit = nobody swung).
+   if(typeof m.youHit==='number'){ startSwing(me?avatars[me.username]:null); spawnSplat(duel.opponent,m.youHit,m.youSpecial); }
+   if(typeof m.oppHit==='number'){ startSwing(avatars[duel.opponent]); spawnSplat(me.username,m.oppHit,m.oppSpecial); }
+ }
+ let last;
+ if(closing) last=m.note||'⚔️ Too far apart — closing in to strike…';
+ else {
+   last=`You hit ${m.youHit}${m.youSpecial?' (DRAGON SLASH!)':''} · they hit ${m.oppHit}${m.oppSpecial?' (special!)':''}`;
+   if(m.note) last=m.note;
+ }
  $('duellast').textContent=last;
  renderDuelBar(); renderOrbs();
 }
@@ -3088,7 +3647,7 @@ function endDuelUI(m){
  const won=m.winner===me.username;
  const itemsTxt=(m.itemsWon&&m.itemsWon.length)? `<br>Items in the pot: ${m.itemsWon.map(s=>`${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}`).join(', ')}`:'';
  $('duelendsheet').innerHTML=`<h3>${won?'🏆 You won!':'💀 You lost'}</h3>
- <p><b>${esc(m.winner)}</b> won the duel (${esc(m.reason)}) and took the <b style="color:#ff8fd0">${m.pot}g</b> pot.${itemsTxt}</p>
+ <p><b>${esc(m.winner)}</b> won the duel (${esc(m.reason)}) and took the <b style="color:#e3c766">${m.pot}g</b> pot.${itemsTxt}</p>
  <p class="note">Your gold: ${me.gold}g · Record: ${me.wins}W/${me.losses}L · Rating ${me.rating}</p>
  <div class="btns"><button class="act" onclick="closeModal('duelendmodal')">Back to the plaza</button></div>`;
  $('duelendmodal').classList.add('open');
@@ -3139,12 +3698,19 @@ function npcFightUI(m){
    if(!npcFight) return;
    npcFight.hpYou=m.hpYou; npcFight.maxHpYou=m.maxHpYou; npcFight.hpNpc=m.hpNpc; npcFight.maxHpNpc=m.maxHpNpc; npcFight.energyYou=m.energyYou;
    if(me) me.specialEnergy=m.energyYou;
-   spawnSplatOn(npcAvatars[m.npcId],m.youHit,m.youSpecial);
-   spawnSplat(me.username,m.npcHit,false);
+   applyClosing(m); // Stage 8: on a closing tick, walk into reach (moveTo)
    const ba=npcAvatars[m.npcId];
+   // Swings + hitsplats only on real swings — a null hit field means
+   // that side never swung (closing tick / gated melee brother).
+   if(typeof m.youHit==='number'){ startSwing(me?avatars[me.username]:null); spawnSplatOn(ba,m.youHit,m.youSpecial); }
+   if(typeof m.npcHit==='number'){ startSwing(ba); spawnSplat(me.username,m.npcHit,false); }
    if(ba&&ba.isBrother){ ba.hp=m.hpNpc; ba.maxHp=m.maxHpNpc; ba.hpFill.style.width=clamp(m.hpNpc/Math.max(1,m.maxHpNpc)*100,0,100)+'%'; ba.hpWrap.style.display='block'; }
    const oppName=npcFight.kind==='barrows'? (npcFight.name.split(' ')[0]) : 'goblin';
-   let last=`You hit ${m.youHit}${m.youSpecial?' (DRAGON SLASH!)':''} · ${oppName} hit ${m.npcHit}`;
+   const parts=[];
+   if(typeof m.youHit==='number') parts.push(`You hit ${m.youHit}${m.youSpecial?' (DRAGON SLASH!)':''}`);
+   else parts.push('⚔️ Too far — walk up to strike!');
+   if(typeof m.npcHit==='number') parts.push(`${oppName} hit ${m.npcHit}`);
+   let last=parts.join(' · ');
    if(m.note) last=m.note;
    $('duellast').textContent=last;
    renderNpcBar(); renderOrbs();
@@ -3186,6 +3752,7 @@ function npcFightUI(m){
 }
 /* ================= Fight Caves UI (Stage 4) ================= */
 let fcRun=null; // {wave,hpYou,maxHpYou,targetId,targetHp,energyYou} — my active run
+let prevFcHp={}, prevFcMyHp=null; // Stage 8: last-seen HP per cave monster + me (hitsplats from drops)
 let jadWarnStyle=null, jadWarnTimer=null;
 function renderFcBar(){
  if(!fcRun) return;
@@ -3223,11 +3790,14 @@ function onFcState(m){
  }
  fcRun.wave=m.wave; fcRun.hpYou=m.hpYou; fcRun.maxHpYou=m.maxHpYou;
  fcMonsters={}; for(const mon of (m.monsters||[])) fcMonsters[mon.id]=mon;
+ prevFcHp={}; for(const mon of (m.monsters||[])) prevFcHp[mon.id]=mon.hp;
+ prevFcMyHp=m.hpYou;
  syncFcMonsters(); renderFcBar(); renderOrbs(); drawMinimap();
 }
 function onFcWave(m){
  if(fcRun) fcRun.wave=m.wave;
  fcMonsters={}; for(const mon of (m.monsters||[])) fcMonsters[mon.id]=mon;
+ prevFcHp={}; for(const mon of (m.monsters||[])) prevFcHp[mon.id]=mon.hp;
  syncFcMonsters();
  toast(`🌋 Wave ${m.wave} / 63`);
  logLine(`🌋 Wave ${m.wave} of 63 — ${(m.monsters||[]).length} monster${(m.monsters||[]).length===1?'':'s'} incoming.`);
@@ -3238,23 +3808,44 @@ function onFcTick(m){
  fcRun.wave=m.wave; fcRun.hpYou=m.hpYou; fcRun.maxHpYou=m.maxHpYou;
  fcRun.targetId=m.targetId; fcRun.targetHp=m.targetHp; fcRun.energyYou=m.energyYou;
  if(me) me.specialEnergy=m.energyYou;
- // The tick lists living monsters only: refresh HP, drop the dead.
+ applyClosing(m); // Stage 8: on a closing tick, walk into reach (moveTo)
+ // Stage 8 hitsplats, derived from HP drops (fc ticks carry state, not
+ // per-hit events): a monster's HP drop splats on it — and swings my
+ // knight when it's my target; my HP drop splats on me. A monster that
+ // vanished from the list died: its last HP is the killing splat.
  const aliveIds=new Set();
- for(const u of (m.monsters||[])){ aliveIds.add(u.id); if(fcMonsters[u.id]) fcMonsters[u.id].hp=u.hp; }
+ for(const u of (m.monsters||[])){
+   aliveIds.add(u.id);
+   const prev=prevFcHp[u.id];
+   if(typeof prev==='number'&&u.hp<prev){
+     spawnSplatOn(fcAvatars[u.id],prev-u.hp,false);
+     if(u.id===m.targetId) startSwing(me?avatars[me.username]:null);
+   }
+   prevFcHp[u.id]=u.hp;
+   if(fcMonsters[u.id]) fcMonsters[u.id].hp=u.hp;
+ }
+ for(const id of Object.keys(prevFcHp)){
+   if(!aliveIds.has(id)){
+     if(prevFcHp[id]>0){ spawnSplatOn(fcAvatars[id],prevFcHp[id],false); if(id===m.targetId) startSwing(me?avatars[me.username]:null); }
+     delete prevFcHp[id];
+   }
+ }
+ if(typeof prevFcMyHp==='number'&&m.hpYou<prevFcMyHp) spawnSplat(me.username,prevFcMyHp-m.hpYou,false);
+ prevFcMyHp=m.hpYou;
  for(const id of Object.keys(fcMonsters)){ if(!aliveIds.has(id)) delete fcMonsters[id]; }
  syncFcMonsters();
- // Hitsplats: your hit on the target; hits taken on you (blue 0 = blocked).
- const tgtA=m.targetId?fcAvatars[m.targetId]:null;
- if(tgtA && (m.youHit>0 || !m.note)) spawnSplatOn(tgtA,m.youHit,false);
+ // Blocked hits arrive in hitsTaken as 0-damage — blue splat each.
  let taken=0, blockedN=0, jadDmg=0;
  for(const h of (m.hitsTaken||[])){
    if(h.blocked){ blockedN++; spawnSplat(me.username,0,false); }
-   else if(h.dmg>0){ taken+=h.dmg; if(h.kind==='jad') jadDmg+=h.dmg; spawnSplat(me.username,h.dmg,false); }
+   else if(h.dmg>0){ taken+=h.dmg; if(h.kind==='jad') jadDmg+=h.dmg; }
  }
  let last;
  if(m.note) last=m.note;
+ else if(m.closing) last='⚔️ Too far — walk up to strike!';
  else {
-   const parts=[`You hit ${m.youHit}`];
+   const parts=[];
+   if(typeof m.youHit==='number') parts.push(`You hit ${m.youHit}`);
    if(jadDmg>0) parts.push(`JAD hit you for ${jadDmg}!`);
    else if(taken>0) parts.push(`they hit you for ${taken}`);
    if(blockedN>0) parts.push(`${blockedN} blocked 🛡️`);
@@ -3276,7 +3867,7 @@ function onFcTelegraph(m){
  jadWarnTimer=setTimeout(()=>{ $('jadwarn').style.display='none'; if(btn) btn.classList.remove('flash'); },1150);
 }
 function onFcEnd(m){
- fcRun=null; pendingFcAttack=null;
+ fcRun=null; pendingFcAttack=null; prevFcHp={}; prevFcMyHp=null;
  $('fcbar').classList.remove('open');
  $('jadwarn').style.display='none';
  clearFcMonsters();
@@ -3287,8 +3878,8 @@ function onFcEnd(m){
  if(m.reason==='complete'){
    const rw=m.reward;
    h=`<h3>🏆 FIRE CAPE! You beat TzTok-Jad!</h3>
-   <p>You cleared all 63 waves in <b style="color:#ff8fd0">${fmtMs(m.timeMs)}</b> — ${m.kills} kills this run.</p>
-   <p>Reward: <b style="color:#ff8fd0">+${rw?rw.gold:500}g</b> and the 🔥 <b>Fire cape</b> — check your backpack (or the bank, if your pack was full).</p>`;
+   <p>You cleared all 63 waves in <b style="color:#e3c766">${fmtMs(m.timeMs)}</b> — ${m.kills} kills this run.</p>
+   <p>Reward: <b style="color:#e3c766">+${rw?rw.gold:500}g</b> and the 🔥 <b>Fire cape</b> — check your backpack (or the bank, if your pack was full).</p>`;
  } else if(m.reason==='death'){
    h=`<h3>💀 You fell on wave ${m.wave}</h3>
    <p>${m.kills} kills this run. You wake up in the plaza at full health — nothing lost.</p>`;
@@ -3309,11 +3900,11 @@ function openFcStart(){
  $('fcstartsheet').innerHTML=`<h3>🌋 The Fight Caves</h3>
  <p>63 waves of monsters, one after another — Tz-Kih, Tz-Kek, Tok-Xil, Yt-MejKot and Ket-Zek — and on wave 63, <b>TzTok-Jad</b> himself. Beat him for the 🔥 <b>Fire cape</b> and <b>500g</b>.</p>
  <p class="note">Your fight HP is your Hitpoints level. Protect prayers fully block matching attacks. Jad telegraphs every attack — when the warning flashes, switch to the matching Protect prayer before it lands. Food, potions and Dragon Slash all work in there. Dying costs nothing.</p>
- <div class="setrow"><span class="grow">Attempts</span><b style="color:#ff8fd0">${f.attempts}</b></div>
- <div class="setrow"><span class="grow">Best wave</span><b style="color:#ff8fd0">${f.bestWave} / 63</b></div>
- <div class="setrow"><span class="grow">Total kills</span><b style="color:#ff8fd0">${f.kills}</b></div>
- <div class="setrow"><span class="grow">Completions</span><b style="color:#ff8fd0">${f.completions}</b></div>
- <div class="setrow"><span class="grow">Best clear time</span><b style="color:#ff8fd0">${f.bestTimeMs?fmtMs(f.bestTimeMs):'—'}</b></div>
+ <div class="setrow"><span class="grow">Attempts</span><b style="color:#e3c766">${f.attempts}</b></div>
+ <div class="setrow"><span class="grow">Best wave</span><b style="color:#e3c766">${f.bestWave} / 63</b></div>
+ <div class="setrow"><span class="grow">Total kills</span><b style="color:#e3c766">${f.kills}</b></div>
+ <div class="setrow"><span class="grow">Completions</span><b style="color:#e3c766">${f.completions}</b></div>
+ <div class="setrow"><span class="grow">Best clear time</span><b style="color:#e3c766">${f.bestTimeMs?fmtMs(f.bestTimeMs):'—'}</b></div>
  <div class="btns"><button class="act" onclick="startFcRun()">▶ Enter the Fight Caves</button><button class="ghost" onclick="closeModal('fcstartmodal')">Look around first</button></div>`;
  $('fcstartmodal').classList.add('open');
 }
