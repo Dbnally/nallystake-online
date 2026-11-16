@@ -604,6 +604,29 @@ const partyInvites = new Map(); // inviterKey -> { inviterKey, targetKey, expire
 const tradeRequests = new Map(); // tradeId -> { id, fromKey, toKey, expires, timer }
 const trades = new Map(); // tradeId -> { id, aKey, bKey, offers, confirmed, expires, timer }
 
+// ---------- Stage 7C: challenge '!' markers ----------
+// Derek's design: the CHALLENGER wears the '!', not the target. When a
+// challenge goes out, everyone hears who is challenging whom (clients
+// filter by area and badge the challenger); when it resolves — accept,
+// decline, expiry, or either side leaving — the marker clears.
+// Clients also auto-expire the marker after 30s, so a missed clear is
+// not fatal: these broadcasts are presentation, never game state.
+function broadcastChallenging(challengerKey, targetKey) {
+  const from = online.get(challengerKey);
+  if (!from) return;
+  const to = online.get(targetKey);
+  broadcast({ type: 'challenging', area: from.area, from: from.profile.username, to: to ? to.profile.username : null });
+}
+function broadcastChallengeClear(challengerKey) {
+  const from = online.get(challengerKey);
+  const u = db.users[challengerKey];
+  const name = from ? from.profile.username : (u ? u.profile.username : null);
+  if (!name) return;
+  const msg = { type: 'challenge_clear', from: name };
+  if (from) msg.area = from.area; // challenger offline: no current area to report
+  broadcast(msg);
+}
+
 // ---------- Areas (Stage 1) ----------
 // Each area has its own 0..800 x 0..450 coordinate space. A player's area
 // is SESSION-ONLY state (not saved): everyone logs back into the plaza.
@@ -655,11 +678,19 @@ function broadcast(obj, exceptKey) {
   for (const [k, p] of online) if (k !== exceptKey) send(p.ws, obj);
 }
 function playersSnapshot(area) {
+  const now = Date.now();
   return [...online.entries()].filter(([, p]) => !area || p.area === area).map(([k, p]) => ({
     username: p.profile.username, x: Math.round(p.x), y: Math.round(p.y), area: p.area,
     inDuel: !!p.duelId, activePrayer: p.profile.activePrayer || null,
     role: effectiveRole(p.profile), // Stage 7A
     party: partyListForKey(k), // Stage 7B: member usernames ([] when not in a party)
+    // Stage 7C: what this player is visibly doing right now, so other
+    // players can tell at a glance. A duel beats a monster fight,
+    // which beats a just-used skill (4s window after the action).
+    act: p.duelId ? 'duel'
+      : (p.npcFightId || p.barrowsFightId || p.fcRunId) ? 'fight'
+      : (p.actAt && now - p.actAt < 4000) ? (p.actSkill || null)
+      : null,
   }));
 }
 // State is per-area: players only see (and are seen by) their own area.
@@ -2105,7 +2136,7 @@ wss.on('connection', (ws, req) => {
   const profile = db.users[key].profile;
   ensureV2(profile);
   // Everyone logs into the plaza (area is session-only, never saved).
-  online.set(key, { ws, profile, x: 100 + Math.random() * 500, y: 100 + Math.random() * 250, area: 'plaza', duelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsPuzzleSolved: false });
+  online.set(key, { ws, profile, x: 100 + Math.random() * 500, y: 100 + Math.random() * 250, area: 'plaza', duelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsPuzzleSolved: false, actSkill: null, actAt: 0 });
   send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot('plaza'), area: 'plaza' });
   send(ws, pilesMsg('plaza')); // Stage 5: any drop piles waiting in the plaza
   send(ws, alliesMsg('plaza')); // Stage 6: any Tree Guardians standing in the plaza
@@ -2423,6 +2454,7 @@ wss.on('connection', (ws, req) => {
       }
       addXp(key, { [node.skill]: node.xp });
       save(key);
+      me.actSkill = node.skill; me.actAt = Date.now(); // Stage 7C: activity marker (training stations share this handler)
       send(ws, { type: 'gather_result', nodeId: node.id, ok: true, item: node.item, xp: node.xp });
       return sendProfile(key);
     }
@@ -2437,6 +2469,7 @@ wss.on('connection', (ws, req) => {
       fires.set(id, { id, area: me.area, x: me.x, y: me.y, expiresAt: Date.now() + FIRE_BURN_MS });
       addXp(key, { firemaking: 40 });
       save(key);
+      me.actSkill = 'firemaking'; me.actAt = Date.now(); // Stage 7C: activity marker
       broadcastFires(me.area);
       send(ws, { type: 'fire_lit', id, seconds: Math.round(FIRE_BURN_MS / 1000) });
       return sendProfile(key);
@@ -2462,6 +2495,7 @@ wss.on('connection', (ws, req) => {
       const xp = burnt ? 0 : recipe.xp;
       if (xp) addXp(key, { cooking: xp });
       save(key);
+      me.actSkill = 'cooking'; me.actAt = Date.now(); // Stage 7C: activity marker
       send(ws, { type: 'cook_result', ok: !burnt, item: resultItem, xp });
       return sendProfile(key);
     }
@@ -2493,6 +2527,7 @@ wss.on('connection', (ws, req) => {
       const xp = recipe.xp * qty;
       addXp(key, { smithing: xp });
       save(key);
+      me.actSkill = 'smithing'; me.actAt = Date.now(); // Stage 7C: activity marker
       send(ws, { type: 'smelt_result', bar, qty, xp });
       return sendProfile(key);
     }
@@ -2513,6 +2548,7 @@ wss.on('connection', (ws, req) => {
       if (stackQty(profile.backpack, rec.bar) < 1) return send(ws, { type: 'error', message: `You need 1 x ${ITEMS[rec.bar].name} in your backpack to start a ${ITEMS[item].name}.` });
       removeStacks(profile.backpack, rec.bar, 1);
       me.smithing = { item, progress: 0, heat: 100, heatAt: Date.now() };
+      me.actSkill = 'smithing'; me.actAt = Date.now(); // Stage 7C: activity marker
       save(key);
       send(ws, { type: 'smith_state', item, progress: 0, heat: 100, note: 'Work it at the anvil while it is hot — heat fades and cold metal barely moves. Unfinished work is session-only: finish before you log out or the bar is lost.' });
       return sendProfile(key);
@@ -2527,6 +2563,7 @@ wss.on('connection', (ws, req) => {
       const now = Date.now();
       if (now - (me.lastSmithHitAt || 0) < 300) return send(ws, { type: 'error', message: 'Too fast — one swing at a time.' });
       me.lastSmithHitAt = now;
+      me.actSkill = 'smithing'; me.actAt = now; // Stage 7C: activity marker
       const heat = smithHeatNow(sm);
       // Hot metal moves: +12..18 at heat 66+, +7..11 at 33+, +3..6 cold.
       const gain = heat >= 66 ? 12 + Math.floor(Math.random() * 7)
@@ -2555,6 +2592,7 @@ wss.on('connection', (ws, req) => {
       const now = Date.now();
       if (now - (me.lastReheatAt || 0) < 1000) return send(ws, { type: 'error', message: 'Too fast — the metal is still heating.' });
       me.lastReheatAt = now;
+      me.actSkill = 'smithing'; me.actAt = now; // Stage 7C: activity marker
       sm.heat = 100;
       sm.heatAt = now;
       return send(ws, { type: 'smith_state', item: sm.item, progress: sm.progress, heat: 100 });
@@ -3292,12 +3330,14 @@ wss.on('connection', (ws, req) => {
       const id = crypto.randomBytes(6).toString('hex');
       challenges.set(id, { from: key, to: targetKey, stake, items, expires: Date.now() + 30000 });
       send(target.ws, { type: 'challenge_incoming', challengeId: id, from: profile.username, stake, items, seconds: 30 });
+      broadcastChallenging(key, targetKey); // Stage 7C: '!' over the challenger
       send(ws, { type: 'chat', from: 'Game', text: `Challenge sent to ${target.profile.username} for ${stake}g${items.length ? ' + items' : ''}.` });
     }
     if (m.type === 'challenge_response') {
       const ch = challenges.get(m.challengeId);
-      if (!ch || ch.to !== key || ch.expires < Date.now()) { challenges.delete(m.challengeId); return send(ws, { type: 'error', message: 'That challenge is gone.' }); }
+      if (!ch || ch.to !== key || ch.expires < Date.now()) { if (ch) broadcastChallengeClear(ch.from); challenges.delete(m.challengeId); return send(ws, { type: 'error', message: 'That challenge is gone.' }); }
       challenges.delete(m.challengeId);
+      broadcastChallengeClear(ch.from); // Stage 7C: answered — the '!' comes down
       const fromP = online.get(ch.from);
       if (!fromP) return;
       if (!m.accept) { send(fromP.ws, { type: 'chat', from: 'Game', text: `${profile.username} declined. No gold or items were taken.` }); return; }
@@ -3330,6 +3370,11 @@ wss.on('connection', (ws, req) => {
     if (me && me.fcRunId) {
       const r = fcRuns.get(me.fcRunId);
       if (r) endFcRun(r, 'disconnect'); // records settle silently; the run is gone
+    }
+    // Stage 7C: pending challenges involving the leaver die with
+    // them — clear the challenger's '!' marker either way.
+    for (const [cid, ch] of [...challenges]) {
+      if (ch.from === key || ch.to === key) { challenges.delete(cid); broadcastChallengeClear(ch.from); }
     }
     // Stage 7A: pending official-fight offers and certificate
     // requests involving the leaver are cancelled (nothing is spent).
