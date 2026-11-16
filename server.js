@@ -74,6 +74,16 @@
 // whose winner earns a Certificate), the certificate exchange
 // (a Certificate trades to an online admin for 250g), and admin
 // item spawning. The client for these arrives in a follow-up stage.
+//
+// Stage 7B (server only) adds: the rest of Derek's tap-player menu —
+// Talk (private whispers), Examine (a read-only look at another
+// online player: role, area, levels, record, worn gear — never gold
+// or backpack), Invite (session-only parties, social only, no
+// gameplay effects) and Trade (two-sided, server-validated, atomic:
+// offers can be changed freely until BOTH sides confirm, any change
+// un-confirms both, and the swap re-validates against current
+// holdings at confirm time so nothing can be pulled mid-trade).
+// Challenge and Follow from that menu need no server work here.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -587,6 +597,12 @@ const duels = new Map(); // id -> duel
 // Stage 7A pending flows (session-only, like challenges):
 const fightOffers = new Map(); // id -> { id, runnerKey, aKey, bKey, accepted: Map/key->bool, expires, timer }
 const certRequests = new Map(); // requesterKey -> { requesterKey, handled }
+// Stage 7B social/trade state (session-only, never saved to profiles):
+const parties = new Map(); // partyId -> Set of player keys
+const partyOf = new Map(); // player key -> partyId
+const partyInvites = new Map(); // inviterKey -> { inviterKey, targetKey, expires, timer }
+const tradeRequests = new Map(); // tradeId -> { id, fromKey, toKey, expires, timer }
+const trades = new Map(); // tradeId -> { id, aKey, bKey, offers, confirmed, expires, timer }
 
 // ---------- Areas (Stage 1) ----------
 // Each area has its own 0..800 x 0..450 coordinate space. A player's area
@@ -639,10 +655,11 @@ function broadcast(obj, exceptKey) {
   for (const [k, p] of online) if (k !== exceptKey) send(p.ws, obj);
 }
 function playersSnapshot(area) {
-  return [...online.values()].filter((p) => !area || p.area === area).map((p) => ({
+  return [...online.entries()].filter(([, p]) => !area || p.area === area).map(([k, p]) => ({
     username: p.profile.username, x: Math.round(p.x), y: Math.round(p.y), area: p.area,
     inDuel: !!p.duelId, activePrayer: p.profile.activePrayer || null,
     role: effectiveRole(p.profile), // Stage 7A
+    party: partyListForKey(k), // Stage 7B: member usernames ([] when not in a party)
   }));
 }
 // State is per-area: players only see (and are seen by) their own area.
@@ -656,6 +673,160 @@ function broadcastState() {
 function sendProfile(key) {
   const p = online.get(key);
   if (p) send(p.ws, { type: 'profile', profile: publicProfile(p.profile) });
+}
+
+// ---------- Stage 7B helpers: parties ----------
+// Usernames in the party this player belongs to (including themselves),
+// or [] when they are not in a party. Party members are always online
+// (disconnect removes a member), but fall back to the saved username.
+function partyListForKey(key) {
+  const partyId = partyOf.get(key);
+  if (!partyId) return [];
+  const set = parties.get(partyId);
+  if (!set) return [];
+  return [...set].map((k) => {
+    const sess = online.get(k);
+    if (sess) return sess.profile.username;
+    const u = db.users[k];
+    return u ? u.profile.username : k;
+  });
+}
+function sendPartyUpdate(key) {
+  const sess = online.get(key);
+  if (sess) send(sess.ws, { type: 'party', members: partyListForKey(key) });
+}
+function partyChat(key, text) {
+  const sess = online.get(key);
+  if (sess) send(sess.ws, { type: 'chat', from: 'Game', text });
+}
+function clearPartyInvite(inviterKey) {
+  const inv = partyInvites.get(inviterKey);
+  if (inv) { clearTimeout(inv.timer); partyInvites.delete(inviterKey); }
+}
+function findPartyInviteForTarget(targetKey) {
+  for (const inv of partyInvites.values()) if (inv.targetKey === targetKey) return inv;
+  return null;
+}
+function clearPartyInvitesInvolving(key) {
+  for (const [inviterKey, inv] of [...partyInvites]) {
+    if (inviterKey === key || inv.targetKey === key) { clearTimeout(inv.timer); partyInvites.delete(inviterKey); }
+  }
+}
+// A party of one only ever exists while its invite is pending (see the
+// party_invite handler): when that invite dies, the solo party goes too.
+function dissolveSoloParty(key) {
+  const partyId = partyOf.get(key);
+  if (!partyId) return;
+  const set = parties.get(partyId);
+  if (set && set.size === 1 && set.has(key)) {
+    parties.delete(partyId);
+    partyOf.delete(key);
+    sendPartyUpdate(key);
+    broadcastState();
+  }
+}
+// Remove a player from their party: they get an empty party update,
+// the remaining members are notified and refreshed, and a party that
+// drops below 2 members dissolves (its last member goes partyless).
+function leaveParty(key) {
+  const partyId = partyOf.get(key);
+  if (!partyId) return false;
+  const set = parties.get(partyId);
+  const sess = online.get(key);
+  const username = sess ? sess.profile.username : (db.users[key] ? db.users[key].profile.username : key);
+  partyOf.delete(key);
+  if (set) set.delete(key);
+  sendPartyUpdate(key); // partyless now -> members []
+  const remaining = set ? [...set] : [];
+  if (remaining.length < 2) {
+    parties.delete(partyId);
+    for (const rk of remaining) {
+      partyOf.delete(rk);
+      sendPartyUpdate(rk);
+      partyChat(rk, `${username} left the party.`);
+    }
+  } else {
+    for (const rk of remaining) {
+      sendPartyUpdate(rk);
+      partyChat(rk, `${username} left the party.`);
+    }
+  }
+  broadcastState();
+  return true;
+}
+
+// ---------- Stage 7B helpers: trades ----------
+function activeTradeForKey(key) {
+  for (const t of trades.values()) if (t.aKey === key || t.bKey === key) return t;
+  return null;
+}
+function pendingTradeForKey(key) {
+  for (const r of tradeRequests.values()) if (r.fromKey === key || r.toKey === key) return r;
+  return null;
+}
+function clearTradeRequestsInvolving(key) {
+  for (const [id, r] of [...tradeRequests]) {
+    if (r.fromKey === key || r.toKey === key) { clearTimeout(r.timer); tradeRequests.delete(id); }
+  }
+}
+function tradeOfferView(offer) {
+  return { gold: offer.gold, items: offer.items.map((s) => ({ item: s.item, qty: s.qty })) };
+}
+// One update per side, each seeing their own offer as `you`.
+function sendTradeUpdate(trade) {
+  for (const k of [trade.aKey, trade.bKey]) {
+    const sess = online.get(k);
+    if (!sess) continue;
+    const other = k === trade.aKey ? trade.bKey : trade.aKey;
+    send(sess.ws, {
+      type: 'trade_update', tradeId: trade.id,
+      you: tradeOfferView(trade.offers[k]), them: tradeOfferView(trade.offers[other]),
+      youConfirmed: !!trade.confirmed[k], themConfirmed: !!trade.confirmed[other],
+    });
+  }
+}
+function closeTrade(trade) {
+  clearTimeout(trade.timer);
+  trades.delete(trade.id);
+}
+// Cancel an open trade: both sides hear it ended, nothing moves.
+function cancelTrade(trade, reason) {
+  if (!trades.has(trade.id)) return;
+  closeTrade(trade);
+  for (const k of [trade.aKey, trade.bKey]) {
+    const sess = online.get(k);
+    if (sess) send(sess.ws, { type: 'trade_done', tradeId: trade.id, ok: false, reason });
+  }
+}
+// Execute a both-confirmed trade: re-validate BOTH offers against the
+// CURRENT purses/backpacks first — if anything offered is no longer
+// there, the whole trade falls through and nothing moves. Otherwise
+// the swap is exact: each side loses what they offered and gains what
+// the other offered (items overflow to the bank, never lost).
+function executeTrade(trade) {
+  const aUser = db.users[trade.aKey], bUser = db.users[trade.bKey];
+  if (!aUser || !bUser) { cancelTrade(trade, 'The trade fell through — an item or the gold was no longer there.'); return; }
+  const aProf = aUser.profile, bProf = bUser.profile;
+  ensureV2(aProf); ensureV2(bProf);
+  const offerA = trade.offers[trade.aKey], offerB = trade.offers[trade.bKey];
+  const validA = offerA.gold <= aProf.gold && hasItems(aProf, offerA.items);
+  const validB = offerB.gold <= bProf.gold && hasItems(bProf, offerB.items);
+  if (!validA || !validB) { cancelTrade(trade, 'The trade fell through — an item or the gold was no longer there.'); return; }
+  aProf.gold -= offerA.gold; bProf.gold -= offerB.gold;
+  for (const s of offerA.items) removeStacks(aProf.backpack, s.item, s.qty);
+  for (const s of offerB.items) removeStacks(bProf.backpack, s.item, s.qty);
+  aProf.gold += offerB.gold; bProf.gold += offerA.gold;
+  for (const s of offerB.items) addItemToProfile(aProf, s.item, s.qty);
+  for (const s of offerA.items) addItemToProfile(bProf, s.item, s.qty);
+  save(trade.aKey); save(trade.bKey);
+  closeTrade(trade);
+  sendProfile(trade.aKey); sendProfile(trade.bKey);
+  for (const k of [trade.aKey, trade.bKey]) {
+    const sess = online.get(k);
+    if (!sess) continue;
+    const otherKey = k === trade.aKey ? trade.bKey : trade.aKey;
+    send(sess.ws, { type: 'trade_done', tradeId: trade.id, ok: true, with: db.users[otherKey].profile.username });
+  }
 }
 
 const STYLES = {
@@ -793,6 +964,11 @@ function endDuel(duel, winnerKey, reason) {
 }
 
 function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null) {
+  // Stage 7B: a duel starting cancels any open trade involving either
+  // fighter first — the trade's other party is notified, nothing moves.
+  for (const t of [...trades.values()]) {
+    if (t.aKey === aKey || t.bKey === aKey || t.aKey === bKey || t.bKey === bKey) cancelTrade(t, 'Trade cancelled — a duel is starting.');
+  }
   const a = db.users[aKey].profile, b = db.users[bKey].profile;
   // Escrow: both gold stakes AND both item stakes leave purses/backpacks
   // before the first tick. A decline never reaches here, so takes nothing.
@@ -2897,6 +3073,208 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
+    // ----- Stage 7B: Talk (whispers) -----
+    if (m.type === 'whisper') {
+      const text = String(m.text || '').trim().slice(0, 200);
+      if (!text) return; // empty whispers are ignored, like empty chat
+      const targetName = String(m.to || '').trim();
+      const targetKey = userKeyFor(m.to);
+      const target = online.get(targetKey);
+      if (!target) return send(ws, { type: 'error', message: `${targetName} is not online.` });
+      if (targetKey !== key) send(target.ws, { type: 'whisper', from: profile.username, text });
+      // Echo to the sender (with `to`) so their client renders their own line.
+      return send(ws, { type: 'whisper', from: profile.username, to: target.profile.username, text });
+    }
+
+    // ----- Stage 7B: Examine (read-only; never gold or backpack) -----
+    if (m.type === 'examine') {
+      const targetName = String(m.target || '').trim();
+      const targetKey = userKeyFor(m.target);
+      const target = online.get(targetKey);
+      if (!target) return send(ws, { type: 'error', message: `${targetName} is not online.` });
+      ensureV2(target.profile);
+      const levels = levelsOf(target.profile);
+      return send(ws, {
+        type: 'examine',
+        player: {
+          username: target.profile.username, role: effectiveRole(target.profile), area: target.area,
+          combatLevel: Math.round(combatLevelOf(levels) * 100) / 100,
+          totalLevel: SKILLS.reduce((t, s) => t + levels[s], 0),
+          wins: target.profile.wins, losses: target.profile.losses, rating: target.profile.rating,
+          style: target.profile.style, worn: { ...target.profile.worn }, inDuel: !!target.duelId,
+        },
+      });
+    }
+
+    // ----- Stage 7B: parties (Invite) -----
+    if (m.type === 'party_invite') {
+      const targetName = String(m.target || '').trim();
+      const targetKey = userKeyFor(m.target);
+      const target = online.get(targetKey);
+      if (!target) return send(ws, { type: 'error', message: `${targetName} is not online.` });
+      if (targetKey === key) return send(ws, { type: 'error', message: 'You cannot invite yourself.' });
+      const myPartyId = partyOf.get(key);
+      if (myPartyId && parties.get(myPartyId) && parties.get(myPartyId).has(targetKey)) {
+        return send(ws, { type: 'error', message: `${target.profile.username} is already in your party.` });
+      }
+      // One pending invite per inviter and per target: stale ones go.
+      const staleForTarget = findPartyInviteForTarget(targetKey);
+      if (staleForTarget) clearPartyInvite(staleForTarget.inviterKey);
+      if (partyInvites.has(key)) clearPartyInvite(key);
+      // Not in a party yet: I become a party of one pending the invite.
+      if (!partyOf.has(key)) {
+        const partyId = crypto.randomBytes(6).toString('hex');
+        parties.set(partyId, new Set([key]));
+        partyOf.set(key, partyId);
+        sendPartyUpdate(key);
+        broadcastState();
+      }
+      const inv = { inviterKey: key, targetKey, expires: Date.now() + 30000, timer: null };
+      inv.timer = setTimeout(() => {
+        if (!partyInvites.has(key)) return;
+        partyInvites.delete(key);
+        const inviterSess = online.get(key);
+        if (inviterSess) send(inviterSess.ws, { type: 'chat', from: 'Game', text: `Your party invite to ${targetName} expired.` });
+        dissolveSoloParty(key);
+      }, 30000);
+      if (inv.timer.unref) inv.timer.unref();
+      partyInvites.set(key, inv);
+      return send(target.ws, { type: 'party_invite', from: profile.username });
+    }
+    if (m.type === 'party_reply') {
+      const inv = findPartyInviteForTarget(key);
+      if (!inv) return send(ws, { type: 'error', message: 'No party invite is pending.' });
+      if (inv.expires < Date.now()) {
+        clearPartyInvite(inv.inviterKey);
+        dissolveSoloParty(inv.inviterKey);
+        return send(ws, { type: 'error', message: 'That party invite has expired.' });
+      }
+      const inviterKey = inv.inviterKey;
+      clearPartyInvite(inviterKey);
+      const inviter = online.get(inviterKey);
+      if (m.accept !== true) {
+        if (inviter) send(inviter.ws, { type: 'chat', from: 'Game', text: `${profile.username} declined your party invite.` });
+        dissolveSoloParty(inviterKey);
+        return;
+      }
+      if (!inviter) return send(ws, { type: 'error', message: 'That party invite has expired.' });
+      // Joining from a different party: leave that one first.
+      const myPartyId = partyOf.get(key);
+      if (myPartyId && myPartyId !== partyOf.get(inviterKey)) leaveParty(key);
+      let partyId = partyOf.get(inviterKey);
+      if (!partyId) {
+        partyId = crypto.randomBytes(6).toString('hex');
+        parties.set(partyId, new Set([inviterKey]));
+        partyOf.set(inviterKey, partyId);
+      }
+      const set = parties.get(partyId);
+      set.add(key);
+      partyOf.set(key, partyId);
+      for (const mk of [...set]) {
+        sendPartyUpdate(mk);
+        partyChat(mk, `${profile.username} joined the party.`);
+      }
+      broadcastState();
+      return;
+    }
+    if (m.type === 'party_leave') {
+      if (!partyOf.has(key)) return send(ws, { type: 'error', message: 'You are not in a party.' });
+      leaveParty(key);
+      return;
+    }
+
+    // ----- Stage 7B: trades -----
+    if (m.type === 'trade_request') {
+      const targetKey = userKeyFor(m.target);
+      const target = online.get(targetKey);
+      if (!target || targetKey === key) return send(ws, { type: 'error', message: 'Pick another online player.' });
+      if (me.duelId || target.duelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
+      if (me.npcFightId || target.npcFightId) return send(ws, { type: 'error', message: 'One of you is fighting a monster.' });
+      if (me.barrowsFightId || target.barrowsFightId) return send(ws, { type: 'error', message: 'One of you is fighting a Barrows brother.' });
+      if (me.fcRunId || target.fcRunId) return send(ws, { type: 'error', message: 'One of you is in the Fight Caves.' });
+      if (activeTradeForKey(key) || activeTradeForKey(targetKey)) return send(ws, { type: 'error', message: 'One of you is already in a trade.' });
+      if (pendingTradeForKey(key) || pendingTradeForKey(targetKey)) return send(ws, { type: 'error', message: 'A trade request is already pending for one of you.' });
+      const id = crypto.randomBytes(6).toString('hex');
+      const req = { id, fromKey: key, toKey: targetKey, expires: Date.now() + 30000, timer: null };
+      req.timer = setTimeout(() => {
+        if (!tradeRequests.has(id)) return;
+        tradeRequests.delete(id);
+        const fromSess = online.get(key);
+        if (fromSess) send(fromSess.ws, { type: 'chat', from: 'Game', text: `Your trade request to ${target.profile.username} expired.` });
+      }, 30000);
+      if (req.timer.unref) req.timer.unref();
+      tradeRequests.set(id, req);
+      send(target.ws, { type: 'trade_incoming', from: profile.username, tradeId: id });
+      return send(ws, { type: 'chat', from: 'Game', text: `Trade request sent to ${target.profile.username}.` });
+    }
+    if (m.type === 'trade_response') {
+      const req = tradeRequests.get(String(m.tradeId || ''));
+      if (!req || req.toKey !== key || req.expires < Date.now()) {
+        if (req) { clearTimeout(req.timer); tradeRequests.delete(req.id); }
+        return send(ws, { type: 'error', message: 'That trade request is gone.' });
+      }
+      clearTimeout(req.timer);
+      tradeRequests.delete(req.id);
+      const fromSess = online.get(req.fromKey);
+      if (m.accept !== true) {
+        if (fromSess) send(fromSess.ws, { type: 'chat', from: 'Game', text: `${profile.username} declined your trade request.` });
+        return;
+      }
+      if (!fromSess) return send(ws, { type: 'error', message: 'That trade request is gone.' });
+      // Re-check busy state at accept time, like challenge_response.
+      if (me.duelId || fromSess.duelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
+      if (activeTradeForKey(key) || activeTradeForKey(req.fromKey)) return send(ws, { type: 'error', message: 'One of you is already in a trade.' });
+      const trade = {
+        id: req.id, aKey: req.fromKey, bKey: key,
+        offers: { [req.fromKey]: { gold: 0, items: [] }, [key]: { gold: 0, items: [] } },
+        confirmed: { [req.fromKey]: false, [key]: false },
+        expires: Date.now() + 120000, timer: null,
+      };
+      trade.timer = setTimeout(() => { if (trades.has(trade.id)) cancelTrade(trade, 'Trade timed out.'); }, 120000);
+      if (trade.timer.unref) trade.timer.unref();
+      trades.set(trade.id, trade);
+      send(fromSess.ws, { type: 'trade_open', tradeId: trade.id, with: profile.username });
+      return send(ws, { type: 'trade_open', tradeId: trade.id, with: fromSess.profile.username });
+    }
+    if (m.type === 'trade_offer') {
+      const trade = trades.get(String(m.tradeId || ''));
+      if (!trade || (trade.aKey !== key && trade.bKey !== key)) return send(ws, { type: 'error', message: 'That trade is gone.' });
+      const gold = m.gold === undefined ? 0 : +m.gold;
+      if (!Number.isFinite(gold) || gold < 0 || Math.floor(gold) !== gold) return send(ws, { type: 'error', message: 'Invalid gold amount.' });
+      if (gold > profile.gold) return send(ws, { type: 'error', message: 'You don\'t have that much gold.' });
+      const rawItems = m.items === undefined ? [] : m.items;
+      if (!Array.isArray(rawItems)) return send(ws, { type: 'error', message: 'Invalid items.' });
+      const merged = new Map();
+      for (const e of rawItems.slice(0, 28)) {
+        const item = String((e && e.item) || '');
+        const qty = Math.floor(+(e && e.qty) || 0);
+        if (!ITEMS[item]) return send(ws, { type: 'error', message: 'Unknown item.' });
+        if (qty < 1) return send(ws, { type: 'error', message: 'Invalid item quantity.' });
+        merged.set(item, (merged.get(item) || 0) + qty);
+      }
+      const items = [...merged.entries()].map(([item, qty]) => ({ item, qty }));
+      if (!hasItems(profile, items)) return send(ws, { type: 'error', message: 'You don\'t have all the items you tried to offer.' });
+      trade.offers[key] = { gold, items };
+      // Anti-scam: any offer change un-confirms BOTH sides.
+      trade.confirmed[trade.aKey] = false;
+      trade.confirmed[trade.bKey] = false;
+      return sendTradeUpdate(trade);
+    }
+    if (m.type === 'trade_confirm') {
+      const trade = trades.get(String(m.tradeId || ''));
+      if (!trade || (trade.aKey !== key && trade.bKey !== key)) return send(ws, { type: 'error', message: 'That trade is gone.' });
+      trade.confirmed[key] = true;
+      sendTradeUpdate(trade);
+      if (trade.confirmed[trade.aKey] && trade.confirmed[trade.bKey]) executeTrade(trade);
+      return;
+    }
+    if (m.type === 'trade_cancel') {
+      const trade = trades.get(String(m.tradeId || ''));
+      if (!trade || (trade.aKey !== key && trade.bKey !== key)) return send(ws, { type: 'error', message: 'That trade is gone.' });
+      cancelTrade(trade, 'Trade cancelled.');
+      return;
+    }
+
     // ----- Challenges & duels -----
     if (m.type === 'challenge') {
       const targetKey = String(m.target || '').toLowerCase();
@@ -2966,6 +3344,16 @@ wss.on('connection', (ws, req) => {
       }
     }
     certRequests.delete(key);
+    // Stage 7B: leaving removes you from your party (remaining
+    // members are notified and refreshed; a party under 2 dissolves),
+    // clears pending party invites involving you, cancels any active
+    // trade (the other side is notified) and clears pending trade
+    // requests involving you.
+    clearPartyInvitesInvolving(key);
+    if (partyOf.has(key)) leaveParty(key);
+    const myTrade = activeTradeForKey(key);
+    if (myTrade) cancelTrade(myTrade, 'Trade cancelled — the other player left.');
+    clearTradeRequestsInvolving(key);
     // Stage 6: a Tree Guardian is session-only — it goes when you do.
     if (allies.has(key)) { const ally = allies.get(key); allies.delete(key); broadcastAllies(ally.area); }
     online.delete(key);
