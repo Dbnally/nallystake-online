@@ -135,6 +135,11 @@
  .pickrow{display:flex;align-items:center;gap:7px;font-size:13px;padding:4px 0;border-bottom:1px solid #3d1440}
  .pickrow .grow{flex:1}
  .pickrow input{width:58px;padding:4px}
+ .sheet.wide{width:min(580px,96vw)}
+ button.ghost:disabled{opacity:.45}
+ /* Stage 7B: follow chip */
+ #followchip{position:fixed;left:146px;bottom:170px;z-index:30;background:rgba(24,10,26,var(--uia));border:2px solid #8b5cf6;border-radius:10px;padding:6px 8px;font-size:12px;font-weight:700;display:none;align-items:center;gap:7px}
+ #followchip.on{display:flex}
  /* auth + errors */
  #auth{position:fixed;inset:0;z-index:60;background:linear-gradient(160deg,#2a0a33,#160a2e 55%,#0d1b2e);display:flex;align-items:center;justify-content:center;padding:16px}
  #auth .card{background:#1d0b22;border:2px solid #ff4fa3;border-radius:14px;padding:18px;width:min(400px,94vw);box-shadow:0 0 34px #ff4fa333}
@@ -222,6 +227,8 @@
  <button class="qbtn actbtn" id="jumpbtn" title="Jump — moving jumps flip in the direction you're travelling!">🤸<span class="qlbl">JUMP</span></button>
 </div>
 
+<div id="followchip"><span id="followtxt">🚶 Following</span><button class="ghost" id="followstop">✖ Stop</button></div>
+
 <div id="duelbar">
  <div class="t" id="dueltitle">⚔️ Duel</div>
  <div id="duelofficial" style="display:none;text-align:center;font-weight:800;color:#ffd75e;font-size:12px;margin-bottom:4px"></div>
@@ -275,6 +282,12 @@
 <div class="modal" id="lootmodal"><div class="sheet" id="lootsheet"></div></div>
 <div class="modal" id="fightoffermodal"><div class="sheet" id="fightoffersheet"></div></div>
 <div class="modal" id="certreqmodal"><div class="sheet" id="certreqsheet"></div></div>
+<div class="modal" id="playermenumodal"><div class="sheet" id="playermenusheet"></div></div>
+<div class="modal" id="talkmodal"><div class="sheet" id="talksheet"></div></div>
+<div class="modal" id="examinemodal"><div class="sheet" id="examinesheet"></div></div>
+<div class="modal" id="partyinvitemodal"><div class="sheet" id="partyinvitesheet"></div></div>
+<div class="modal" id="tradeincomingmodal"><div class="sheet" id="tradeincomingsheet"></div></div>
+<div class="modal" id="trademodal"><div class="sheet wide" id="tradesheet"></div></div>
 
 <div id="toast"></div>
 
@@ -466,6 +479,14 @@ function onMsg(m){
  if(m.type==='online_list'){ lastOnlineList=m.players||[]; if(drawerPanel==='admin') renderDrawer(); }
  if(m.type==='fight_offer'){ openFightOffer(m); }
  if(m.type==='cert_request'){ openCertRequest(m); }
+ if(m.type==='whisper'){ if(m.to) logLine(`💬 you → ${m.to}: ${m.text}`); else logLine(`💬 ${m.from} → you: ${m.text}`); }
+ if(m.type==='examine'){ openExamine(m); }
+ if(m.type==='party_invite'){ openPartyInvite(m); }
+ if(m.type==='party'){ myParty=m.members||[]; if(drawerPanel==='players') renderDrawer(); }
+ if(m.type==='trade_incoming'){ openTradeIncoming(m); }
+ if(m.type==='trade_open'){ openTrade(m); }
+ if(m.type==='trade_update'){ onTradeUpdate(m); }
+ if(m.type==='trade_done'){ onTradeDone(m); }
  if(m.type==='duel_start'){ startDuelUI(m); }
  if(m.type==='duel_tick'){ duelTickUI(m); }
  if(m.type==='duel_end'){ endDuelUI(m); }
@@ -1964,13 +1985,14 @@ function handleTap(cx,cy){
    const d=Math.hypot(s.x-cx,s.y-cy);
    if(d<44 && d<bestD){ best=name; bestD=d; }
  }
- if(best){ if(best!==me.username) openChallenge(best); return; }
+ if(best){ if(best!==me.username) openPlayerMenu(best); return; }
  // ground -> walk there (or just face it, in Face tap mode)
  const groundRoot=areaGroups[curArea];
  const gh=groundRoot? raycaster.intersectObjects(groundRoot.children.filter(o=>o.geometry&&o.geometry.type==='PlaneGeometry'),false)[0] : null;
  if(gh){
    const pt={x:clamp(wx2s(gh.point.x),0,800), y:clamp(wz2s(gh.point.z),0,450)};
    pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false;
+   stopFollow();
    if(settings.tapMode==='face') faceToward(pt); else tapTarget=pt;
  }
 }
@@ -2021,7 +2043,7 @@ function stepMovement(dt){
  if(keys.w||keys.arrowup) f+=1; if(keys.s||keys.arrowdown) f-=1;
  if(keys.d||keys.arrowright) r+=1; if(keys.a||keys.arrowleft) r-=1;
  f+=-joyVec.y; r+=joyVec.x;
- if(f||r){ tapTarget=null; pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false; stopGather(); const l=Math.hypot(f,r); f/=l; r/=l;
+ if(f||r){ tapTarget=null; pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false; stopGather(); stopFollow(); const l=Math.hypot(f,r); f/=l; r/=l;
    vx=(-sYaw*f + cYaw*r); vz=(-cYaw*f - sYaw*r); myVel={x:vx,z:vz}; }
  else if(tapTarget){
    const dx=tapTarget.x-myPos.x, dy=tapTarget.y-myPos.y, d=Math.hypot(dx,dy);
@@ -2149,6 +2171,7 @@ $('minimap').addEventListener('pointerdown',e=>{
  const lx=(dx*c-dy*s)/MM_S, ly=(dx*s+dy*c)/MM_S;
  pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false;
  stopGather();
+ stopFollow();
  tapTarget={x:clamp(myPos.x+lx,0,800), y:clamp(myPos.y+ly,0,450)};
 });
 /* ================= main loop / init ================= */
@@ -2434,9 +2457,19 @@ function pPrayers(){
 }
 /* ---- Players ---- */
 function pPlayers(){
+ let h='';
+ if(myParty.length>=2){
+   h+=`<h4 style="margin:2px 0 5px;color:#ff8fd0">🎉 Your party</h4>`;
+   h+=`<div class="rowline"><span class="grow">${myParty.map(n=>esc(n)).join(' · ')}</span><button class="ghost" onclick="send({type:'party_leave'})">Leave party</button></div>`;
+   h+=`<p class="note" style="margin-bottom:8px">Party is just for grouping up — no shared rewards yet.</p>`;
+ }
  const others=players.filter(p=>p.username!==me.username);
- if(!others.length) return `<p>Just you in the plaza so far.<br><span class="note">Share the link — when a friend signs in, they'll appear here and in the plaza. Tap their knight (or their name here) to challenge them.</span></p>`;
- return others.map(p=>`<div class="rowline"><span class="ic">🧍</span><span class="grow"><b>${rolePrefix(p.role)}${esc(p.username)}</b> ${p.activePrayer?PRAYER_BADGE[p.activePrayer]:''}<br><span class="sub">${p.inDuel?'in a duel':'in the plaza'}</span></span>${p.inDuel?'':`<button class="act" onclick="openChallenge('${esc(p.username)}')">Challenge</button>`}</div>`).join('');
+ if(!others.length){
+   h+=`<p>Just you in this area so far.<br><span class="note">Share the link — when a friend signs in, they'll appear here and in the world. Tap their knight (or the Menu button here) to invite, challenge, trade, follow, talk or examine them.</span></p>`;
+   return h;
+ }
+ h+=others.map(p=>`<div class="rowline"><span class="ic">🧍</span><span class="grow"><b>${myParty.includes(p.username)?'👥 ':''}${rolePrefix(p.role)}${esc(p.username)}</b> ${p.activePrayer?PRAYER_BADGE[p.activePrayer]:''}<br><span class="sub">${p.inDuel?'in a duel':'in the plaza'}</span></span>${p.inDuel?'':`<button class="act" onclick="openPlayerMenu('${esc(p.username)}')">Menu</button>`}</div>`).join('');
+ return h;
 }
 /* ---- Admin (Stage 7A) ---- */
 let lastAdminList=null, lastOnlineList=null;
@@ -2666,7 +2699,7 @@ window.openChallenge=function(name){
    closeModal('challengemodal');
  };
 };
-window.closeModal=function(id){ $(id).classList.remove('open'); if(id==='incomingmodal') stopIncomingTimer(); if(id==='fightoffermodal') stopFightOfferTimer(); };
+window.closeModal=function(id){ $(id).classList.remove('open'); if(id==='incomingmodal') stopIncomingTimer(); if(id==='fightoffermodal') stopFightOfferTimer(); if(id==='partyinvitemodal') stopPartyInviteTimer(); if(id==='tradeincomingmodal') stopTradeReqTimer(); };
 let incomingCh=null, incomingTimer=null;
 function stopIncomingTimer(){ if(incomingTimer){ clearInterval(incomingTimer); incomingTimer=null; } }
 function openIncoming(m){
@@ -2713,11 +2746,186 @@ function openCertRequest(m){
  $('crapprove').onclick=()=>{ send({type:'cert_reply',from:m.from,accept:true}); closeModal('certreqmodal'); };
  $('crdecline').onclick=()=>{ send({type:'cert_reply',from:m.from,accept:false}); closeModal('certreqmodal'); };
 }
+/* ================= Stage 7B: tap-player menu, party, trade, follow, examine, talk ================= */
+let myParty=[]; // usernames in MY party (from 'party' messages; [] = no party)
+/* ---- Tap-player menu ---- */
+window.openPlayerMenu=function(name){
+ const p=players.find(x=>x.username===name);
+ const inParty=myParty.includes(name);
+ $('playermenusheet').innerHTML=`<h3>${p?rolePrefix(p.role):''}${esc(name)}</h3>
+ <button class="ghost" style="width:100%;margin-bottom:6px" ${inParty?'disabled':''} onclick="pmInvite('${esc(name)}')">${inParty?'🎉 In your party ✓':'🎉 Invite'}</button>
+ <button class="act" style="width:100%;margin-bottom:6px" onclick="pmChallenge('${esc(name)}')">⚔️ Challenge</button>
+ <button class="ghost" style="width:100%;margin-bottom:6px" onclick="pmTrade('${esc(name)}')">🤝 Trade</button>
+ <button class="ghost" style="width:100%;margin-bottom:6px" onclick="pmFollow('${esc(name)}')">🚶 Follow</button>
+ <button class="ghost" style="width:100%;margin-bottom:6px" onclick="pmTalk('${esc(name)}')">💬 Talk</button>
+ <button class="ghost" style="width:100%;margin-bottom:6px" onclick="pmExamine('${esc(name)}')">🔍 Examine</button>
+ <div class="btns"><button class="ghost" onclick="closeModal('playermenumodal')">Close</button></div>`;
+ $('playermenumodal').classList.add('open');
+};
+window.pmInvite=function(name){ closeModal('playermenumodal'); send({type:'party_invite',target:name}); };
+window.pmChallenge=function(name){ closeModal('playermenumodal'); openChallenge(name); };
+window.pmTrade=function(name){ closeModal('playermenumodal'); send({type:'trade_request',target:name}); };
+window.pmFollow=function(name){ closeModal('playermenumodal'); startFollow(name); };
+window.pmTalk=function(name){ closeModal('playermenumodal'); openTalk(name); };
+window.pmExamine=function(name){ closeModal('playermenumodal'); send({type:'examine',target:name}); };
+/* ---- Talk: whisper compose sheet (replies render in the chat log) ---- */
+window.openTalk=function(name){
+ $('talksheet').innerHTML=`<h3>💬 Talk to ${esc(name)}</h3>
+ <input id="talktext" placeholder="Private message…" maxlength="200" style="width:100%;box-sizing:border-box">
+ <div class="btns"><button class="act" id="talksend">Send</button><button class="ghost" onclick="closeModal('talkmodal')">Cancel</button></div>
+ <p class="note">Only ${esc(name)} will see this — it appears in the chat log as a 💬 line.</p>`;
+ $('talkmodal').classList.add('open');
+ const inp=$('talktext');
+ const doSend=()=>{ const v=inp.value.trim(); if(v) send({type:'whisper',to:name,text:v}); closeModal('talkmodal'); };
+ $('talksend').onclick=doSend;
+ inp.addEventListener('keydown',e=>{ if(e.key==='Enter') doSend(); });
+ setTimeout(()=>{ try{ inp.focus(); }catch(e){} },50);
+};
+/* ---- Examine sheet ---- */
+const AREA_LABELS={plaza:'🏰 Plaza',goblins:'👺 Goblin Camp',training:'🏋️ Training Cave',gathering:'⛏️ Gathering Cave',cove:'🎣 Fishing Cove',mine:'⛏️🔥 Emberfall Mine & Smithy',fightcaves:'🌋 Fight Caves',barrows:'💀 Barrows',barrows_tunnels:'💀 Barrows Tunnels',arena:'⚔️ Duel Arena'};
+function openExamine(m){
+ const p=m.player; if(!p) return;
+ const wornRows=SLOT_DEFS.filter(([slot])=>p.worn&&p.worn[slot]).map(([slot,label])=>`<div class="rowline"><span class="ic">${iconOf(p.worn[slot])}</span><span class="grow"><b>${label}</b><br><span class="sub">${esc(nameOf(p.worn[slot]))}</span></span></div>`).join('');
+ $('examinesheet').innerHTML=`<h3>${rolePrefix(p.role)}${esc(p.username)}</h3>
+ <div class="setrow"><span class="grow">Role</span><b style="color:#ff8fd0">${ROLE_LABEL[p.role]||'Player'}</b></div>
+ <div class="setrow"><span class="grow">⚔️ Combat level</span><b style="color:#ff8fd0">${p.combatLevel}</b></div>
+ <div class="setrow"><span class="grow">📊 Total level</span><b style="color:#ff8fd0">${p.totalLevel}</b></div>
+ <div class="setrow"><span class="grow">🏆 Duels</span><b style="color:#ff8fd0">${p.wins}W – ${p.losses}L</b></div>
+ <div class="setrow"><span class="grow">⭐ Rating</span><b style="color:#ff8fd0">${p.rating}</b></div>
+ <div class="setrow"><span class="grow">🥊 Style</span><b style="color:#ff8fd0">${esc(p.style||'')}</b></div>
+ <div class="setrow"><span class="grow">📍 Area</span><b style="color:#ff8fd0">${AREA_LABELS[p.area]||esc(p.area||'')}</b></div>
+ ${p.inDuel?`<div class="setrow"><span class="grow">⚔️ Status</span><b style="color:#ff8fd0">In a duel right now</b></div>`:''}
+ <h4 style="margin:10px 0 5px;color:#ff8fd0">🗡️ Worn</h4>
+ ${wornRows||'<p class="note">Wearing nothing.</p>'}
+ <div class="btns"><button class="act" onclick="closeModal('examinemodal')">Close</button></div>`;
+ $('examinemodal').classList.add('open');
+}
+/* ---- Party invite card ---- */
+let partyInviteTimer=null;
+function stopPartyInviteTimer(){ if(partyInviteTimer){ clearInterval(partyInviteTimer); partyInviteTimer=null; } }
+function openPartyInvite(m){
+ $('partyinvitesheet').innerHTML=`<h3>🎉 Party invite</h3>
+ <p><b>${esc(m.from)}</b> invites you to their party.</p>
+ <p class="note" id="picount"></p>
+ <div class="btns"><button class="act" id="piaccept">Join party</button><button class="ghost" id="pidecline">Decline</button></div>`;
+ $('partyinvitemodal').classList.add('open');
+ let left=30;
+ const upd=()=>{ const el=$('picount'); if(el) el.textContent=`⏱ ${left}s to answer`; };
+ upd();
+ stopPartyInviteTimer();
+ partyInviteTimer=setInterval(()=>{ left--; if(left<=0){ stopPartyInviteTimer(); closeModal('partyinvitemodal'); toast('Party invite expired.'); } else upd(); },1000);
+ $('piaccept').onclick=()=>{ send({type:'party_reply',accept:true}); stopPartyInviteTimer(); closeModal('partyinvitemodal'); };
+ $('pidecline').onclick=()=>{ send({type:'party_reply',accept:false}); stopPartyInviteTimer(); closeModal('partyinvitemodal'); };
+}
+/* ---- Trade: incoming request card ---- */
+let tradeReqTimer=null;
+function stopTradeReqTimer(){ if(tradeReqTimer){ clearInterval(tradeReqTimer); tradeReqTimer=null; } }
+function openTradeIncoming(m){
+ $('tradeincomingsheet').innerHTML=`<h3>🤝 Trade request</h3>
+ <p><b>${esc(m.from)}</b> wants to trade with you.</p>
+ <p class="note" id="tricount"></p>
+ <div class="btns"><button class="act" id="traaccept">Accept — trade!</button><button class="ghost" id="tradec">Decline</button></div>`;
+ $('tradeincomingmodal').classList.add('open');
+ let left=30;
+ const upd=()=>{ const el=$('tricount'); if(el) el.textContent=`⏱ ${left}s to answer`; };
+ upd();
+ stopTradeReqTimer();
+ tradeReqTimer=setInterval(()=>{ left--; if(left<=0){ stopTradeReqTimer(); closeModal('tradeincomingmodal'); toast('Trade request expired.'); } else upd(); },1000);
+ $('traaccept').onclick=()=>{ send({type:'trade_response',tradeId:m.tradeId,accept:true}); stopTradeReqTimer(); closeModal('tradeincomingmodal'); };
+ $('tradec').onclick=()=>{ send({type:'trade_response',tradeId:m.tradeId,accept:false}); stopTradeReqTimer(); closeModal('tradeincomingmodal'); };
+}
+/* ---- Trade: the window ---- */
+let trade=null; // {id, with, you:{gold,items}, them:{gold,items}, youConfirmed, themConfirmed}
+let tradeCancelMine=false; // I hit Cancel — the echoing trade_done stays quiet
+function openTrade(m){
+ trade={id:m.tradeId,with:m.with,you:{gold:0,items:[]},them:{gold:0,items:[]},youConfirmed:false,themConfirmed:false};
+ tradeCancelMine=false;
+ $('tradesheet').innerHTML=`<h3>🤝 Trading with ${esc(m.with)}</h3>
+ <div id="tradeinputs">
+  <div class="rowline"><span class="grow">Gold (you have ${me?me.gold:0}g)</span><input type="number" id="tradegold" value="0" min="0"></div>
+  ${pickerHTML('trp')}
+  <div class="btns"><button class="act" id="tradeupdate">Update offer</button></div>
+ </div>
+ <div id="tradestate"></div>
+ <p class="note" style="margin-top:8px">Changing your offer un-confirms BOTH sides — always re-check before confirming.</p>
+ <div class="btns"><button class="act" id="tradeconfirm">Confirm trade</button><button class="ghost" id="tradecancel">Cancel</button></div>`;
+ $('trademodal').classList.add('open');
+ renderTradeState();
+ $('tradeupdate').onclick=()=>{ if(!trade) return; const g=clamp(Math.floor(+$('tradegold').value||0),0,me?me.gold:0); send({type:'trade_offer',tradeId:trade.id,gold:g,items:readPicker('trp')}); };
+ $('tradeconfirm').onclick=()=>{ if(trade) send({type:'trade_confirm',tradeId:trade.id}); };
+ $('tradecancel').onclick=()=>{ if(trade){ tradeCancelMine=true; send({type:'trade_cancel',tradeId:trade.id}); } trade=null; closeModal('trademodal'); };
+}
+function offerList(o){
+ const parts=[];
+ if(o&&o.gold>0) parts.push(`🪙 ${o.gold}g`);
+ for(const s of ((o&&o.items)||[])) parts.push(`${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}`);
+ return parts.length? parts.join('<br>') : '<span class="sub">Nothing</span>';
+}
+function renderTradeState(){
+ if(!trade) return;
+ const el=$('tradestate'); if(!el) return;
+ el.innerHTML=`<div class="detail"><b>Your offer</b> <span class="note">— as the server sees it</span><br>${offerList(trade.you)}<br><span class="note">${trade.youConfirmed?'You confirmed ✓':'You have not confirmed yet.'}</span></div>
+ <div class="detail"><b>${esc(trade.with)}'s offer</b><br>${offerList(trade.them)}<br><span class="note">${trade.themConfirmed?'They confirmed ✓':'They have not confirmed yet.'}</span></div>
+ ${trade.youConfirmed&&!trade.themConfirmed?'<p class="note" style="margin-top:6px">Waiting for them to confirm…</p>':''}`;
+ const cb=$('tradeconfirm');
+ if(cb){ cb.disabled=!!trade.youConfirmed; cb.textContent=trade.youConfirmed?'✓ Confirmed — waiting…':'Confirm trade'; }
+}
+function onTradeUpdate(m){
+ if(!trade||m.tradeId!==trade.id) return;
+ trade.you=m.you; trade.them=m.them; trade.youConfirmed=!!m.youConfirmed; trade.themConfirmed=!!m.themConfirmed;
+ if($('trademodal').classList.contains('open')) renderTradeState(); // server-state sections only — my inputs stay untouched
+}
+function onTradeDone(m){
+ if(trade&&m.tradeId!==trade.id) return; // a stale trade I already left behind
+ const wasMine=tradeCancelMine; tradeCancelMine=false;
+ trade=null;
+ closeModal('trademodal');
+ if(m.ok){ toast('🤝 Trade complete!'); logLine(`🤝 Trade with ${m.with||'the other player'} complete.`); }
+ else if(!wasMine) toast(m.reason||'Trade ended.');
+}
+/* ---- Follow mode (client-only: walk toward a player in my area) ---- */
+let followTarget=null, followPoint=null, followSetAt=0, followMissingAt=0;
+function startFollow(name){
+ followTarget=name; followPoint=null; followSetAt=0; followMissingAt=0;
+ $('followtxt').textContent=`🚶 Following ${name}`;
+ $('followchip').classList.add('on');
+ toast(`🚶 Following ${name} — use the stick, tap the ground, or tap ✖ to stop.`);
+}
+function stopFollow(){
+ if(!followTarget) return;
+ followTarget=null; followPoint=null; followMissingAt=0;
+ $('followchip').classList.remove('on');
+}
+$('followstop').onclick=()=>{ stopFollow(); tapTarget=null; };
+function followTick(){
+ if(!followTarget) return;
+ if(duel||npcFight||fcRun){ stopFollow(); return; } // a fight started — following ends
+ if(!me||!myPos) return;
+ const p=players.find(x=>x.username===followTarget);
+ if(!p){
+   if(!followMissingAt) followMissingAt=Date.now();
+   else if(Date.now()-followMissingAt>10000){ const n=followTarget; stopFollow(); tapTarget=null; toast(`Lost sight of ${n} — follow stopped.`); }
+   return;
+ }
+ followMissingAt=0;
+ const dx=p.x-myPos.x, dy=p.y-myPos.y, d=Math.hypot(dx,dy);
+ if(d<=60){ // close enough — stand here
+   if(tapTarget&&followPoint&&tapTarget.x===followPoint.x&&tapTarget.y===followPoint.y) tapTarget=null;
+   return;
+ }
+ // stand ~40 server units from them, on my side of them
+ const pt={x:Math.round(clamp(p.x-(dx/d)*40,0,800)), y:Math.round(clamp(p.y-(dy/d)*40,0,450))};
+ const now=Date.now();
+ if(!followPoint||Math.hypot(pt.x-followPoint.x,pt.y-followPoint.y)>10||now-followSetAt>500){
+   followPoint=pt; followSetAt=now; tapTarget=pt; // stepMovement walks there + sends the moves
+ }
+}
 /* ================= duel UI ================= */
 let duel=null;
 let npcFight=null;
 function startDuelUI(m){
  stopGather();
+ stopFollow();
  duel={id:m.duelId,opponent:m.opponent,pot:m.pot,hpYou:99,hpOpponent:99,energyYou:Math.floor(me?me.specialEnergy||0:0),escrow:m.escrowItems||[],arena:m.arena||null};
  me=m.profile;
  if(m.arena&&m.arena.id) setArenaVariant(m.arena.id); // recolour the pit for this duel
@@ -2790,6 +2998,7 @@ function npcFightUI(m){
  if(m.phase==='start'){
    pendingAttack=null;
    stopGather();
+   stopFollow();
    npcFight={npcId:m.npcId,kind:m.kind||'goblin',name:m.name||'Goblin',combatLevel:m.combatLevel||5,hpYou:m.hpYou,maxHpYou:m.maxHpYou,hpNpc:m.hpNpc,maxHpNpc:m.maxHpNpc,energyYou:Math.floor(m.energyYou||0)};
    $('duelbar').classList.add('open');
    $('duelflee').style.display='block';
@@ -2889,6 +3098,7 @@ function renderFcBar(){
  sb.onclick=()=>send({type:'special'});
 }
 function onFcState(m){
+ stopFollow();
  if(!fcRun){
    fcRun={wave:m.wave,hpYou:m.hpYou,maxHpYou:m.maxHpYou,targetId:null,targetHp:0,energyYou:Math.floor(me?me.specialEnergy||0:0)};
    $('fcbar').classList.add('open');
@@ -3008,5 +3218,7 @@ renderQuickButtons();
 // While a piece is on the anvil, refresh the Smithy panel once a second so
 // the heat bar visibly cools (the server fades heat 1 point per 2 seconds).
 setInterval(()=>{ if(smithState&&drawerPanel==='smithy') renderDrawer(); },1000);
+// Stage 7B: follow mode steering (checks 3× a second; stepMovement does the walking).
+setInterval(followTick,300);
 </script>
 </body></html>
