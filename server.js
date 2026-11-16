@@ -64,6 +64,16 @@
 // Fight Caves — never in PvP duels, and it waits outside the arena
 // while its owner duels), and sometimes takes a hit meant for its
 // owner. Nothing about guardians is saved: logging out removes yours.
+//
+// Stage 7A (server only) adds: roles & permissions (the account
+// 'nally' is the permanent owner; stored roles are player / mod /
+// admin), admin role/style management, the NC and Certificate token
+// items (never bought, sold or exchanged), mod certification
+// (+1 NC, admin/owner only), mod-run official fights (a certified
+// mod — or an admin/owner — spends 1 NC to run a zero-stake duel
+// whose winner earns a Certificate), the certificate exchange
+// (a Certificate trades to an online admin for 250g), and admin
+// item spawning. The client for these arrives in a follow-up stage.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -233,6 +243,16 @@ for (const [id, name, accBonus, maxBonus] of [
 ]) {
   ITEMS[id] = { name, kind: 'weapon', slot: 'weapon', sellOnly: 800, accBonus, maxBonus };
 }
+// Stage 7A: NC and Certificate tokens. kind 'token': stackable like
+// any other backpack stack, but NEVER buyable in a shop, NEVER
+// sellable to a shop and NEVER on the Gold Exchange — sellOnly 0
+// (mirroring fire_cape) makes sellPrice() return 0, and the shop /
+// exchange handlers additionally guard on kind 'token' with the
+// error 'That can't be sold.'. NC is spent by certified mods (and
+// admins/owners) to run official fights; a Certificate is what an
+// official-fight winner earns, exchangeable to an admin for 250g.
+ITEMS.nc = { name: 'NC', icon: '🪙', kind: 'token', sellOnly: 0 };
+ITEMS.certificate = { name: 'Certificate', icon: '📜', kind: 'token', sellOnly: 0 };
 const SHOPS = ['Potion', 'Weapon', 'Armour', 'Food & Supplies', 'Pickaxe Pete'];
 const exchangePrices = {};
 for (const g of GOODS) exchangePrices[g.id] = g.base;
@@ -240,6 +260,7 @@ for (const g of GOODS) exchangePrices[g.id] = g.base;
 function sellPrice(itemId) {
   const def = ITEMS[itemId];
   if (!def) return 0;
+  if (def.kind === 'token') return 0; // Stage 7A: tokens are never sellable
   if (def.buy) return Math.max(1, Math.floor(def.buy * SHOP_SELLBACK));
   if (def.sellOnly) return def.sellOnly; // Stage 2 resources: fixed buy-back
   return 0;
@@ -253,6 +274,7 @@ function catalogList() {
     heal: d.heal || 0, prayerRestore: d.prayerRestore || 0,
     accBonus: d.accBonus || 0, maxBonus: d.maxBonus || 0, reduction: d.reduction || 0,
     speed: d.speed || 0, // Stage 3: pickaxe speed multiplier (0 for non-tools)
+    icon: d.icon || null, // Stage 7A: token icons (null for older items)
   }));
 }
 function goodsList() {
@@ -329,6 +351,10 @@ function newProfile(username) {
     // looted flag (the round resets the moment the chest is looted,
     // so this is never persisted as true — it completes the shape).
     barrows: { kills: [], tunnel: null, looted: false },
+    // Stage 7A roles: stored role ('player' | 'mod' | 'admin') plus
+    // the mod certification flag. The 'owner' role is never stored —
+    // it is computed from the username (see effectiveRole).
+    role: 'player', certified: false,
   };
 }
 // Migration: Phase 1 accounts gain the v2 fields with defaults. Existing
@@ -373,7 +399,38 @@ function ensureV2(p) {
     if (p.barrows.tunnel !== null && !BARROWS_BROTHERS[p.barrows.tunnel]) { p.barrows.tunnel = null; changed = true; }
     if (typeof p.barrows.looted !== 'boolean') { p.barrows.looted = false; changed = true; }
   }
+  // Stage 7A migration: role + certified. An unknown/corrupt stored
+  // role falls back to 'player'; certification is a plain boolean.
+  if (p.role !== 'player' && p.role !== 'mod' && p.role !== 'admin') { p.role = 'player'; changed = true; }
+  if (typeof p.certified !== 'boolean') { p.certified = false; changed = true; }
   return changed;
+}
+// Stage 7A: the EFFECTIVE role of a session ({profile}), a profile,
+// a db record ({profile}) or a username/key string. The account
+// 'nally' (any casing) is permanently the owner — its stored role is
+// ignored. Everyone else's effective role is their stored role.
+function effectiveRole(sessOrProfile) {
+  if (!sessOrProfile) return 'player';
+  let prof = null;
+  if (typeof sessOrProfile === 'string') {
+    const u = db.users[sessOrProfile.toLowerCase()];
+    prof = u ? u.profile : { username: sessOrProfile };
+  } else if (sessOrProfile.profile) prof = sessOrProfile.profile;
+  else prof = sessOrProfile;
+  if (!prof) return 'player';
+  if (String(prof.username || '').toLowerCase() === 'nally') return 'owner';
+  if (prof.role === 'admin') return 'admin';
+  if (prof.role === 'mod') return 'mod';
+  return 'player';
+}
+function isAdminOrOwner(sessOrProfile) {
+  const r = effectiveRole(sessOrProfile);
+  return r === 'admin' || r === 'owner';
+}
+// Normalise a client-supplied username to its db key (usernames are
+// stored trimmed; keys are the lowercased name).
+function userKeyFor(username) {
+  return String(username || '').trim().toLowerCase();
 }
 function publicProfile(p) {
   ensureV2(p);
@@ -395,10 +452,13 @@ function publicProfile(p) {
     fc: { ...p.fc },
     // Stage 5 Barrows run state (kills this round + tunnel crypt).
     barrows: { kills: [...p.barrows.kills], tunnel: p.barrows.tunnel, looted: p.barrows.looted },
+    // Stage 7A: effective role (owner computed) + certification flag.
+    role: effectiveRole(p), certified: !!p.certified,
   };
 }
 function leaderboardProfile(p) {
-  return { username: p.username, gold: p.gold, rating: p.rating, wins: p.wins, losses: p.losses, style: p.style };
+  ensureV2(p);
+  return { username: p.username, gold: p.gold, rating: p.rating, wins: p.wins, losses: p.losses, style: p.style, role: effectiveRole(p) };
 }
 // Grant XP in one or more skills: applies the gains, sends one
 // {type:'xp'} notice per skill (the client turns these into XP drops),
@@ -454,6 +514,16 @@ function sanitizeItems(list) {
 }
 function hasItems(profile, items) {
   return items.every((s) => stackQty(profile.backpack, s.item) >= s.qty);
+}
+// Stage 7A helper (the codebase's overflow-to-bank pattern, factored):
+// add qty of an item to a profile's backpack; whatever does not fit
+// overflows into the bank so a grant is never lost. Works for online
+// and offline profiles alike — the caller saves and, if the target is
+// online, pushes a fresh profile with sendProfile().
+function addItemToProfile(profile, item, qty) {
+  ensureV2(profile);
+  const leftover = addStacks(profile.backpack, item, qty, BACKPACK_MAX_STACKS);
+  if (leftover > 0) addStacks(profile.bank, item, leftover);
 }
 
 // ---------- HTTP: static client + account APIs ----------
@@ -514,6 +584,9 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 const online = new Map(); // usernameKey -> { ws, profile, x, y, area, duelId, npcFightId }
 const challenges = new Map(); // id -> { from, to, stake, items, expires }
 const duels = new Map(); // id -> duel
+// Stage 7A pending flows (session-only, like challenges):
+const fightOffers = new Map(); // id -> { id, runnerKey, aKey, bKey, accepted: Map/key->bool, expires, timer }
+const certRequests = new Map(); // requesterKey -> { requesterKey, handled }
 
 // ---------- Areas (Stage 1) ----------
 // Each area has its own 0..800 x 0..450 coordinate space. A player's area
@@ -569,6 +642,7 @@ function playersSnapshot(area) {
   return [...online.values()].filter((p) => !area || p.area === area).map((p) => ({
     username: p.profile.username, x: Math.round(p.x), y: Math.round(p.y), area: p.area,
     inDuel: !!p.duelId, activePrayer: p.profile.activePrayer || null,
+    role: effectiveRole(p.profile), // Stage 7A
   }));
 }
 // State is per-area: players only see (and are seen by) their own area.
@@ -682,6 +756,13 @@ function endDuel(duel, winnerKey, reason) {
     if (leftover > 0) addStacks(winner.bank, s.item, leftover);
     itemsWon.push({ item: s.item, qty: s.qty });
   }
+  // Stage 7A: an OFFICIAL duel (run by a certified mod / admin /
+  // owner for 1 NC) pays its winner a Certificate — backpack first,
+  // overflow to the bank, exactly like item escrow above. This runs
+  // before the saves and the duel_end profiles below, so the win is
+  // already visible in both.
+  const officialRunner = duel.official && duel.official.runner ? String(duel.official.runner) : null;
+  if (officialRunner) addItemToProfile(winner, 'certificate', 1);
   winner.wins += 1; loser.losses += 1;
   winner.rating += 11; loser.rating = Math.max(0, loser.rating - 11);
   save(winnerKey); save(loserKey);
@@ -699,10 +780,19 @@ function endDuel(duel, winnerKey, reason) {
     }
   }
   broadcast({ type: 'chat', from: 'Duel Master', text: `${winner.username} beat ${loser.username} for ${duel.pot}g (${reason}).` });
+  // Stage 7A: official-duel settlement is announced game-wide, and
+  // the runner hears it directly as well (the broadcast already
+  // reaches them; the admin_note makes it unmissable in their feed).
+  if (officialRunner) {
+    const line = `🏆 ${winner.username} won the official fight run by ${officialRunner} and earned a Certificate!`;
+    broadcast({ type: 'chat', from: 'Game', text: line });
+    const runnerSess = online.get(officialRunner.toLowerCase());
+    if (runnerSess) send(runnerSess.ws, { type: 'admin_note', text: line });
+  }
   broadcastState();
 }
 
-function startDuel(aKey, bKey, stake, itemsA = [], itemsB = []) {
+function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null) {
   const a = db.users[aKey].profile, b = db.users[bKey].profile;
   // Escrow: both gold stakes AND both item stakes leave purses/backpacks
   // before the first tick. A decline never reaches here, so takes nothing.
@@ -721,6 +811,7 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = []) {
     hp: { [aKey]: 99, [bKey]: 99 }, specialQueued: { [aKey]: false, [bKey]: false },
     done: false, timer: null,
     arena: { id: arenaDef.id, name: arenaDef.name },
+    official: official || null, // Stage 7A: { runner: username } for mod-run fights
   };
   duels.set(id, duel);
   const sessA = online.get(aKey), sessB = online.get(bKey);
@@ -730,7 +821,7 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = []) {
   for (const k of [aKey, bKey]) {
     const p = online.get(k);
     send(p.ws, { type: 'area', area: 'arena' });
-    send(p.ws, { type: 'duel_start', duelId: id, stake, pot: duel.pot, escrowItems, arena: duel.arena, you: db.users[k].profile.username, opponent: db.users[k === aKey ? bKey : aKey].profile.username, profile: publicProfile(db.users[k].profile) });
+    send(p.ws, { type: 'duel_start', duelId: id, stake, pot: duel.pot, escrowItems, arena: duel.arena, official: duel.official, you: db.users[k].profile.username, opponent: db.users[k === aKey ? bKey : aKey].profile.username, profile: publicProfile(db.users[k].profile) });
   }
   broadcast({ type: 'chat', from: 'Duel Master', text: `${a.username} vs ${b.username} — now fighting in the ${arenaDef.name}!` });
   broadcastState();
@@ -2343,6 +2434,7 @@ wss.on('connection', (ws, req) => {
       const def = ITEMS[item];
       const qty = Math.max(1, Math.min(999, Math.floor(+m.qty || 1)));
       if (!def) return send(ws, { type: 'error', message: 'Unknown item.' });
+      if (def.kind === 'token') return send(ws, { type: 'error', message: "That can't be sold." });
       // Shops buy anything with a sell price: their own stock at 60%
       // back, and Stage 2 gathered resources at their fixed sellOnly.
       if (!sellPrice(item)) return send(ws, { type: 'error', message: 'The shops don\'t buy that — try the Gold Exchange.' });
@@ -2488,7 +2580,11 @@ wss.on('connection', (ws, req) => {
 
     // ----- Gold Exchange -----
     if (m.type === 'exchange_buy' || m.type === 'exchange_sell') {
-      const good = GOODS.find((g) => g.id === String(m.good || ''));
+      // Stage 7A: tokens are never Exchange goods — a sell attempt
+      // gets the token error, not the generic unknown-good one.
+      const wantedGood = String(m.good || '');
+      if (ITEMS[wantedGood] && ITEMS[wantedGood].kind === 'token') return send(ws, { type: 'error', message: "That can't be sold." });
+      const good = GOODS.find((g) => g.id === wantedGood);
       const qty = Math.max(1, Math.min(999, Math.floor(+m.qty || 1)));
       if (!good) return send(ws, { type: 'error', message: 'Unknown exchange good.' });
       const price = exchangePrices[good.id];
@@ -2551,6 +2647,256 @@ wss.on('connection', (ws, req) => {
       return send(ws, { type: 'chat', from: 'Game', text: 'Dragon Slash queued — it fires on the next tick.' });
     }
 
+    // ----- Stage 7A: roles, certification, official fights, spawning -----
+    if (m.type === 'set_role') {
+      const senderRole = effectiveRole(profile);
+      if (senderRole !== 'owner' && senderRole !== 'admin') return send(ws, { type: 'error', message: 'You do not have permission to do that.' });
+      const role = String(m.role || '');
+      if (role !== 'player' && role !== 'mod' && role !== 'admin') return send(ws, { type: 'error', message: 'Invalid role.' });
+      const targetKey = userKeyFor(m.target);
+      const targetUser = db.users[targetKey];
+      if (!targetUser) return send(ws, { type: 'error', message: 'No such player.' });
+      ensureV2(targetUser.profile);
+      const targetEff = effectiveRole(targetUser.profile);
+      if (senderRole === 'admin') {
+        if (role === 'admin') return send(ws, { type: 'error', message: 'Admins cannot create admins.' });
+        if (targetEff !== 'player' && targetEff !== 'mod') return send(ws, { type: 'error', message: 'Admins can only change players and mods.' });
+      }
+      targetUser.profile.role = role;
+      if (role !== 'mod') targetUser.profile.certified = false;
+      save(targetKey);
+      const note = `Set ${targetUser.profile.username}'s role to ${role}.`;
+      const targetSess = online.get(targetKey);
+      if (targetSess) {
+        sendProfile(targetKey);
+        send(targetSess.ws, { type: 'chat', from: 'Game', text: `Your role is now ${role}.` });
+        send(targetSess.ws, { type: 'admin_note', text: `Your role is now ${role}.` });
+      }
+      send(ws, { type: 'admin_note', text: note });
+      send(ws, { type: 'chat', from: 'Game', text: note });
+      broadcastState();
+      return;
+    }
+    if (m.type === 'set_style_admin') {
+      if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'You do not have permission to do that.' });
+      const targetKey = userKeyFor(m.target);
+      const targetSess = online.get(targetKey);
+      if (!targetSess) return send(ws, { type: 'error', message: 'That player is not online.' });
+      const style = String(m.style || '');
+      if (!STYLES[style]) return send(ws, { type: 'error', message: 'Unknown style.' });
+      targetSess.profile.style = style;
+      save(targetKey);
+      send(targetSess.ws, { type: 'profile', profile: publicProfile(targetSess.profile) });
+      send(targetSess.ws, { type: 'chat', from: 'Game', text: `An admin set your style to ${style}.` });
+      send(targetSess.ws, { type: 'admin_note', text: `Your style was set to ${style} by an admin.` });
+      const note = `Set ${targetSess.profile.username}'s style to ${style}.`;
+      send(ws, { type: 'admin_note', text: note });
+      send(ws, { type: 'chat', from: 'Game', text: note });
+      return;
+    }
+    if (m.type === 'admin_list') {
+      if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'You do not have permission to do that.' });
+      const players = Object.entries(db.users).map(([k, u]) => {
+        ensureV2(u.profile);
+        return { username: u.profile.username, role: effectiveRole(u.profile), certified: !!u.profile.certified, online: online.has(k) };
+      });
+      return send(ws, { type: 'admin_list', players });
+    }
+    if (m.type === 'online_list') {
+      const r = effectiveRole(profile);
+      if (r !== 'mod' && r !== 'admin' && r !== 'owner') return send(ws, { type: 'error', message: 'You do not have permission to do that.' });
+      const players = [...online.values()].map((sess) => ({ username: sess.profile.username, area: sess.area, role: effectiveRole(sess.profile) }));
+      return send(ws, { type: 'online_list', players });
+    }
+    if (m.type === 'certify') {
+      if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'You do not have permission to do that.' });
+      const targetKey = userKeyFor(m.target);
+      const targetUser = db.users[targetKey];
+      if (!targetUser) return send(ws, { type: 'error', message: 'No such player.' });
+      ensureV2(targetUser.profile);
+      if (effectiveRole(targetUser.profile) !== 'mod') return send(ws, { type: 'error', message: 'Only mods can be certified.' });
+      targetUser.profile.certified = true;
+      addItemToProfile(targetUser.profile, 'nc', 1);
+      save(targetKey);
+      const targetSess = online.get(targetKey);
+      if (targetSess) {
+        sendProfile(targetKey);
+        send(targetSess.ws, { type: 'chat', from: 'Game', text: `⭐ You were certified by ${profile.username} (+1 NC).` });
+        send(targetSess.ws, { type: 'admin_note', text: `You were certified by ${profile.username} (+1 NC).` });
+      }
+      broadcast({ type: 'chat', from: 'Game', text: `⭐ ${targetUser.profile.username} was certified by ${profile.username} (+1 NC).` });
+      send(ws, { type: 'admin_note', text: `Certified ${targetUser.profile.username} (+1 NC).` });
+      return;
+    }
+    if (m.type === 'spawn_item') {
+      if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'You do not have permission to do that.' });
+      const item = String(m.item || '');
+      if (!ITEMS[item]) return send(ws, { type: 'error', message: 'Unknown item.' });
+      const qty = Math.max(1, Math.min(99, Math.floor(+m.qty || 1)));
+      const targetKey = m.target ? userKeyFor(m.target) : key;
+      const targetUser = db.users[targetKey];
+      if (!targetUser) return send(ws, { type: 'error', message: 'No such player.' });
+      ensureV2(targetUser.profile);
+      addItemToProfile(targetUser.profile, item, qty);
+      save(targetKey);
+      const targetSess = online.get(targetKey);
+      if (targetSess) {
+        sendProfile(targetKey);
+        if (targetKey !== key) {
+          send(targetSess.ws, { type: 'chat', from: 'Game', text: `You received ${qty} x ${ITEMS[item].name}.` });
+          send(targetSess.ws, { type: 'admin_note', text: `You received ${qty} x ${ITEMS[item].name}.` });
+        }
+      }
+      const note = `Spawned ${qty} x ${ITEMS[item].name} for ${targetUser.profile.username}.`;
+      send(ws, { type: 'admin_note', text: note });
+      if (targetKey !== key) send(ws, { type: 'chat', from: 'Game', text: note });
+      return;
+    }
+    if (m.type === 'run_fight') {
+      const senderRole = effectiveRole(profile);
+      const allowed = senderRole === 'admin' || senderRole === 'owner' || (senderRole === 'mod' && !!profile.certified);
+      if (!allowed) {
+        if (senderRole === 'mod') return send(ws, { type: 'error', message: 'You need to be certified to run official fights.' });
+        return send(ws, { type: 'error', message: 'You do not have permission to run official fights.' });
+      }
+      const aKey = userKeyFor(m.a);
+      const bKey = userKeyFor(m.b);
+      if (!aKey || !bKey || aKey === bKey) return send(ws, { type: 'error', message: 'Pick two different fighters.' });
+      if (aKey === key || bKey === key) return send(ws, { type: 'error', message: 'The runner cannot be a fighter.' });
+      const sessA = online.get(aKey);
+      const sessB = online.get(bKey);
+      if (!sessA || !sessB) return send(ws, { type: 'error', message: 'Both fighters must be online.' });
+      // Mirror the challenge busy-checks for the runner and both fighters.
+      for (const sess of [me, sessA, sessB]) {
+        if (sess.duelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
+        if (sess.npcFightId) return send(ws, { type: 'error', message: 'One of you is fighting a monster.' });
+        if (sess.barrowsFightId) return send(ws, { type: 'error', message: 'One of you is fighting a Barrows brother.' });
+        if (sess.fcRunId) return send(ws, { type: 'error', message: 'One of you is in the Fight Caves.' });
+      }
+      for (const o of fightOffers.values()) {
+        if (o.runnerKey === key || o.aKey === aKey || o.bKey === aKey || o.aKey === bKey || o.bKey === bKey) {
+          return send(ws, { type: 'error', message: 'A fight offer is already pending for one of those players.' });
+        }
+      }
+      if (stackQty(profile.backpack, 'nc') < 1) return send(ws, { type: 'error', message: 'You need 1 NC to run an official fight.' });
+      const id = crypto.randomBytes(6).toString('hex');
+      const offer = { id, runnerKey: key, aKey, bKey, accepted: {}, expires: Date.now() + 30000, timer: null };
+      offer.timer = setTimeout(() => {
+        if (!fightOffers.has(id)) return;
+        fightOffers.delete(id);
+        const line = 'The official fight offer expired.';
+        const rSess = online.get(offer.runnerKey);
+        if (rSess) { send(rSess.ws, { type: 'chat', from: 'Game', text: line }); send(rSess.ws, { type: 'admin_note', text: line }); }
+        for (const fk of [offer.aKey, offer.bKey]) {
+          const fSess = online.get(fk);
+          if (fSess) send(fSess.ws, { type: 'chat', from: 'Game', text: line });
+        }
+      }, 30000);
+      if (offer.timer.unref) offer.timer.unref();
+      fightOffers.set(id, offer);
+      send(sessA.ws, { type: 'fight_offer', id, fightId: id, from: profile.username, opponent: sessB.profile.username });
+      send(sessB.ws, { type: 'fight_offer', id, fightId: id, from: profile.username, opponent: sessA.profile.username });
+      send(ws, { type: 'admin_note', text: `Official fight offer sent: ${sessA.profile.username} vs ${sessB.profile.username}.` });
+      send(ws, { type: 'chat', from: 'Game', text: `Official fight offer sent: ${sessA.profile.username} vs ${sessB.profile.username}.` });
+      return;
+    }
+    if (m.type === 'fight_reply') {
+      let offer = null;
+      for (const o of fightOffers.values()) if (o.aKey === key || o.bKey === key) { offer = o; break; }
+      if (!offer) return send(ws, { type: 'error', message: 'No fight offer is pending.' });
+      if (offer.expires < Date.now()) {
+        clearTimeout(offer.timer); fightOffers.delete(offer.id);
+        return send(ws, { type: 'error', message: 'That fight offer has expired.' });
+      }
+      const runnerSess = online.get(offer.runnerKey);
+      const otherKey = offer.aKey === key ? offer.bKey : offer.aKey;
+      const otherSess = online.get(otherKey);
+      if (m.accept !== true) {
+        // Decline: spend nothing, tell the runner and the other fighter.
+        clearTimeout(offer.timer); fightOffers.delete(offer.id);
+        const line = `${profile.username} declined the official fight — the fight is off. No NC was spent.`;
+        if (runnerSess) { send(runnerSess.ws, { type: 'chat', from: 'Game', text: line }); send(runnerSess.ws, { type: 'admin_note', text: line }); }
+        if (otherSess) send(otherSess.ws, { type: 'chat', from: 'Game', text: line });
+        return;
+      }
+      offer.accepted[key] = true;
+      if (!(offer.accepted[offer.aKey] && offer.accepted[offer.bKey])) {
+        if (runnerSess) send(runnerSess.ws, { type: 'admin_note', text: `${profile.username} accepted the official fight.` });
+        return;
+      }
+      // Both accepted: claim the offer first so nothing double-starts.
+      clearTimeout(offer.timer); fightOffers.delete(offer.id);
+      const runnerUser = db.users[offer.runnerKey];
+      const runnerProfile = runnerUser ? runnerUser.profile : null;
+      const sessA2 = online.get(offer.aKey);
+      const sessB2 = online.get(offer.bKey);
+      const cancelAll = (line) => {
+        for (const s of [runnerSess, sessA2, sessB2]) if (s) send(s.ws, { type: 'chat', from: 'Game', text: line });
+        if (runnerSess) send(runnerSess.ws, { type: 'admin_note', text: line });
+      };
+      if (!runnerProfile || stackQty(runnerProfile.backpack, 'nc') < 1) { cancelAll('The official fight was cancelled — the runner no longer has an NC.'); return; }
+      if (!sessA2 || !sessB2) { cancelAll('The official fight was cancelled — a fighter went offline.'); return; }
+      if (sessA2.duelId || sessB2.duelId || sessA2.npcFightId || sessB2.npcFightId || sessA2.barrowsFightId || sessB2.barrowsFightId || sessA2.fcRunId || sessB2.fcRunId) {
+        cancelAll('The official fight was cancelled — a fighter is busy.'); return;
+      }
+      removeStacks(runnerProfile.backpack, 'nc', 1);
+      save(offer.runnerKey);
+      if (runnerSess) sendProfile(offer.runnerKey);
+      startDuel(offer.aKey, offer.bKey, 0, [], [], { runner: runnerProfile.username });
+      return;
+    }
+    if (m.type === 'exchange_cert') {
+      if (stackQty(profile.backpack, 'certificate') < 1) return send(ws, { type: 'error', message: "You don't have a Certificate to exchange." });
+      const adminsOnline = [...online.entries()].filter(([k, sess]) => k !== key && isAdminOrOwner(sess.profile));
+      if (adminsOnline.length === 0) return send(ws, { type: 'error', message: 'No admin is online right now.' });
+      if (certRequests.has(key)) return send(ws, { type: 'error', message: 'You already have a certificate exchange request pending.' });
+      certRequests.set(key, { requesterKey: key, handled: false });
+      for (const [, sess] of adminsOnline) send(sess.ws, { type: 'cert_request', from: profile.username });
+      send(ws, { type: 'chat', from: 'Game', text: 'Certificate exchange requested — waiting for an admin.' });
+      return;
+    }
+    if (m.type === 'cert_reply') {
+      if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'You do not have permission to do that.' });
+      let requesterKey = m.from ? userKeyFor(m.from) : null;
+      let req = requesterKey ? certRequests.get(requesterKey) : null;
+      if (!req && !requesterKey && certRequests.size > 0) {
+        const first = certRequests.entries().next().value;
+        requesterKey = first[0]; req = first[1];
+      }
+      if (!req || req.handled) return send(ws, { type: 'error', message: 'That certificate request is gone.' });
+      const requesterSess = online.get(requesterKey);
+      const requesterUser = db.users[requesterKey];
+      if (m.accept !== true) {
+        req.handled = true; certRequests.delete(requesterKey);
+        const line = `${profile.username} declined your certificate exchange.`;
+        if (requesterSess) send(requesterSess.ws, { type: 'chat', from: 'Game', text: line });
+        send(ws, { type: 'admin_note', text: `Declined ${requesterUser ? requesterUser.profile.username : requesterKey}'s certificate exchange.` });
+        return;
+      }
+      // First accept wins: claim it before touching any balances, so
+      // a second admin's reply can never pay out twice.
+      req.handled = true; certRequests.delete(requesterKey);
+      if (!requesterUser) return send(ws, { type: 'error', message: 'That player is gone.' });
+      const requesterProfile = requesterUser.profile;
+      ensureV2(requesterProfile);
+      if (stackQty(requesterProfile.backpack, 'certificate') < 1) {
+        const line = 'The certificate exchange failed — the player no longer has a Certificate.';
+        if (requesterSess) send(requesterSess.ws, { type: 'chat', from: 'Game', text: line });
+        return send(ws, { type: 'error', message: line });
+      }
+      removeStacks(requesterProfile.backpack, 'certificate', 1);
+      requesterProfile.gold += 250;
+      save(requesterKey); save(key);
+      if (requesterSess) {
+        sendProfile(requesterKey);
+        send(requesterSess.ws, { type: 'chat', from: 'Game', text: `📜 You exchanged a Certificate with ${profile.username} for 250g.` });
+      }
+      send(ws, { type: 'admin_note', text: `Accepted ${requesterProfile.username}'s Certificate exchange (250g paid).` });
+      send(ws, { type: 'chat', from: 'Game', text: `📜 ${requesterProfile.username} exchanged a Certificate with you for 250g.` });
+      broadcast({ type: 'chat', from: 'Game', text: `📜 ${requesterProfile.username} exchanged a Certificate with ${profile.username} for 250g.` });
+      return;
+    }
+
     // ----- Challenges & duels -----
     if (m.type === 'challenge') {
       const targetKey = String(m.target || '').toLowerCase();
@@ -2607,6 +2953,19 @@ wss.on('connection', (ws, req) => {
       const r = fcRuns.get(me.fcRunId);
       if (r) endFcRun(r, 'disconnect'); // records settle silently; the run is gone
     }
+    // Stage 7A: pending official-fight offers and certificate
+    // requests involving the leaver are cancelled (nothing is spent).
+    for (const [oid, o] of [...fightOffers]) {
+      if (o.runnerKey === key || o.aKey === key || o.bKey === key) {
+        clearTimeout(o.timer); fightOffers.delete(oid);
+        for (const otherKey of [o.runnerKey, o.aKey, o.bKey]) {
+          if (otherKey === key) continue;
+          const s = online.get(otherKey);
+          if (s) send(s.ws, { type: 'chat', from: 'Game', text: 'The official fight offer was cancelled — a player left.' });
+        }
+      }
+    }
+    certRequests.delete(key);
     // Stage 6: a Tree Guardian is session-only — it goes when you do.
     if (allies.has(key)) { const ally = allies.get(key); allies.delete(key); broadcastAllies(ally.area); }
     online.delete(key);
