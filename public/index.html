@@ -201,6 +201,7 @@
   <button class="rbtn" data-panel="exchange" title="Gold Exchange">💱</button>
   <button class="rbtn" data-panel="prayers" title="Prayers">🙏</button>
   <button class="rbtn" data-panel="players" title="Players">👥</button>
+  <button class="rbtn" data-panel="admin" title="Admin">👑</button>
   <button class="rbtn" data-panel="skills" title="Skills">📊</button>
   <button class="rbtn" data-panel="smithy" title="Smithy">🔥</button>
   <button class="rbtn" data-panel="teleport" title="Teleport">🌀</button>
@@ -223,6 +224,7 @@
 
 <div id="duelbar">
  <div class="t" id="dueltitle">⚔️ Duel</div>
+ <div id="duelofficial" style="display:none;text-align:center;font-weight:800;color:#ffd75e;font-size:12px;margin-bottom:4px"></div>
  <div class="hprow"><span class="nm">You</span><div class="hpbar"><div id="hpyou" style="width:100%"></div></div><span id="hpyouv">99</span></div>
  <div class="hprow"><span class="nm" id="dueloppname">Opponent</span><div class="hpbar"><div id="hpopp" style="width:100%"></div></div><span id="hpoppv">99</span></div>
  <div id="duellast" class="note" style="text-align:center"></div>
@@ -271,6 +273,8 @@
 <div class="modal" id="fcendmodal"><div class="sheet" id="fcendsheet"></div></div>
 <div class="modal" id="puzzlemodal"><div class="sheet" id="puzzlesheet"></div></div>
 <div class="modal" id="lootmodal"><div class="sheet" id="lootsheet"></div></div>
+<div class="modal" id="fightoffermodal"><div class="sheet" id="fightoffersheet"></div></div>
+<div class="modal" id="certreqmodal"><div class="sheet" id="certreqsheet"></div></div>
 
 <div id="toast"></div>
 
@@ -306,9 +310,10 @@ const ICONS={restore_potion:'🍷',prayer_potion:'🌟',ration:'🍗',bronze_swo
  silver_ore:'🤍',gold_ore:'🟡',mithril_ore:'🔵',adamantite_ore:'🟢',runite_ore:'💠',
  bronze_bar:'🟫',iron_bar:'⬜',silver_bar:'🥈',steel_bar:'⬛',mithril_bar:'🟦',adamant_bar:'🟩',rune_bar:'🟪',
  fire_cape:'🔥',
- dharoks_greataxe:'🪓',guthans_warspear:'🔱',torags_hammers:'🔨',veracs_flail:'⛓️',ahrims_staff:'🪄',karils_crossbow:'🏹'};
-const KIND_ICON={potion:'🧪',food:'🍗',weapon:'⚔️',armour:'🛡️',good:'📦',tool:'⛏️',trophy:'🏆'};
-function iconOf(id){ if(ICONS[id])return ICONS[id]; const d=catalog[id]; return d? (KIND_ICON[d.kind]||'📦') : '📦'; }
+ dharoks_greataxe:'🪓',guthans_warspear:'🔱',torags_hammers:'🔨',veracs_flail:'⛓️',ahrims_staff:'🪄',karils_crossbow:'🏹',
+ nc:'🪙',certificate:'📜'};
+const KIND_ICON={potion:'🧪',food:'🍗',weapon:'⚔️',armour:'🛡️',good:'📦',tool:'⛏️',trophy:'🏆',token:'🪙'};
+function iconOf(id){ if(ICONS[id])return ICONS[id]; const d=catalog[id]; if(d&&d.icon) return d.icon; return d? (KIND_ICON[d.kind]||'📦') : '📦'; }
 function nameOf(id){ if(catalog[id])return catalog[id].name; if(goods[id])return goods[id].name; return id; }
 function stackQtyOf(stacks,id){ const s=(stacks||[]).find(x=>x.item===id); return s?s.qty:0; }
 function myQty(id){ return me? stackQtyOf(me.backpack,id):0; }
@@ -318,6 +323,14 @@ function toast(t){ const el=$('toast'); el.textContent=t; el.style.display='bloc
 function logLine(t){ const el=$('log'); el.textContent+=t+'\n'; while(el.textContent.split('\n').length>60) el.textContent=el.textContent.split('\n').slice(1).join('\n'); el.scrollTop=1e6; }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function fmtMs(ms){ if(!ms||ms<=0) return '—'; const s=Math.floor(ms/1000); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
+
+/* ================= roles (Stage 7A) ================= */
+const ROLE_BADGE={owner:'👑',admin:'🛡️',mod:'⭐'};
+const ROLE_LABEL={owner:'👑 Owner',admin:'🛡️ Admin',mod:'⭐ Mod',player:'Player'};
+function roleBadge(role){ return ROLE_BADGE[role]||''; }
+function rolePrefix(role){ const b=ROLE_BADGE[role]; return b? b+' ':''; }
+function myRole(){ return (me&&me.role)||'player'; }
+function isAdminOrOwner(){ const r=myRole(); return r==='admin'||r==='owner'; }
 
 /* ================= settings (localStorage) ================= */
 const SETTINGS_KEY='nallystake_settings_v1';
@@ -448,6 +461,11 @@ function onMsg(m){
  if(m.type==='fc_telegraph'){ onFcTelegraph(m); }
  if(m.type==='fc_end'){ onFcEnd(m); }
  if(m.type==='challenge_incoming'){ openIncoming(m); }
+ if(m.type==='admin_note'){ toast(m.text); logLine(`👑 Admin: ${m.text}`); }
+ if(m.type==='admin_list'){ lastAdminList=m.players||[]; if(drawerPanel==='admin') renderDrawer(); }
+ if(m.type==='online_list'){ lastOnlineList=m.players||[]; if(drawerPanel==='admin') renderDrawer(); }
+ if(m.type==='fight_offer'){ openFightOffer(m); }
+ if(m.type==='cert_request'){ openCertRequest(m); }
  if(m.type==='duel_start'){ startDuelUI(m); }
  if(m.type==='duel_tick'){ duelTickUI(m); }
  if(m.type==='duel_end'){ endDuelUI(m); }
@@ -1285,9 +1303,9 @@ function makeKnight(isMe,name){
  const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.28}));
  sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
  const label=document.createElement('div'); label.className='plabel';
- label.innerHTML=`<div class="bubble"></div><span class="badge"></span> <span class="nm">${esc(name)}</span>`;
+ label.innerHTML=`<div class="bubble"></div><span class="rbadge"></span><span class="badge"></span> <span class="nm">${esc(name)}</span>`;
  $('labels').appendChild(label);
- return {group:g,pivot,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),
+ return {group:g,pivot,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),roleEl:label.querySelector('.rbadge'),
    x:0,z:0,tx:0,tz:0,rot:0,jump:null,prayer:null,bubbleUntil:0,bob:Math.random()*6,isMe};
 }
 const PRAYER_BADGE={melee:'🛡️',missiles:'🏹',magic:'🔮'};
@@ -1307,6 +1325,7 @@ function syncAvatars(){
    if(p.username!==me.username){ a.tx=sx2w(p.x); a.tz=sy2w(p.y); }
    a.prayer=p.activePrayer||null;
    a.badgeEl.textContent=a.prayer?PRAYER_BADGE[a.prayer]:'';
+   if(a.roleEl) a.roleEl.textContent=roleBadge(p.role)? roleBadge(p.role)+' ':'';
  }
  for(const name of Object.keys(avatars)){
    if(!seen.has(name)){ scene.remove(avatars[name].group); avatars[name].label.remove(); delete avatars[name]; }
@@ -2217,10 +2236,11 @@ initThree();
 
 /* ================= drawer panels ================= */
 let drawerPanel=null, shopTab='Potion', shopMode='buy', bankQty='1', selStack=null, packSorted=false;
-const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',players:'👥 Players online',skills:'📊 Skills',smithy:'🔥 Emberfall Smithy',teleport:'🌀 Teleport',settings:'🎛️ Settings'};
+const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',players:'👥 Players online',admin:'👑 Admin',skills:'📊 Skills',smithy:'🔥 Emberfall Smithy',teleport:'🌀 Teleport',settings:'🎛️ Settings'};
 function togglePanel(name){ drawerPanel===(name)? closeDrawer() : openPanel(name); }
 function openPanel(name){ drawerPanel=name; selStack=null; if(name==='backpack') packSorted=false; $('drawer').classList.add('open'); renderDrawer();
- document.querySelectorAll('.rbtn').forEach(b=>b.classList.toggle('on',b.dataset.panel===name)); }
+ document.querySelectorAll('.rbtn').forEach(b=>b.classList.toggle('on',b.dataset.panel===name));
+ if(name==='admin') refreshAdminLists(); }
 function closeDrawer(){ drawerPanel=null; $('drawer').classList.remove('open');
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.remove('on')); }
 document.querySelectorAll('.rbtn').forEach(b=>b.onclick=()=>{ togglePanel(b.dataset.panel); railOpen=false; applyRailVisibility(); });
@@ -2239,6 +2259,7 @@ function renderDrawer(){
  if(drawerPanel==='exchange') b.innerHTML=pExchange();
  if(drawerPanel==='prayers') b.innerHTML=pPrayers();
  if(drawerPanel==='players') b.innerHTML=pPlayers();
+ if(drawerPanel==='admin') b.innerHTML=pAdmin();
  if(drawerPanel==='skills') b.innerHTML=pSkills();
  if(drawerPanel==='smithy') b.innerHTML=pSmithy();
  if(drawerPanel==='teleport') b.innerHTML=pTeleport();
@@ -2277,6 +2298,11 @@ function pBackpack(){
    if(s){
      h+=`<div class="detail"><b>${iconOf(s.item)} ${esc(nameOf(s.item))}</b> x${s.qty}`;
      if(d) h+=`<div class="note">${d.kind}${d.slot?` · worn: ${d.slot}`:''}${d.heal?` · heals ${d.heal} HP`:''}${d.prayerRestore?` · restores ${d.prayerRestore} prayer`:''}${d.maxBonus?` · +${d.maxBonus} max hit`:''}${d.reduction?` · −${Math.round(d.reduction*100)}% damage taken`:''}${d.speed?` · ⛏️ pickaxe speed ×${d.speed}`:''}</div>`;
+     if(d&&d.kind==='token'){
+       if(s.item==='certificate') h+=`<div class="note" style="margin-top:4px">📜 Exchange this with an admin for 250g — use the 👑 Admin panel.</div>`;
+       else if(s.item==='nc') h+=`<div class="note" style="margin-top:4px">🪙 Mods spend NC to run official fights.</div>`;
+       h+=`<div class="note" style="margin-top:4px">Tokens can't be bought or sold.</div>`;
+     }
      h+=`<div class="btns">`;
      if(d&&(d.kind==='food'||d.kind==='potion')) h+=`<button class="act" onclick="send({type:'use',item:'${s.item}'})">Use</button>`;
      if(d&&d.slot) h+=`<button class="act" onclick="send({type:'equip',item:'${s.item}'})">Equip</button>`;
@@ -2328,7 +2354,7 @@ function pShop(){
      <button class="act" onclick="send({type:'shop_buy',item:'${d.id}',qty:1})">Buy 1</button><button class="ghost" onclick="send({type:'shop_buy',item:'${d.id}',qty:5})">Buy 5</button></div>`;
    }
  } else {
-   const sellable=me.backpack.filter(s=>catalog[s.item]&&catalog[s.item].sell>0);
+   const sellable=me.backpack.filter(s=>catalog[s.item]&&catalog[s.item].sell>0&&catalog[s.item].kind!=='token');
    if(!sellable.length) h+=`<p class="note">Nothing in your backpack the shops will buy. (Exchange goods sell on the Gold Exchange.)</p>`;
    for(const s of sellable){
      const d=catalog[s.item];
@@ -2410,7 +2436,84 @@ function pPrayers(){
 function pPlayers(){
  const others=players.filter(p=>p.username!==me.username);
  if(!others.length) return `<p>Just you in the plaza so far.<br><span class="note">Share the link — when a friend signs in, they'll appear here and in the plaza. Tap their knight (or their name here) to challenge them.</span></p>`;
- return others.map(p=>`<div class="rowline"><span class="ic">🧍</span><span class="grow"><b>${esc(p.username)}</b> ${p.activePrayer?PRAYER_BADGE[p.activePrayer]:''}<br><span class="sub">${p.inDuel?'in a duel':'in the plaza'}</span></span>${p.inDuel?'':`<button class="act" onclick="openChallenge('${esc(p.username)}')">Challenge</button>`}</div>`).join('');
+ return others.map(p=>`<div class="rowline"><span class="ic">🧍</span><span class="grow"><b>${rolePrefix(p.role)}${esc(p.username)}</b> ${p.activePrayer?PRAYER_BADGE[p.activePrayer]:''}<br><span class="sub">${p.inDuel?'in a duel':'in the plaza'}</span></span>${p.inDuel?'':`<button class="act" onclick="openChallenge('${esc(p.username)}')">Challenge</button>`}</div>`).join('');
+}
+/* ---- Admin (Stage 7A) ---- */
+let lastAdminList=null, lastOnlineList=null;
+let fightSelA='', fightSelB='';
+let spawnItemSel='', spawnQtyVal=1, spawnTargetVal='';
+window.refreshAdminLists=function(){
+ if(isAdminOrOwner()) send({type:'admin_list'});
+ const r=myRole(); if(r==='mod'||r==='admin'||r==='owner') send({type:'online_list'});
+};
+window.adminSetRole=function(target,role){ send({type:'set_role',target,role}); setTimeout(refreshAdminLists,400); };
+window.adminCertify=function(target){ send({type:'certify',target}); setTimeout(refreshAdminLists,400); };
+window.adminSetStyle=function(target,style){ if(!style) return; send({type:'set_style_admin',target,style}); setTimeout(refreshAdminLists,400); };
+window.adminRunFight=function(){
+ const a=($('fighta')||{}).value||fightSelA, b=($('fightb')||{}).value||fightSelB;
+ if(!a||!b){ toast('Pick two fighters first.'); return; }
+ if(a===b){ toast('Pick two different fighters.'); return; }
+ send({type:'run_fight',a,b});
+};
+window.spawnField=function(){ const si=$('spawnitem'),sq=$('spawnqty'),st=$('spawntarget'); if(si) spawnItemSel=si.value; if(sq) spawnQtyVal=clamp(Math.floor(+sq.value||1),1,99); if(st) spawnTargetVal=st.value; };
+window.adminSpawn=function(){
+ const item=($('spawnitem')||{}).value||spawnItemSel;
+ if(!item){ toast('Pick an item first.'); return; }
+ const qty=clamp(Math.floor(+(( $('spawnqty')||{}).value)||spawnQtyVal||1),1,99);
+ const t=((($('spawntarget')||{}).value)||'').trim();
+ const o={type:'spawn_item',item,qty};
+ if(t&&(!me||t.toLowerCase()!==me.username.toLowerCase())) o.target=t;
+ send(o);
+};
+function pAdmin(){
+ const role=myRole();
+ let h=`<div class="setrow"><span class="grow"><b>My role</b></span><b style="color:#ff8fd0">${ROLE_LABEL[role]||'Player'}</b></div>`;
+ if(role==='mod') h+=`<div class="setrow"><span class="grow">Certification</span><b style="color:#ff8fd0">${me.certified?'⭐ Certified':'Not certified yet'}</b></div>`;
+ h+=`<div class="setrow"><span class="grow">🪙 NC</span><b style="color:#ff8fd0">${myQty('nc')}</b></div>`;
+ h+=`<div class="setrow"><span class="grow">📜 Certificates</span><b style="color:#ff8fd0">${myQty('certificate')}</b></div>`;
+ if(myQty('certificate')>=1){
+   h+=`<button class="act" style="width:100%;margin:4px 0" onclick="send({type:'exchange_cert'})">📜 Exchange Certificate → 250g</button>`;
+   h+=`<p class="note">An admin must be online to approve the exchange.</p>`;
+ }
+ const canRun=role==='admin'||role==='owner'||(role==='mod'&&!!me.certified);
+ if(canRun){
+   const onlineOthers=(lastOnlineList||[]).filter(p=>!me||p.username!==me.username);
+   const opts=(sel)=>onlineOthers.map(p=>`<option value="${esc(p.username)}" ${p.username===sel?'selected':''}>${rolePrefix(p.role)}${esc(p.username)}</option>`).join('');
+   h+=`<h4 style="margin:12px 0 5px;color:#ff8fd0">🏆 Run official fight</h4>`;
+   if(lastOnlineList===null) h+=`<p class="note">Loading online players…</p>`;
+   else if(onlineOthers.length<2) h+=`<p class="note">You need at least two other players online to run a fight.</p>`;
+   h+=`<div class="rowline"><span class="grow">Fighter 1</span><select id="fighta" onchange="fightSelA=this.value"><option value="">— pick —</option>${opts(fightSelA)}</select></div>`;
+   h+=`<div class="rowline"><span class="grow">Fighter 2</span><select id="fightb" onchange="fightSelB=this.value"><option value="">— pick —</option>${opts(fightSelB)}</select></div>`;
+   h+=`<div style="display:flex;gap:6px"><button class="act" style="flex:1" onclick="adminRunFight()">🏆 Run fight</button><button class="ghost" onclick="refreshAdminLists()">↻ Refresh</button></div>`;
+   h+=`<p class="note" style="margin-top:5px">Costs 1 NC, charged only when both fighters accept. Winner earns a Certificate.</p>`;
+ } else if(role==='mod'){
+   h+=`<h4 style="margin:12px 0 5px;color:#ff8fd0">🏆 Run official fight</h4><p class="note">You need to be certified by an admin before you can run official fights.</p>`;
+ }
+ if(isAdminOrOwner()){
+   h+=`<h4 style="margin:12px 0 5px;color:#ff8fd0">Players &amp; roles</h4>`;
+   if(lastAdminList===null) h+=`<p class="note">Loading players…</p>`;
+   else {
+     for(const p of lastAdminList){
+       const isOwnerRow=p.role==='owner';
+       h+=`<div class="rowline"><span class="grow"><b>${p.online?'🟢':'⚪'} ${rolePrefix(p.role)}${esc(p.username)}</b>${p.certified?' <span class="sub">⭐ certified</span>':''}<br><span class="sub">${ROLE_LABEL[p.role]||'Player'}${p.online?'':' · offline'}</span></span></div>`;
+       h+=`<div style="display:flex;gap:5px;flex-wrap:wrap;margin:-2px 0 8px">`;
+       h+=`<button class="ghost" ${p.role==='player'||isOwnerRow?'disabled':''} onclick="adminSetRole('${esc(p.username)}','player')">Player</button>`;
+       h+=`<button class="ghost" ${p.role==='mod'||isOwnerRow?'disabled':''} onclick="adminSetRole('${esc(p.username)}','mod')">Mod</button>`;
+       if(role==='owner') h+=`<button class="ghost" ${p.role==='admin'||isOwnerRow?'disabled':''} onclick="adminSetRole('${esc(p.username)}','admin')">Admin</button>`;
+       if(p.role==='mod'&&!p.certified) h+=`<button class="act" onclick="adminCertify('${esc(p.username)}')">⭐ Certify</button>`;
+       h+=`<select onchange="adminSetStyle('${esc(p.username)}',this.value)" ${p.online?'':'disabled'}><option value="">Style…</option>${STYLES_LIST.map(s=>`<option value="${s}">${s}</option>`).join('')}</select>`;
+       h+=`</div>`;
+     }
+   }
+   const itemOpts=catalogArr.map(it=>`<option value="${esc(it.id)}" ${it.id===spawnItemSel?'selected':''}>${esc(it.name)} (${esc(it.id)})</option>`).join('');
+   const dl=(lastOnlineList||[]).map(p=>`<option value="${esc(p.username)}">`).join('');
+   h+=`<h4 style="margin:12px 0 5px;color:#ff8fd0">✨ Make items</h4>`;
+   h+=`<div class="rowline"><span class="grow">Item</span><select id="spawnitem" onchange="spawnField()">${itemOpts}</select></div>`;
+   h+=`<div class="rowline"><span class="grow">Quantity (1–99)</span><input type="number" id="spawnqty" min="1" max="99" value="${spawnQtyVal}" onchange="spawnField()"></div>`;
+   h+=`<div class="rowline"><span class="grow">Give to</span><input id="spawntarget" list="onlinenames" placeholder="Your name (or leave blank for yourself)" value="${esc(spawnTargetVal)}" onchange="spawnField()" oninput="spawnField()"></div><datalist id="onlinenames">${dl}</datalist>`;
+   h+=`<button class="act" style="width:100%" onclick="adminSpawn()">✨ Create</button>`;
+ }
+ return h;
 }
 /* ---- Skills ---- */
 function pSkills(){
@@ -2521,7 +2624,7 @@ function pTeleport(){
  return h;
 }
 /* ---- Settings ---- */
-const PANEL_LIST=[['backpack','🎒 Backpack'],['worn','🗡️ Worn items'],['shop','🏪 Shops'],['bank','🏦 Bank'],['exchange','💱 Gold Exchange'],['prayers','🙏 Prayers'],['players','👥 Players'],['skills','📊 Skills'],['smithy','🔥 Smithy'],['teleport','🌀 Teleport'],['settings','🎛️ Settings']];
+const PANEL_LIST=[['backpack','🎒 Backpack'],['worn','🗡️ Worn items'],['shop','🏪 Shops'],['bank','🏦 Bank'],['exchange','💱 Gold Exchange'],['prayers','🙏 Prayers'],['players','👥 Players'],['admin','👑 Admin'],['skills','📊 Skills'],['smithy','🔥 Smithy'],['teleport','🌀 Teleport'],['settings','🎛️ Settings']];
 function pSettings(){
  let h=`<div class="setrow"><span class="grow">📷 Camera drag speed<br><span class="note">Screen-drag rotation &amp; camera stick</span></span><input type="range" min="0.25" max="3" step="0.25" value="${settings.camSpeed}" oninput="setCamSpeed(this.value)"><b id="camspeedval" style="color:#ff8fd0;min-width:34px;text-align:right">${settings.camSpeed}×</b></div>`;
  h+=`<div class="setrow"><span class="grow">👆 Ground tap mode</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.tapMode==='walk'?'on':''}" onclick="setTapMode('walk')">🚶 Walk</button><button class="${settings.tapMode==='face'?'on':''}" onclick="setTapMode('face')">🧭 Face</button></div>`;
@@ -2563,7 +2666,7 @@ window.openChallenge=function(name){
    closeModal('challengemodal');
  };
 };
-window.closeModal=function(id){ $(id).classList.remove('open'); if(id==='incomingmodal') stopIncomingTimer(); };
+window.closeModal=function(id){ $(id).classList.remove('open'); if(id==='incomingmodal') stopIncomingTimer(); if(id==='fightoffermodal') stopFightOfferTimer(); };
 let incomingCh=null, incomingTimer=null;
 function stopIncomingTimer(){ if(incomingTimer){ clearInterval(incomingTimer); incomingTimer=null; } }
 function openIncoming(m){
@@ -2585,6 +2688,31 @@ function openIncoming(m){
  $('inaccept').onclick=()=>{ send({type:'challenge_response',challengeId:m.challengeId,accept:true,items:readPicker('inp')}); stopIncomingTimer(); closeModal('incomingmodal'); };
  $('indecline').onclick=()=>{ send({type:'challenge_response',challengeId:m.challengeId,accept:false,items:[]}); stopIncomingTimer(); closeModal('incomingmodal'); };
 }
+/* ================= Stage 7A cards: official fight offers & cert requests ================= */
+let fightOfferTimer=null;
+function stopFightOfferTimer(){ if(fightOfferTimer){ clearInterval(fightOfferTimer); fightOfferTimer=null; } }
+function openFightOffer(m){
+ $('fightoffersheet').innerHTML=`<h3>🏆 Official fight!</h3>
+ <p><b>${esc(m.from)}</b> is running a fight: <b>You vs ${esc(m.opponent)}</b>.<br>The winner earns a 📜 <b>Certificate</b>.</p>
+ <p class="note" id="focount"></p>
+ <div class="btns"><button class="act" id="foaccept">Accept — fight!</button><button class="ghost" id="fodecline">Decline</button></div>`;
+ $('fightoffermodal').classList.add('open');
+ let left=30;
+ const upd=()=>{ const el=$('focount'); if(el) el.textContent=`⏱ ${left}s to answer`; };
+ upd();
+ stopFightOfferTimer();
+ fightOfferTimer=setInterval(()=>{ left--; if(left<=0){ stopFightOfferTimer(); closeModal('fightoffermodal'); toast('Fight offer expired.'); } else upd(); },1000);
+ $('foaccept').onclick=()=>{ send({type:'fight_reply',accept:true}); stopFightOfferTimer(); closeModal('fightoffermodal'); };
+ $('fodecline').onclick=()=>{ send({type:'fight_reply',accept:false}); stopFightOfferTimer(); closeModal('fightoffermodal'); };
+}
+function openCertRequest(m){
+ $('certreqsheet').innerHTML=`<h3>📜 Certificate exchange</h3>
+ <p><b>${esc(m.from)}</b> wants to exchange a Certificate for <b style="color:#ff8fd0">250g</b>.</p>
+ <div class="btns"><button class="act" id="crapprove">Approve — pay 250g</button><button class="ghost" id="crdecline">Decline</button></div>`;
+ $('certreqmodal').classList.add('open');
+ $('crapprove').onclick=()=>{ send({type:'cert_reply',from:m.from,accept:true}); closeModal('certreqmodal'); };
+ $('crdecline').onclick=()=>{ send({type:'cert_reply',from:m.from,accept:false}); closeModal('certreqmodal'); };
+}
 /* ================= duel UI ================= */
 let duel=null;
 let npcFight=null;
@@ -2596,6 +2724,9 @@ function startDuelUI(m){
  $('duelflee').style.display='none';
  $('duelbar').classList.add('open');
  $('dueloppname').textContent=m.opponent;
+ const offEl=$('duelofficial');
+ if(m.official&&m.official.runner){ offEl.textContent=`🏆 Official fight run by ${m.official.runner} — winner earns a Certificate!`; offEl.style.display='block'; }
+ else { offEl.textContent=''; offEl.style.display='none'; }
  const itemsTxt=duel.escrow.length? ` + ${duel.escrow.reduce((t,s)=>t+s.qty,0)} items in escrow`:'';
  const arenaTxt=m.arena&&m.arena.name? ` — ${m.arena.name}`:'';
  $('dueltitle').textContent=`⚔️ You vs ${m.opponent}${arenaTxt} — pot ${m.pot}g${itemsTxt}`;
@@ -2630,6 +2761,7 @@ function endDuelUI(m){
  const wasDuel=duel; duel=null;
  $('duelflee').style.display='none';
  $('duelbar').classList.remove('open');
+ $('duelofficial').style.display='none';
  me=m.profile;
  const won=m.winner===me.username;
  const itemsTxt=(m.itemsWon&&m.itemsWon.length)? `<br>Items in the pot: ${m.itemsWon.map(s=>`${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}`).join(', ')}`:'';
