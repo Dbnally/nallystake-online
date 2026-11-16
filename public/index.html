@@ -2202,6 +2202,22 @@ function drawMinimap(){
    g.fillStyle='#ffffff'; g.beginPath(); g.arc(p.x,p.y,10,0,7); g.fill();
  }
  g.restore();
+ // shop labels (plaza): drawn upright in screen space so they don't spin
+ // with the map — each shop gets its stall-coloured disc + first letter
+ // (Potion P, Weapon W, Armour A, Food & Supplies F) at its map position.
+ if(curArea==='plaza'){
+   const cth=Math.cos(th), sth=Math.sin(th);
+   g.font='bold 8px system-ui'; g.textAlign='center'; g.textBaseline='middle';
+   for(const s of SHOP_SPOTS){
+     const vx=(s.x-myPos.x)*MM_S, vy=(s.y-myPos.y)*MM_S;
+     const sx=cx+vx*cth-vy*sth, sy=cy+vx*sth+vy*cth;
+     if(sx<6||sx>W-6||sy<6||sy>H-6) continue;
+     g.fillStyle='#'+s.color.toString(16).padStart(6,'0');
+     g.beginPath(); g.arc(sx,sy,6,0,7); g.fill();
+     g.strokeStyle='#fff'; g.lineWidth=1; g.beginPath(); g.arc(sx,sy,6,0,7); g.stroke();
+     g.fillStyle='#fff'; g.fillText(s.shop[0],sx,sy+0.5);
+   }
+ }
  // player dot, always centred, with a facing tick pointing up
  g.fillStyle='#ff8fd0'; g.beginPath(); g.arc(cx,cy,3.4,0,7); g.fill();
  g.strokeStyle='#ff8fd0'; g.lineWidth=2; g.beginPath(); g.moveTo(cx,cy-4); g.lineTo(cx,cy-9); g.stroke();
