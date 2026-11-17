@@ -1131,14 +1131,15 @@ function broadcastChallengeClear(challengerKey) {
 // ---------- Stage 14: duel challenge configuration ----------
 // Derek's reference screen: ONE configuration sheet that both
 // duelists edit until BOTH confirm — the rules (No Prayer / No
-// Potions / No Food / No Special Attacks; melee-only is a constant
+// Potions / No Food / No Special Attacks, and Stage 18's No
+// Movement; melee-only is a constant
 // of this game, not a toggle), the matched gold stake, and each
 // side's item stake. Any terms change resets BOTH confirms (the
 // trade flow's rule). The duel — escrow and all — starts only on
 // the second confirm, through the existing startDuel path.
-const DUEL_RULE_KEYS = ['noPrayer', 'noPotions', 'noFood', 'noSpecial'];
+const DUEL_RULE_KEYS = ['noPrayer', 'noPotions', 'noFood', 'noSpecial', 'noMovement'];
 function cleanDuelRules(r) {
-  const out = { noPrayer: false, noPotions: false, noFood: false, noSpecial: false };
+  const out = { noPrayer: false, noPotions: false, noFood: false, noSpecial: false, noMovement: false };
   if (r && typeof r === 'object') for (const k of DUEL_RULE_KEYS) out[k] = !!r[k];
   return out;
 }
@@ -1783,7 +1784,7 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
     done: false, timer: null,
     arena: { id: arenaDef.id, name: arenaDef.name },
     official: official || null, // Stage 7A: { runner: username } for mod-run fights
-    rules: duelRules, // Stage 14: { noPrayer, noPotions, noFood, noSpecial } — enforced by the prayer/use/special handlers
+    rules: duelRules, // Stage 14: { noPrayer, noPotions, noFood, noSpecial } — enforced by the prayer/use/special handlers; Stage 18 adds noMovement — enforced by the move handler
     freePlay: fp, // Stage 15: practice fight — endDuel settles nothing (no pot, no record, no rating)
   };
   duels.set(id, duel);
@@ -3148,7 +3149,13 @@ wss.on('connection', (ws, req) => {
       // still runs so every client keeps the authoritative spot.
       const duelNow = me.duelId ? duels.get(me.duelId) : null;
       const frozen = !!(duelNow && duelNow.tickCount <= COUNTDOWN_TICKS);
-      if (!frozen) {
+      // Stage 18: a No Movement duel locks both fighters at their
+      // duel-start spots for the WHOLE duel, not just the countdown.
+      // They spawn toe-to-toe inside melee reach (780 vs 820), so the
+      // standing fight works — swings, specials and eating all carry
+      // on; only running away is off the table.
+      const noMove = !!(duelNow && duelNow.rules && duelNow.rules.noMovement);
+      if (!frozen && !noMove) {
         me.x = Math.max(0, Math.min(WORLD_W, +m.x || 0));
         me.y = Math.max(0, Math.min(WORLD_H, +m.y || 0));
       }
