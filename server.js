@@ -54,7 +54,8 @@
 // a random arena and back to the plaza afterwards), drop piles
 // (backpack items dropped as per-area ground piles anyone can pick
 // up), and the Muse-game style boosts (Accurate extra hits,
-// Aggressive power hits, Defensive / Controlled defender blocks).
+// Aggressive power hits, Defensive / Controlled defender blocks —
+// replaced by the Stage 10 RuneScape-style rebalance, see STYLES).
 //
 // Stage 6 adds: Tree Guardians — an {type:'awaken_tree'} request turns
 // the nearest living tree (Gathering Cave / Fishing Cove) into a
@@ -116,6 +117,19 @@
 // Stage 7D custom item editor: an admin can set a `color` tint
 // (#rrggbb) and drawn `art` (a capped PNG data URL) on a custom
 // item; both ride on the def, the catalog and the reference lists.
+//
+// Stage 10 (server only) is the combat-style rebalance Derek asked
+// for: fighting ticks now resolve like a RuneScape match — an OSRS
+// attack roll vs defence roll (see hitChance) puts two identical
+// fighters at about a 50/50 hit chance, and each combat style is a
+// single small effect (Accurate +3 Attack, Aggressive +3 Strength,
+// Defensive 20% block, Controlled +1/+1 with a 7% block), only one
+// active at a time. The Stage 5 proc boosts are removed. Stage 10
+// also adds two client-support pieces: inv_swap (drag-to-reorder
+// backpack stacks) and saved character appearance (profile.appearance
+// — sanitised by cleanAppearance, settable at register and via
+// set_appearance, and carried in state snapshots + public profiles
+// so every client can render each knight's look).
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -295,6 +309,18 @@ for (const [id, name, accBonus, maxBonus] of [
 // official-fight winner earns, exchangeable to an admin for 250g.
 ITEMS.nc = { name: 'NC', icon: '🪙', kind: 'token', sellOnly: 0 };
 ITEMS.certificate = { name: 'Certificate', icon: '📜', kind: 'token', sellOnly: 0 };
+// Stage 9: the Note. kind 'note': like the tokens it is never buyable
+// and never sellable (sellOnly 0; sellPrice() and the shop / Exchange
+// handlers refuse it with "That can't be sold."). Unlike the tokens it
+// is also PERSONAL — a player SIGNS one from a Certificate
+// ({type:'sign_note'}; the signed text lives on profile.notes, one
+// entry per held note item, FIFO) and hands it to an admin
+// ({type:'give_note'}) as a request, so the drop / trade / duel-stake
+// paths all refuse it with NOTE_PERSONAL_MSG.
+ITEMS.note = { name: 'Note', icon: '📝', kind: 'note', sellOnly: 0 };
+// The ONE refusal every path that would move a note off its owner
+// (drop, trade offer, duel item stakes) answers with.
+const NOTE_PERSONAL_MSG = "A note is personal — it can't be dropped, traded, or staked.";
 
 // ---------- Stage 7D: custom items + placed objects (registries) ----------
 // Base items are numbered 1..BASE_ITEM_COUNT in ITEMS definition
@@ -412,7 +438,7 @@ for (const g of GOODS) exchangePrices[g.id] = g.base;
 function sellPrice(itemId) {
   const def = itemDef(itemId);
   if (!def) return 0;
-  if (def.kind === 'token') return 0; // Stage 7A: tokens are never sellable
+  if (def.kind === 'token' || def.kind === 'note') return 0; // Stage 7A/9: tokens and notes are never sellable
   if (def.custom) return 0; // Stage 7D: custom items are never sellable
   if (def.buy) return Math.max(1, Math.floor(def.buy * SHOP_SELLBACK));
   if (def.sellOnly) return def.sellOnly; // Stage 2 resources: fixed buy-back
@@ -492,10 +518,48 @@ function emptyWorn() {
   for (const s of WORN_SLOTS) w[s] = null;
   return w;
 }
+// Stage 10: character appearance, saved on the profile. Indexes into
+// client-side palettes: hair 0=blonde, 1=brown, 2=black; beard
+// 0=clean, 1=short, 2=full; skin 0=pale, 1=tan, 2=dark; torso / arms /
+// legs / feet are colour-palette indexes 0..5. `chosen` records that
+// the player actually picked a look (at register or via
+// set_appearance) rather than wearing the default.
+function defaultAppearance() {
+  return { gender: 'male', hair: 1, beard: 0, skin: 1, torso: 0, arms: 0, legs: 0, feet: 0, chosen: false };
+}
+// Sanitise an appearance: start from the default, layer the base
+// (prev — itself sanitised field by field), then layer the supplied
+// object (a) on top. Every field independently falls back to the
+// layer below when its supplied value is invalid; valid numbers are
+// rounded and clamped into their palette range. Stray keys never
+// leak through — the result always has exactly the nine fields.
+function cleanAppearance(a, prev) {
+  const clean = defaultAppearance();
+  const apply = (src) => {
+    if (!src || typeof src !== 'object' || Array.isArray(src)) return;
+    if (src.gender === 'male' || src.gender === 'female') clean.gender = src.gender;
+    clean.hair = clampAppearanceInt(src.hair, 0, 2, clean.hair);
+    clean.beard = clampAppearanceInt(src.beard, 0, 2, clean.beard);
+    clean.skin = clampAppearanceInt(src.skin, 0, 2, clean.skin);
+    clean.torso = clampAppearanceInt(src.torso, 0, 5, clean.torso);
+    clean.arms = clampAppearanceInt(src.arms, 0, 5, clean.arms);
+    clean.legs = clampAppearanceInt(src.legs, 0, 5, clean.legs);
+    clean.feet = clampAppearanceInt(src.feet, 0, 5, clean.feet);
+    if (typeof src.chosen === 'boolean') clean.chosen = src.chosen;
+  };
+  apply(prev);
+  apply(a);
+  return clean;
+}
+function clampAppearanceInt(v, lo, hi, fallback) {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return fallback;
+  return Math.max(lo, Math.min(hi, Math.round(v)));
+}
 function newProfile(username) {
   return {
     username, gold: START_GOLD, rating: 1000, wins: 0, losses: 0,
     style: 'accurate', createdAt: new Date().toISOString(),
+    appearance: defaultAppearance(), // Stage 10 — see cleanAppearance
     backpack: [], // [{item, qty}] stacks, max BACKPACK_MAX_STACKS distinct
     worn: emptyWorn(),
     bank: [], // [{item, qty}] stacks — items only, gold stays a number
@@ -518,6 +582,12 @@ function newProfile(username) {
     // records, so world-shared data rides on its owner's profile and
     // is aggregated into runtime registries at boot.
     customItems: {}, placedObjects: [],
+    // Stage 9: the texts of the signed Notes this player currently
+    // HOLDS, oldest first ([{ text, from, at }] — from is the signer).
+    // One entry per held 'note' item, FIFO-matched: signing creates
+    // item + entry together, giving a note away removes both, and a
+    // declined note returns both.
+    notes: [],
   };
 }
 // Migration: Phase 1 accounts gain the v2 fields with defaults. Existing
@@ -580,6 +650,21 @@ function ensureV2(p) {
       && PROP_KINDS.includes(o.kind) && Number.isFinite(+o.x) && Number.isFinite(+o.y));
     if (clean.length !== p.placedObjects.length) { p.placedObjects = clean; changed = true; }
   }
+  // Stage 9 migration: unread note texts. Only the container shape is
+  // enforced (entries are server-created): malformed entries drop.
+  if (!Array.isArray(p.notes)) { p.notes = []; changed = true; }
+  else {
+    const clean = p.notes.filter((n) => n && typeof n.text === 'string' && typeof n.from === 'string' && Number.isFinite(+n.at));
+    if (clean.length !== p.notes.length) { p.notes = clean; changed = true; }
+  }
+  // Stage 10 migration: character appearance. A missing one is
+  // backfilled with the default; a present one is sanitised in
+  // place (merged over the default — a set look is never wiped).
+  if (!p.appearance || typeof p.appearance !== 'object' || Array.isArray(p.appearance)) { p.appearance = defaultAppearance(); changed = true; }
+  else {
+    const clean = cleanAppearance(p.appearance, null);
+    if (JSON.stringify(clean) !== JSON.stringify(p.appearance)) { p.appearance = clean; changed = true; }
+  }
   return changed;
 }
 // Stage 7A: the EFFECTIVE role of a session ({profile}), a profile,
@@ -631,6 +716,9 @@ function publicProfile(p) {
     barrows: { kills: [...p.barrows.kills], tunnel: p.barrows.tunnel, looted: p.barrows.looted },
     // Stage 7A: effective role (owner computed) + certification flag.
     role: effectiveRole(p), certified: !!p.certified,
+    // Stage 10: character appearance (sanitised on the way in; the
+    // spread keeps clients from mutating the stored object).
+    appearance: { ...p.appearance },
   };
 }
 function leaderboardProfile(p) {
@@ -720,14 +808,21 @@ function readBody(req) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   if (req.method === 'POST' && url.pathname === '/api/register') {
-    const { username, password } = await readBody(req);
+    const { username, password, appearance } = await readBody(req);
     const name = String(username || '').trim();
     if (!/^[A-Za-z0-9_ ]{3,16}$/.test(name)) return json(res, 400, { error: 'Name: 3-16 letters/numbers.' });
     if (String(password || '').length < 6) return json(res, 400, { error: 'Password: 6+ characters.' });
     const key = name.toLowerCase();
     if (db.users[key]) return json(res, 409, { error: 'That name is taken.' });
     const salt = crypto.randomBytes(16).toString('hex');
-    db.users[key] = { salt, passHash: hashPass(password, salt), profile: newProfile(name) };
+    const profile = newProfile(name);
+    // Stage 10: an optional appearance picked on the register screen
+    // is sanitised and stored as chosen; anything unusable simply
+    // leaves the default look (chosen stays false).
+    if (appearance && typeof appearance === 'object' && !Array.isArray(appearance)) {
+      profile.appearance = { ...cleanAppearance(appearance, null), chosen: true };
+    }
+    db.users[key] = { salt, passHash: hashPass(password, salt), profile };
     save(key);
     const token = crypto.randomBytes(24).toString('hex');
     tokens.set(token, key);
@@ -764,6 +859,32 @@ const duels = new Map(); // id -> duel
 // Stage 7A pending flows (session-only, like challenges):
 const fightOffers = new Map(); // id -> { id, runnerKey, aKey, bKey, accepted: Map/key->bool, expires, timer }
 const certRequests = new Map(); // requesterKey -> { requesterKey, handled }
+// Stage 9: signed-note requests. A player signs a Note from a
+// Certificate (sign_note), then GIVES it to an admin (give_note); the
+// pending request lives here (session-only, like certRequests) until
+// that admin decides (note_reply). The wording of a signed note lives
+// in ONE place — noteRequestText.
+const noteRequests = new Map(); // id -> { id, fromKey, fromName, text, toKey, at }
+let noteSeq = 0;
+function noteRequestText(playerName) { return playerName + "'s request: exchange 1 certificate for 250g.\nSigned: " + playerName; }
+// Returns a pending signed note to its signer (decline, or the admin
+// holding it left): the item (overflow to bank) and its text entry go
+// back onto the signer's saved profile, and the signer is told if
+// they are online.
+function returnSignedNote(req, chatLine) {
+  const signerUser = db.users[req.fromKey];
+  if (!signerUser) return;
+  const signerProfile = signerUser.profile;
+  ensureV2(signerProfile);
+  signerProfile.notes.push({ text: req.text, from: req.fromName, at: req.at });
+  addItemToProfile(signerProfile, 'note', 1);
+  save(req.fromKey);
+  const signerSess = online.get(req.fromKey);
+  if (signerSess) {
+    sendProfile(req.fromKey);
+    if (chatLine) send(signerSess.ws, { type: 'chat', from: 'Game', text: chatLine });
+  }
+}
 // Stage 7B social/trade state (session-only, never saved to profiles):
 const parties = new Map(); // partyId -> Set of player keys
 const partyOf = new Map(); // player key -> partyId
@@ -825,6 +946,41 @@ const NPC_RANGE = 150; // server units — attack / stay-in-combat range (15 til
 // approachPoint) and the client walks them there.
 const MELEE_REACH = 42; // ~4 tiles at 10 units/tile
 const APPROACH_STEP = 34; // units per tick for a closing monster
+
+// ---------- Stage 12: OSRS fight pacing ----------
+// Derek: "when a fight starts make it more realistic to how OSRS
+// mechanics was." In OSRS a melee weapon swings once per its weapon
+// speed — 4 ticks (2.4s) for a sword — never on every game tick, and
+// a combatant only starts swinging once they choose to attack. So:
+//   - Duels open with a COUNTDOWN_TICKS countdown (5 ticks, 3.0s):
+//     movement is frozen (move messages from either duelist are
+//     ignored) and nobody can swing, but engagement taps ARE
+//     accepted. Both fighters start UN-engaged: {type:'duel_attack'}
+//     is the ONLY way a duelist engages — first swing on the next
+//     tick after the countdown (or on the next tick, once the
+//     countdown is past), then one swing per MELEE_SPEED ticks.
+//     Derek's clarified rule: "players have to tap attack to
+//     retaliate" — being hit, connected or not, NEVER engages a
+//     duelist; a fighter who never taps never swings. Duel rolls
+//     are also EQUALISED: both fighters roll with effective
+//     Attack/Strength/Defence = DUEL_LEVEL whatever their trained
+//     levels (weapons, armour, styles, specials and XP awards stay
+//     individual). (The countdown replaced the original 3-tick
+//     OPENING_TICKS opening for duels; NPC fights never had an
+//     opening and are unchanged.)
+//   - Goblins / Barrows: the player engages by tapping the monster
+//     (attack_npc / barrows_enter, as always) and swings once per
+//     MELEE_SPEED ticks from one weapon-speed after engagement. The
+//     MONSTER starts with its swings locked — it closes distance
+//     but does not swing — until the player's first connected swing
+//     lands on it; then it unlocks, first swing one weapon-speed
+//     after the unlock, on the same per-combatant timer.
+//   - Fight Caves keeps its own per-monster cadence — untouched:
+//     its monsters are aggressive by design.
+const OPENING_TICKS = 3; // the original duel opening (superseded for duels by COUNTDOWN_TICKS; kept for reference)
+const COUNTDOWN_TICKS = 5; // duel countdown: 5 ticks (3.0s) of frozen movement and no swings
+const MELEE_SPEED = 4; // OSRS melee weapon speed: one swing per 4 ticks (2.4s)
+const DUEL_LEVEL = 40; // duels only: both fighters' effective Attack/Strength/Defence for the rolls
 // The point a client should walk its player to so they end up next
 // to a target: MELEE_REACH*0.75 from the target, on the line from
 // the player toward it, clamped to the area bounds (0..800 x 0..450).
@@ -859,7 +1015,7 @@ GOBLIN_SPAWNS.forEach(([x, y], i) => {
   const id = 'goblin' + (i + 1);
   npcs.set(id, { id, ...GOBLIN_DEF, area: 'goblins', x, y, spawnX: x, spawnY: y, hp: GOBLIN_DEF.maxHp, alive: true, respawnAt: 0, fightId: null });
 });
-const npcFights = new Map(); // id -> { id, playerKey, npcId, hpYou, maxHpYou, specialQueued, done, timer }
+const npcFights = new Map(); // id -> { id, playerKey, npcId, hpYou, maxHpYou, specialQueued, done, timer, tickCount, nextSwingYou, nextSwingNpc }
 // Pseudo-profile so goblins can be the defender in the duel rollHit():
 // no style block, no worn gear, no armour reduction.
 const NPC_DEFENDER = { style: 'accurate', worn: { weapon: null, shield: null, head: null, body: null, legs: null } };
@@ -885,6 +1041,7 @@ function playersSnapshot(area) {
     username: p.profile.username, x: Math.round(p.x), y: Math.round(p.y), area: p.area,
     inDuel: !!p.duelId, activePrayer: p.profile.activePrayer || null,
     role: effectiveRole(p.profile), // Stage 7A
+    appearance: p.profile.appearance ? { ...p.profile.appearance } : defaultAppearance(), // Stage 10: how this knight looks
     party: partyListForKey(k), // Stage 7B: member usernames ([] when not in a party)
     // Stage 7C: what this player is visibly doing right now, so other
     // players can tell at a glance. A duel beats a monster fight,
@@ -1062,23 +1219,44 @@ function executeTrade(trade) {
   }
 }
 
+// Stage 10: Derek's RuneScape-style rebalance. A swing is an OSRS
+// attack roll vs defence roll, so two identical fighters land about
+// half their swings (measured ~50% for a level-matched mirror match —
+// the pre-Stage-10 flat style constants landed ~76-91%). A combat
+// style is ONE single effect, active at a time (profile.style is a
+// single value — nothing stacks), and each effect is small:
+//   accurate   +3 effective Attack level in the accuracy roll.
+//   aggressive +3 effective Strength level in the max-hit formula.
+//   defensive  a flat 20% chance to fully block each incoming hit.
+//   controlled +1 effective Attack, +1 effective Strength, 7% block.
+// The old Stage 5 procs (Accurate 25% extra hit, Aggressive 25% power
+// hit, Defensive 25% / Controlled 12% blocks) are GONE — nothing in
+// the tick notes may claim them any more. The defender block chance
+// lives ONLY in this table: rollHit reads it for duels, and the NPC /
+// Barrows / Fight Caves ticks read it for monster swings.
 const STYLES = {
-  accurate:   { acc: 0.85, max: 11 }, // +accuracy
-  aggressive: { acc: 0.70, max: 15 }, // +power
-  defensive:  { acc: 0.75, max: 11, block: 0.25 }, // Stage 5 style boost: 25% defender block
-  controlled: { acc: 0.78, max: 13, block: 0.12 }, // Stage 5 style boost: 12% defender block
+  accurate:   { atkBoost: 3, strBoost: 0, block: 0 },
+  aggressive: { atkBoost: 0, strBoost: 3, block: 0 },
+  defensive:  { atkBoost: 0, strBoost: 0, block: 0.20 },
+  controlled: { atkBoost: 1, strBoost: 1, block: 0.07 },
 };
-// Stage 5 style boosts (the Muse-game rules Derek asked for) — the
-// defender half lives in the styles' `block` field above (read by
-// rollHit for duels and by the NPC / Fight Caves / Barrows ticks for
-// monster swings): Defensive blocks 25% of incoming hits outright,
-// Controlled 12%. The attacker half lives in rollPlayerAttack below:
-// Accurate has a 25% chance of a second swing in the same tick,
-// Aggressive a 25% chance of a power hit (+25% damage), Controlled
-// 12% for each effect independently.
+// Attack-roll tuning constant: with identical levels and gear on both
+// sides the attack and defence rolls nearly cancel, and this small
+// multiplier on the attack roll centres the mirror match on ~50%
+// (simulated with the real functions: 49-52% from bronze at level 1
+// to dragon at level 50+).
+const ACC_BALANCE = 0.97;
+// Unarmed / base max hit before weapon, cape and Strength terms — the
+// old Accurate style max, so a fresh fighter's damage is unchanged.
+const BASE_MAX_HIT = 11;
 function weaponBonus(p) {
   const def = p.worn && p.worn.weapon ? itemDef(p.worn.weapon) : null;
   return def && def.kind === 'weapon' ? def : null;
+}
+function capeBonus(p) {
+  // Stage 5: a worn cape (the Fire cape) adds its own small bonuses,
+  // exactly like a weapon's — it is the only cape-slot item so far.
+  return p.worn && p.worn.cape ? itemDef(p.worn.cape) : null;
 }
 function armourReduction(p) {
   let r = 0, filled = 0;
@@ -1089,47 +1267,85 @@ function armourReduction(p) {
   if (filled === 4) r += 0.05; // full-set bonus
   return Math.min(r, 0.45);
 }
+// OSRS-style accuracy points for the attack roll: the item table's
+// accBonus fractions (0.02 bronze sword ... 0.12 dragon, up to 0.50
+// for admin customs) become roll points (bronze 1, steel 2, dragon 5).
+function weaponAccPoints(p) {
+  let pts = 0;
+  const w = weaponBonus(p);
+  if (w) pts += Math.round((w.accBonus || 0) * 40);
+  const capeDef = capeBonus(p);
+  if (capeDef) pts += Math.round((capeDef.accBonus || 0) * 40);
+  return pts;
+}
+// The chance (0..1) that one swing connects, before the defender's
+// style block and armour are considered: OSRS attack roll vs defence
+// roll. Attack roll = (effective Attack + 8) x (64 + weapon points);
+// defence roll = (Defence + 8) x 64 (armour's contribution stays its
+// damage reduction, below — it does not also dodge). A special
+// (Dragon Slash) adds its +5% on top, as before.
+// levelOverride (duel call sites only): when given, BOTH profiles
+// roll with this effective level for Attack/Strength/Defence
+// instead of their trained levels (DUEL_LEVEL equalisation). Every
+// other call site omits it and rolls real skills, as Stage 10 built.
+function hitChance(attackerProfile, defenderProfile, useSpecial = false, levelOverride = null) {
+  const s = STYLES[attackerProfile.style] || STYLES.accurate;
+  const aLv = levelOverride == null ? levelsOf(attackerProfile) : { attack: levelOverride };
+  const dLv = levelOverride == null ? levelsOf(defenderProfile) : { defence: levelOverride };
+  const atkRoll = (aLv.attack + (s.atkBoost || 0) + 8) * (64 + weaponAccPoints(attackerProfile)) * ACC_BALANCE;
+  const defRoll = (dLv.defence + 8) * 64;
+  let chance = atkRoll > defRoll
+    ? 1 - (defRoll + 2) / (2 * (atkRoll + 1))
+    : atkRoll / (2 * (defRoll + 1));
+  if (useSpecial) chance += 0.05;
+  return Math.min(0.98, Math.max(0.02, chance));
+}
+// Max hit for one swing: base + weapon + cape, plus the Strength
+// term — every 3 effective Strength levels above 1 add +1, so
+// Aggressive's +3 is worth exactly +1 max hit at any level, and
+// Controlled's +1 crosses a step at some levels (a little of each).
+function maxHit(attackerProfile, useSpecial = false, levelOverride = null) {
+  const s = STYLES[attackerProfile.style] || STYLES.accurate;
+  const lv = levelOverride == null ? levelsOf(attackerProfile) : { strength: levelOverride };
+  const w = weaponBonus(attackerProfile);
+  let max = BASE_MAX_HIT + Math.floor((lv.strength + (s.strBoost || 0) - 1) / 3) + (w ? w.maxBonus : 0);
+  const capeDef = capeBonus(attackerProfile);
+  if (capeDef) max += capeDef.maxBonus || 0;
+  if (useSpecial) max = Math.floor(max * 1.5); // Dragon Slash
+  return max;
+}
+// One swing, fully resolved: { dmg, connected, outcome }.
+// `connected` is the ACCURACY outcome — the swing was on target —
+// regardless of the defender's style block or armour: a
+// blocked-but-accurate swing still counts as a hit that landed
+// (Stage 12's monster unlocks key off it), while a clean miss
+// does not. `outcome` is the client-facing clarity
+// label: 'hit' when damage got through, 'blocked' when the swing
+// connected but was fully stopped (style block, or armour absorbing
+// the whole blow), 'miss' when the accuracy roll failed. The damage
+// law is unchanged: damage is dealt only when the swing is both
+// unblocked and accurate, exactly as before.
+function rollHitDetail(attackerProfile, defenderProfile, useSpecial = false, levelOverride = null) {
+  const d = STYLES[defenderProfile.style] || STYLES.accurate;
+  const blocked = !!(d.block && Math.random() < d.block);
+  const connected = Math.random() <= hitChance(attackerProfile, defenderProfile, useSpecial, levelOverride);
+  if (blocked || !connected) return { dmg: 0, connected, outcome: connected ? 'blocked' : 'miss' };
+  const raw = 1 + Math.floor(Math.random() * maxHit(attackerProfile, useSpecial, levelOverride));
+  const dmg = Math.floor(raw * (1 - armourReduction(defenderProfile)));
+  return { dmg, connected: true, outcome: dmg > 0 ? 'hit' : 'blocked' };
+}
 // Returns damage dealt (0 = miss / blocked / fully absorbed by armour).
 function rollHit(attackerProfile, defenderProfile, useSpecial = false) {
-  const s = STYLES[attackerProfile.style] || STYLES.accurate;
-  const d = STYLES[defenderProfile.style] || STYLES.accurate;
-  if (d.block && Math.random() < d.block) return 0;
-  const w = weaponBonus(attackerProfile);
-  let acc = s.acc + (w ? w.accBonus : 0);
-  let max = s.max + (w ? w.maxBonus : 0);
-  // Stage 5: a worn cape (the Fire cape) adds its own small bonuses,
-  // exactly like a weapon's — it is the only cape-slot item so far.
-  const capeDef = attackerProfile.worn && attackerProfile.worn.cape ? itemDef(attackerProfile.worn.cape) : null;
-  if (capeDef) { acc += capeDef.accBonus || 0; max += capeDef.maxBonus || 0; }
-  if (useSpecial) { acc += 0.05; max = Math.floor(max * 1.5); } // Dragon Slash
-  if (Math.random() > Math.min(acc, 0.98)) return 0;
-  const raw = 1 + Math.floor(Math.random() * max);
-  return Math.floor(raw * (1 - armourReduction(defenderProfile)));
+  return rollHitDetail(attackerProfile, defenderProfile, useSpecial).dmg;
 }
-// Stage 5: one full player attack for a tick — the base rollHit plus
-// the attacker's style boosts. Returns { dmg, notes }: `dmg` is the
-// TOTAL damage for the tick (callers grant combat XP on it, so an
-// extra hit earns XP on its damage like any other hit), and `notes`
-// names any boost that triggered, for the tick's note field.
-//   accurate   25%: a second, independent swing is added.
-//   aggressive 25%: a power hit — the connecting hit deals +25%.
-//   controlled 12%: each of the two rolls above, independently.
-// (Defensive has no attacker boost; its boost is the defender block.)
-function rollPlayerAttack(attackerProfile, defenderProfile, useSpecial = false) {
-  const style = attackerProfile.style || 'accurate';
-  const notes = [];
-  let dmg = rollHit(attackerProfile, defenderProfile, useSpecial);
-  const powerChance = style === 'aggressive' ? 0.25 : style === 'controlled' ? 0.12 : 0;
-  if (powerChance && dmg > 0 && Math.random() < powerChance) {
-    dmg = Math.round(dmg * 1.25);
-    notes.push('Power hit!');
-  }
-  const extraChance = style === 'accurate' ? 0.25 : style === 'controlled' ? 0.12 : 0;
-  if (extraChance && Math.random() < extraChance) {
-    const extra = rollHit(attackerProfile, defenderProfile, false);
-    if (extra > 0) { dmg += extra; notes.push('Style boost: extra hit!'); }
-  }
-  return { dmg, notes };
+// One full player attack for a tick. Since Stage 10 this is a single
+// swing — the style's whole effect is already inside rollHit's rolls
+// (level boosts) or the defender's block — so there are no proc notes
+// to surface. Returns { dmg, connected, outcome, notes } for the callers' tick
+// messages (callers grant combat XP on `dmg` like any other hit).
+function rollPlayerAttack(attackerProfile, defenderProfile, useSpecial = false, levelOverride = null) {
+  const r = rollHitDetail(attackerProfile, defenderProfile, useSpecial, levelOverride);
+  return { dmg: r.dmg, connected: r.connected, outcome: r.outcome, notes: [] };
 }
 
 // Stage 5: the four duel arenas. A duel picks one at random; both
@@ -1219,6 +1435,14 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null)
   const duel = {
     id, a: aKey, b: bKey, stake, pot: stake * 2, escrowItems,
     hp: { [aKey]: 99, [bKey]: 99 }, specialQueued: { [aKey]: false, [bKey]: false },
+    // Stage 12: swing timers in duel ticks. tickCount counts every
+    // tick of the duel (closing ticks included). Both fighters
+    // start UN-engaged — their timers sit at Infinity — until they
+    // tap to attack ({type:'duel_attack'}); nothing else engages
+    // them (no auto-retaliate in duels).
+    tickCount: 0,
+    engaged: { [aKey]: false, [bKey]: false },
+    nextSwingAt: { [aKey]: Infinity, [bKey]: Infinity },
     done: false, timer: null,
     arena: { id: arenaDef.id, name: arenaDef.name },
     official: official || null, // Stage 7A: { runner: username } for mod-run fights
@@ -1235,11 +1459,19 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null)
   for (const k of [aKey, bKey]) {
     const p = online.get(k);
     send(p.ws, { type: 'area', area: 'arena' });
-    send(p.ws, { type: 'duel_start', duelId: id, stake, pot: duel.pot, escrowItems, arena: duel.arena, official: duel.official, you: db.users[k].profile.username, opponent: db.users[k === aKey ? bKey : aKey].profile.username, profile: publicProfile(db.users[k].profile) });
+    send(p.ws, { type: 'duel_start', duelId: id, stake, pot: duel.pot, escrowItems, arena: duel.arena, official: duel.official, countdownTicks: COUNTDOWN_TICKS, you: db.users[k].profile.username, opponent: db.users[k === aKey ? bKey : aKey].profile.username, profile: publicProfile(db.users[k].profile) });
   }
   broadcast({ type: 'chat', from: 'Duel Master', text: `${a.username} vs ${b.username} — now fighting in the ${arenaDef.name}!` });
   broadcastState();
   duel.timer = setInterval(() => {
+    duel.tickCount += 1;
+    const tick = duel.tickCount;
+    // Stage 12 countdown: ticks 1..COUNTDOWN_TICKS are the countdown
+    // (countdownLeft counts 5,4,3,2,1); from tick COUNTDOWN_TICKS+1
+    // the fight is live and countdownLeft is 0. No swing can be due
+    // during the countdown — engagement arms the first swing for
+    // the tick after it.
+    const countdownLeft = Math.max(0, COUNTDOWN_TICKS - tick + 1);
     // Stage 8: melee adjacency. Every duel attack is melee-type, so
     // if the fighters are not standing next to each other this tick
     // is a CLOSING tick: no specials are consumed, no attacks are
@@ -1255,21 +1487,43 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null)
         const opp = k === aKey ? posB : posA;
         send(p.ws, {
           type: 'duel_tick', hpYou: duel.hp[k], hpOpponent: duel.hp[k === aKey ? bKey : aKey],
-          youHit: null, oppHit: null, youSpecial: false, oppSpecial: false,
-          energyYou: db.users[k].profile.specialEnergy,
+          youHit: null, oppHit: null, youOutcome: null, oppOutcome: null, youSpecial: false, oppSpecial: false,
+          energyYou: db.users[k].profile.specialEnergy, countdownLeft,
           closing: true, moveTo: approachPoint(p.x, p.y, opp.x, opp.y),
         });
       }
       return;
     }
-    // Both attacks due this tick resolve, then deaths are checked (OSRS tick rule).
-    const aSpecial = duel.specialQueued[aKey], bSpecial = duel.specialQueued[bKey];
-    duel.specialQueued[aKey] = false; duel.specialQueued[bKey] = false;
+    // Stage 12: per-fighter swing timers. An ENGAGED fighter swings
+    // only on a tick where their timer is due; each swing re-arms
+    // the timer MELEE_SPEED ticks out. The due time is an absolute
+    // duel tick, so a fighter who was out of reach when their timer
+    // came due (closing ticks above return first) swings on the
+    // first tick they are back in reach — the timer never gets
+    // pushed forward by distance. An UN-engaged fighter never
+    // swings: engagement comes ONLY from their own duel_attack tap
+    // (Derek: "players have to tap attack to retaliate" — being
+    // hit never engages them). On a tick where a fighter does not
+    // swing, their hit field is null (exactly like a closing tick)
+    // and a queued special STAYS queued: Dragon Slash only ever
+    // fires riding a real swing.
+    const aDue = duel.engaged[aKey] && tick >= duel.nextSwingAt[aKey];
+    const bDue = duel.engaged[bKey] && tick >= duel.nextSwingAt[bKey];
+    if (aDue) duel.nextSwingAt[aKey] = tick + MELEE_SPEED;
+    if (bDue) duel.nextSwingAt[bKey] = tick + MELEE_SPEED;
+    const aSpecial = aDue && duel.specialQueued[aKey];
+    const bSpecial = bDue && duel.specialQueued[bKey];
+    if (aDue) duel.specialQueued[aKey] = false;
+    if (bDue) duel.specialQueued[bKey] = false;
     if (aSpecial) a.specialEnergy = Math.max(0, a.specialEnergy - SPECIAL_COST);
     if (bSpecial) b.specialEnergy = Math.max(0, b.specialEnergy - SPECIAL_COST);
-    // Stage 5: style boosts ride along on every player attack.
-    const aRes = rollPlayerAttack(a, b, aSpecial);
-    const bRes = rollPlayerAttack(b, a, bSpecial);
+    // Stage 10: each fighter's single style effect rides along on
+    // every player attack (inside the shared roll functions).
+    // Stage 12: duel rolls are EQUALISED at DUEL_LEVEL for both
+    // fighters — trained Attack/Strength/Defence do not apply in a
+    // duel; weapons, armour, styles, specials and XP stay personal.
+    const aRes = aDue ? rollPlayerAttack(a, b, aSpecial, DUEL_LEVEL) : { dmg: 0, connected: false, outcome: null, notes: [] };
+    const bRes = bDue ? rollPlayerAttack(b, a, bSpecial, DUEL_LEVEL) : { dmg: 0, connected: false, outcome: null, notes: [] };
     const dmgToB = aRes.dmg;
     const dmgToA = bRes.dmg;
     duel.hp[bKey] = Math.max(0, duel.hp[bKey] - dmgToB);
@@ -1285,9 +1539,12 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null)
       if (oppNotes.length) noteParts.push(`Opponent: ${oppNotes.join(' ')}`);
       if (p) send(p.ws, {
         type: 'duel_tick', hpYou: duel.hp[k], hpOpponent: duel.hp[k === aKey ? bKey : aKey],
-        youHit: k === aKey ? dmgToB : dmgToA, oppHit: k === aKey ? dmgToA : dmgToB,
+        youHit: k === aKey ? (aDue ? dmgToB : null) : (bDue ? dmgToA : null),
+        oppHit: k === aKey ? (bDue ? dmgToA : null) : (aDue ? dmgToB : null),
+        youOutcome: k === aKey ? aRes.outcome : bRes.outcome,
+        oppOutcome: k === aKey ? bRes.outcome : aRes.outcome,
         youSpecial: k === aKey ? aSpecial : bSpecial, oppSpecial: k === aKey ? bSpecial : aSpecial,
-        energyYou: db.users[k].profile.specialEnergy,
+        energyYou: db.users[k].profile.specialEnergy, countdownLeft,
         note: noteParts.length ? noteParts.join(' ') : undefined,
       });
     }
@@ -1360,7 +1617,7 @@ function startNpcFight(key, npc) {
   const id = crypto.randomBytes(6).toString('hex');
   // Fight HP pool = the player's Hitpoints level (duels keep their 99 pool).
   const maxHpYou = Math.max(1, levelForXp(profile.xp.hitpoints));
-  const fight = { id, playerKey: key, npcId: npc.id, hpYou: maxHpYou, maxHpYou, specialQueued: false, done: false, timer: null, tickCount: 0 };
+  const fight = { id, playerKey: key, npcId: npc.id, hpYou: maxHpYou, maxHpYou, specialQueued: false, done: false, timer: null, tickCount: 0, nextSwingYou: MELEE_SPEED, nextSwingNpc: MELEE_SPEED, npcUnlocked: false };
   npcFights.set(id, fight);
   sess.npcFightId = id;
   npc.fightId = id;
@@ -1389,33 +1646,70 @@ function npcTick(fight) {
       type: 'npc_fight', phase: 'tick', npcId: npc.id,
       hpYou: Math.max(0, fight.hpYou), maxHpYou: fight.maxHpYou,
       hpNpc: Math.max(0, npc.hp), maxHpNpc: npc.maxHp,
-      youHit: null, npcHit: null, youSpecial: false, energyYou: profile.specialEnergy,
+      youHit: null, npcHit: null, youOutcome: null, npcOutcome: null, youSpecial: false, energyYou: profile.specialEnergy,
       closing: true, moveTo: approachPoint(sess.x, sess.y, npc.x, npc.y),
     });
     broadcastNpcState();
     return;
   }
   fight.tickCount = (fight.tickCount || 0) + 1;
-  const useSpec = fight.specialQueued; fight.specialQueued = false;
-  if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
-  // Player swing: the duel roll (style + worn weapon vs no armour),
-  // plus the Stage 5 style boosts (extra hits / power hits).
-  const atkRes = rollPlayerAttack(profile, NPC_DEFENDER, useSpec);
-  const youHit = atkRes.dmg;
-  const tickNotes = [...atkRes.notes];
-  // Goblin swing: Protect from Melee FULLY blocks it (Derek's OSRS spec);
-  // otherwise the duel rules apply — the style's block chance (Stage 5:
-  // Defensive 25% / Controlled 12%), then the goblin's accuracy, then
-  // the player's worn armour reduction.
-  let npcHit = 0;
-  if (profile.activePrayer === npc.attackType) npcHit = 0;
-  else if (STYLES[profile.style] && STYLES[profile.style].block && Math.random() < STYLES[profile.style].block) {
-    npcHit = 0;
-    tickNotes.push(`Blocked by your ${cap(profile.style)} style!`);
+  const tick = fight.tickCount;
+  const tickNotes = [];
+  // Stage 12: OSRS swing timers — the player swings once per
+  // MELEE_SPEED fighting ticks, the first swing one full
+  // weapon-speed after engagement (no opening beat for NPC fights).
+  // The goblin runs on the same timer but starts LOCKED (see the
+  // retaliate unlock in the player's swing below). Between swings a
+  // fighter's hit field is null (the client reads null as "no
+  // swing", exactly like a closing tick), and a queued special
+  // stays queued until the player's swing is actually due — it only
+  // ever fires riding a real swing.
+  let useSpec = false;
+  let youHit = null; // null: the player's swing is not due this tick
+  let youOutcome = null; // the player's swing outcome (Stage 12 clarity)
+  if (tick >= (fight.nextSwingYou || MELEE_SPEED)) {
+    fight.nextSwingYou = tick + MELEE_SPEED;
+    useSpec = fight.specialQueued; fight.specialQueued = false;
+    if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
+    // Player swing: the shared Stage 10 roll (style level boosts vs
+    // the NPC defender profile, worn weapon, no armour).
+    const atkRes = rollPlayerAttack(profile, NPC_DEFENDER, useSpec);
+    youHit = atkRes.dmg;
+    youOutcome = atkRes.outcome;
+    tickNotes.push(...atkRes.notes);
+    // Stage 12 retaliate unlock: the goblin's swings stay locked
+    // until the player's first CONNECTED swing lands on it — then
+    // it unlocks, its first swing one weapon-speed after the hit.
+    // (Guardian damage does not unlock it: only the player's own
+    // connected swing counts.)
+    if (atkRes.connected && !fight.npcUnlocked) {
+      fight.npcUnlocked = true;
+      fight.nextSwingNpc = tick + MELEE_SPEED;
+    }
   }
-  else if (Math.random() <= npc.acc) {
-    const raw = 1 + Math.floor(Math.random() * npc.maxHit);
-    npcHit = Math.floor(raw * (1 - armourReduction(profile)));
+  // Goblin swing (only once unlocked, and only on its due ticks):
+  // Protect from Melee FULLY blocks it (Derek's OSRS spec);
+  // otherwise the duel rules apply — the style's block chance
+  // (Stage 10: Defensive 20% / Controlled 7%, from the STYLES table),
+  // then the goblin's accuracy, then the player's worn armour
+  // reduction.
+  let npcHit = null; // null: the goblin never swung this tick (locked, or swing not due)
+  let npcOutcome = null; // the goblin's swing outcome (Stage 12 clarity)
+  if (fight.npcUnlocked && tick >= (fight.nextSwingNpc || MELEE_SPEED)) {
+    fight.nextSwingNpc = tick + MELEE_SPEED;
+    npcHit = 0;
+    if (profile.activePrayer === npc.attackType) { npcHit = 0; npcOutcome = 'blocked'; }
+    else if (STYLES[profile.style] && STYLES[profile.style].block && Math.random() < STYLES[profile.style].block) {
+      npcHit = 0;
+      npcOutcome = 'blocked';
+      tickNotes.push(`Blocked by your ${cap(profile.style)} style!`);
+    }
+    else if (Math.random() <= npc.acc) {
+      const raw = 1 + Math.floor(Math.random() * npc.maxHit);
+      npcHit = Math.floor(raw * (1 - armourReduction(profile)));
+      npcOutcome = npcHit > 0 ? 'hit' : 'blocked'; // connected, but armour absorbed the whole blow
+    }
+    else npcOutcome = 'miss';
   }
   // Stage 6: a Tree Guardian fighting beside its owner sometimes
   // takes the goblin's hit instead — only a hit that actually got
@@ -1427,15 +1721,16 @@ function npcTick(fight) {
     tickNotes.push(`🌳 Your ${ally.name} takes the hit for you!`);
     if (ally.hp <= 0) killAlly(ally);
   }
-  npc.hp -= youHit;
-  // ... and the guardian swings at the goblin itself every 2nd tick,
-  // right after its owner's swing lands. Its damage grants no XP.
+  npc.hp -= youHit || 0;
+  // ... and the guardian swings at the goblin itself every 2nd
+  // fighting tick (its own cadence, unchanged by Stage 12). Its
+  // damage grants no XP.
   if (ally && allies.get(fight.playerKey) === ally && fight.tickCount % 2 === 0) {
     const allyDmg = allyDamage(ally);
     npc.hp -= allyDmg;
     tickNotes.push(`🌳 ${ally.name} hits for ${allyDmg}!`);
   }
-  fight.hpYou -= npcHit;
+  fight.hpYou -= npcHit || 0;
   if (youHit > 0) {
     profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
     addXp(fight.playerKey, combatXpGains(profile.style, youHit));
@@ -1444,7 +1739,7 @@ function npcTick(fight) {
     type: 'npc_fight', phase: 'tick', npcId: npc.id,
     hpYou: Math.max(0, fight.hpYou), maxHpYou: fight.maxHpYou,
     hpNpc: Math.max(0, npc.hp), maxHpNpc: npc.maxHp,
-    youHit, npcHit, youSpecial: useSpec, energyYou: profile.specialEnergy,
+    youHit, npcHit, youOutcome, npcOutcome, youSpecial: useSpec, energyYou: profile.specialEnergy,
     note: tickNotes.length ? tickNotes.join(' ') : undefined,
   });
   broadcastNpcState();
@@ -1501,8 +1796,10 @@ setInterval(() => {
 // above the tunnel mound with the run intact.
 //
 // Brother tuning — combat levels are the OSRS ones (115 / 98); HP,
-// accuracy, max hit and cadence are this port's tuning, in line with
-// the Fight Caves': ~100 HP, swings every 2 ticks (1.2s). A mid-level
+// accuracy and max hit are this port's tuning, in line with the
+// Fight Caves': ~100 HP. Cadence since Stage 12 is the shared OSRS
+// swing timer: every brother swings once per MELEE_SPEED ticks
+// (a simplification — in OSRS their weapon speeds vary). A mid-level
 // player (HP pool 30-60) with food and the right Protect prayer wins
 // comfortably; without prayer the incoming damage is real but
 // survivable on food. Mechanics per Derek's 2026-11-13 spec, exactly:
@@ -1518,12 +1815,12 @@ setInterval(() => {
 //   - Prayer drain in crypt fights is the ordinary active-prayer
 //     drain only — no extra Barrows drain (parity with goblin fights).
 const BARROWS_BROTHERS = {
-  dharok: { id: 'dharok', name: 'Dharok the Wretched', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 8, acc: 0.60, attackEvery: 2, mound: { x: 150, y: 110 } },
-  guthan: { id: 'guthan', name: 'Guthan the Infested', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 9, acc: 0.60, attackEvery: 2, mound: { x: 330, y: 80 } },
-  torag:  { id: 'torag', name: 'Torag the Corrupted', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 7, acc: 0.60, attackEvery: 2, mound: { x: 510, y: 80 } },
-  verac:  { id: 'verac', name: 'Verac the Defiled', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 10, acc: 0.62, attackEvery: 2, mound: { x: 660, y: 110 } },
-  ahrim:  { id: 'ahrim', name: 'Ahrim the Blighted', combatLevel: 98, attackType: 'magic', maxHp: 90, maxHit: 11, acc: 0.60, attackEvery: 2, mound: { x: 240, y: 220 } },
-  karil:  { id: 'karil', name: 'Karil the Tainted', combatLevel: 98, attackType: 'missiles', maxHp: 90, maxHit: 11, acc: 0.62, attackEvery: 2, mound: { x: 560, y: 220 } },
+  dharok: { id: 'dharok', name: 'Dharok the Wretched', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 8, acc: 0.60, mound: { x: 150, y: 110 } },
+  guthan: { id: 'guthan', name: 'Guthan the Infested', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 9, acc: 0.60, mound: { x: 330, y: 80 } },
+  torag:  { id: 'torag', name: 'Torag the Corrupted', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 7, acc: 0.60, mound: { x: 510, y: 80 } },
+  verac:  { id: 'verac', name: 'Verac the Defiled', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 10, acc: 0.62, mound: { x: 660, y: 110 } },
+  ahrim:  { id: 'ahrim', name: 'Ahrim the Blighted', combatLevel: 98, attackType: 'magic', maxHp: 90, maxHit: 11, acc: 0.60, mound: { x: 240, y: 220 } },
+  karil:  { id: 'karil', name: 'Karil the Tainted', combatLevel: 98, attackType: 'missiles', maxHp: 90, maxHit: 11, acc: 0.62, mound: { x: 560, y: 220 } },
 };
 const BARROWS_CHEST = { x: 400, y: 225 }; // centre of the tunnels = the tunnels spawn
 const BARROWS_PUZZLE_SYMBOLS = ['circle', 'square', 'triangle', 'diamond'];
@@ -1561,6 +1858,7 @@ function startBarrowsFight(key, def, area, anchorX, anchorY) {
     attackType: def.attackType, area, anchorX, anchorY,
     hpYou: maxHpYou, maxHpYou, hpNpc: def.maxHp, maxHpNpc: def.maxHp,
     specialQueued: false, done: false, timer: null, tickCount: 0, rageFlags: {},
+    nextSwingYou: MELEE_SPEED, nextSwingNpc: MELEE_SPEED, npcUnlocked: false, // Stage 12 swing timers + retaliate lock
   };
   barrowsFights.set(id, fight);
   sess.barrowsFightId = id;
@@ -1612,19 +1910,35 @@ function barrowsTick(fight) {
   const closing = Math.hypot(sess.x - fight.anchorX, sess.y - fight.anchorY) > MELEE_REACH;
   const ally = helperAlly(fight.playerKey, sess.area);
   let useSpec = false;
-  let youHit = null; // null on a closing tick: the player never swung
+  let youHit = null; // null when the player never swung (closing, or the swing is not due yet)
+  let youOutcome = null; // the player's swing outcome (Stage 12 clarity)
   if (!closing) {
-    // Player swing (every tick): the shared player attack — style
-    // boosts included — with combat XP on the total damage, like
-    // goblin fights.
-    useSpec = fight.specialQueued; fight.specialQueued = false;
-    if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
-    const atkRes = rollPlayerAttack(profile, NPC_DEFENDER, useSpec);
-    youHit = atkRes.dmg;
-    notes.push(...atkRes.notes);
-    fight.hpNpc -= youHit;
+    // Stage 12: OSRS swing timer — the player swings once per
+    // MELEE_SPEED ticks, the first swing one weapon-speed after
+    // engagement; on other in-reach ticks youHit stays null and a
+    // queued special stays queued for the due swing. The swing
+    // itself is the shared player attack — style boosts included —
+    // with combat XP on the total damage, like goblin fights.
+    if (fight.tickCount >= (fight.nextSwingYou || MELEE_SPEED)) {
+      fight.nextSwingYou = fight.tickCount + MELEE_SPEED;
+      useSpec = fight.specialQueued; fight.specialQueued = false;
+      if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
+      const atkRes = rollPlayerAttack(profile, NPC_DEFENDER, useSpec);
+      youHit = atkRes.dmg;
+      youOutcome = atkRes.outcome;
+      notes.push(...atkRes.notes);
+      fight.hpNpc -= youHit;
+      // Stage 12 retaliate unlock: the brother's swings stay locked
+      // until the player's first CONNECTED swing lands on him —
+      // then he unlocks, his first swing one weapon-speed later.
+      if (atkRes.connected && !fight.npcUnlocked) {
+        fight.npcUnlocked = true;
+        fight.nextSwingNpc = fight.tickCount + MELEE_SPEED;
+      }
+    }
     // Stage 6: a Tree Guardian fighting beside its owner swings at
-    // the brother every 2nd tick, right after its owner's swing. No XP.
+    // the brother every 2nd tick (its own cadence, unchanged by
+    // Stage 12). No XP.
     if (ally && fight.tickCount % 2 === 0) {
       const allyDmg = allyDamage(ally);
       fight.hpNpc -= allyDmg;
@@ -1646,28 +1960,42 @@ function barrowsTick(fight) {
     }
   }
 
-  // Brother swing, on his own cadence (every `attackEvery` ticks). He
-  // swings even on the tick the player kills him (the goblin rule:
-  // both sides resolve, then deaths are checked). Stage 8: a MELEE
-  // brother cannot swing at a player who has not walked up to him —
-  // his hit field is null on a closing tick (he never swung).
+  // Brother swing, on his own Stage 12 swing timer (MELEE_SPEED for
+  // every brother), and only once the retaliate unlock above has
+  // freed it. He swings even on the tick the player kills him (the
+  // goblin rule: both sides resolve, then deaths are checked).
+  // Stage 8: a MELEE brother cannot swing at a player who has not
+  // walked up to him — his hit field is null on a closing tick (he
+  // never swung), and it stays null between his swings too. A gated
+  // brother's timer does not advance: he swings on the first tick
+  // the player is back in reach once his timer is due.
   const brotherGated = closing && def.attackType === 'melee';
-  let npcHit = brotherGated ? null : 0;
-  if (!brotherGated && fight.tickCount % def.attackEvery === 0) {
+  let npcHit = null;
+  let npcOutcome = null; // the brother's swing outcome (Stage 12 clarity)
+  if (!brotherGated && fight.npcUnlocked && fight.tickCount >= (fight.nextSwingNpc || MELEE_SPEED)) {
+    fight.nextSwingNpc = fight.tickCount + MELEE_SPEED;
+    npcHit = 0;
     if (profile.activePrayer === def.attackType) {
       npcHit = 0; // the matching Protect prayer FULLY prevents it — Verac included, no bypass
+      npcOutcome = 'blocked';
     } else {
       const swings = def.id === 'torag' ? 2 : 1; // Torag's two hammers: two independent rolls
       let styleBlocked = false;
+      let anyConnected = false; // a hammer was on target (even if armour absorbed it whole)
       for (let sIdx = 0; sIdx < swings; sIdx++) {
         if (STYLES[profile.style] && STYLES[profile.style].block && Math.random() < STYLES[profile.style].block) { styleBlocked = true; continue; }
         if (Math.random() > def.acc) continue;
+        anyConnected = true;
         let maxHit = def.maxHit;
         // Dharok: +150% of base spread over his missing health (8 -> 20).
         if (def.id === 'dharok') maxHit = Math.round(def.maxHit * (1 + 1.5 * (1 - Math.max(0, fight.hpNpc) / fight.maxHpNpc)));
         const raw = 1 + Math.floor(Math.random() * maxHit);
         npcHit += Math.floor(raw * (1 - armourReduction(profile)));
       }
+      // One outcome for the whole swing: damage through = 'hit';
+      // on target but fully stopped (style block / armour) =
+      // 'blocked'; every hammer off target = 'miss'.
+      npcOutcome = npcHit > 0 ? 'hit' : (styleBlocked || anyConnected) ? 'blocked' : 'miss';
       if (styleBlocked && npcHit === 0 && swings > 0) notes.push(`Blocked by your ${cap(profile.style)} style!`);
       // Guthan's swirl: a connecting hit (damage got through) has a
       // 25% chance to heal him for what he dealt — never from the dead.
@@ -1687,13 +2015,13 @@ function barrowsTick(fight) {
     notes.push(`🌳 Your ${ally.name} takes the hit for you!`);
     if (ally.hp <= 0) killAlly(ally);
   }
-  fight.hpYou -= npcHit || 0; // npcHit is null when a melee brother was gated (Stage 8)
+  fight.hpYou -= npcHit || 0; // npcHit is null when the brother never swung (gated, Stage 8; or between swings, Stage 12)
 
   send(sess.ws, {
     type: 'npc_fight', phase: 'tick', npcId: fight.brother, kind: 'barrows',
     hpYou: Math.max(0, fight.hpYou), maxHpYou: fight.maxHpYou,
     hpNpc: Math.max(0, fight.hpNpc), maxHpNpc: fight.maxHpNpc,
-    youHit, npcHit, youSpecial: useSpec, energyYou: profile.specialEnergy,
+    youHit, npcHit, youOutcome, npcOutcome, youSpecial: useSpec, energyYou: profile.specialEnergy,
     note: notes.length ? notes.join(' ') : undefined,
     // Stage 8: on a closing tick, where to walk to reach the brother.
     ...(closing ? { closing: true, moveTo: approachPoint(sess.x, sess.y, fight.anchorX, fight.anchorY) } : {}),
@@ -1967,7 +2295,7 @@ function fcTick(run) {
     } else {
       useSpec = run.specialQueued; run.specialQueued = false;
       if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
-      // Stage 5: style boosts ride along on the player's swing.
+      // Stage 10: the style's level boosts ride along on the swing.
       const atkRes = rollPlayerAttack(profile, NPC_DEFENDER, useSpec);
       youHit = atkRes.dmg;
       if (atkRes.notes.length) note = atkRes.notes.join(' ');
@@ -2469,8 +2797,17 @@ wss.on('connection', (ws, req) => {
     let m; try { m = JSON.parse(raw); } catch { return; }
     const me = online.get(key); if (!me) return;
     if (m.type === 'move') {
-      me.x = Math.max(0, Math.min(800, +m.x || 0));
-      me.y = Math.max(0, Math.min(450, +m.y || 0));
+      // Stage 12: duel countdown freeze — while a duel's countdown
+      // is still running (its tick count has not passed
+      // COUNTDOWN_TICKS), a duelist's move is IGNORED: their server
+      // position stays at the duel-start spot. The state broadcast
+      // still runs so every client keeps the authoritative spot.
+      const duelNow = me.duelId ? duels.get(me.duelId) : null;
+      const frozen = !!(duelNow && duelNow.tickCount <= COUNTDOWN_TICKS);
+      if (!frozen) {
+        me.x = Math.max(0, Math.min(800, +m.x || 0));
+        me.y = Math.max(0, Math.min(450, +m.y || 0));
+      }
       broadcastState();
     }
     if (m.type === 'chat') {
@@ -2489,6 +2826,17 @@ wss.on('connection', (ws, req) => {
     }
     if (m.type === 'style') {
       if (STYLES[m.style]) { profile.style = m.style; save(key); send(ws, { type: 'profile', profile: publicProfile(profile) }); }
+    }
+    // Stage 10: change your character's appearance. Sanitised over
+    // the current look (partial updates keep the rest), marked
+    // chosen, saved, and broadcast so every nearby client re-renders
+    // the knight — the state snapshot carries appearance per player.
+    if (m.type === 'set_appearance') {
+      profile.appearance = { ...cleanAppearance(m.appearance, profile.appearance), chosen: true };
+      save(key);
+      sendProfile(key);
+      broadcastState();
+      return;
     }
 
     // ----- Travel between areas (Stage 1) -----
@@ -2687,6 +3035,7 @@ wss.on('connection', (ws, req) => {
       const def = itemDef(item);
       const qty = Math.max(1, Math.min(9999, Math.floor(+m.qty || 1)));
       if (!def) return send(ws, { type: 'error', message: 'Unknown item. (Gold is not an item — it cannot be dropped.)' });
+      if (def.kind === 'note') return send(ws, { type: 'error', message: NOTE_PERSONAL_MSG }); // Stage 9: notes are personal
       if (me.duelId) return send(ws, { type: 'error', message: 'You cannot drop items during a duel.' });
       if (me.fcRunId) return send(ws, { type: 'error', message: 'You cannot drop items during a Fight Caves run.' });
       if (!removeStacks(profile.backpack, item, qty)) return send(ws, { type: 'error', message: `You don't have ${qty} x ${def.name}.` });
@@ -2972,7 +3321,7 @@ wss.on('connection', (ws, req) => {
       const def = itemDef(item);
       const qty = Math.max(1, Math.min(999, Math.floor(+m.qty || 1)));
       if (!def) return send(ws, { type: 'error', message: 'Unknown item.' });
-      if (def.kind === 'token') return send(ws, { type: 'error', message: "That can't be sold." });
+      if (def.kind === 'token' || def.kind === 'note') return send(ws, { type: 'error', message: "That can't be sold." });
       if (def.custom) return send(ws, { type: 'error', message: "That can't be sold." }); // Stage 7D: customs, same treatment as tokens
       // Shops buy anything with a sell price: their own stock at 60%
       // back, and Stage 2 gathered resources at their fixed sellOnly.
@@ -3015,6 +3364,26 @@ wss.on('connection', (ws, req) => {
       save(key);
       return sendProfile(key);
     }
+    // Stage 10 (client drag-to-move): reorder two backpack stacks.
+    // A pure swap of two EXISTING stack entries — no quantities
+    // change, no item is created or destroyed, so no item rule can
+    // be bypassed. a == b is a no-op success (the client fires it
+    // when a drag ends where it started); anything out of bounds or
+    // non-integer is an error and changes nothing.
+    if (m.type === 'inv_swap') {
+      const a = m.a, b = m.b;
+      if (!Number.isInteger(a) || !Number.isInteger(b)
+        || a < 0 || b < 0 || a >= profile.backpack.length || b >= profile.backpack.length) {
+        return send(ws, { type: 'error', message: 'No backpack slot there to swap.' });
+      }
+      if (a !== b) {
+        const tmp = profile.backpack[a];
+        profile.backpack[a] = profile.backpack[b];
+        profile.backpack[b] = tmp;
+        save(key);
+      }
+      return sendProfile(key);
+    }
 
     // ----- Use a consumable -----
     if (m.type === 'use') {
@@ -3046,7 +3415,7 @@ wss.on('connection', (ws, req) => {
               type: 'npc_fight', phase: 'tick', npcId: bf.brother, kind: 'barrows',
               hpYou: bf.hpYou, maxHpYou: bf.maxHpYou,
               hpNpc: Math.max(0, bf.hpNpc), maxHpNpc: bf.maxHpNpc,
-              youHit: 0, npcHit: 0, youSpecial: false, energyYou: profile.specialEnergy,
+              youHit: 0, npcHit: 0, youOutcome: null, npcOutcome: null, youSpecial: false, energyYou: profile.specialEnergy,
               note: `${profile.username} used ${def.name} (+${def.heal} HP)`,
             });
             return sendProfile(key);
@@ -3078,7 +3447,7 @@ wss.on('connection', (ws, req) => {
           type: 'npc_fight', phase: 'tick', npcId: nf.npcId,
           hpYou: nf.hpYou, maxHpYou: nf.maxHpYou,
           hpNpc: npcNow ? Math.max(0, npcNow.hp) : 0, maxHpNpc: npcNow ? npcNow.maxHp : 0,
-          youHit: 0, npcHit: 0, youSpecial: false, energyYou: profile.specialEnergy,
+          youHit: 0, npcHit: 0, youOutcome: null, npcOutcome: null, youSpecial: false, energyYou: profile.specialEnergy,
           note: `${profile.username} used ${def.name} (+${def.heal} HP)`,
         });
         return sendProfile(key);
@@ -3091,8 +3460,9 @@ wss.on('connection', (ws, req) => {
         const p = online.get(k);
         if (p) send(p.ws, {
           type: 'duel_tick', hpYou: duel.hp[k], hpOpponent: duel.hp[k === duel.a ? duel.b : duel.a],
-          youHit: 0, oppHit: 0, youSpecial: false, oppSpecial: false,
+          youHit: 0, oppHit: 0, youOutcome: null, oppOutcome: null, youSpecial: false, oppSpecial: false,
           energyYou: db.users[k].profile.specialEnergy,
+          countdownLeft: Math.max(0, COUNTDOWN_TICKS - duel.tickCount + 1),
           note: `${profile.username} used ${def.name} (+${def.heal} HP)`,
         });
       }
@@ -3122,7 +3492,7 @@ wss.on('connection', (ws, req) => {
       // Stage 7A: tokens are never Exchange goods — a sell attempt
       // gets the token error, not the generic unknown-good one.
       const wantedGood = String(m.good || '');
-      if (itemDef(wantedGood) && itemDef(wantedGood).kind === 'token') return send(ws, { type: 'error', message: "That can't be sold." });
+      if (itemDef(wantedGood) && (itemDef(wantedGood).kind === 'token' || itemDef(wantedGood).kind === 'note')) return send(ws, { type: 'error', message: "That can't be sold." });
       const good = GOODS.find((g) => g.id === wantedGood);
       const qty = Math.max(1, Math.min(999, Math.floor(+m.qty || 1)));
       if (!good) return send(ws, { type: 'error', message: 'Unknown exchange good.' });
@@ -3163,6 +3533,25 @@ wss.on('connection', (ws, req) => {
     }
 
     // ----- Special attack (Dragon Slash) -----
+    if (m.type === 'duel_attack') {
+      // Stage 12: tap-to-attack. A duel fighter starts UN-engaged
+      // and never swings until they tap their opponent (this
+      // message) — the ONLY way to engage: being hit never wakes a
+      // duelist (no auto-retaliate; "players have to tap attack to
+      // retaliate"). Taps are accepted during the countdown;
+      // engaging arms the swing timer: the first swing lands on
+      // the next tick after the duel's 5-tick countdown — or on
+      // the next tick, if the countdown is long past. Tapping
+      // again while already engaged is a harmless no-op.
+      const duel = me.duelId ? duels.get(me.duelId) : null;
+      if (!duel) return send(ws, { type: 'error', message: 'You are not in a duel.' });
+      if (!duel.engaged[key]) {
+        duel.engaged[key] = true;
+        duel.nextSwingAt[key] = Math.max(COUNTDOWN_TICKS, duel.tickCount) + 1;
+      }
+      return;
+    }
+
     if (m.type === 'special') {
       const duel = me.duelId ? duels.get(me.duelId) : null;
       const nf = !duel && me.npcFightId ? npcFights.get(me.npcFightId) : null;
@@ -3434,6 +3823,93 @@ wss.on('connection', (ws, req) => {
       send(ws, { type: 'admin_note', text: `Accepted ${requesterProfile.username}'s Certificate exchange (250g paid).` });
       send(ws, { type: 'chat', from: 'Game', text: `📜 ${requesterProfile.username} exchanged a Certificate with you for 250g.` });
       broadcast({ type: 'chat', from: 'Game', text: `📜 ${requesterProfile.username} exchanged a Certificate with ${profile.username} for 250g.` });
+      return;
+    }
+    // ----- Stage 9: signed notes (the certificate request flow) -----
+    // A player signs a Note FROM a Certificate, then gives the signed
+    // note to an admin as a request; the admin agrees (signer +250g)
+    // or declines (the signed note returns). The broadcast
+    // exchange_cert panel flow above is separate and unchanged.
+    if (m.type === 'sign_note') {
+      ensureV2(profile);
+      const certQty = stackQty(profile.backpack, 'certificate');
+      if (certQty < 1) return send(ws, { type: 'error', message: "You don't have a Certificate to sign." });
+      // The note needs a backpack stack of its own: signing always
+      // fits unless the pack is full AND the certificate stack
+      // survives the signing (qty > 1) AND no note stack exists yet.
+      const hasNoteStack = profile.backpack.some((s) => s.item === 'note');
+      if (!hasNoteStack && certQty > 1 && profile.backpack.length >= BACKPACK_MAX_STACKS) {
+        return send(ws, { type: 'error', message: 'Your backpack is full (28 stacks).' });
+      }
+      removeStacks(profile.backpack, 'certificate', 1);
+      addStacks(profile.backpack, 'note', 1, BACKPACK_MAX_STACKS);
+      profile.notes.push({ text: noteRequestText(profile.username), from: profile.username, at: Date.now() });
+      save(key);
+      send(ws, { type: 'chat', from: 'Game', text: '📝 You signed a Note requesting 250g for 1 Certificate. Give it to an admin to ask.' });
+      return sendProfile(key);
+    }
+    if (m.type === 'read_note') {
+      // Reading shows the OLDEST held signed note and consumes
+      // NOTHING — the note is still yours to give away afterwards.
+      ensureV2(profile);
+      if (stackQty(profile.backpack, 'note') < 1) return send(ws, { type: 'error', message: 'You have no note to read.' });
+      if (profile.notes.length === 0) return send(ws, { type: 'error', message: 'That note is blank.' });
+      const entry = profile.notes[0];
+      return send(ws, { type: 'note_text', text: entry.text, from: entry.from, at: entry.at });
+    }
+    if (m.type === 'give_note') {
+      ensureV2(profile);
+      if (stackQty(profile.backpack, 'note') < 1) return send(ws, { type: 'error', message: 'You have no note to give.' });
+      if (profile.notes.length === 0) return send(ws, { type: 'error', message: 'That note is blank.' });
+      const targetKey = userKeyFor(m.to);
+      if (targetKey === key) return send(ws, { type: 'error', message: "You can't give a note to yourself." });
+      const target = online.get(targetKey);
+      if (!target) return send(ws, { type: 'error', message: 'That admin is not online right now.' });
+      if (!isAdminOrOwner(target.profile)) return send(ws, { type: 'error', message: 'You can only give a note to an admin.' });
+      removeStacks(profile.backpack, 'note', 1);
+      const entry = profile.notes.shift();
+      const id = ++noteSeq;
+      noteRequests.set(id, { id, fromKey: key, fromName: profile.username, text: entry.text, toKey: targetKey, at: entry.at });
+      save(key);
+      send(target.ws, { type: 'note_request', id, from: profile.username, text: entry.text });
+      send(ws, { type: 'chat', from: 'Game', text: `📝 You gave your signed Note to ${target.profile.username}.` });
+      return sendProfile(key);
+    }
+    if (m.type === 'admin_notes') {
+      if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'You do not have permission to do that.' });
+      const notes = [...noteRequests.values()]
+        .filter((r) => r.toKey === key)
+        .map((r) => ({ id: r.id, from: r.fromName, text: r.text, at: r.at }));
+      return send(ws, { type: 'admin_notes', notes });
+    }
+    if (m.type === 'note_reply') {
+      if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'You do not have permission to do that.' });
+      const req = noteRequests.get(Math.floor(+m.id || 0));
+      if (!req) return send(ws, { type: 'error', message: 'That note is gone.' });
+      if (req.toKey !== key) return send(ws, { type: 'error', message: 'That note was given to another admin.' });
+      // The decision removes the pending note either way.
+      noteRequests.delete(req.id);
+      const signerUser = db.users[req.fromKey];
+      if (!signerUser) return send(ws, { type: 'error', message: 'That player is gone.' });
+      const signerProfile = signerUser.profile;
+      ensureV2(signerProfile);
+      const signerSess = online.get(req.fromKey);
+      if (m.accept === true) {
+        // Settled on the signer's SAVED profile — they are paid even
+        // if they have gone offline since handing the note over.
+        signerProfile.gold += 250;
+        save(req.fromKey); save(key);
+        if (signerSess) {
+          sendProfile(req.fromKey);
+          send(signerSess.ws, { type: 'chat', from: 'Game', text: `📜 Your signed Note was approved by ${profile.username} — 250g paid.` });
+        }
+        send(ws, { type: 'admin_note', text: `Approved ${req.fromName}'s signed Note (250g paid).` });
+        send(ws, { type: 'chat', from: 'Game', text: `📜 You approved ${req.fromName}'s signed Note (250g paid).` });
+        return;
+      }
+      returnSignedNote(req, `📝 ${profile.username} declined your signed Note — it has been returned to you.`);
+      save(key);
+      send(ws, { type: 'admin_note', text: `Declined ${req.fromName}'s signed Note — returned to them.` });
       return;
     }
 
@@ -3758,6 +4234,7 @@ wss.on('connection', (ws, req) => {
         const item = String((e && e.item) || '');
         const qty = Math.floor(+(e && e.qty) || 0);
         if (!itemDef(item)) return send(ws, { type: 'error', message: 'Unknown item.' }); // Stage 7D: customs are tradeable
+        if (itemDef(item).kind === 'note') return send(ws, { type: 'error', message: NOTE_PERSONAL_MSG }); // Stage 9: notes are personal
         if (qty < 1) return send(ws, { type: 'error', message: 'Invalid item quantity.' });
         merged.set(item, (merged.get(item) || 0) + qty);
       }
@@ -3789,6 +4266,7 @@ wss.on('connection', (ws, req) => {
       const targetKey = String(m.target || '').toLowerCase();
       const stake = Math.floor(+m.stake || 0);
       const items = sanitizeItems(m.items);
+      if (items.some((s) => s.item === 'note')) return send(ws, { type: 'error', message: NOTE_PERSONAL_MSG }); // Stage 9: notes are personal
       const target = online.get(targetKey);
       if (!target || targetKey === key) return send(ws, { type: 'error', message: 'Pick another online player.' });
       if (me.duelId || target.duelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
@@ -3816,6 +4294,7 @@ wss.on('connection', (ws, req) => {
       if (me.barrowsFightId || fromP.barrowsFightId) return send(ws, { type: 'error', message: 'One of you is fighting a Barrows brother.' });
       if (me.fcRunId || fromP.fcRunId) return send(ws, { type: 'error', message: 'One of you is in the Fight Caves.' });
       const myItems = sanitizeItems(m.items);
+      if (myItems.some((s) => s.item === 'note')) return send(ws, { type: 'error', message: NOTE_PERSONAL_MSG }); // Stage 9: notes are personal
       // Re-check purses AND backpacks at accept time — escrow only happens now.
       if (db.users[ch.from].profile.gold < ch.stake || profile.gold < ch.stake) return send(ws, { type: 'error', message: 'Someone no longer has the gold.' });
       if (!hasItems(db.users[ch.from].profile, ch.items)) return send(ws, { type: 'error', message: 'The challenger no longer has the staked items.' });
@@ -3860,6 +4339,16 @@ wss.on('connection', (ws, req) => {
       }
     }
     certRequests.delete(key);
+    // Stage 9: signed notes an admin was holding when they left go
+    // back to their signers (item + text) — a note is never lost
+    // because its admin logged off. Notes the leaver gave away stay
+    // pending: their signer is settled from the saved profile.
+    for (const [nid, r] of [...noteRequests]) {
+      if (r.toKey === key) {
+        noteRequests.delete(nid);
+        returnSignedNote(r, '📝 The admin left, so your signed Note was returned to you.');
+      }
+    }
     // Stage 7B: leaving removes you from your party (remaining
     // members are notified and refreshed; a party under 2 dissolves),
     // clears pending party invites involving you, cancels any active
