@@ -206,6 +206,11 @@
  #barrowsbar.open{display:block}
  #barrowsbar .t{font-weight:900;color:#d8b4fe;text-align:center;font-size:14px;margin-bottom:5px}
  #barrowsbar .x{background:none;border:0;color:#e8d9b0;font-size:15px;cursor:pointer;float:right}
+ /* Stage 17: Stake Board waiting bar — shown while you stand in the Waiting Area */
+ #stakewaitbar{position:fixed;top:44px;right:8px;z-index:44;width:min(320px,74vw);background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:12px;padding:8px 10px;display:none}
+ #stakewaitbar.open{display:block}
+ #stakewaitbar .t{font-weight:900;color:#e3c766;text-align:center;font-size:14px;margin-bottom:5px}
+ #stakewaitbar .btns{margin-top:6px}
  .bchip{display:inline-block;background:#221a13;border:1px solid #4a3a28;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700;margin:0 3px 4px 0;color:#b8a888}
  .bchip.slain{color:#7dff8a;border-color:#2e6b24}
  .bchip.tun{border-color:#c9a227;color:#e0cfa0}
@@ -264,7 +269,7 @@
 <div id="labels"></div>
 <div id="splats"></div>
 
-<div id="topbar"><b>⚔️ nallystake 🏰</b><span id="hudname">—</span><span>🪙 <b id="hudgold">0</b>g</span><span>⭐ <b id="hudrating">1000</b></span><span id="hudwl">0W/0L</span><span id="hudcombat">⚔️ Combat lvl 3</span><span class="grow"></span><span class="note">gold only · no real money</span></div>
+<div id="topbar"><b>⚔️ nallystake 🏰</b><span id="hudname">—</span><span>⭐ <b id="hudrating">1000</b></span><span id="hudwl">0W/0L</span><span id="hudcombat">⚔️ Combat lvl 3</span><span class="grow"></span><span class="note">gold only · no real money</span></div>
 
 <div id="mapwrap">
  <canvas id="minimap" width="128" height="72"></canvas>
@@ -353,12 +358,19 @@
  <div class="note" id="barrowshint" style="text-align:center"></div>
 </div>
 
+<div id="stakewaitbar">
+ <div class="t">⏳ Waiting Area</div>
+ <div class="note" id="stakewaittxt" style="text-align:center">Waiting for your opponent to hit Ready…</div>
+ <div class="btns"><button class="ghost" id="stakewaitcancel">Cancel match</button></div>
+</div>
+
 <div id="chatbox" class="closed">
  <div id="chathead"><span>💬 Chat / game log</span><span id="chatchev">▸</span></div>
  <div id="chatbody"><div id="log"></div><div id="chatrow"><input id="chat" placeholder="Say something…" maxlength="140"><button class="act" id="sendchat">Send</button></div></div>
 </div>
 
 <div class="modal" id="challengemodal"><div class="sheet" id="challengesheet"></div></div>
+<div class="modal" id="stakeboardmodal"><div class="sheet" id="stakeboardsheet"></div></div>
 <div class="modal" id="incomingmodal"><div class="sheet" id="incomingsheet"></div></div>
 <div class="modal" id="duelendmodal"><div class="sheet" id="duelendsheet"></div></div>
 <div class="modal" id="fcstartmodal"><div class="sheet" id="fcstartsheet"></div></div>
@@ -421,19 +433,47 @@ const ICONS={restore_potion:'🍷',prayer_potion:'🌟',ration:'🍗',bronze_swo
  bronze_bar:'🟫',iron_bar:'⬜',silver_bar:'🥈',steel_bar:'⬛',mithril_bar:'🟦',adamant_bar:'🟩',rune_bar:'🟪',
  fire_cape:'🔥',
  dharoks_greataxe:'🪓',guthans_warspear:'🔱',torags_hammers:'🔨',veracs_flail:'⛓️',ahrims_staff:'🪄',karils_crossbow:'🏹',
- nc:'🪙',certificate:'📜'};
-const KIND_ICON={potion:'🧪',food:'🍗',weapon:'⚔️',armour:'🛡️',good:'📦',tool:'⛏️',trophy:'🏆',token:'🪙'};
+ nc:'🪙',certificate:'📜',note:'📝',gold:'🪙'};
+const KIND_ICON={potion:'🧪',food:'🍗',weapon:'⚔️',armour:'🛡️',good:'📦',tool:'⛏️',trophy:'🏆',token:'🪙',currency:'🪙'};
 function iconOf(id){ if(ICONS[id])return ICONS[id]; const d=catalog[id]; if(d&&d.icon) return d.icon; return d? (KIND_ICON[d.kind]||'📦') : '📦'; }
+/* Stage 16: the gold stack's face — a coin pile that GROWS with
+   the amount (Derek's design): 1 coin, 2, 3, 4, then bigger and
+   bigger piles. Coins are 🪙 spans layered in a square box; the
+   stack's count label beside it still shows the exact amount.
+   Tier layouts are [left%, bottom%] per coin, bottom layer first. */
+const GOLD_PILE_TIERS=[
+ {max:1, coins:[[31,26]]},
+ {max:2, coins:[[8,26],[54,26]]},
+ {max:3, coins:[[8,8],[54,8],[31,44]]},
+ {max:4, coins:[[6,44],[52,44],[6,6],[52,6]]},
+ {max:24, coins:[[4,4],[36,4],[66,4],[20,36],[50,36]]},
+ {max:99, coins:[[2,2],[26,2],[50,2],[74,2],[14,32],[38,32],[62,32]]},
+ {max:999, coins:[[2,2],[24,2],[46,2],[68,2],[12,28],[34,28],[56,28],[24,54],[46,54]]},
+ {max:Infinity, coins:[[0,0],[20,0],[40,0],[60,0],[78,0],[10,24],[30,24],[50,24],[70,24],[20,48],[42,48],[62,48],[31,70]]},
+];
+function goldPileHTML(qty,size){
+ const sz=size||24;
+ let q=Math.floor(+qty||0);
+ if(!(q>=1)) q=(me? stackQtyOf(me.backpack,'gold'):0)||1; // no qty at hand: show my own pile
+ const tier=GOLD_PILE_TIERS.find(t=>q<=t.max)||GOLD_PILE_TIERS[GOLD_PILE_TIERS.length-1];
+ const fs=Math.max(9,Math.round(sz*0.52));
+ const glow=q>=1000?'filter:drop-shadow(0 0 3px rgba(227,199,102,.9));':'';
+ const coins=tier.coins.map(([l,b])=>`<span style="position:absolute;left:${l}%;bottom:${b}%;font-size:${fs}px;line-height:1">🪙</span>`).join('');
+ return `<span style="position:relative;display:inline-block;width:${sz}px;height:${sz}px;vertical-align:middle;${glow}">${coins}</span>`;
+}
 /* Stage 8: an item's face in DOM UI — the admin's drawn art if the def
    has any, else its emoji, on a tint chip when the def carries a color
-   (custom items only; base items just get their emoji as before). */
-function itemIconHTML(item,size){
+   (custom items only; base items just get their emoji as before).
+   Stage 16: 'gold' ignores all of that — its face is the coin pile,
+   sized by the stack quantity when the caller passes one. */
+function itemIconHTML(item,size,qty){
  const d=catalog[item], sz=size||24;
+ if(item==='gold') return goldPileHTML(qty,sz);
  if(d&&d.art) return `<img src="${d.art}" alt="" style="width:${sz}px;height:${sz}px;border-radius:6px;vertical-align:middle;object-fit:cover">`;
  if(d&&d.color) return `<span style="display:inline-block;background:${d.color};border:1px solid rgba(0,0,0,.5);border-radius:6px;padding:0 3px;font-size:${Math.max(12,sz-3)}px;line-height:1.25;vertical-align:middle">${iconOf(item)}</span>`;
  return iconOf(item);
 }
-function nameOf(id){ if(catalog[id])return catalog[id].name; if(goods[id])return goods[id].name; if(id==='nc')return 'NC'; if(id==='certificate')return 'Certificate'; return id; }
+function nameOf(id){ if(catalog[id])return catalog[id].name; if(goods[id])return goods[id].name; if(id==='nc')return 'NC'; if(id==='certificate')return 'Certificate'; if(id==='gold')return 'Gold coins'; return id; }
 function stackQtyOf(stacks,id){ const s=(stacks||[]).find(x=>x.item===id); return s?s.qty:0; }
 function myQty(id){ return me? stackQtyOf(me.backpack,id):0; }
 function send(o){ if(ws&&ws.readyState===1) ws.send(JSON.stringify(o)); }
@@ -684,14 +724,20 @@ function onMsg(m){
  if(m.type==='duel_start'){ startDuelUI(m); }
  if(m.type==='duel_tick'){ duelTickUI(m); }
  if(m.type==='duel_end'){ endDuelUI(m); }
+ if(m.type==='stake_board'){ stakeBoard={offers:m.offers||[]}; if($('stakeboardmodal').classList.contains('open')) renderStakeBoard(); }
+ if(m.type==='stake_matched'){ stakeMatch={matchId:m.matchId,opponent:m.opponent,stake:m.stake,pot:m.pot,readyMine:false,readyOpponent:false}; toast(`🤝 Stake match vs ${m.opponent} — winner takes ${m.pot}g!`); logLine(`🤝 Stake Board: matched vs ${m.opponent} for ${m.stake}g each (pot ${m.pot}g).`); $('stakeboardmodal').classList.add('open'); renderStakeBoard(); }
+ if(m.type==='stake_match_update'){ if(stakeMatch&&m.matchId===stakeMatch.matchId){ const wasOppReady=stakeMatch.readyOpponent; stakeMatch.opponent=m.opponentName||m.opponent||stakeMatch.opponent; stakeMatch.stake=m.stake; stakeMatch.pot=m.pot; stakeMatch.readyMine=!!m.readyMine; stakeMatch.readyOpponent=!!m.readyOpponent; if(stakeMatch.readyOpponent&&!wasOppReady&&!stakeMatch.readyMine) toast(`⏳ ${stakeMatch.opponent} is ready and waiting — hit Ready to start!`); if($('stakeboardmodal').classList.contains('open')) renderStakeBoard(); } }
+ if(m.type==='stake_waiting'){ closeModal('stakeboardmodal'); if(stakeMatch){ stakeMatch.readyMine=true; } $('stakewaittxt').textContent=`⏳ Waiting Area — waiting for ${m.opponent} to hit Ready… the fight starts the moment they do. Winner takes ${m.pot}g.`; $('stakewaitbar').classList.add('open'); }
+ if(m.type==='stake_match_cancelled'){ stakeMatch=null; $('stakewaitbar').classList.remove('open'); closeModal('stakeboardmodal'); toast('⚔️ '+(m.reason||'Stake match cancelled — no gold was taken.')); }
 }
 
 /* ================= HUD / orbs ================= */
-function renderAll(){ renderHUD(); renderOrbs(); refreshToolsBtn(); if(drawerPanel) renderDrawer(); if(fcRun) renderFcBar(); drawMinimap(); }
+function renderAll(){ renderHUD(); renderOrbs(); refreshToolsBtn(); if(drawerPanel) renderDrawer(); if(fcRun) renderFcBar(); drawMinimap(); if($('stakeboardmodal').classList.contains('open')) renderStakeBoard(); }
 function renderHUD(){
  if(!me) return;
  $('hudname').textContent=me.username;
- $('hudgold').textContent=me.gold;
+ // Stage 16: no gold counter up here any more — gold is the coin
+ // stack in the backpack (and bank); panels show the total inside.
  $('hudrating').textContent=me.rating;
  $('hudwl').textContent=`${me.wins}W/${me.losses}L`;
  $('hudcombat').textContent=`⚔️ Combat lvl ${Math.floor(me.combatLevel||3)}`;
@@ -769,6 +815,10 @@ const SHOP_SPOTS=[ // server coords (Stage 13: old spots x2 — must match the s
  {shop:'Food & Supplies',x:340,y:680,color:0x3f9e4d},
 ];
 const BOARD_POS={x:984,y:450};
+const STAKE_SIGN_POS={x:180,y:780}; // Stage 17: Stake Board sign, south-west plaza (server 180,780 — clear of the SW gate trigger at x<=20,y>=860)
+let stakeSparkles=[]; // sign sparkle meshes, pulsed in animate()
+let stakeBoard={offers:[]}; // latest stake_board payload
+let stakeMatch=null; // {matchId,opponent,stake,pot,readyMine,readyOpponent} while matched
 let renderer, scene, camera, raycaster, sunLight=null;
 let curArea='plaza';
 let areaGroups={}; // 'plaza' | 'goblins' -> THREE.Group (only the current one is visible)
@@ -897,6 +947,30 @@ function buildPlaza(root){
  box(0.18,2.4,0.18,0x5a4020,-1.1,1.2,0,bg); box(0.18,2.4,0.18,0x5a4020,1.1,1.2,0,bg);
  box(2.8,1.7,0.12,0x8a6d1f,0,1.7,0,bg,{type:'players'});
  const dbl=textSprite('⚔️ DUEL BOARD','#e3c766','rgba(23,19,12,0.85)'); dbl.position.set(0,3.2,0); bg.add(dbl);
+ // ⚔️ STAKE BOARD (Stage 17) — sparkling sign in the SOUTH-WEST
+ // corner (server 180,780): tap it to offer your gold bid; anyone
+ // can accept, both Ready up, winner takes the pot.
+ const sbg=new THREE.Group(); sbg.position.set(sx2w(STAKE_SIGN_POS.x),0,sy2w(STAKE_SIGN_POS.y)); scene.add(sbg);
+ const sbAct={type:'stakeboard'};
+ box(0.18,2.6,0.18,0x5a4020,-1.1,1.3,0,sbg,sbAct); box(0.18,2.6,0.18,0x5a4020,1.1,1.3,0,sbg,sbAct); // posts
+ boxM(3.0,1.8,0.12,new THREE.MeshLambertMaterial({map:woodTexture('#74552a')}),0,1.85,0,sbg,sbAct); // board
+ box(3.2,0.16,0.16,0xd4af37,0,2.82,0,sbg,sbAct); box(3.2,0.16,0.16,0xd4af37,0,0.88,0,sbg,sbAct); // gold trim top/bottom
+ box(0.16,1.95,0.16,0xd4af37,-1.58,1.85,0,sbg,sbAct); box(0.16,1.95,0.16,0xd4af37,1.58,1.85,0,sbg,sbAct); // gold trim sides
+ const sbl=textSprite('⚔️ STAKE BOARD','#ffd75e','rgba(23,19,12,0.9)'); sbl.position.set(0,3.5,0); sbg.add(sbl);
+ // sparkles: little gold/white octahedra floating around the board,
+ // pulsed (scale + flicker + bob) in animate() via stakeSparkles.
+ stakeSparkles=[];
+ for(let i=0;i<9;i++){
+   const sm=new THREE.Mesh(new THREE.OctahedronGeometry(0.13),new THREE.MeshBasicMaterial({color:i%2? 0xffffff:0xffd75e}));
+   const a=(i/9)*Math.PI*2;
+   sm.position.set(Math.cos(a)*1.9,1.85+Math.sin(i*2.3)*0.85,0.35+Math.sin(a)*0.25);
+   sm.userData.act=sbAct; interactives.push(sm); sbg.add(sm);
+   stakeSparkles.push({mesh:sm,phase:Math.random()*10,baseY:sm.position.y});
+ }
+ const sblabel=document.createElement('div'); sblabel.className='plabel';
+ sblabel.innerHTML=`<div class="nname">⚔️ Stake Board — offer a fight</div>`;
+ $('labels').appendChild(sblabel);
+ worldLabels.push({el:sblabel,x:sx2w(STAKE_SIGN_POS.x),y:3.9,z:sy2w(STAKE_SIGN_POS.y),area:'plaza',kind:'static'});
  // Duel Master — static figure standing by the board (Fisher Wren pattern)
  const dm=new THREE.Group(); dm.position.set(23,0,5.6); scene.add(dm); // Stage 13: x2, still beside the duel board
  box(0.24,0.7,0.24,0x241a12,-0.16,0.35,0,dm); box(0.24,0.7,0.24,0x241a12,0.16,0.35,0,dm); // legs
@@ -1379,6 +1453,31 @@ function setArenaVariant(id){
  if(arenaFloorMat) arenaFloorMat.color.setHex(v.floor);
  for(const k of Object.keys(arenaDecor)) for(const o of arenaDecor[k]) o.visible=(k===arenaVariant);
 }
+/* ---- Stage 17: Waiting Area (Stake Board matches) ---- */
+function buildWaiting(root){
+ const S=root;
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:stoneTexture(18,12),color:0x9a958a}));
+ floor.rotation.x=-Math.PI/2; S.add(floor);
+ // rock walls on every side — no gates: the only ways out are the
+ // fight starting (startDuel) or cancelling the match.
+ rockWallRun(S,-80,-45,80,-45); rockWallRun(S,-80,45,80,45);
+ rockWallRun(S,-80,-45,-80,45); rockWallRun(S,80,-45,80,45);
+ buildTorch(S,-28,-40); buildTorch(S,28,-40); buildTorch(S,-28,40); buildTorch(S,28,40);
+ // banner over the north wall
+ box(0.18,2.2,0.18,0x5a4020,0,1.1,-39,S);
+ const sp=textSprite('⏳ WAITING AREA','#e3c766','rgba(23,19,12,0.85)'); sp.position.set(0,3.2,-39); S.add(sp);
+ // two glowing spawn pads: poster west (server 700,450), acceptor east (900,450)
+ for(const [px,col] of [[700,0xffd75e],[900,0xd9dee6]]){
+   const pad=new THREE.Mesh(new THREE.CircleGeometry(1.7,20),new THREE.MeshBasicMaterial({color:col}));
+   pad.rotation.x=-Math.PI/2; pad.position.set(sx2w(px),0.04,sy2w(450)); S.add(pad);
+   const ring=new THREE.Mesh(new THREE.RingGeometry(1.7,2.0,20),new THREE.MeshLambertMaterial({color:0xc9a227}));
+   ring.rotation.x=-Math.PI/2; ring.position.set(sx2w(px),0.035,sy2w(450)); S.add(ring);
+ }
+ const wlabel=document.createElement('div'); wlabel.className='plabel';
+ wlabel.innerHTML=`<div class="nname">⏳ Waiting Area — the fight starts when both fighters are ready</div>`;
+ $('labels').appendChild(wlabel);
+ worldLabels.push({el:wlabel,x:0,y:3.4,z:-39,area:'waiting',kind:'static'});
+}
 /* ---- Barrows state + HUD ---- */
 function onBarrowsState(m){
  barrowsState={kills:m.kills||[],tunnel:m.tunnel||null,inTunnels:!!m.inTunnels};
@@ -1514,6 +1613,7 @@ function buildAreas(){
  areaGroups.barrows=new THREE.Group(); scene.add(areaGroups.barrows); buildBarrows(areaGroups.barrows);
  areaGroups.barrows_tunnels=new THREE.Group(); scene.add(areaGroups.barrows_tunnels); buildBarrowsTunnels(areaGroups.barrows_tunnels);
  areaGroups.arena=new THREE.Group(); scene.add(areaGroups.arena); buildArena(areaGroups.arena);
+ areaGroups.waiting=new THREE.Group(); scene.add(areaGroups.waiting); buildWaiting(areaGroups.waiting);
  applyAreaVisibility();
 }
 function applyAreaVisibility(){
@@ -1553,7 +1653,7 @@ function setArea(a){
  }
  drawMinimap();
 }
-const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_tunnels:1,arena:1};
+const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_tunnels:1,arena:1,waiting:1};
 /* Knight armour (Stage 8 medieval theme): rounded bodies — sphere
    head under a steel helmet cap, tapered-cylinder torso, cylinder
    limbs on shoulder/hip pivots (the right shoulder pivot is the weapon
@@ -2113,7 +2213,8 @@ function rebuildPiles(){
    box(0.62,0.42,0.62,0x8a6d3f,0,0.21,0,g); // sack
    box(0.3,0.22,0.3,0xa8845a,0,0.52,0,g); // sack neck
    const label=document.createElement('div'); label.className='plabel';
-   label.innerHTML=`<div class="nname">${iconOf(p.item)} ${esc(nameOf(p.item))}${p.qty>1?' ×'+p.qty:''}</div>${p.owner?`<div class="nsub">${esc(p.owner)}'s drop</div>`:''}`;
+   // Stage 16: a dropped gold pile wears the coin-pile face, sized by its amount.
+   label.innerHTML=`<div class="nname">${p.item==='gold'? goldPileHTML(p.qty,18) : iconOf(p.item)} ${esc(nameOf(p.item))}${p.qty>1?' ×'+p.qty:''}</div>${p.owner?`<div class="nsub">${esc(p.owner)}'s drop</div>`:''}`;
    $('labels').appendChild(label);
    worldLabels.push({el:label,x:sx2w(p.x),y:1.5,z:sy2w(p.y),area,kind:'pile',pileId:p.id});
    pileProps[p.id]={x:sx2w(p.x),z:sy2w(p.y),labelY:1.5,pile:p};
@@ -2512,6 +2613,7 @@ function handleTap(cx,cy){
      if(act.type==='bank'){ openPanel('bank'); return; }
      if(act.type==='shop'){ shopTab=act.shop; openPanel('shop'); return; }
      if(act.type==='players'){ openPanel('players'); return; }
+     if(act.type==='stakeboard'){ openStakeBoard(); return; }
    }
  }
  // goblins (tap to attack; walks over first if too far)
@@ -2720,6 +2822,7 @@ function drawMinimap(){
  const caveBg=(curArea==='training'||curArea==='gathering'||curArea==='mine'||curArea==='fightcaves');
  g.fillStyle= curArea==='barrows'? '#333a2a'
    : curArea==='barrows_tunnels'? '#0d0a12'
+   : curArea==='waiting'? '#33302a'
    : curArea==='arena'? ARENA_VARIANTS[arenaVariant].css
    : caveBg? (curArea==='fightcaves'? '#241a12' : '#2b2b30') : (curArea==='goblins')? '#55702f' : '#241d15'; g.fillRect(0,0,1600,900);
  if(curArea==='plaza'){
@@ -2729,6 +2832,10 @@ function drawMinimap(){
    g.fillStyle='#e3c766'; g.fillRect(BANK_POS.x-14,BANK_POS.y-14,28,28); // bank
    for(const s of SHOP_SPOTS){ g.fillStyle='#'+s.color.toString(16).padStart(6,'0'); g.fillRect(s.x-12,s.y-12,24,24); }
    g.fillStyle='#fff'; g.fillRect(BOARD_POS.x-8,BOARD_POS.y-8,16,16);
+   g.fillStyle='#ffd75e'; g.beginPath(); g.arc(STAKE_SIGN_POS.x,STAKE_SIGN_POS.y,13,0,7); g.fill(); // Stake Board sign (SW)
+ } else if(curArea==='waiting'){
+   g.fillStyle='#ffd75e'; g.beginPath(); g.arc(700,450,16,0,7); g.fill(); // spawn pads
+   g.fillStyle='#d9dee6'; g.beginPath(); g.arc(900,450,16,0,7); g.fill();
  } else if(curArea==='barrows'){
    for(const id of BARROWS_ORDER){
      const b=BARROWS_CLIENT[id], slain=barrowsState.kills.includes(id);
@@ -2891,6 +2998,14 @@ function animate(){
    const fs=1+0.10*Math.sin(now*0.03+f.phase*5);
    f.flame.scale.set(fs,1+0.16*Math.sin(now*0.041+f.phase),fs);
  }
+ // Stake Board sparkles twinkle (Stage 17): scale pulse + flicker + bob
+ for(const s of stakeSparkles){
+   const sc=0.65+0.55*Math.abs(Math.sin(now*0.006+s.phase*7));
+   s.mesh.scale.set(sc,sc,sc);
+   s.mesh.visible=Math.sin(now*0.009+s.phase*5)>-0.35;
+   s.mesh.rotation.y+=0.04;
+   s.mesh.position.y=s.baseY+0.14*Math.sin(now*0.003+s.phase*3);
+ }
  updateLiveSplats(now);
  // Tree Guardians trail their owners with the same easing
  for(const a of Object.values(allyAvatars)){
@@ -2975,7 +3090,7 @@ document.querySelectorAll('.rbtn').forEach(b=>b.onclick=()=>{ if(b._suppressClic
 $('drawerx').onclick=closeDrawer;
 function itemCell(s,onclick,extra){
  const hl=highlights.has(s.item);
- return `<div class="cell ${extra||''}${hl?' hl':''}" onclick="${onclick}">${hl?'<span class="hlb">⭐</span>':''}<span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${itemIconHTML(s.item,24)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
+ return `<div class="cell ${extra||''}${hl?' hl':''}" onclick="${onclick}">${hl?'<span class="hlb">⭐</span>':''}<span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${itemIconHTML(s.item,24,s.qty)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
 }
 function renderDrawer(){
  if(!drawerPanel||!me) return;
@@ -3008,8 +3123,8 @@ window.cookItem=function(item){
 };
 window.packBackpack=function(){ packSorted=true; renderDrawer(); toast('🎒 Packed — everything pulled to the top, in order.'); };
 /* ---- Stage 7C: Examine block (built from catalog data, no server call) ---- */
-const KIND_LABEL={food:'Food',potion:'Potion',weapon:'Weapon',armour:'Armour',tool:'Tool',resource:'Resource',good:'Trade good',token:'Token',trophy:'Trophy'};
-const KIND_DESC={food:'Eat it to heal.',potion:'Drink it to restore yourself.',weapon:'Wield it to fight with it.',armour:'Wear it to protect yourself in a fight.',tool:'A tool — it speeds up the work it is made for.',resource:'A raw material — cook it, smelt it, smith with it, or sell it.',good:'A trade good — its price drifts on the Gold Exchange.',trophy:'A hard-won trophy. Wear it to show what you beat.'};
+const KIND_LABEL={food:'Food',potion:'Potion',weapon:'Weapon',armour:'Armour',tool:'Tool',resource:'Resource',good:'Trade good',token:'Token',trophy:'Trophy',currency:'Money'};
+const KIND_DESC={food:'Eat it to heal.',potion:'Drink it to restore yourself.',weapon:'Wield it to fight with it.',armour:'Wear it to protect yourself in a fight.',tool:'A tool — it speeds up the work it is made for.',resource:'A raw material — cook it, smelt it, smith with it, or sell it.',good:'A trade good — its price drifts on the Gold Exchange.',trophy:'A hard-won trophy. Wear it to show what you beat.',currency:'Your money, as a stack of coins. It lives in your backpack (or the bank) — shops, stakes and trades draw from both stacks together.'};
 const ITEM_NAME_FALLBACK={nc:'NC',certificate:'Certificate'};
 /* Stage 7D: the identity line for admin-made custom items — every copy
    of the item carries the maker's name and the base it was cloned from. */
@@ -3024,6 +3139,7 @@ function examineHTML(item){
  let desc=KIND_DESC[kind]||'A useful item.';
  if(item==='certificate') desc='Exchange this with an admin for 250g — use the 👑 Admin panel.';
  else if(item==='nc') desc='Mods spend NC to run official fights.';
+ else if(item==='gold') desc=KIND_DESC.currency;
  else if(item==='logs'||item.endsWith('_logs')) desc='Use it to light a fire, then cook on the fire.';
  const stats=[];
  if(d){
@@ -3036,6 +3152,7 @@ function examineHTML(item){
  }
  let price='';
  if(isTokenItem(item,d)) price=`Tokens can't be bought or sold.`;
+ else if(item==='gold') price=`Gold is money — it is never bought or sold, only spent and staked.`;
  else if(d&&(d.buy>0||d.sell>0)) price=`${d.buy>0?`Shops sell it for ${d.buy}g`:''}${d.buy>0&&d.sell>0?' · ':''}${d.sell>0?`shops buy it for ${d.sell}g each`:''}`;
  else if(goods[item]) price=`On the Gold Exchange — around ${goods[item].price}g right now.`;
  return `<div class="detail" style="margin-top:6px"><b>🔍 ${itemIconHTML(item,22)} ${esc((d&&d.name)||ITEM_NAME_FALLBACK[item]||nameOf(item))}</b>
@@ -3069,9 +3186,15 @@ function pBackpack(){
  if(selStack){
    const s=me.backpack.find(x=>x.item===selStack), d=catalog[selStack];
    if(s){
-     h+=`<div class="detail"><b>${itemIconHTML(s.item,22)} ${esc(nameOf(s.item))}</b> x${s.qty}`;
+     h+=`<div class="detail"><b>${itemIconHTML(s.item,22,s.qty)} ${esc(nameOf(s.item))}</b> x${s.qty}`;
      if(d) h+=`<div class="note">${d.kind}${d.slot?` · worn: ${d.slot}`:''}${d.heal?` · heals ${d.heal} HP`:''}${d.prayerRestore?` · restores ${d.prayerRestore} prayer`:''}${d.accBonus?` · +${Math.round(d.accBonus*100)}% accuracy`:''}${d.maxBonus?` · +${d.maxBonus} max hit`:''}${d.reduction?` · −${Math.round(d.reduction*100)}% damage taken`:''}${d.speed?` · ⛏️ pickaxe speed ×${d.speed}`:''}</div>`;
      h+=customLineHTML(s.item);
+     if(s.item==='gold'){
+       // Stage 16: the coin stack IS the money — say where it lives
+       // and what draws from it, right on its own sheet.
+       const inBank=stackQtyOf(me.bank,'gold');
+       h+=`<div class="note" style="margin-top:4px">🪙 This stack is your money${inBank?` — plus ${inBank} more coins in the bank (${me.gold}g in total)`:''}. Shops, duel stakes and trades draw from your backpack and bank coins together. Stake it with the gold amount on the challenge screen — it can't be staked as an item.</div>`;
+     }
      if(isTokenItem(s.item,d)){
        if(s.item==='certificate') h+=`<div class="note" style="margin-top:4px">📜 Exchange this with an admin for 250g — use the 👑 Admin panel.</div>`;
        else if(s.item==='nc') h+=`<div class="note" style="margin-top:4px">🪙 Mods spend NC to run official fights.</div>`;
@@ -3159,7 +3282,7 @@ const BANK_TABS=[['all','All'],['weapons','⚔️ Weapons'],['armour','🛡️ A
 function bankCat(item){
  const d=catalog[item];
  if(d){ if(d.kind==='weapon') return 'weapons'; if(d.kind==='armour') return 'armour';
-   if(d.kind==='food'||d.kind==='potion') return 'food'; if(d.kind==='good'||d.kind==='tool') return 'other'; }
+   if(d.kind==='food'||d.kind==='potion') return 'food'; if(d.kind==='good'||d.kind==='tool'||d.kind==='currency') return 'other'; }
  return 'resources';
 }
 window.setBankQty=function(q){
@@ -3172,7 +3295,7 @@ window.bankSearchInput=function(v){ bankSearch=v||''; applyBankFilter(); };
 function bankValue(){ return (me?me.bank:[]).reduce((t,s)=>{ const d=catalog[s.item]; const v=d? d.buy : (goods[s.item]? goods[s.item].price : 0); return t+v*s.qty; },0); }
 function qtyFor(owned){ if(bankQty==='all') return owned; if(bankQty==='x') return Math.min(owned,bankXQty); return Math.min(owned, bankQty==='10'?10 : bankQty==='5'?5 : 1); }
 function bankCell(s,onclick){
- return `<div class="cell" data-cat="${bankCat(s.item)}" data-item="${s.item}" data-qty="${s.qty}" data-name="${esc(nameOf(s.item)).toLowerCase()}" onclick="${onclick}"><span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${itemIconHTML(s.item,24)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
+ return `<div class="cell" data-cat="${bankCat(s.item)}" data-item="${s.item}" data-qty="${s.qty}" data-name="${esc(nameOf(s.item)).toLowerCase()}" onclick="${onclick}"><span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${itemIconHTML(s.item,24,s.qty)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
 }
 function applyBankFilter(){
  if(drawerPanel!=='bank') return;
@@ -3185,7 +3308,7 @@ function applyBankFilter(){
 }
 function pBank(){
  let h=`<div class="note">Quantity:</div><div class="seg">${['1','5','10','x','all'].map(q=>`<button class="${bankQty===q?'on':''}" onclick="setBankQty('${q}')">${q==='all'?'All':q==='x'?`X (${bankXQty})`:q}</button>`).join('')}</div>`;
- h+=`<div class="note" style="margin:4px 0">Bank value: <b style="color:#e3c766">${bankValue()}g</b> · items only — gold stays in your purse.</div>`;
+ h+=`<div class="note" style="margin:4px 0">Bank value: <b style="color:#e3c766">${bankValue()}g</b> · priced at shop buy-back. Your 🪙 gold coins are an item too — they stack here or in your backpack, and spending draws from both.</div>`;
  h+=`<div class="tabs">${BANK_TABS.map(([id,lb])=>`<button class="${bankTab===id?'on':''}" onclick="setBankTab('${id}')">${lb}</button>`).join('')}</div>`;
  h+=`<input placeholder="🔍 Search items…" value="${esc(bankSearch)}" oninput="bankSearchInput(this.value)" style="width:100%;box-sizing:border-box;margin-bottom:8px">`;
  h+=`<h4 style="margin:8px 0 5px;color:#e3c766">Backpack — tap to deposit</h4>`;
@@ -3686,7 +3809,11 @@ function pSettings(){
 /* ================= challenge cards ================= */
 function pickerHTML(prefix){
  if(!me||!me.backpack.length) return `<p class="note">Your backpack is empty — gold-only stake.</p>`;
- return me.backpack.map((s,i)=>`<div class="pickrow"><span>${itemIconHTML(s.item,20)}</span><span class="grow">${esc(nameOf(s.item))} <span class="sub">(have ${s.qty})</span></span><input type="number" id="${prefix}${i}" min="0" max="${s.qty}" value="0" data-item="${s.item}"></div>`).join('');
+ // Stage 16: the gold stack is never listed here — in a trade, gold
+ // moves with the gold amount field, never as an offered item. The
+ // row is skipped WITHOUT renumbering: input ids stay keyed to the
+ // true backpack index that readPicker walks.
+ return me.backpack.map((s,i)=> s.item==='gold'? '' : `<div class="pickrow"><span>${itemIconHTML(s.item,20,s.qty)}</span><span class="grow">${esc(nameOf(s.item))} <span class="sub">(have ${s.qty})</span></span><input type="number" id="${prefix}${i}" min="0" max="${s.qty}" value="0" data-item="${s.item}"></div>`).join('');
 }
 function readPicker(prefix){
  const out=[];
@@ -3722,8 +3849,12 @@ function chalMyItems(){ return chalRole==='from'? chalTerms.items : chalTerms.it
 function chalTheirItems(){ return chalRole==='from'? chalTerms.itemsTo : chalTerms.items; }
 function chalPickerHTML(){
  if(!me||!me.backpack.length) return `<p class="note">Your backpack is empty — gold-only stake.</p>`;
+ if(me.backpack.every(s=>s.item==='gold')) return `<p class="note">Only gold in here — gold stakes with the amount below, not as an item.</p>`;
  const preset={}; for(const s of chalMyItems()) preset[s.item]=(preset[s.item]||0)+s.qty;
- return me.backpack.map((s,i)=>`<div class="pickrow"><span>${itemIconHTML(s.item,18)}</span><span class="grow">${esc(nameOf(s.item))} <span class="sub">(${s.qty})</span></span><input type="number" id="chp${i}" min="0" max="${s.qty}" value="${Math.min(preset[s.item]||0,s.qty)}" data-item="${s.item}" onchange="chalTermsEdited()"></div>`).join('');
+ // Stage 16: the gold stack is never listed — gold stakes via the
+ // GOLD TO STAKE amount. Rows skip without renumbering (readPicker
+ // walks the true backpack indexes).
+ return me.backpack.map((s,i)=> s.item==='gold'? '' : `<div class="pickrow"><span>${itemIconHTML(s.item,18,s.qty)}</span><span class="grow">${esc(nameOf(s.item))} <span class="sub">(${s.qty})</span></span><input type="number" id="chp${i}" min="0" max="${s.qty}" value="${Math.min(preset[s.item]||0,s.qty)}" data-item="${s.item}" onchange="chalTermsEdited()"></div>`).join('');
 }
 function chalTheirHTML(){
  const list=chalTheirItems();
@@ -3922,7 +4053,7 @@ window.openTalk=function(name){
  setTimeout(()=>{ try{ inp.focus(); }catch(e){} },50);
 };
 /* ---- Examine sheet ---- */
-const AREA_LABELS={plaza:'🏰 Plaza',goblins:'👺 Goblin Camp',training:'🏋️ Training Cave',gathering:'⛏️ Gathering Cave',cove:'🎣 Fishing Cove',mine:'⛏️🔥 Emberfall Mine & Smithy',fightcaves:'🌋 Fight Caves',barrows:'💀 Barrows',barrows_tunnels:'💀 Barrows Tunnels',arena:'⚔️ Duel Arena'};
+const AREA_LABELS={plaza:'🏰 Plaza',goblins:'👺 Goblin Camp',training:'🏋️ Training Cave',gathering:'⛏️ Gathering Cave',cove:'🎣 Fishing Cove',mine:'⛏️🔥 Emberfall Mine & Smithy',fightcaves:'🌋 Fight Caves',barrows:'💀 Barrows',barrows_tunnels:'💀 Barrows Tunnels',arena:'⚔️ Duel Arena',waiting:'⏳ Waiting Area'};
 function openExamine(m){
  const p=m.player; if(!p) return;
  const wornRows=SLOT_DEFS.filter(([slot])=>p.worn&&p.worn[slot]).map(([slot,label])=>`<div class="rowline"><span class="ic">${iconOf(p.worn[slot])}</span><span class="grow"><b>${label}</b><br><span class="sub">${esc(nameOf(p.worn[slot]))}</span></span></div>`).join('');
@@ -3999,7 +4130,7 @@ function openTrade(m){
 function offerList(o){
  const parts=[];
  if(o&&o.gold>0) parts.push(`🪙 ${o.gold}g`);
- for(const s of ((o&&o.items)||[])) parts.push(`${itemIconHTML(s.item,18)} ${esc(nameOf(s.item))} x${s.qty}`);
+ for(const s of ((o&&o.items)||[])) parts.push(`${itemIconHTML(s.item,18,s.qty)} ${esc(nameOf(s.item))} x${s.qty}`);
  return parts.length? parts.join('<br>') : '<span class="sub">Nothing</span>';
 }
 function renderTradeState(){
@@ -4122,10 +4253,70 @@ function setDuelCountdown(v){
  }
 }
 function clearDuelCountdown(){ duelCountdownLeft=null; cdHide(); }
+/* ================= Stage 17: Stake Board UI ================= */
+function openStakeBoard(){
+ send({type:'stake_board_get'});
+ renderStakeBoard();
+ $('stakeboardmodal').classList.add('open');
+}
+function renderStakeBoard(){
+ const sh=$('stakeboardsheet'); if(!sh) return;
+ const myGold=me? me.gold:0;
+ let h=`<h3>⚔️ Stake Board — South-West Corner</h3>`;
+ h+=`<div class="note" style="margin-bottom:6px">Your gold: <b style="color:#e3c766">${myGold}g</b> — offer a bid, someone accepts it, both hit Ready, and the winner takes the whole pot.</div>`;
+ if(stakeMatch){
+   const rd=b=>b? 'Ready ✓':'Not ready';
+   h+=`<div style="border:2px solid #c9a227;border-radius:10px;padding:10px;margin-bottom:8px">
+    <div style="font-weight:900;color:#e3c766">🤝 Matched! You vs ${esc(stakeMatch.opponent)}</div>
+    <div class="rowline"><span class="grow">Stake (each)</span><b>${stakeMatch.stake}g</b></div>
+    <div class="rowline"><span class="grow">Winner gets</span><b style="color:#e3c766">${stakeMatch.pot}g</b></div>
+    <div class="rowline"><span class="grow">You</span><b>${rd(!!stakeMatch.readyMine)}</b></div>
+    <div class="rowline"><span class="grow">${esc(stakeMatch.opponent)}</span><b>${rd(!!stakeMatch.readyOpponent)}</b></div>
+    <div class="note">First to hit Ready goes to the Waiting Area. The fight starts the moment the second fighter is ready — the stakes are taken then, not before.</div>
+    <div class="btns"><button class="act" id="stakereadybtn"${stakeMatch.readyMine?' disabled':''}>${stakeMatch.readyMine?'✓ Ready — in the Waiting Area':'✅ Ready'}</button><button class="ghost" id="stakecancelmatchbtn">Cancel match</button></div>
+   </div>`;
+ } else {
+   const mine=(stakeBoard.offers||[]).find(o=>me&&o.username===me.username);
+   if(mine){
+     h+=`<div style="border:2px solid #4a3a28;border-radius:10px;padding:10px;margin-bottom:8px">
+      <div style="font-weight:900">📣 Your offer: <span style="color:#e3c766">${mine.stake}g</span> — winner gets ${mine.pot}g</div>
+      <div class="note">Anyone in the plaza can take it from this board. It comes down after 10 minutes.</div>
+      <div class="btns"><button class="ghost" id="stakecancelofferbtn">Cancel Offer</button></div></div>`;
+   } else {
+     h+=`<div style="font-weight:900;margin-bottom:4px">💰 Offer your bid</div>
+      <div class="rowline"><span class="grow">Gold stake</span><input type="number" id="stakeamt" value="100" min="1" max="${myGold}"></div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin:6px 0">${[100,500,1000,5000,10000].map(v=>`<button class="ghost stakechip" data-v="${v}">${v.toLocaleString()}g</button>`).join('')}</div>
+      <div class="btns"><button class="act" id="stakepostbtn">📣 Post Offer</button></div>`;
+   }
+   h+=`<div style="font-weight:900;margin:8px 0 4px">📋 Open offers</div>`;
+   const offers=stakeBoard.offers||[];
+   if(!offers.length) h+=`<div class="note">No offers yet — post yours and anyone in the plaza can take it.</div>`;
+   for(const o of offers){
+     const isMine=!!(me&&o.username===me.username);
+     const cant=!isMine&&myGold<o.stake;
+     h+=`<div class="rowline"><span class="grow"><b>${esc(o.username)}</b> — ${o.stake}g bid<br><span class="sub">Winner gets ${o.pot}g</span></span>${isMine?'<span class="note">Your offer</span>':`<button class="act stakeaccept" data-id="${o.id}"${cant?' disabled':''}>${cant?'Not enough gold':'⚔️ Accept — fight for '+o.pot+'g'}</button>`}</div>`;
+   }
+ }
+ h+=`<div class="btns"><button class="ghost" onclick="closeModal('stakeboardmodal')">Close</button></div>`;
+ sh.innerHTML=h;
+ const post=$('stakepostbtn');
+ if(post) post.onclick=()=>{ const v=Math.floor(+($('stakeamt').value||0)); if(v<1){ toast('Enter a stake of at least 1g.'); return; } if(v>(me?me.gold:0)){ toast("You don't have that much gold."); return; } send({type:'stake_offer_create',stake:v}); };
+ document.querySelectorAll('.stakechip').forEach(b=>{ b.onclick=()=>{ const el=$('stakeamt'); if(el) el.value=b.dataset.v; }; });
+ const co=$('stakecancelofferbtn');
+ if(co) co.onclick=()=>{ const mine2=(stakeBoard.offers||[]).find(o=>me&&o.username===me.username); if(mine2) send({type:'stake_offer_cancel',offerId:mine2.id}); };
+ document.querySelectorAll('.stakeaccept').forEach(b=>{ b.onclick=()=>{ send({type:'stake_offer_accept',offerId:b.dataset.id}); }; });
+ const rd=$('stakereadybtn');
+ if(rd) rd.onclick=()=>{ if(stakeMatch) send({type:'stake_ready',matchId:stakeMatch.matchId}); };
+ const cm=$('stakecancelmatchbtn');
+ if(cm) cm.onclick=()=>{ if(stakeMatch) send({type:'stake_match_cancel',matchId:stakeMatch.matchId}); };
+}
+$('stakewaitcancel').onclick=()=>{ if(stakeMatch) send({type:'stake_match_cancel',matchId:stakeMatch.matchId}); };
 function startDuelUI(m){
  stopGather();
  stopFollow();
  cancelUse(true);
+ // Stage 17: the stake fight is starting — the wait bar and board go away.
+ stakeMatch=null; $('stakewaitbar').classList.remove('open'); closeModal('stakeboardmodal');
  // Stage 14: the configuration screen's job is done — close it and
  // keep the agreed rules for the strip's greyed-out controls.
  chalTerms=null; chalNotice=false; stopIncomingTimer(); closeModal('challengemodal'); closeModal('incomingmodal');
@@ -4735,7 +4926,7 @@ window.openAdminNote=function(id){
 function bpCell(s,idx){
  const hl=highlights.has(s.item);
  const armed=useMode&&useMode.item===s.item;
- return `<div class="cell bp-cell ${selStack===s.item?'sel':''}${armed?' usearm':''}" data-item="${s.item}" data-idx="${idx}">${hl?'<span class="hlb">⭐</span>':''}<span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${itemIconHTML(s.item,24)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
+ return `<div class="cell bp-cell ${selStack===s.item?'sel':''}${armed?' usearm':''}" data-item="${s.item}" data-idx="${idx}">${hl?'<span class="hlb">⭐</span>':''}<span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${itemIconHTML(s.item,24,s.qty)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
 }
 function bpPrimaryTap(item){
  const d=catalog[item];
