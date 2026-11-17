@@ -129,6 +129,7 @@
  #duelbar.open{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap}
  .fightinfo{display:none!important}
  #duelhint{font-weight:800;color:#ffd75e;font-size:12px;background:#3a2c1c;border:1px solid #c9a227;border-radius:999px;padding:4px 9px;white-space:nowrap}
+ #duelnomove{font-weight:800;color:#ffb3b3;font-size:12px;background:#3a1c1c;border:1px solid #8e2f32;border-radius:999px;padding:4px 9px;white-space:nowrap}
  #duelbar .t{font-weight:900;color:#e3c766;text-align:center;font-size:14px;margin-bottom:5px}
  .hprow{display:flex;align-items:center;gap:7px;font-size:12px;margin:3px 0}
  .hprow .nm{width:86px;text-align:right;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -161,6 +162,24 @@
  .chalbox .pickrow{font-size:12px}
  .chalbox .pickrow input{width:44px}
  .chalitem{font-size:12px;padding:2px 0}
+ /* Stage 18: "Dueling with:" remodel — stake boxes, gear figure, two-column rules */
+ .chalcols{display:flex;gap:10px}
+ .chalcol{flex:1;min-width:0}
+ .chalstake-grid{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;padding:2px 0}
+ .chalstake-cell{width:44px;text-align:center}
+ .chalstake-cell .ic{display:block;font-size:20px;line-height:1.1}
+ .chalstake-cell .q{font-size:10px;font-weight:900;color:#5d4028}
+ .chalgold{text-align:center;font-weight:900;color:#5d4028;font-size:13px;margin-top:5px;border-top:1px solid rgba(122,103,72,.4);padding-top:5px}
+ .gear-fig{margin:8px auto 2px;max-width:300px}
+ .gear-row{display:flex;gap:6px;justify-content:center;margin:3px 0}
+ .gear-cell{width:62px;text-align:center;background:rgba(255,255,255,.22);border:1px solid #7a6748;border-radius:8px;padding:4px 2px 3px}
+ .gear-cell .gic{display:block;font-size:22px;line-height:1.15}
+ .gear-cell .glab{display:block;font-size:9px;font-weight:700;color:#5d4028;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .gear-cell.empty .gic{opacity:.35;filter:grayscale(1)}
+ /* Stage 18: login activity picker */
+ .actpick{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+ .actpick button{text-align:left;font-size:15px;padding:10px 12px}
+ .actpick .sub{display:block;font-size:11.5px;font-weight:400;color:#ffe9a8;margin-top:2px}
  .ruledis{opacity:.45!important;filter:grayscale(.85)}
  .sheet.wide{width:min(580px,96vw)}
  button.ghost:disabled{opacity:.45}
@@ -231,8 +250,10 @@
  .parchment .act{background:linear-gradient(180deg,#8e2f32,#5d1d20);border-color:#c9a227;color:#ffe9a8}
  .parchment .ghost{background:rgba(43,33,24,.12);color:#2b2118;border-color:#7a6748}
  .parchment input[type=number]{background:#f4ead0;color:#2b2118}
- #railclear{width:46px;min-height:30px;border-radius:10px;border:2px solid #7a6748;background:linear-gradient(180deg,#3a2f22,#241c13);color:#e8d9b0;font-size:10px;font-weight:700;cursor:pointer;padding:2px 0}
- #railclear.sure{background:#8e2f32;color:#ffe9a8;border-color:#e8c96a}
+ /* Stage 18: the chips under the master toggle (Grab / Menu tap / Camera) */
+ .railchip{width:46px;min-height:30px;border-radius:10px;border:2px solid #7a6748;background:linear-gradient(180deg,#3a2f22,#241c13);color:#e8d9b0;font-size:10px;font-weight:700;cursor:pointer;padding:2px 0;line-height:1.25}
+ .railchip.on{background:#2e7d32;color:#eaffea;border-color:#66bb6a}
+ body.grabbing #railset .rbtn{cursor:grab;outline:2px dashed rgba(102,187,106,.65);outline-offset:-2px}
  .dragghost{position:fixed;z-index:190;pointer-events:none;font-size:30px;width:52px;height:52px;line-height:52px;text-align:center;background:rgba(36,26,13,.9);border:2px solid #e8c96a;border-radius:12px;transform:translate(-50%,-50%)}
  .dragghost img{width:40px;height:40px;border-radius:8px;vertical-align:middle}
  .dragging{opacity:.45}
@@ -284,7 +305,9 @@
 
 <div id="rail">
  <button id="gearbtn" title="Show / hide all buttons">🎛️</button>
- <button id="railclear" title="Reset all button spots">🧹 Clear</button>
+ <button id="railgrab" class="railchip" title="Grab mode: drag the panel buttons where you want them, then toggle off to lock them">✋ Grab</button>
+ <button id="railmenutap" class="railchip" title="Menu tap: taps on players, monsters, nodes and piles open their menu instead of acting">🖱️ Menu tap: Off</button>
+ <button id="railcam" class="railchip" title="Camera view: third person / first person">🎥 3rd</button>
  <div id="railset">
   <button class="rbtn" data-panel="backpack" title="Backpack">🎒</button>
   <button class="rbtn" data-panel="worn" title="Worn items">🗡️</button>
@@ -325,6 +348,7 @@
  <div class="hprow fightinfo"><span class="nm" id="dueloppname">Opponent</span><div class="hpbar"><div id="hpopp" style="width:100%"></div></div><span id="hpoppv">99</span></div>
  <div id="duellast" class="note fightinfo" style="text-align:center"></div>
  <div id="duelhint" style="display:none">⚔️ Tap your opponent to attack!</div>
+ <div id="duelnomove" style="display:none">🚫 No Movement</div>
  <div id="duelquick"></div>
  <div id="duelflee" style="display:none"><button class="ghost" id="fleebtn">🏃 Flee</button></div>
 </div>
@@ -390,6 +414,7 @@
 <div class="modal" id="notereqmodal"><div class="sheet" id="notereqsheet"></div></div>
 <div class="modal" id="ctxmodal"><div class="sheet" id="ctxsheet"></div></div>
 <div class="modal" id="appmodal"><div class="sheet parchment" id="appsheet"></div></div>
+<div class="modal" id="activitymodal"><div class="sheet parchment" id="activitysheet"></div></div>
 
 <div id="toast"></div>
 
@@ -493,10 +518,17 @@ function isAdminOrOwner(){ const r=myRole(); return r==='admin'||r==='owner'; }
 
 /* ================= settings (localStorage) ================= */
 const SETTINGS_KEY='nallystake_settings_v1';
-let settings={camSpeed:1.5,tapMode:'walk',uiAlpha:0.78,run:true,hidden:{}};
+let settings={camSpeed:1.5,groundTap:'walk',tapMode:'normal',camPov:'third',uiAlpha:0.78,run:true,hidden:{}};
 try{ const s=JSON.parse(localStorage.getItem(SETTINGS_KEY)||'null'); if(s&&typeof s==='object') settings=Object.assign(settings,s); }catch(e){}
 if(typeof settings.camSpeed!=='number') settings.camSpeed=1.5;
-if(settings.tapMode!=='face') settings.tapMode='walk';
+/* Stage 18 migration: tapMode used to hold the GROUND tap mode
+   ('walk' / 'face'). That preference now lives in groundTap, and
+   tapMode is the menu-tap mode ('normal' / 'menu', default
+   'normal'). A saved 'walk'/'face' is carried across, not lost. */
+if(settings.tapMode==='walk'||settings.tapMode==='face'){ settings.groundTap=settings.tapMode; settings.tapMode='normal'; }
+if(settings.tapMode!=='menu') settings.tapMode='normal';
+if(settings.groundTap!=='face') settings.groundTap='walk';
+if(settings.camPov!=='first') settings.camPov='third'; // Stage 18: camera POV ('third' default / 'first')
 if(typeof settings.uiAlpha!=='number') settings.uiAlpha=0.78;
 if(typeof settings.run!=='boolean') settings.run=true; // run toggle defaults ON; a saved off stays off
 if(!settings.hidden||typeof settings.hidden!=='object') settings.hidden={};
@@ -509,7 +541,7 @@ try{ railOpen=localStorage.getItem('nallystake_rail_open')!=='0'; }catch(e){}
 function applyRailVisibility(){
  const rs=$('railset'); if(rs) rs.classList.toggle('open',railOpen);
  const gb=$('gearbtn'); if(gb) gb.textContent=railOpen?'✕':'🎛️';
- const rc=$('railclear'); if(rc) rc.style.display=railOpen?'':'none';
+ for(const id of ['railgrab','railmenutap','railcam']){ const c=$(id); if(c) c.style.display=railOpen?'':'none'; } // Stage 18: the chips follow the rail
  document.querySelectorAll('#railset .rbtn').forEach(b=>{ b.style.display=settings.hidden[b.dataset.panel]?'none':''; });
  refreshToolsBtn();
 }
@@ -528,7 +560,14 @@ function applySettings(){
 window.toggleRail=function(){ railOpen=!railOpen; try{ localStorage.setItem('nallystake_rail_open',railOpen?'1':'0'); }catch(e){} applyRailVisibility(); };
 $('gearbtn').onclick=()=>toggleRail();
 window.setCamSpeed=function(v){ settings.camSpeed=clamp(parseFloat(v)||1.5,0.25,3); const el=$('camspeedval'); if(el) el.textContent=settings.camSpeed+'×'; saveSettings(); };
-window.setTapMode=function(m){ settings.tapMode=(m==='face')?'face':'walk'; saveSettings(); renderDrawer(); };
+window.setGroundTap=function(m){ settings.groundTap=(m==='face')?'face':'walk'; saveSettings(); renderDrawer(); };
+/* Stage 18: menu-tap mode (Part B) + camera POV (Part E) setters.
+   Both persist in the settings store and refresh their rail chips. */
+window.setTapMode=function(m){ settings.tapMode=(m==='menu')?'menu':'normal'; saveSettings(); renderMenuTapChip(); if(drawerPanel==='settings') renderDrawer(); };
+window.setCamPov=function(v){ settings.camPov=(v==='first')?'first':'third'; saveSettings(); renderCamChip(); if(drawerPanel==='settings') renderDrawer(); };
+window.toggleCamPov=function(){ setCamPov(settings.camPov==='first'?'third':'first'); };
+function renderMenuTapChip(){ const b=$('railmenutap'); if(!b) return; const on=settings.tapMode==='menu'; b.textContent=on?'🖱️ Menu tap: On':'🖱️ Menu tap: Off'; b.classList.toggle('on',on); }
+function renderCamChip(){ const b=$('railcam'); if(!b) return; const fp=settings.camPov==='first'; b.textContent=fp?'🎥 1st':'🎥 3rd'; b.classList.toggle('on',fp); b.title=fp?'Camera: first person — tap for third person':'Camera: third person — tap for first person'; }
 window.setUiAlpha=function(v){ settings.uiAlpha=clamp(parseFloat(v)||0.78,0.3,1); saveSettings(); };
 window.setBtnVisible=function(p,vis){ settings.hidden[p]=!vis; saveSettings(); };
 
@@ -649,8 +688,46 @@ function connect(){
  };
  ws.onerror=()=>{ logLine('⚠️ Connection problem.'); };
 }
+/* ================= Stage 18: login activity picker =================
+   Once per login session, right after the welcome: "What do you
+   want to do?" Dueling stands the player next to the Stake Board
+   sign in the SW plaza (a plain move — the same message walking
+   sends); the other activities ride the existing travel flow.
+   `activityShown` is a page-session flag, so a reconnect that
+   replays the welcome never re-shows the picker. */
+let activityShown=false;
+function maybeShowActivityPicker(){
+ if(activityShown||!me) return;
+ activityShown=true;
+ $('activitysheet').innerHTML=`<h3 style="text-align:center;color:#5d4028;margin-top:0">🎯 What do you want to do?</h3>
+ <p class="note" style="text-align:center;color:#4a3826">Pick where this session starts. You can always walk through the gates or use 🌀 Teleport later — nothing is locked in.</p>
+ <div class="actpick">
+  <button class="act" onclick="pickActivity('dueling')">⚔️ Dueling<span class="sub">Start next to the dueling sign — set up fights at the Stake Board</span></button>
+  <button class="act" onclick="pickActivity('fightcaves')">🌋 Fight Caves<span class="sub">63 waves, TzTok-Jad and the fire cape</span></button>
+  <button class="act" onclick="pickActivity('barrows')">⚰️ Barrows<span class="sub">Six brothers, the tunnels and the reward chest</span></button>
+  <button class="act" onclick="pickActivity('gathering')">⛏️ Skilling &amp; Gathering<span class="sub">Gathering Cave — mine, fish, chop and cook</span></button>
+  <button class="act" onclick="pickActivity('plaza')">🏰 Explore the Plaza<span class="sub">Shops, bank and everyone else — start where you are</span></button>
+ </div>`;
+ $('activitymodal').classList.add('open');
+}
+window.pickActivity=function(act){
+ closeModal('activitymodal');
+ if(!me) return;
+ if(act==='dueling'){
+   // A short step east of the sign (STAKE_SIGN_POS is 180,780) so
+   // the knight isn't standing inside it. One move message places
+   // us there; finishStep(false) syncs the local avatar without
+   // sending a second move.
+   const spot={x:STAKE_SIGN_POS.x+50,y:STAKE_SIGN_POS.y};
+   if(myPos){ myPos={x:spot.x,y:spot.y}; tapTarget=null; send({type:'move',x:spot.x,y:spot.y}); lastSentPos={x:spot.x,y:spot.y}; finishStep(false); }
+   toast('⚔️ Dueling — you start by the dueling sign. Tap the sparkling sign to post a bid or take a fight.');
+ } else if(act==='fightcaves'){ send({type:'travel',to:'fightcaves'}); toast('🌋 Fight Caves — good luck in there.'); }
+ else if(act==='barrows'){ send({type:'travel',to:'barrows'}); toast('⚰️ Barrows — the brothers are waiting.'); }
+ else if(act==='gathering'){ send({type:'travel',to:'gathering'}); toast('⛏️ Gathering Cave — mine, fish, chop and cook.'); }
+ else toast('🏰 Explore the plaza — every gate leads somewhere.');
+};
 function onMsg(m){
- if(m.type==='welcome'){ welcomed=true; quickAttempt=false; me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); }
+ if(m.type==='welcome'){ welcomed=true; quickAttempt=false; me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); maybeShowActivityPicker(); }
  if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(drawerPanel==='shop') renderDrawer(); renderQuickButtons(); }
  if(m.type==='exchange_prices'){ goods={}; for(const g of (m.goods||[])) goods[g.id]=g; if(drawerPanel==='exchange') renderDrawer(); drawMinimap(); }
  if(m.type==='state'){ if(m.area&&m.area!==curArea) setArea(m.area); players=m.players||[]; initMyPos(); syncAvatars(); if(drawerPanel==='players') renderDrawer(); drawMinimap(); }
@@ -2488,6 +2565,9 @@ function projectTo(x,y,z){
 }
 function updateLabels(now){
  for(const a of Object.values(avatars)){
+   // Stage 18: in first person my own name/HP label would hang in
+   // the middle of the view — it stays hidden while the POV is on.
+   if(a.isMe&&settings.camPov==='first'){ a.label.style.display='none'; continue; }
    const s=projectTo(a.group.position.x,2.75,a.group.position.z);
    if(!s){ a.label.style.display='none'; continue; }
    a.label.style.display='block';
@@ -2616,6 +2696,18 @@ function handleTap(cx,cy){
      if(act.type==='stakeboard'){ openStakeBoard(); return; }
    }
  }
+ // Stage 18: Menu tap mode — a quick tap on a player, NPC/monster,
+ // gathering node or drop pile opens the same context menu a
+ // long-press opens, instead of the primary action. Anything else
+ // (ground, fires, nothing) falls through to the normal tap, so
+ // ground taps still walk in both modes.
+ if(settings.tapMode==='menu'){
+   const hit=detectWorldTap(cx,cy);
+   if(hit&&(hit.kind==='player'||hit.kind==='npc'||hit.kind==='fc'||hit.kind==='node'||hit.kind==='pile'||hit.kind==='mound')){
+     handleLongPress(cx,cy);
+     return;
+   }
+ }
  // goblins (tap to attack; walks over first if too far)
  if(curArea==='goblins'){
    let gb=null,gbD=1e9;
@@ -2710,7 +2802,7 @@ function handleTap(cx,cy){
    pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false;
    pendingUseCook=null; pendingUseLogs=null;
    stopFollow();
-   if(settings.tapMode==='face') faceToward(pt); else tapTarget=pt;
+   if(settings.groundTap==='face') faceToward(pt); else tapTarget=pt;
  }
 }
 function faceToward(pt){
@@ -2760,7 +2852,10 @@ function stepMovement(dt){
  // Stage 12: duel countdown — my knight stands still until FIGHT!
  // (the server ignores duelists' moves during the count anyway; this
  // stops the local knight sliding). Camera drag is separate and free.
- if(duelCountdownLeft>0){ tapTarget=null; myVel={x:0,z:0}; finishStep(false); return; }
+ // Stage 18: a No Movement duel locks the local knight the same way
+ // for the whole duel, so the client never drifts from the server's
+ // frozen positions.
+ if(duelCountdownLeft>0||(duel&&duel.rules&&duel.rules.noMovement)){ tapTarget=null; myVel={x:0,z:0}; finishStep(false); return; }
  let vx=0, vz=0; // world units / s
  const sYaw=Math.sin(camYaw), cYaw=Math.cos(camYaw);
  // camera forward on the ground (world): (-sinYaw, -cosYaw); right: (cosYaw, -sinYaw)
@@ -3021,11 +3116,25 @@ function animate(){
  // camera follows local player
  const a=me?avatars[me.username]:null;
  const fx=a?a.group.position.x:0, fz=a?a.group.position.z:0;
- const cx=fx+Math.sin(camYaw)*Math.cos(camPitch)*camDist;
- const cz=fz+Math.cos(camYaw)*Math.cos(camPitch)*camDist;
- const cy=Math.sin(camPitch)*camDist;
- camera.position.set(cx,cy,cz);
- camera.lookAt(fx,1.1,fz);
+ if(settings.camPov==='first'&&a){
+   // Stage 18: first person — the camera sits at my knight's head
+   // (head sphere rides at y≈1.94 on the group) and looks along his
+   // rendered facing (rotation.y; facing dir = (sin, cos) in xz).
+   // My own mesh is hidden so it can't block the view. Movement and
+   // the joystick are untouched; drag-rotate is ignored in this
+   // view (v1) — camYaw simply has no effect here.
+   a.group.visible=false;
+   const rot=a.group.rotation.y, hy=a.group.position.y+1.9;
+   camera.position.set(fx+Math.sin(rot)*0.35,hy,fz+Math.cos(rot)*0.35);
+   camera.lookAt(fx+Math.sin(rot)*10,hy,fz+Math.cos(rot)*10);
+ } else {
+   if(a) a.group.visible=true;
+   const cx=fx+Math.sin(camYaw)*Math.cos(camPitch)*camDist;
+   const cz=fz+Math.cos(camYaw)*Math.cos(camPitch)*camDist;
+   const cy=Math.sin(camPitch)*camDist;
+   camera.position.set(cx,cy,cz);
+   camera.lookAt(fx,1.1,fz);
+ }
  // Stage 13: the shadow camera follows the local player (its box is
  // roughly the old 80x45 footprint), keeping the same sun angle.
  if(sunLight){ sunLight.position.set(fx+30,50,fz+20); sunLight.target.position.set(fx,0,fz); sunLight.target.updateMatrixWorld(); }
@@ -3796,8 +3905,12 @@ const PANEL_LIST=[['backpack','🎒 Backpack'],['worn','🗡️ Worn items'],['s
 function pSettings(){
  let h=`<div class="setrow"><span class="grow">🎨 Appearance<br><span class="note">Change how your knight looks</span></span><button class="act" onclick="closeDrawer();openAppearance()">🎨 Appearance</button></div>`;
  h+=`<div class="setrow"><span class="grow">📷 Camera drag speed<br><span class="note">Screen-drag rotation &amp; camera stick</span></span><input type="range" min="0.25" max="3" step="0.25" value="${settings.camSpeed}" oninput="setCamSpeed(this.value)"><b id="camspeedval" style="color:#e3c766;min-width:34px;text-align:right">${settings.camSpeed}×</b></div>`;
- h+=`<div class="setrow"><span class="grow">👆 Ground tap mode</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.tapMode==='walk'?'on':''}" onclick="setTapMode('walk')">🚶 Walk</button><button class="${settings.tapMode==='face'?'on':''}" onclick="setTapMode('face')">🧭 Face</button></div>`;
+ h+=`<div class="setrow"><span class="grow">👆 Ground tap mode</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.groundTap==='walk'?'on':''}" onclick="setGroundTap('walk')">🚶 Walk</button><button class="${settings.groundTap==='face'?'on':''}" onclick="setGroundTap('face')">🧭 Face</button></div>`;
  h+=`<p class="note" style="margin:2px 0 8px">Walk: tapping the ground walks there. Face: tapping just turns your knight to face that spot.</p>`;
+ h+=`<div class="setrow"><span class="grow">🖱️ Menu tap mode</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.tapMode==='normal'?'on':''}" onclick="setTapMode('normal')">👆 Normal</button><button class="${settings.tapMode==='menu'?'on':''}" onclick="setTapMode('menu')">🖱️ Menu</button></div>`;
+ h+=`<p class="note" style="margin:2px 0 8px">Menu: tapping a player, monster, gathering spot or dropped pile opens its menu — the same one a long-press opens — and tapping a backpack item opens its sheet. Normal: taps act straight away. Ground taps walk in both modes. The 🖱️ chip under the 🎛️ button toggles this too.</p>`;
+ h+=`<div class="setrow"><span class="grow">🎥 Camera view</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.camPov==='third'?'on':''}" onclick="setCamPov('third')">🎥 Third person</button><button class="${settings.camPov==='first'?'on':''}" onclick="setCamPov('first')">👀 First person</button></div>`;
+ h+=`<p class="note" style="margin:2px 0 8px">First person puts the camera at your knight's head, looking the way he faces — a different feel for fights. The 🎥 chip under the 🎛️ button switches it too.</p>`;
  h+=`<div class="setrow"><span class="grow">🔅 Interface transparency<br><span class="note">Sticks, panels &amp; buttons</span></span><input type="range" min="0.3" max="1" step="0.02" value="${settings.uiAlpha}" oninput="setUiAlpha(this.value)"></div>`;
  h+=`<h4 style="margin:10px 0 5px;color:#e3c766">Menu buttons (⚙)</h4>`;
  for(const [p,label] of PANEL_LIST){
@@ -3834,10 +3947,20 @@ const STYLES_LIST=['accurate','aggressive','defensive','controlled'];
    confirms on any change (challenge_terms pushes the new state).
    Stage 15 adds the 🆓 Free Play toggle row: while it is on, the
    stake controls are disabled and the terms are nothing-staked —
-   a practice fight with no pot, no record and no rating change. */
-const CHAL_LOCKED=[['meleeOnly','Melee Only'],['noRanged','No Ranged'],['noMagic','No Magic']];
-const CHAL_RULES=[['noPrayer','No Prayer'],['noPotions','No Potions'],['noFood','No Food'],['noSpecial','No Special Attacks']];
-const CHAL_NO_RULES={noPrayer:false,noPotions:false,noFood:false,noSpecial:false};
+   a practice fight with no pot, no record and no rating change.
+   Stage 18 remodels the sheet on Derek's second reference image
+   ("Dueling with:"): the two stake boxes across the top (mine is
+   the picker + the matched gold, theirs an icon grid), my worn
+   gear in a body layout in the middle, the rule rows in two
+   columns, Accept / Decline along the bottom — same confirm /
+   cancel mechanics underneath. It also adds the No Movement rule:
+   both fighters stand at their duel-start spots for the whole
+   duel (the server ignores their move messages). */
+const CHAL_LOCKED_L=[['meleeOnly','Melee Only']];
+const CHAL_LOCKED_R=[['noRanged','No Ranged'],['noMagic','No Magic']];
+const CHAL_RULES_L=[['noPrayer','No Prayer'],['noFood','No Food'],['noMovement','No Movement']];
+const CHAL_RULES_R=[['noPotions','No Drinks'],['noSpecial','No Special Attacks']];
+const CHAL_NO_RULES={noPrayer:false,noPotions:false,noFood:false,noSpecial:false,noMovement:false};
 let chalTerms=null;   // pre-send draft (challengeId null) or the server's challenge_terms payload
 let chalRole=null;    // 'from' (challenger) | 'to' (challenged)
 let chalNotice=false; // "Terms changed — confirm again."
@@ -3860,6 +3983,29 @@ function chalTheirHTML(){
  const list=chalTheirItems();
  if(!list||!list.length) return `<p class="note" style="text-align:center">Nothing staked yet</p>`;
  return list.map(s=>`<div class="chalitem">${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}</div>`).join('');
+}
+/* Stage 18: the opponent's stake as an icon grid (the reference
+   image's stake box), and my worn gear as a body-layout figure. */
+function chalTheirGridHTML(){
+ const list=chalTheirItems();
+ if(!list||!list.length) return `<p class="note" style="text-align:center">Nothing staked yet</p>`;
+ return `<div class="chalstake-grid">${list.map(s=>`<div class="chalstake-cell"><span class="ic">${itemIconHTML(s.item,26,s.qty)}</span><span class="q">${esc(nameOf(s.item))}${s.qty>1?` x${s.qty}`:''}</span></div>`).join('')}</div>`;
+}
+function chalGearHTML(){
+ const w=(me&&me.worn)||{};
+ const cell=(slot)=>{
+   const def=SLOT_DEFS.find(s=>s[0]===slot);
+   const it=w[slot];
+   if(it) return `<div class="gear-cell" title="${def?def[1]:slot}: ${esc(nameOf(it))}"><span class="gic">${itemIconHTML(it,26)}</span><span class="glab">${esc(nameOf(it))}</span></div>`;
+   return `<div class="gear-cell empty" title="${def?def[1]:slot} — empty"><span class="gic">${def?def[2]:'·'}</span><span class="glab">${def?def[1]:slot}</span></div>`;
+ };
+ return `<div class="gear-fig">
+  <div class="gear-row">${cell('head')}</div>
+  <div class="gear-row">${cell('cape')}${cell('amulet')}${cell('weapon')}</div>
+  <div class="gear-row">${cell('body')}${cell('shield')}</div>
+  <div class="gear-row">${cell('legs')}</div>
+  <div class="gear-row">${cell('hands')}${cell('feet')}${cell('ring')}</div>
+ </div>`;
 }
 function chalScreenState(){
  // Stage 15: while Free Play is on, the terms are nothing-staked
@@ -3922,24 +4068,40 @@ function renderChalSheet(){
  sh.classList.add('parchment');
  const t=chalTerms, mine=chalRole;
  const myName=mine==='from'?t.from:t.to, theirName=mine==='from'?t.to:t.from;
- let h=`<h3 style="text-align:center;color:#5d4028;margin-top:0">⚔️ DUEL CHALLENGE CONFIGURATION</h3>`;
+ const ruleRow=(k,label)=>`<div class="rulerow"><span class="grow">${label}</span><button class="pill ${t.rules[k]?'on':'off'}" onclick="chalFlipRule('${k}')">${t.rules[k]?'On':'Off'}</button></div>`;
+ const lockedRow=(label)=>`<div class="rulerow"><span class="grow">${label}</span><span class="pill on locked">On</span></div>`;
+ // Stage 18: the sheet follows Derek's "Dueling with:" image —
+ // header, stake boxes across the top, gear figure in the middle,
+ // rule columns, Accept / Decline along the bottom.
+ let h=`<h3 style="text-align:center;color:#5d4028;margin-top:0">⚔️ Dueling with: ${esc(theirName)}</h3>`;
  h+=`<div class="chalnames"><span>${esc(t.from)}${t.confirm.from?' <span class="cf">✓</span>':''}</span><span>${esc(t.to)}${t.confirm.to?' <span class="cf">✓</span>':''}</span></div>`;
- for(const [k,label] of CHAL_LOCKED) h+=`<div class="rulerow"><span class="grow">${label}</span><span class="pill on locked">On</span></div>`;
- for(const [k,label] of CHAL_RULES) h+=`<div class="rulerow"><span class="grow">${label}</span><button class="pill ${t.rules[k]?'on':'off'}" onclick="chalFlipRule('${k}')">${t.rules[k]?'On':'Off'}</button></div>`;
+ h+=`<div class="chalitems">`;
+ if(t.freePlay){
+   h+=`<div class="chalbox"><div class="chalboxh">Your Stake:</div><p class="note" style="text-align:center;font-weight:900">🆓 Free Play — nothing is staked</p></div>`;
+   h+=`<div class="chalbox"><div class="chalboxh">Opponent's Stake:</div><p class="note" style="text-align:center;font-weight:900">🆓 Free Play — nothing is staked</p></div>`;
+ } else {
+   h+=`<div class="chalbox"><div class="chalboxh">Your Stake:</div>${chalPickerHTML()}<div class="chalgold">🪙 Gold: <input type="number" id="chalstake" min="0" value="${t.stake}" onchange="chalTermsEdited()" style="width:72px"> g</div></div>`;
+   h+=`<div class="chalbox"><div class="chalboxh">Opponent's Stake:</div>${chalTheirGridHTML()}<div class="chalgold">🪙 Gold: ${t.stake} g <span class="sub">(matched)</span></div></div>`;
+ }
+ h+=`</div>`;
+ h+=`<p class="note" style="text-align:center;font-weight:900;margin:8px 0 0">🛡️ YOUR GEAR</p>${chalGearHTML()}`;
+ h+=`<div class="chalcols"><div class="chalcol">`;
+ for(const [,label] of CHAL_LOCKED_L) h+=lockedRow(label);
+ for(const [k,label] of CHAL_RULES_L) h+=ruleRow(k,label);
+ h+=`</div><div class="chalcol">`;
+ for(const [,label] of CHAL_LOCKED_R) h+=lockedRow(label);
+ for(const [k,label] of CHAL_RULES_R) h+=ruleRow(k,label);
+ h+=`</div></div>`;
  h+=`<div class="rulerow"><span class="grow">🆓 Free Play — no stakes</span><button class="pill ${t.freePlay?'on':'off'}" onclick="chalFlipFreePlay()">${t.freePlay?'On':'Off'}</button></div>`;
- h+=`<p class="note" style="text-align:center;font-weight:900;margin:8px 0 4px">ITEMS TO STAKE</p>`;
- if(t.freePlay) h+=`<p class="note" style="text-align:center;font-weight:900">🆓 Free Play — nothing is staked</p>`;
- else h+=`<div class="chalitems"><div class="chalbox"><div class="chalboxh">${esc(myName)} — you</div>${chalPickerHTML()}</div><div class="chalbox"><div class="chalboxh">${esc(theirName)}</div>${chalTheirHTML()}</div></div>`;
- h+=`<div class="rowline" style="margin-top:8px"><span class="grow"><b>GOLD TO STAKE</b> 🪙 <span class="sub">(matched — both stake this)</span></span><input type="number" id="chalstake" min="0" value="${t.stake}" ${t.freePlay?'disabled':''} onchange="chalTermsEdited()"></div>`;
  h+=`<div class="rowline"><span class="grow">Your fighting style</span><select id="chstyle">${STYLES_LIST.map(s=>`<option ${me&&me.style===s?'selected':''}>${s}</option>`).join('')}</select></div>`;
  if(chalNotice) h+=`<p class="note" style="text-align:center;color:#8e2f32;font-weight:900">⚠️ Terms changed — confirm again.</p>`;
  if(mine==='to'&&t.challengeId) h+=`<p class="note" id="chalcount" style="text-align:center"></p>`;
  if(!t.challengeId){
    h+=`<div class="btns"><button class="act" onclick="chalSend()">Send challenge</button><button class="ghost" onclick="chalCancel()">Cancel</button></div>`;
  } else if(t.confirm[mine]){
-   h+=`<div class="btns"><button class="act" disabled style="opacity:.55">Waiting for ${esc(theirName)}…</button><button class="ghost" onclick="chalCancel()">✖ CANCEL CHALLENGE</button></div>`;
+   h+=`<div class="btns"><button class="act" disabled style="opacity:.55">Waiting for ${esc(theirName)}…</button><button class="ghost" onclick="chalCancel()">✖ Decline</button></div>`;
  } else {
-   h+=`<div class="btns"><button class="act" onclick="chalConfirm()">✔ CONFIRM RULES & STAKES</button><button class="ghost" onclick="chalCancel()">✖ CANCEL CHALLENGE</button></div>`;
+   h+=`<div class="btns"><button class="act" onclick="chalConfirm()">✔ Accept</button><button class="ghost" onclick="chalCancel()">✖ Decline</button></div>`;
  }
  if(t.freePlay) h+=`<p class="note">Free Play is a practice fight: no gold, no items, and no win/loss record or rating change — just the fight (combat XP still counts). Either side can edit until both confirm; any change resets both confirms.</p>`;
  else h+=`<p class="note">Winner takes everything staked. Stakes are held by the server in escrow once the duel starts — cancelling takes nothing. Either side can edit until both confirm; any change resets both confirms.</p>`;
@@ -4357,6 +4519,10 @@ function renderDuelBar(){
  // Stage 14: controls the agreed rules ban are greyed out (visual
  // only — the server is the real gate and answers with the 🚫 line).
  const R=duel.rules||{};
+ // Stage 18: a No Movement duel says so in the strip and greys the
+ // joystick out (the server ignores duelists' moves anyway).
+ const nmEl=$('duelnomove'); if(nmEl) nmEl.style.display=R.noMovement?'block':'none';
+ const joyEl=$('joy'); if(joyEl) joyEl.style.opacity=R.noMovement?'0.35':'';
  let h=`<button class="act${R.noSpecial?' ruledis':''}" id="specbtn">⚡ Dragon Slash (${duel.energyYou}%)</button>`;
  for(const s of consum){ const dis=(R.noFood&&catalog[s.item].kind==='food')||(R.noPotions&&catalog[s.item].kind==='potion'); h+=`<button class="ghost${dis?' ruledis':''}" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}</button>`; }
  $('duelquick').innerHTML=h;
@@ -4403,6 +4569,8 @@ function endDuelUI(m){
  $('duelflee').style.display='none';
  $('duelbar').classList.remove('open');
  $('duelofficial').style.display='none';
+ const nmEnd=$('duelnomove'); if(nmEnd) nmEnd.style.display='none'; // Stage 18: No Movement chip + joystick restored
+ const joyEnd=$('joy'); if(joyEnd) joyEnd.style.opacity='';
  me=m.profile;
  const won=m.winner===me.username;
  const itemsTxt=(m.itemsWon&&m.itemsWon.length)? `<br>Items in the pot: ${m.itemsWon.map(s=>`${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}`).join(', ')}`:'';
@@ -4425,6 +4593,8 @@ function endDuelUI(m){
 $('fleebtn').onclick=()=>send({type:'flee'});
 function renderNpcBar(){
  if(!npcFight) return;
+ const nmNpc=$('duelnomove'); if(nmNpc) nmNpc.style.display='none'; // Stage 18: the No Movement chip is duel-only
+ const joyNpc=$('joy'); if(joyNpc) joyNpc.style.opacity='';
  $('hpyou').style.width=clamp(npcFight.hpYou/Math.max(1,npcFight.maxHpYou)*100,0,100)+'%'; $('hpyouv').textContent=npcFight.hpYou;
  $('hpopp').style.width=clamp(npcFight.hpNpc/Math.max(1,npcFight.maxHpNpc)*100,0,100)+'%'; $('hpoppv').textContent=npcFight.hpNpc;
  const consum=(me?me.backpack:[]).filter(s=>catalog[s.item]&&(catalog[s.item].kind==='food'||catalog[s.item].kind==='potion'));
@@ -4983,6 +5153,9 @@ function wireBpCells(){
      }
      if(holdFired) return; // the hold already opened the sheet — swallow the release
      if(Math.hypot(lx-sx,ly-sy)>10) return; // it was a scroll
+     // Stage 18: Menu tap mode — a tap opens the item's detail sheet
+     // instead of quick-using / equipping it.
+     if(settings.tapMode==='menu'){ selStack=item; examineStack=null; renderDrawer(); return; }
      bpPrimaryTap(item);
    };
    cell.addEventListener('pointerup',finish);
@@ -5092,7 +5265,7 @@ function handleLongPress(cx,cy){
  }
  if(hit.kind==='ground'){
    openCtxSheet('🚶 Ground',[
-     {label:'🚶 Walk here',fn:()=>{ stopFollow(); if(settings.tapMode==='face') faceToward(hit.pt); else tapTarget=hit.pt; }},
+     {label:'🚶 Walk here',fn:()=>{ stopFollow(); if(settings.groundTap==='face') faceToward(hit.pt); else tapTarget=hit.pt; }},
      {label:'✖ Cancel',fn:null}
    ]);
    return;
@@ -5174,8 +5347,17 @@ function rebuildMyKnight(app,key){
  syncAvatars(); // re-applies badges / prayer / activity to the fresh label
 }
 
-/* ---- Amendment B: hold-and-drag buttons + fight box, Clear chip ---- */
-const BTN_POS_KEY='nallystake_btn_pos', FIGHT_POS_KEY='nallystake_fightbox_pos';
+/* ---- Stage 18: ✋ Grab mode replaces hold-drag + the Clear chip ----
+   The rail buttons are LOCKED by default: taps fire their actions
+   and nothing can be dragged (the old hold-450ms-to-drag is gone,
+   and so is Clear — saved spots now just stay where you put them).
+   Toggle ✋ Grab ON and the same buttons move with a plain
+   press-and-drag, no hold delay; while Grab is on, a press never
+   fires a button's action. Toggle it OFF to lock everything back
+   in place. Positions persist in BTN_POS_KEY exactly as before.
+   The fight strip and the master 🎛️ button were never draggable
+   and stay fixed. */
+const BTN_POS_KEY='nallystake_btn_pos';
 function loadBtnPos(){ try{ return JSON.parse(localStorage.getItem(BTN_POS_KEY)||'{}')||{}; }catch(e){ return {}; } }
 function applyBtnPositions(){
  const pos=loadBtnPos();
@@ -5183,63 +5365,55 @@ function applyBtnPositions(){
    const p=pos[b.dataset.panel];
    if(p){ b.style.position='fixed'; b.style.left=p.l+'px'; b.style.top=p.t+'px'; b.style.zIndex='60'; }
  });
- // The fight bars are fixed bottom strips now — any saved fight-box
- // position (FIGHT_POS_KEY) is deliberately ignored.
 }
-function wireHoldDrag(handle,moveEl,save){
- let sx=0,sy=0,pid=null,holdT=null,armed=false,dragging=false,startL=0,startT=0;
- handle.addEventListener('pointerdown',e=>{
-   if(pid!==null) return;
-   pid=e.pointerId; sx=e.clientX; sy=e.clientY; armed=false; dragging=false;
-   try{ handle.setPointerCapture(pid); }catch(err){}
-   holdT=setTimeout(()=>{ holdT=null; armed=true; },450);
+let grabMode=false;
+function setGrabMode(on){
+ grabMode=!!on;
+ const gb=$('railgrab');
+ if(gb){ gb.classList.toggle('on',grabMode); gb.textContent=grabMode?'✋ Grab: On':'✋ Grab'; }
+ document.body.classList.toggle('grabbing',grabMode);
+ toast(grabMode?'✋ Grab on — drag the buttons where you want them, then toggle Grab off to lock them.':'🔒 Buttons locked in place.');
+}
+$('railgrab').onclick=()=>setGrabMode(!grabMode);
+document.querySelectorAll('#railset .rbtn').forEach(b=>{
+ let pid=null,sx=0,sy=0,startL=0,startT=0,dragging=false;
+ b.addEventListener('pointerdown',e=>{
+   if(!grabMode||pid!==null) return; // locked: the press is a normal tap
+   pid=e.pointerId; sx=e.clientX; sy=e.clientY; dragging=false;
+   b._suppressClickUntil=Date.now()+60000; // a press in Grab mode never fires the action
+   try{ b.setPointerCapture(pid); }catch(err){}
  });
- handle.addEventListener('pointermove',e=>{
-   if(pid===null||e.pointerId!==pid) return;
+ b.addEventListener('pointermove',e=>{
+   if(!grabMode||pid===null||e.pointerId!==pid) return;
    const dx=e.clientX-sx, dy=e.clientY-sy;
-   if(!armed&&holdT&&Math.hypot(dx,dy)>10){ clearTimeout(holdT); holdT=null; } // moved before the hold armed — plain press
-   if(armed&&!dragging){
+   if(!dragging&&Math.hypot(dx,dy)>4){
      dragging=true;
-     const r=moveEl.getBoundingClientRect();
-     moveEl.style.position='fixed'; moveEl.style.left=r.left+'px'; moveEl.style.top=r.top+'px'; moveEl.style.bottom='auto'; moveEl.style.zIndex='70';
+     const r=b.getBoundingClientRect();
+     b.style.position='fixed'; b.style.left=r.left+'px'; b.style.top=r.top+'px'; b.style.bottom='auto'; b.style.zIndex='70';
      startL=r.left; startT=r.top;
    }
-   if(dragging){ moveEl.style.left=(startL+dx)+'px'; moveEl.style.top=(startT+dy)+'px'; }
+   if(dragging){ b.style.left=(startL+dx)+'px'; b.style.top=(startT+dy)+'px'; }
  });
  const finish=e=>{
    if(pid===null||(e.pointerId!==undefined&&e.pointerId!==pid)) return;
    pid=null;
-   if(holdT){ clearTimeout(holdT); holdT=null; }
    if(dragging){
      dragging=false;
-     const r=moveEl.getBoundingClientRect();
-     save(Math.round(r.left),Math.round(r.top));
-     handle._suppressClickUntil=Date.now()+350; // a drag never fires the tap action
-   } else if(armed){
-     handle._suppressClickUntil=Date.now()+350; // a hold that ended where it started = no action
+     const r=b.getBoundingClientRect();
+     const pos=loadBtnPos(); pos[b.dataset.panel]={l:Math.round(r.left),t:Math.round(r.top)};
+     try{ localStorage.setItem(BTN_POS_KEY,JSON.stringify(pos)); }catch(err){}
    }
-   armed=false;
+   b._suppressClickUntil=Date.now()+350; // swallow the click this press produces
  };
- handle.addEventListener('pointerup',finish);
- handle.addEventListener('pointercancel',finish);
-}
-document.querySelectorAll('#railset .rbtn').forEach(b=>{
- wireHoldDrag(b,b,(l,t)=>{ const pos=loadBtnPos(); pos[b.dataset.panel]={l,t}; try{ localStorage.setItem(BTN_POS_KEY,JSON.stringify(pos)); }catch(e){} });
+ b.addEventListener('pointerup',finish);
+ b.addEventListener('pointercancel',finish);
 });
 applyBtnPositions();
-let railClearArmed=false, railClearTimer=null;
-$('railclear').onclick=()=>{
- if(!railClearArmed){
-   railClearArmed=true;
-   $('railclear').textContent='Sure?'; $('railclear').classList.add('sure');
-   railClearTimer=setTimeout(()=>{ railClearArmed=false; $('railclear').textContent='🧹 Clear'; $('railclear').classList.remove('sure'); },2500);
-   return;
- }
- clearTimeout(railClearTimer); railClearArmed=false;
- $('railclear').textContent='🧹 Clear'; $('railclear').classList.remove('sure');
- try{ localStorage.removeItem(BTN_POS_KEY); localStorage.removeItem(FIGHT_POS_KEY); }catch(e){}
- document.querySelectorAll('#railset .rbtn').forEach(b=>{ b.style.position=''; b.style.left=''; b.style.top=''; b.style.zIndex=''; });
- toast('🧹 Button spots reset.');
-};
+/* Stage 18: the other two chips under the master toggle — Menu tap
+   (Part B) and Camera POV (Part E) — wired to their settings. */
+$('railmenutap').onclick=()=>setTapMode(settings.tapMode==='menu'?'normal':'menu');
+$('railcam').onclick=()=>toggleCamPov();
+renderMenuTapChip();
+renderCamChip();
 </script>
 </body></html>
