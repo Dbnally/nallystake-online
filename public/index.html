@@ -145,6 +145,23 @@
  .pickrow{display:flex;align-items:center;gap:7px;font-size:13px;padding:4px 0;border-bottom:1px solid #3a2c1c}
  .pickrow .grow{flex:1}
  .pickrow input{width:58px;padding:4px}
+ /* Stage 14: duel challenge configuration screen */
+ .chalnames{display:flex;gap:8px;margin-bottom:6px}
+ .chalnames span{flex:1;text-align:center;font-weight:900;color:#171310;background:linear-gradient(180deg,#d8c690,#b39b5e);border:1px solid #7a6748;border-radius:8px;padding:5px 4px;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .chalnames .cf{color:#1d6b1d}
+ .rulerow{display:flex;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid rgba(122,103,72,.35);font-size:14px}
+ .rulerow .grow{flex:1}
+ .pill{border-radius:999px;padding:2px 0;font-weight:900;font-size:12px;border:1px solid #4a3a28;cursor:pointer;width:54px;text-align:center;flex:none}
+ .pill.on{background:#2e7d32;border-color:#66bb6a;color:#eaffea}
+ .pill.off{background:#5d1d20;border-color:#8e2f32;color:#ffd9d9}
+ .pill.locked{opacity:.55;cursor:default}
+ .chalitems{display:flex;gap:8px;align-items:flex-start}
+ .chalbox{flex:1;border:1px solid #7a6748;border-radius:8px;padding:6px;background:rgba(255,255,255,.18);min-height:58px;min-width:0}
+ .chalboxh{font-weight:900;font-size:11px;text-align:center;color:#5d4028;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .chalbox .pickrow{font-size:12px}
+ .chalbox .pickrow input{width:44px}
+ .chalitem{font-size:12px;padding:2px 0}
+ .ruledis{opacity:.45!important;filter:grayscale(.85)}
  .sheet.wide{width:min(580px,96vw)}
  button.ghost:disabled{opacity:.45}
  /* Stage 7B: follow chip */
@@ -643,8 +660,10 @@ function onMsg(m){
  if(m.type==='fc_telegraph'){ onFcTelegraph(m); }
  if(m.type==='fc_end'){ onFcEnd(m); }
  if(m.type==='challenge_incoming'){ openIncoming(m); }
+ if(m.type==='challenge_terms'){ adoptChallengeTerms(m); }
+ if(m.type==='challenge_closed'){ if(chalTerms&&m.challengeId===chalTerms.challengeId){ chalTerms=null; chalNotice=false; stopIncomingTimer(); closeModal('challengemodal'); closeModal('incomingmodal'); toast('Challenge ended — nothing was taken.'); } }
  if(m.type==='challenging'){ if(m.area===curArea&&m.from) challengeMarks[m.from]={to:m.to||null,expires:Date.now()+30000}; }
- if(m.type==='challenge_clear'){ if(m.from){ delete challengeMarks[m.from]; if(incomingCh&&incomingCh.from===m.from) incomingCh=null; if(drawerPanel==='players') renderDrawer(); } }
+ if(m.type==='challenge_clear'){ if(m.from){ delete challengeMarks[m.from]; if(incomingCh&&incomingCh.from===m.from) incomingCh=null; if(chalTerms&&chalTerms.from===m.from){ chalTerms=null; chalNotice=false; stopIncomingTimer(); closeModal('challengemodal'); closeModal('incomingmodal'); } if(drawerPanel==='players') renderDrawer(); } }
  if(m.type==='admin_note'){ toast(m.text); logLine(`👑 Admin: ${m.text}`); }
  if(m.type==='admin_list'){ lastAdminList=m.players||[]; if(drawerPanel==='admin') renderDrawer(); }
  if(m.type==='online_list'){ lastOnlineList=m.players||[]; if(drawerPanel==='admin') renderDrawer(); }
@@ -2576,7 +2595,7 @@ function handleTap(cx,cy){
      // Derek's rule: a challenger wears the ❗. Tapping them while THEIR
      // challenge to me is still pending reopens the duel-rules sheet
      // (the terms both sides agree to) instead of the player menu.
-     if(chalMark(best)&&incomingCh&&incomingCh.from===best) $('incomingmodal').classList.add('open');
+     if(chalMark(best)&&incomingCh&&incomingCh.from===best){ $('incomingmodal').classList.add('open'); if(chalTerms&&chalTerms.challengeId===incomingCh.challengeId) renderChalSheet(); }
      else openPlayerMenu(best);
    }
    return;
@@ -3191,15 +3210,20 @@ function pExchange(){
 /* ---- Prayers ---- */
 function pPrayers(){
  const pct=clamp(me.prayerPoints/me.prayerMax*100,0,100);
+ // Stage 14: in a No Prayer duel the buttons grey out (the server
+ // rejects activations with the 🚫 line; switching off still works).
+ // In a No Potions duel the prayer-potion drink greys the same way.
+ const noPray=!!(duel&&duel.rules&&duel.rules.noPrayer), noPot=!!(duel&&duel.rules&&duel.rules.noPotions);
  let h=`<div class="note">Prayer points: <b style="color:#e3c766">${Math.floor(me.prayerPoints)} / ${me.prayerMax}</b> — an active prayer drains slowly and switches off at 0.</div>
  <div class="bar" style="margin:6px 0 10px"><div style="width:${pct}%;background:#2456c8"></div></div>
  <div style="display:flex;gap:6px">
-  <button class="praybtn ${me.activePrayer==='melee'?'on':''}" onclick="send({type:'prayer',prayer:'melee'})">🛡️<br>Protect<br>Melee</button>
-  <button class="praybtn ${me.activePrayer==='missiles'?'on':''}" onclick="send({type:'prayer',prayer:'missiles'})">🏹<br>Protect<br>Missiles</button>
-  <button class="praybtn ${me.activePrayer==='magic'?'on':''}" onclick="send({type:'prayer',prayer:'magic'})">🔮<br>Protect<br>Magic</button>
+  <button class="praybtn ${me.activePrayer==='melee'?'on':''}${noPray?' ruledis':''}" onclick="send({type:'prayer',prayer:'melee'})">🛡️<br>Protect<br>Melee</button>
+  <button class="praybtn ${me.activePrayer==='missiles'?'on':''}${noPray?' ruledis':''}" onclick="send({type:'prayer',prayer:'missiles'})">🏹<br>Protect<br>Missiles</button>
+  <button class="praybtn ${me.activePrayer==='magic'?'on':''}${noPray?' ruledis':''}" onclick="send({type:'prayer',prayer:'magic'})">🔮<br>Protect<br>Magic</button>
  </div>
  <p class="note" style="margin-top:8px">One at a time — tapping the lit one turns it off. Your active prayer shows as a badge over your knight.</p>`;
- if(myQty('prayer_potion')>0) h+=`<button class="act" onclick="send({type:'use',item:'prayer_potion'})">🌟 Drink prayer potion (have ${myQty('prayer_potion')})</button>`;
+ if(noPray) h+=`<p class="note" style="color:#e88">🚫 No Prayer in this duel.</p>`;
+ if(myQty('prayer_potion')>0) h+=`<button class="act${noPot?' ruledis':''}" onclick="send({type:'use',item:'prayer_potion'})">🌟 Drink prayer potion (have ${myQty('prayer_potion')})</button>`;
  return h;
 }
 /* ---- Players ---- */
@@ -3671,44 +3695,145 @@ function readPicker(prefix){
  return out;
 }
 const STYLES_LIST=['accurate','aggressive','defensive','controlled'];
-window.openChallenge=function(name){
- const sh=$('challengesheet');
- sh.innerHTML=`<h3>⚔️ Challenge ${esc(name)}</h3>
- <div class="rowline"><span class="grow">Gold stake (g)</span><input type="number" id="chstake" value="10" min="0"></div>
- <div class="rowline"><span class="grow">Your fighting style</span><select id="chstyle">${STYLES_LIST.map(s=>`<option ${me&&me.style===s?'selected':''}>${s}</option>`).join('')}</select></div>
- <p class="note">Add items from your backpack to your stake (winner takes everything staked):</p>
- ${pickerHTML('chp')}
- <div class="btns"><button class="act" id="chsend">Send challenge</button><button class="ghost" onclick="closeModal('challengemodal')">Cancel</button></div>
- <p class="note">Stakes are held by the server in escrow. If they decline, nothing is taken.</p>`;
- $('challengemodal').classList.add('open');
- $('chsend').onclick=()=>{
-   const style=$('chstyle').value;
-   if(me.style!==style) send({type:'style',style});
-   send({type:'challenge',target:name,stake:Math.max(0,Math.floor(+$('chstake').value||0)),items:readPicker('chp')});
-   closeModal('challengemodal');
+/* ================= Stage 14: duel challenge configuration =================
+   ONE configuration screen per challenge (Derek's reference photo):
+   both names as columns, rule rows with On/Off pills (Melee Only /
+   No Ranged / No Magic are locked On — duels in this game are
+   melee-only), ITEMS TO STAKE boxes for both sides, the matched
+   GOLD TO STAKE, CONFIRM RULES & STAKES / CANCEL CHALLENGE. The
+   challenger composes on this screen and sends; the challenged
+   player gets the same screen (from the '!' tap or the popup).
+   Either side may edit until both confirm — the server resets both
+   confirms on any change (challenge_terms pushes the new state). */
+const CHAL_LOCKED=[['meleeOnly','Melee Only'],['noRanged','No Ranged'],['noMagic','No Magic']];
+const CHAL_RULES=[['noPrayer','No Prayer'],['noPotions','No Potions'],['noFood','No Food'],['noSpecial','No Special Attacks']];
+const CHAL_NO_RULES={noPrayer:false,noPotions:false,noFood:false,noSpecial:false};
+let chalTerms=null;   // pre-send draft (challengeId null) or the server's challenge_terms payload
+let chalRole=null;    // 'from' (challenger) | 'to' (challenged)
+let chalNotice=false; // "Terms changed — confirm again."
+let chalLeft=0;       // answer countdown display (the server owns the real expiry)
+
+function chalModalId(){ return chalRole==='from'?'challengemodal':'incomingmodal'; }
+function chalSheetEl(){ return $(chalRole==='from'?'challengesheet':'incomingsheet'); }
+function chalMyItems(){ return chalRole==='from'? chalTerms.items : chalTerms.itemsTo; }
+function chalTheirItems(){ return chalRole==='from'? chalTerms.itemsTo : chalTerms.items; }
+function chalPickerHTML(){
+ if(!me||!me.backpack.length) return `<p class="note">Your backpack is empty — gold-only stake.</p>`;
+ const preset={}; for(const s of chalMyItems()) preset[s.item]=(preset[s.item]||0)+s.qty;
+ return me.backpack.map((s,i)=>`<div class="pickrow"><span>${itemIconHTML(s.item,18)}</span><span class="grow">${esc(nameOf(s.item))} <span class="sub">(${s.qty})</span></span><input type="number" id="chp${i}" min="0" max="${s.qty}" value="${Math.min(preset[s.item]||0,s.qty)}" data-item="${s.item}" onchange="chalTermsEdited()"></div>`).join('');
+}
+function chalTheirHTML(){
+ const list=chalTheirItems();
+ if(!list||!list.length) return `<p class="note" style="text-align:center">Nothing staked yet</p>`;
+ return list.map(s=>`<div class="chalitem">${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}</div>`).join('');
+}
+function chalScreenState(){
+ const stakeEl=$('chalstake');
+ return {
+   stake: Math.max(0,Math.floor(+(stakeEl?stakeEl.value:chalTerms.stake)||0)),
+   items: readPicker('chp'),
+   rules: {...chalTerms.rules},
  };
+}
+window.chalTermsEdited=function(){ if(chalTerms&&chalTerms.challengeId) send({type:'challenge_update',challengeId:chalTerms.challengeId,...chalScreenState()}); };
+window.chalFlipRule=function(k){
+ if(!chalTerms) return;
+ chalTerms.rules[k]=!chalTerms.rules[k];
+ if(chalTerms.challengeId) send({type:'challenge_update',challengeId:chalTerms.challengeId,...chalScreenState()});
+ else renderChalSheet();
+};
+window.chalSend=function(){
+ if(!chalTerms) return;
+ const st=$('chstyle'); if(st&&me&&me.style!==st.value) send({type:'style',style:st.value});
+ const s=chalScreenState();
+ send({type:'challenge',target:chalTerms.to,stake:s.stake,items:s.items,rules:s.rules});
+ // The sheet stays open: the server's challenge_terms turns this
+ // same screen into the live negotiation (Confirm / Cancel).
+};
+window.chalConfirm=function(){
+ if(!chalTerms||!chalTerms.challengeId) return;
+ const st=$('chstyle'); if(st&&me&&me.style!==st.value) send({type:'style',style:st.value});
+ send({type:'challenge_confirm',challengeId:chalTerms.challengeId,...chalScreenState()});
+};
+window.chalCancel=function(){
+ if(!chalTerms) return;
+ if(!chalTerms.challengeId){ chalTerms=null; closeModal('challengemodal'); return; }
+ if(chalRole==='to') send({type:'challenge_response',challengeId:chalTerms.challengeId,accept:false,items:[]});
+ else send({type:'challenge_cancel',challengeId:chalTerms.challengeId});
+ chalTerms=null; chalNotice=false; stopIncomingTimer();
+ closeModal(chalModalId());
+};
+function renderChalSheet(){
+ const sh=chalSheetEl(); if(!sh||!chalTerms) return;
+ sh.classList.add('parchment');
+ const t=chalTerms, mine=chalRole;
+ const myName=mine==='from'?t.from:t.to, theirName=mine==='from'?t.to:t.from;
+ let h=`<h3 style="text-align:center;color:#5d4028;margin-top:0">⚔️ DUEL CHALLENGE CONFIGURATION</h3>`;
+ h+=`<div class="chalnames"><span>${esc(t.from)}${t.confirm.from?' <span class="cf">✓</span>':''}</span><span>${esc(t.to)}${t.confirm.to?' <span class="cf">✓</span>':''}</span></div>`;
+ for(const [k,label] of CHAL_LOCKED) h+=`<div class="rulerow"><span class="grow">${label}</span><span class="pill on locked">On</span></div>`;
+ for(const [k,label] of CHAL_RULES) h+=`<div class="rulerow"><span class="grow">${label}</span><button class="pill ${t.rules[k]?'on':'off'}" onclick="chalFlipRule('${k}')">${t.rules[k]?'On':'Off'}</button></div>`;
+ h+=`<p class="note" style="text-align:center;font-weight:900;margin:8px 0 4px">ITEMS TO STAKE</p>`;
+ h+=`<div class="chalitems"><div class="chalbox"><div class="chalboxh">${esc(myName)} — you</div>${chalPickerHTML()}</div><div class="chalbox"><div class="chalboxh">${esc(theirName)}</div>${chalTheirHTML()}</div></div>`;
+ h+=`<div class="rowline" style="margin-top:8px"><span class="grow"><b>GOLD TO STAKE</b> 🪙 <span class="sub">(matched — both stake this)</span></span><input type="number" id="chalstake" min="0" value="${t.stake}" onchange="chalTermsEdited()"></div>`;
+ h+=`<div class="rowline"><span class="grow">Your fighting style</span><select id="chstyle">${STYLES_LIST.map(s=>`<option ${me&&me.style===s?'selected':''}>${s}</option>`).join('')}</select></div>`;
+ if(chalNotice) h+=`<p class="note" style="text-align:center;color:#8e2f32;font-weight:900">⚠️ Terms changed — confirm again.</p>`;
+ if(mine==='to'&&t.challengeId) h+=`<p class="note" id="chalcount" style="text-align:center"></p>`;
+ if(!t.challengeId){
+   h+=`<div class="btns"><button class="act" onclick="chalSend()">Send challenge</button><button class="ghost" onclick="chalCancel()">Cancel</button></div>`;
+ } else if(t.confirm[mine]){
+   h+=`<div class="btns"><button class="act" disabled style="opacity:.55">Waiting for ${esc(theirName)}…</button><button class="ghost" onclick="chalCancel()">✖ CANCEL CHALLENGE</button></div>`;
+ } else {
+   h+=`<div class="btns"><button class="act" onclick="chalConfirm()">✔ CONFIRM RULES & STAKES</button><button class="ghost" onclick="chalCancel()">✖ CANCEL CHALLENGE</button></div>`;
+ }
+ h+=`<p class="note">Winner takes everything staked. Stakes are held by the server in escrow once the duel starts — cancelling takes nothing. Either side can edit until both confirm; any change resets both confirms.</p>`;
+ sh.innerHTML=h;
+ chalCountUpd();
+}
+function chalCountUpd(){ const el=$('chalcount'); if(el) el.textContent=chalLeft>0?`⏱ ${chalLeft}s to answer`:''; }
+function adoptChallengeTerms(m){
+ if(!me) return;
+ const role=m.from===me.username?'from':(m.to===me.username?'to':null);
+ if(!role) return;
+ const prev=chalTerms;
+ if(prev&&prev.challengeId===m.challengeId&&(prev.confirm.from||prev.confirm.to)&&!m.confirm.from&&!m.confirm.to) chalNotice=true;
+ if(m.confirm[role]) chalNotice=false;
+ chalRole=role; chalTerms=m;
+ if(role==='to'&&typeof m.seconds==='number') chalLeft=m.seconds;
+ if($(chalModalId()).classList.contains('open')) renderChalSheet();
+}
+window.openChallenge=function(name){
+ // A live negotiation with this player reopens instead of starting over.
+ if(chalTerms&&chalTerms.challengeId&&((chalTerms.from===me.username&&chalTerms.to===name)||(chalTerms.to===me.username&&chalTerms.from===name))){
+   chalRole=chalTerms.from===me.username?'from':'to';
+   $(chalModalId()).classList.add('open');
+   renderChalSheet();
+   return;
+ }
+ chalRole='from'; chalNotice=false;
+ chalTerms={challengeId:null,from:me.username,to:name,stake:10,items:[],itemsTo:[],rules:{...CHAL_NO_RULES},confirm:{from:false,to:false}};
+ $('challengemodal').classList.add('open');
+ renderChalSheet();
 };
 window.closeModal=function(id){ $(id).classList.remove('open'); if(id==='incomingmodal') stopIncomingTimer(); if(id==='fightoffermodal') stopFightOfferTimer(); if(id==='partyinvitemodal') stopPartyInviteTimer(); if(id==='tradeincomingmodal') stopTradeReqTimer(); };
 let incomingCh=null, incomingTimer=null;
 function stopIncomingTimer(){ if(incomingTimer){ clearInterval(incomingTimer); incomingTimer=null; } }
 function openIncoming(m){
  incomingCh=m;
- const itemsTxt=(m.items&&m.items.length)? m.items.map(s=>`${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}`).join(', ') : 'no items';
- $('incomingsheet').innerHTML=`<h3>⚔️ ${esc(m.from)} challenges you!</h3>
- <p>Gold stake: <b style="color:#e3c766">${m.stake}g</b> each<br>Their items: ${itemsTxt}</p>
- <p class="note">Add your own items to match (winner takes all):</p>
- ${pickerHTML('inp')}
- <p class="note" id="incount"></p>
- <div class="btns"><button class="act" id="inaccept">Accept — fight!</button><button class="ghost" id="indecline">Decline</button></div>
- <p class="note">Declining takes nothing from anyone.</p>`;
+ // Stage 14: the challenged player gets the SAME configuration
+ // screen as the challenger — offered terms filled in, my side of
+ // the items box empty, rules editable, Confirm instead of Accept.
+ chalRole='to'; chalNotice=false; chalLeft=m.seconds||30;
+ chalTerms={challengeId:m.challengeId,from:m.from,to:me?me.username:'',stake:m.stake,items:m.items||[],itemsTo:[],rules:m.rules?{...CHAL_NO_RULES,...m.rules}:{...CHAL_NO_RULES},confirm:{from:false,to:false}};
  $('incomingmodal').classList.add('open');
- let left=m.seconds||30;
- const upd=()=>{ const el=$('incount'); if(el) el.textContent=`⏱ ${left}s to answer`; };
- upd();
+ renderChalSheet();
  stopIncomingTimer();
- incomingTimer=setInterval(()=>{ left--; if(left<=0){ stopIncomingTimer(); closeModal('incomingmodal'); toast('Challenge expired.'); } else upd(); },1000);
- $('inaccept').onclick=()=>{ send({type:'challenge_response',challengeId:m.challengeId,accept:true,items:readPicker('inp')}); stopIncomingTimer(); closeModal('incomingmodal'); };
- $('indecline').onclick=()=>{ send({type:'challenge_response',challengeId:m.challengeId,accept:false,items:[]}); stopIncomingTimer(); closeModal('incomingmodal'); };
+ incomingTimer=setInterval(()=>{
+   chalLeft--;
+   if(chalLeft<=0){
+     stopIncomingTimer(); closeModal('incomingmodal');
+     if(chalTerms&&chalTerms.challengeId===m.challengeId){ chalTerms=null; toast('Challenge expired.'); }
+   } else chalCountUpd();
+ },1000);
 }
 /* ================= Stage 7A cards: official fight offers & cert requests ================= */
 let fightOfferTimer=null;
@@ -3975,7 +4100,10 @@ function startDuelUI(m){
  stopGather();
  stopFollow();
  cancelUse(true);
- duel={id:m.duelId,opponent:m.opponent,pot:m.pot,hpYou:99,hpOpponent:99,energyYou:Math.floor(me?me.specialEnergy||0:0),escrow:m.escrowItems||[],arena:m.arena||null};
+ // Stage 14: the configuration screen's job is done — close it and
+ // keep the agreed rules for the strip's greyed-out controls.
+ chalTerms=null; chalNotice=false; stopIncomingTimer(); closeModal('challengemodal'); closeModal('incomingmodal');
+ duel={id:m.duelId,opponent:m.opponent,pot:m.pot,hpYou:99,hpOpponent:99,energyYou:Math.floor(me?me.specialEnergy||0:0),escrow:m.escrowItems||[],arena:m.arena||null,rules:m.rules||null};
  duelEngaged=false; renderDuelHint();
  // Stage 12: countdown overlay (locks my movement until FIGHT!) and
  // the opponent's overhead HP bar, full at the start.
@@ -4009,8 +4137,11 @@ function renderDuelBar(){
  $('hpyou').style.width=clamp(duel.hpYou/99*100,0,100)+'%'; $('hpyouv').textContent=duel.hpYou;
  $('hpopp').style.width=clamp(duel.hpOpponent/99*100,0,100)+'%'; $('hpoppv').textContent=duel.hpOpponent;
  const consum=(me?me.backpack:[]).filter(s=>catalog[s.item]&&(catalog[s.item].kind==='food'||catalog[s.item].kind==='potion'));
- let h=`<button class="act" id="specbtn">⚡ Dragon Slash (${duel.energyYou}%)</button>`;
- for(const s of consum) h+=`<button class="ghost" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}</button>`;
+ // Stage 14: controls the agreed rules ban are greyed out (visual
+ // only — the server is the real gate and answers with the 🚫 line).
+ const R=duel.rules||{};
+ let h=`<button class="act${R.noSpecial?' ruledis':''}" id="specbtn">⚡ Dragon Slash (${duel.energyYou}%)</button>`;
+ for(const s of consum){ const dis=(R.noFood&&catalog[s.item].kind==='food')||(R.noPotions&&catalog[s.item].kind==='potion'); h+=`<button class="ghost${dis?' ruledis':''}" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}</button>`; }
  $('duelquick').innerHTML=h;
  const sb=$('specbtn');
  sb.classList.toggle('ready',duel.energyYou>=50);
