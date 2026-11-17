@@ -3704,7 +3704,10 @@ const STYLES_LIST=['accurate','aggressive','defensive','controlled'];
    challenger composes on this screen and sends; the challenged
    player gets the same screen (from the '!' tap or the popup).
    Either side may edit until both confirm — the server resets both
-   confirms on any change (challenge_terms pushes the new state). */
+   confirms on any change (challenge_terms pushes the new state).
+   Stage 15 adds the 🆓 Free Play toggle row: while it is on, the
+   stake controls are disabled and the terms are nothing-staked —
+   a practice fight with no pot, no record and no rating change. */
 const CHAL_LOCKED=[['meleeOnly','Melee Only'],['noRanged','No Ranged'],['noMagic','No Magic']];
 const CHAL_RULES=[['noPrayer','No Prayer'],['noPotions','No Potions'],['noFood','No Food'],['noSpecial','No Special Attacks']];
 const CHAL_NO_RULES={noPrayer:false,noPotions:false,noFood:false,noSpecial:false};
@@ -3728,11 +3731,15 @@ function chalTheirHTML(){
  return list.map(s=>`<div class="chalitem">${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}</div>`).join('');
 }
 function chalScreenState(){
+ // Stage 15: while Free Play is on, the terms are nothing-staked
+ // whatever the (disabled) stake inputs still hold.
+ if(chalTerms.freePlay) return { stake:0, items:[], rules:{...chalTerms.rules}, freePlay:true };
  const stakeEl=$('chalstake');
  return {
    stake: Math.max(0,Math.floor(+(stakeEl?stakeEl.value:chalTerms.stake)||0)),
    items: readPicker('chp'),
    rules: {...chalTerms.rules},
+   freePlay:false,
  };
 }
 window.chalTermsEdited=function(){ if(chalTerms&&chalTerms.challengeId) send({type:'challenge_update',challengeId:chalTerms.challengeId,...chalScreenState()}); };
@@ -3742,11 +3749,27 @@ window.chalFlipRule=function(k){
  if(chalTerms.challengeId) send({type:'challenge_update',challengeId:chalTerms.challengeId,...chalScreenState()});
  else renderChalSheet();
 };
+window.chalFlipFreePlay=function(){
+ if(!chalTerms) return;
+ const on=!chalTerms.freePlay;
+ chalTerms.freePlay=on;
+ // On: stakes vanish (the server coerces the same way). Off: a
+ // staked duel needs a stake again — restore the usual 10g default
+ // if the coercion left nothing on the table.
+ if(on){ chalTerms.stake=0; chalTerms.items=[]; chalTerms.itemsTo=[]; }
+ else if(chalTerms.stake<1&&!chalTerms.items.length&&!chalTerms.itemsTo.length) chalTerms.stake=10;
+ if(chalTerms.challengeId){
+   // Send the terms as they now stand — NOT chalScreenState(): the
+   // on-screen stake input still shows the pre-flip value until the
+   // server's challenge_terms push re-renders the sheet.
+   send({type:'challenge_update',challengeId:chalTerms.challengeId,stake:chalTerms.stake,items:chalMyItems(),rules:{...chalTerms.rules},freePlay:on});
+ } else renderChalSheet();
+};
 window.chalSend=function(){
  if(!chalTerms) return;
  const st=$('chstyle'); if(st&&me&&me.style!==st.value) send({type:'style',style:st.value});
  const s=chalScreenState();
- send({type:'challenge',target:chalTerms.to,stake:s.stake,items:s.items,rules:s.rules});
+ send({type:'challenge',target:chalTerms.to,stake:s.stake,items:s.items,rules:s.rules,freePlay:s.freePlay});
  // The sheet stays open: the server's challenge_terms turns this
  // same screen into the live negotiation (Confirm / Cancel).
 };
@@ -3772,9 +3795,11 @@ function renderChalSheet(){
  h+=`<div class="chalnames"><span>${esc(t.from)}${t.confirm.from?' <span class="cf">✓</span>':''}</span><span>${esc(t.to)}${t.confirm.to?' <span class="cf">✓</span>':''}</span></div>`;
  for(const [k,label] of CHAL_LOCKED) h+=`<div class="rulerow"><span class="grow">${label}</span><span class="pill on locked">On</span></div>`;
  for(const [k,label] of CHAL_RULES) h+=`<div class="rulerow"><span class="grow">${label}</span><button class="pill ${t.rules[k]?'on':'off'}" onclick="chalFlipRule('${k}')">${t.rules[k]?'On':'Off'}</button></div>`;
+ h+=`<div class="rulerow"><span class="grow">🆓 Free Play — no stakes</span><button class="pill ${t.freePlay?'on':'off'}" onclick="chalFlipFreePlay()">${t.freePlay?'On':'Off'}</button></div>`;
  h+=`<p class="note" style="text-align:center;font-weight:900;margin:8px 0 4px">ITEMS TO STAKE</p>`;
- h+=`<div class="chalitems"><div class="chalbox"><div class="chalboxh">${esc(myName)} — you</div>${chalPickerHTML()}</div><div class="chalbox"><div class="chalboxh">${esc(theirName)}</div>${chalTheirHTML()}</div></div>`;
- h+=`<div class="rowline" style="margin-top:8px"><span class="grow"><b>GOLD TO STAKE</b> 🪙 <span class="sub">(matched — both stake this)</span></span><input type="number" id="chalstake" min="0" value="${t.stake}" onchange="chalTermsEdited()"></div>`;
+ if(t.freePlay) h+=`<p class="note" style="text-align:center;font-weight:900">🆓 Free Play — nothing is staked</p>`;
+ else h+=`<div class="chalitems"><div class="chalbox"><div class="chalboxh">${esc(myName)} — you</div>${chalPickerHTML()}</div><div class="chalbox"><div class="chalboxh">${esc(theirName)}</div>${chalTheirHTML()}</div></div>`;
+ h+=`<div class="rowline" style="margin-top:8px"><span class="grow"><b>GOLD TO STAKE</b> 🪙 <span class="sub">(matched — both stake this)</span></span><input type="number" id="chalstake" min="0" value="${t.stake}" ${t.freePlay?'disabled':''} onchange="chalTermsEdited()"></div>`;
  h+=`<div class="rowline"><span class="grow">Your fighting style</span><select id="chstyle">${STYLES_LIST.map(s=>`<option ${me&&me.style===s?'selected':''}>${s}</option>`).join('')}</select></div>`;
  if(chalNotice) h+=`<p class="note" style="text-align:center;color:#8e2f32;font-weight:900">⚠️ Terms changed — confirm again.</p>`;
  if(mine==='to'&&t.challengeId) h+=`<p class="note" id="chalcount" style="text-align:center"></p>`;
@@ -3785,7 +3810,8 @@ function renderChalSheet(){
  } else {
    h+=`<div class="btns"><button class="act" onclick="chalConfirm()">✔ CONFIRM RULES & STAKES</button><button class="ghost" onclick="chalCancel()">✖ CANCEL CHALLENGE</button></div>`;
  }
- h+=`<p class="note">Winner takes everything staked. Stakes are held by the server in escrow once the duel starts — cancelling takes nothing. Either side can edit until both confirm; any change resets both confirms.</p>`;
+ if(t.freePlay) h+=`<p class="note">Free Play is a practice fight: no gold, no items, and no win/loss record or rating change — just the fight (combat XP still counts). Either side can edit until both confirm; any change resets both confirms.</p>`;
+ else h+=`<p class="note">Winner takes everything staked. Stakes are held by the server in escrow once the duel starts — cancelling takes nothing. Either side can edit until both confirm; any change resets both confirms.</p>`;
  sh.innerHTML=h;
  chalCountUpd();
 }
@@ -3810,7 +3836,7 @@ window.openChallenge=function(name){
    return;
  }
  chalRole='from'; chalNotice=false;
- chalTerms={challengeId:null,from:me.username,to:name,stake:10,items:[],itemsTo:[],rules:{...CHAL_NO_RULES},confirm:{from:false,to:false}};
+ chalTerms={challengeId:null,from:me.username,to:name,stake:10,items:[],itemsTo:[],rules:{...CHAL_NO_RULES},freePlay:false,confirm:{from:false,to:false}};
  $('challengemodal').classList.add('open');
  renderChalSheet();
 };
@@ -3823,7 +3849,7 @@ function openIncoming(m){
  // screen as the challenger — offered terms filled in, my side of
  // the items box empty, rules editable, Confirm instead of Accept.
  chalRole='to'; chalNotice=false; chalLeft=m.seconds||30;
- chalTerms={challengeId:m.challengeId,from:m.from,to:me?me.username:'',stake:m.stake,items:m.items||[],itemsTo:[],rules:m.rules?{...CHAL_NO_RULES,...m.rules}:{...CHAL_NO_RULES},confirm:{from:false,to:false}};
+ chalTerms={challengeId:m.challengeId,from:m.from,to:me?me.username:'',stake:m.stake,items:m.items||[],itemsTo:[],rules:m.rules?{...CHAL_NO_RULES,...m.rules}:{...CHAL_NO_RULES},freePlay:!!m.freePlay,confirm:{from:false,to:false}};
  $('incomingmodal').classList.add('open');
  renderChalSheet();
  stopIncomingTimer();
@@ -4103,7 +4129,7 @@ function startDuelUI(m){
  // Stage 14: the configuration screen's job is done — close it and
  // keep the agreed rules for the strip's greyed-out controls.
  chalTerms=null; chalNotice=false; stopIncomingTimer(); closeModal('challengemodal'); closeModal('incomingmodal');
- duel={id:m.duelId,opponent:m.opponent,pot:m.pot,hpYou:99,hpOpponent:99,energyYou:Math.floor(me?me.specialEnergy||0:0),escrow:m.escrowItems||[],arena:m.arena||null,rules:m.rules||null};
+ duel={id:m.duelId,opponent:m.opponent,pot:m.pot,hpYou:99,hpOpponent:99,energyYou:Math.floor(me?me.specialEnergy||0:0),escrow:m.escrowItems||[],arena:m.arena||null,rules:m.rules||null,freePlay:!!m.freePlay};
  duelEngaged=false; renderDuelHint();
  // Stage 12: countdown overlay (locks my movement until FIGHT!) and
  // the opponent's overhead HP bar, full at the start.
@@ -4128,7 +4154,7 @@ function startDuelUI(m){
  else { offEl.textContent=''; offEl.style.display='none'; }
  const itemsTxt=duel.escrow.length? ` + ${duel.escrow.reduce((t,s)=>t+s.qty,0)} items in escrow`:'';
  const arenaTxt=m.arena&&m.arena.name? ` — ${m.arena.name}`:'';
- $('dueltitle').textContent=`⚔️ You vs ${m.opponent}${arenaTxt} — pot ${m.pot}g${itemsTxt}`;
+ $('dueltitle').textContent=m.freePlay? `⚔️ You vs ${m.opponent}${arenaTxt} — 🆓 Free Play (no stakes)` : `⚔️ You vs ${m.opponent}${arenaTxt} — pot ${m.pot}g${itemsTxt}`;
  $('duellast').textContent='Fight! Land hits to charge your Dragon Slash (50%).';
  renderDuelBar(); renderAll();
 }
@@ -4189,10 +4215,18 @@ function endDuelUI(m){
  me=m.profile;
  const won=m.winner===me.username;
  const itemsTxt=(m.itemsWon&&m.itemsWon.length)? `<br>Items in the pot: ${m.itemsWon.map(s=>`${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}`).join(', ')}`:'';
+ if(m.freePlay){
+   // Stage 15: practice fight — say so plainly; nothing changed hands.
+   $('duelendsheet').innerHTML=`<h3>${won?'🏆 You won the free play fight!':'💀 You lost the free play fight'}</h3>
+ <p><b>${esc(m.winner)}</b> wins the free play fight (${esc(m.reason)}) — 🆓 no stakes, so nothing changed hands.</p>
+ <p class="note">Practice fight — your gold (${me.gold}g), record (${me.wins}W/${me.losses}L) and rating (${me.rating}) are unchanged. Combat XP still counted.</p>
+ <div class="btns"><button class="act" onclick="closeModal('duelendmodal')">Back to the plaza</button></div>`;
+ } else {
  $('duelendsheet').innerHTML=`<h3>${won?'🏆 You won!':'💀 You lost'}</h3>
  <p><b>${esc(m.winner)}</b> won the duel (${esc(m.reason)}) and took the <b style="color:#e3c766">${m.pot}g</b> pot.${itemsTxt}</p>
  <p class="note">Your gold: ${me.gold}g · Record: ${me.wins}W/${me.losses}L · Rating ${me.rating}</p>
  <div class="btns"><button class="act" onclick="closeModal('duelendmodal')">Back to the plaza</button></div>`;
+ }
  $('duelendmodal').classList.add('open');
  renderAll();
 }
