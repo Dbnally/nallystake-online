@@ -96,8 +96,10 @@
  .xpdrop{position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:13px;font-weight:800;color:#e3c766;text-shadow:0 1px 3px #000;animation:xprise 1.6s ease-out forwards;pointer-events:none}
  @keyframes xprise{0%{opacity:0;margin-top:6px}15%{opacity:1}100%{opacity:0;margin-top:-34px}}
  /* goblin label HP bar */
- .plabel .hpwrap{display:none;width:64px;height:7px;background:#400;border:1px solid #200;border-radius:4px;margin:2px auto 0;overflow:hidden}
+ /* overhead HP bar — now THE fight HP display: fill + a "cur/max" number over the head */
+ .plabel .hpwrap{display:none;width:66px;height:11px;background:#400;border:1px solid #200;border-radius:4px;margin:2px auto 0;overflow:hidden;position:relative}
  .plabel .hpfill{height:100%;background:#4caf50}
+ .plabel .hpnum{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#fff;text-shadow:0 1px 2px #000;letter-spacing:.2px;pointer-events:none}
  .plabel .gname{color:#b6ffb0}
  /* settings + skills rows */
  .setrow{display:flex;align-items:center;gap:8px;background:#221a13;border:1px solid #4a3a28;border-radius:8px;padding:7px 8px;margin-bottom:6px;font-size:13px}
@@ -121,14 +123,18 @@
  #chatrow{display:flex;gap:5px;padding:5px}
  #chatrow input{flex:1;min-width:0}
  /* duel banner */
- #duelbar{position:fixed;left:8px;bottom:206px;z-index:45;width:min(360px,82vw);background:rgba(23,19,16,var(--uia));border:2px solid #8e2f32;border-radius:12px;padding:8px 10px;display:none}
- #duelbar.open{display:block}
+ /* duel strip: no overlay box — HP lives over the fighters' heads; only the
+    action buttons remain, as a slim strip pinned above the minimized chat bar */
+ #duelbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(38px + env(safe-area-inset-bottom,0px));z-index:45;max-width:97vw;background:rgba(23,19,16,.88);border:2px solid #8e2f32;border-radius:12px;padding:5px 8px;display:none}
+ #duelbar.open{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap}
+ .fightinfo{display:none!important}
+ #duelhint{font-weight:800;color:#ffd75e;font-size:12px;background:#3a2c1c;border:1px solid #c9a227;border-radius:999px;padding:4px 9px;white-space:nowrap}
  #duelbar .t{font-weight:900;color:#e3c766;text-align:center;font-size:14px;margin-bottom:5px}
  .hprow{display:flex;align-items:center;gap:7px;font-size:12px;margin:3px 0}
  .hprow .nm{width:86px;text-align:right;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .hpbar{flex:1;height:13px;background:#400;border:1px solid #200;border-radius:6px;overflow:hidden}
  .hpbar>div{height:100%;background:#4caf50;transition:width .25s}
- #duelquick{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;align-items:center}
+ #duelquick{display:flex;gap:5px;flex-wrap:wrap;align-items:center;justify-content:center}
  #specbtn.ready{box-shadow:0 0 12px 3px #c9a227;background:#8e2f32}
  /* modals */
  .modal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:14px}
@@ -154,13 +160,15 @@
  #toast{position:fixed;top:44px;left:50%;transform:translateX(-50%);z-index:55;background:rgba(43,33,24,var(--uia));border:2px solid #c9a227;color:#e8d9b0;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:700;display:none;max-width:92vw;text-align:center}
  /* Fight Caves (Stage 4) */
  .plabel .fcname{color:#ffc9a8}
- #fcbar{position:fixed;left:8px;bottom:206px;z-index:45;width:min(330px,74vw);background:rgba(23,19,16,var(--uia));border:2px solid #ff7b24;border-radius:12px;padding:8px 10px;display:none}
- #fcbar.open{display:block}
+ /* Fight Caves strip: same treatment as the duel strip — wave chip + actions only */
+ #fcbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(38px + env(safe-area-inset-bottom,0px));z-index:45;max-width:97vw;background:rgba(23,19,16,.88);border:2px solid #ff7b24;border-radius:12px;padding:5px 8px;display:none}
+ #fcbar.open{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap}
  #fcbar .t{font-weight:900;color:#ffb03a;text-align:center;font-size:14px;margin-bottom:5px}
- #fcquick{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;align-items:center}
+ #fctitle{font-weight:900;color:#ffb03a;font-size:12px;background:#3a2410;border:1px solid #ff7b24;border-radius:999px;padding:4px 9px;white-space:nowrap;margin:0}
+ #fcquick{display:flex;gap:5px;flex-wrap:wrap;align-items:center;justify-content:center}
  #fcspecbtn.ready{box-shadow:0 0 12px 3px #c9a227;background:#8e2f32}
- #fcprayers{display:flex;gap:5px;margin-top:7px}
- .fcpray{flex:1;background:#221a13;border:2px solid #4a3a28;border-radius:9px;color:#e8d9b0;padding:7px 2px;font-size:12px;font-weight:800;cursor:pointer}
+ #fcprayers{display:flex;gap:5px}
+ .fcpray{background:#221a13;border:2px solid #4a3a28;border-radius:9px;color:#e8d9b0;padding:6px 9px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap}
  .fcpray.on{border-color:#c9a227;background:#3a2c1c;box-shadow:0 0 10px #c9a22766}
  .fcpray.flash{animation:fcflash .28s ease-in-out infinite alternate}
  @keyframes fcflash{from{border-color:#ff3b30;background:#5a1408;box-shadow:0 0 6px #ff3b30}to{border-color:#e3c766;background:#7a2a08;box-shadow:0 0 18px #ff7b24}}
@@ -289,28 +297,28 @@
 <div id="usechip" title="Tap to cancel"></div>
 
 <div id="duelbar">
- <div class="t" id="dueltitle">⚔️ Duel</div>
- <div id="duelofficial" style="display:none;text-align:center;font-weight:800;color:#ffd75e;font-size:12px;margin-bottom:4px"></div>
- <div class="hprow"><span class="nm">You</span><div class="hpbar"><div id="hpyou" style="width:100%"></div></div><span id="hpyouv">99</span></div>
- <div class="hprow"><span class="nm" id="dueloppname">Opponent</span><div class="hpbar"><div id="hpopp" style="width:100%"></div></div><span id="hpoppv">99</span></div>
- <div id="duellast" class="note" style="text-align:center"></div>
- <div id="duelhint" style="display:none;text-align:center;font-weight:800;color:#ffd75e;font-size:13px;margin:2px 0">⚔️ Tap your opponent to attack!</div>
+ <div class="t fightinfo" id="dueltitle">⚔️ Duel</div>
+ <div id="duelofficial" class="fightinfo" style="display:none;text-align:center;font-weight:800;color:#ffd75e;font-size:12px;margin-bottom:4px"></div>
+ <div class="hprow fightinfo"><span class="nm">You</span><div class="hpbar"><div id="hpyou" style="width:100%"></div></div><span id="hpyouv">99</span></div>
+ <div class="hprow fightinfo"><span class="nm" id="dueloppname">Opponent</span><div class="hpbar"><div id="hpopp" style="width:100%"></div></div><span id="hpoppv">99</span></div>
+ <div id="duellast" class="note fightinfo" style="text-align:center"></div>
+ <div id="duelhint" style="display:none">⚔️ Tap your opponent to attack!</div>
  <div id="duelquick"></div>
- <div id="duelflee" style="display:none;text-align:center;margin-top:6px"><button class="ghost" id="fleebtn">🏃 Flee</button></div>
+ <div id="duelflee" style="display:none"><button class="ghost" id="fleebtn">🏃 Flee</button></div>
 </div>
 
 <div id="fcbar">
  <div class="t" id="fctitle">🌋 Fight Caves</div>
- <div class="hprow"><span class="nm">You</span><div class="hpbar"><div id="fchpyou" style="width:100%"></div></div><span id="fchpyouv">0</span></div>
- <div class="hprow"><span class="nm" id="fctargetname">Target</span><div class="hpbar"><div id="fchptarget" style="width:100%"></div></div><span id="fchptargetv"></span></div>
- <div id="fclast" class="note" style="text-align:center"></div>
+ <div class="hprow fightinfo"><span class="nm">You</span><div class="hpbar"><div id="fchpyou" style="width:100%"></div></div><span id="fchpyouv">0</span></div>
+ <div class="hprow fightinfo"><span class="nm" id="fctargetname">Target</span><div class="hpbar"><div id="fchptarget" style="width:100%"></div></div><span id="fchptargetv"></span></div>
+ <div id="fclast" class="note fightinfo" style="text-align:center"></div>
  <div id="fcprayers">
   <button class="fcpray" id="fcpray-melee">🛡️ Melee</button>
   <button class="fcpray" id="fcpray-missiles">🏹 Missiles</button>
   <button class="fcpray" id="fcpray-magic">🔮 Magic</button>
  </div>
  <div id="fcquick"></div>
- <div style="text-align:center;margin-top:6px"><button class="ghost" id="fcleavebtn">🏃 Leave the caves</button></div>
+ <div><button class="ghost" id="fcleavebtn">🏃 Leave the caves</button></div>
 </div>
 
 <div id="barrowsbar">
@@ -1470,10 +1478,10 @@ function makeBrother(m){
  const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
  sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
  const label=document.createElement('div'); label.className='plabel';
- label.innerHTML=`<div class="gname">${esc(b.name||m.name)} · lvl ${b.lvl||m.combatLevel||''}</div><div class="hpwrap"><div class="hpfill"></div></div>`;
+ label.innerHTML=`<div class="gname">${esc(b.name||m.name)} · lvl ${b.lvl||m.combatLevel||''}</div><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
  $('labels').appendChild(label);
  const anchor=(curArea==='barrows_tunnels')? {x:800,y:450} : {x:b.x,y:b.y}; // tunnels anchor = the chest (server BARROWS_CHEST)
- return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),
+ return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
    x:sx2w(anchor.x),z:sy2w(anchor.y),hp:100,maxHp:100,isBrother:true,swingStart:0,splatY:2.9};
 }
 function buildAreas(){
@@ -1611,9 +1619,9 @@ function makeKnight(isMe,name,app){
  const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
  sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
  const label=document.createElement('div'); label.className='plabel';
- label.innerHTML=`<div class="bubble"></div><span class="rbadge"></span><span class="badge"></span><span class="abadge"></span><span class="cbadge"></span> <span class="nm">${esc(name)}</span><div class="hpwrap"><div class="hpfill"></div></div>`;
+ label.innerHTML=`<div class="bubble"></div><span class="rbadge"></span><span class="badge"></span><span class="abadge"></span><span class="cbadge"></span> <span class="nm">${esc(name)}</span><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
  $('labels').appendChild(label);
- return {group:g,pivot,legL,legR,armL,armR,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),roleEl:label.querySelector('.rbadge'),actEl:label.querySelector('.abadge'),chalEl:label.querySelector('.cbadge'),hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),
+ return {group:g,pivot,legL,legR,armL,armR,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),roleEl:label.querySelector('.rbadge'),actEl:label.querySelector('.abadge'),chalEl:label.querySelector('.cbadge'),hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
    x:0,z:0,tx:0,tz:0,rot:0,jump:null,prayer:null,bubbleUntil:0,bob:Math.random()*6,isMe,
    swingStart:0,phase:Math.random()*6,moveAmt:0,px:0,pz:0,splatY:2.95};
 }
@@ -1812,9 +1820,9 @@ function makeGoblin(n){
  const sh=new THREE.Mesh(new THREE.CircleGeometry(0.5,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
  sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
  const label=document.createElement('div'); label.className='plabel';
- label.innerHTML=`<div class="gname">Goblin · lvl 5</div><div class="hpwrap"><div class="hpfill"></div></div>`;
+ label.innerHTML=`<div class="gname">Goblin · lvl 5</div><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
  $('labels').appendChild(label);
- return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),
+ return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
    x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:1.95,hp:n.hp,maxHp:n.maxHp};
 }
 function syncNpcs(){
@@ -1828,7 +1836,9 @@ function syncNpcs(){
      a.tx=sx2w(n.x); a.tz=sy2w(n.y); // Stage 8: goblins walk now — ease toward this
      a.hp=n.hp; a.maxHp=n.maxHp;
      a.hpFill.style.width=clamp(n.hp/Math.max(1,n.maxHp)*100,0,100)+'%';
+     a.hpFill.style.background=hpBarColor(n.hp/Math.max(1,n.maxHp));
      a.hpWrap.style.display=(n.hp<n.maxHp)?'block':'none';
+     if(a.hpNum) a.hpNum.textContent=n.hp+'/'+n.maxHp;
    }
  }
  for(const id of Object.keys(npcAvatars)){
@@ -1907,10 +1917,10 @@ function makeFcMonster(m){
  sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
  g.position.set(sx2w(m.x),0,sy2w(m.y));
  const label=document.createElement('div'); label.className='plabel';
- label.innerHTML=`<div class="fcname">${esc(m.name)} · lvl ${m.combatLevel}</div><div class="hpwrap"><div class="hpfill"></div></div>`;
+ label.innerHTML=`<div class="fcname">${esc(m.name)} · lvl ${m.combatLevel}</div><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
  $('labels').appendChild(label);
  shadowify(g);
- return {group:g,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),
+ return {group:g,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
    labelY,hp:m.hp,maxHp:m.maxHp,kind:m.kind,
    tx:sx2w(m.x),tz:sy2w(m.y),swingStart:0,splatY:labelY+0.5};
 }
@@ -1925,7 +1935,9 @@ function syncFcMonsters(){
      a.tx=sx2w(m.x); a.tz=sy2w(m.y); // Stage 8: melee monsters walk toward you — ease toward this
      a.hp=m.hp; a.maxHp=m.maxHp;
      a.hpFill.style.width=clamp(m.hp/Math.max(1,m.maxHp)*100,0,100)+'%';
+     a.hpFill.style.background=hpBarColor(m.hp/Math.max(1,m.maxHp));
      a.hpWrap.style.display=(m.hp<m.maxHp)?'block':'none';
+     if(a.hpNum) a.hpNum.textContent=(fcRun&&fcRun.targetId===m.id)? (Math.max(0,m.hp)+'/'+m.maxHp) : ''; // the number rides on my current target only
    }
  }
  for(const id of Object.keys(fcAvatars)){
@@ -3922,12 +3934,13 @@ function renderDuelHint(){ const h=$('duelhint'); if(h) h.style.display=(duel&&!
    opponent and on my current NPC-fight target, driven by the fight
    ticks; plus the duel countdown overlay + local movement lock. */
 function hpBarColor(f){ return f>0.5? '#4caf50' : f>0.25? '#e8c33a' : '#e03a2a'; }
-function setHpBar(a,frac){
+function setHpBar(a,frac,cur,max){
  if(!a||!a.hpFill) return;
  frac=clamp(frac,0,1);
  a.hpFill.style.width=(frac*100)+'%';
  a.hpFill.style.background=hpBarColor(frac);
  if(a.hpWrap) a.hpWrap.style.display='block';
+ if(a.hpNum) a.hpNum.textContent=(typeof cur==='number'&&typeof max==='number')? (Math.max(0,Math.round(cur))+'/'+max) : '';
 }
 function hideHpBar(a){ if(a&&a.hpWrap) a.hpWrap.style.display='none'; }
 /* Countdown: duel_start carries countdownTicks (5); each duel_tick
@@ -3967,7 +3980,10 @@ function startDuelUI(m){
  // Stage 12: countdown overlay (locks my movement until FIGHT!) and
  // the opponent's overhead HP bar, full at the start.
  if(typeof m.countdownTicks==='number') setDuelCountdown(m.countdownTicks); else clearDuelCountdown();
- const oppAv0=avatars[m.opponent]; if(oppAv0) setHpBar(oppAv0,duel.hpOpponent/99);
+ // HP now lives over the fighters' heads — the opponent's bar AND mine,
+ // both with the number, for the whole duel (the strip has no HP rows).
+ const oppAv0=avatars[m.opponent]; if(oppAv0) setHpBar(oppAv0,duel.hpOpponent/99,duel.hpOpponent,99);
+ const myAv0=me?avatars[me.username]:null; if(myAv0) setHpBar(myAv0,duel.hpYou/99,duel.hpYou,99);
  // Amendment B: both knights turn to face each other (visual only)
  const oppP=players.find(x=>x.username===m.opponent), myP=me? players.find(x=>x.username===me.username):null;
  if(oppP&&myP){
@@ -4005,7 +4021,8 @@ function duelTickUI(m){
  duel.hpYou=m.hpYou; duel.hpOpponent=m.hpOpponent; duel.energyYou=m.energyYou;
  if(me) me.specialEnergy=m.energyYou;
  setDuelCountdown(m.countdownLeft); // Stage 12: drives the 3·2·1 overlay + the move lock
- const oppAv=avatars[duel.opponent]; if(oppAv) setHpBar(oppAv,duel.hpOpponent/99); // opponent's overhead bar
+ const oppAv=avatars[duel.opponent]; if(oppAv) setHpBar(oppAv,duel.hpOpponent/99,duel.hpOpponent,99); // opponent's overhead bar + number
+ const myAv=me?avatars[me.username]:null; if(myAv) setHpBar(myAv,duel.hpYou/99,duel.hpYou,99); // my overhead bar + number (duels only)
  applyClosing(m); // Stage 8: on a closing tick, walk into reach (moveTo)
  const closing=!!m.closing||typeof m.youHit!=='number';
  if(!closing){
@@ -4034,7 +4051,7 @@ function endDuelUI(m){
  const wasDuel=duel; duel=null;
  duelEngaged=false; renderDuelHint();
  clearDuelCountdown(); // Stage 12: overlay off, movement unlocked
- if(wasDuel){ const oppAv=avatars[wasDuel.opponent]; if(oppAv) hideHpBar(oppAv); } // opponent's overhead bar off
+ if(wasDuel){ const oppAv=avatars[wasDuel.opponent]; if(oppAv) hideHpBar(oppAv); const myAv=me?avatars[me.username]:null; if(myAv) hideHpBar(myAv); } // both overhead bars off
  $('duelflee').style.display='none';
  $('duelbar').classList.remove('open');
  $('duelofficial').style.display='none';
@@ -4087,7 +4104,7 @@ function npcFightUI(m){
      $('dueltitle').textContent=`🥊 Goblin · lvl ${npcFight.combatLevel}`;
      $('duellast').textContent='Fight! Land hits to charge your Dragon Slash (50%). Run with 🏃 Flee if it goes bad.';
    }
-   const sba=npcAvatars[m.npcId]; if(sba) setHpBar(sba,npcFight.hpNpc/Math.max(1,npcFight.maxHpNpc)); // Stage 12: overhead bar on my target
+   const sba=npcAvatars[m.npcId]; if(sba) setHpBar(sba,npcFight.hpNpc/Math.max(1,npcFight.maxHpNpc),npcFight.hpNpc,npcFight.maxHpNpc); // overhead bar + number on my target (my own HP stays on the orb)
    renderNpcBar(); renderOrbs();
    return;
  }
@@ -4108,7 +4125,7 @@ function npcFightUI(m){
      if(typeof m.npcOutcome==='string') spawnOutcomeSplat(me.username,m.npcOutcome,m.npcHit,false);
      else spawnSplat(me.username,m.npcHit,false); }
    if(ba&&ba.isBrother){ ba.hp=m.hpNpc; ba.maxHp=m.maxHpNpc; }
-   if(ba) setHpBar(ba,m.hpNpc/Math.max(1,m.maxHpNpc)); // overhead bar tracks the fight, green → yellow → red
+   if(ba) setHpBar(ba,m.hpNpc/Math.max(1,m.maxHpNpc),m.hpNpc,m.maxHpNpc); // overhead bar + number tracks the fight, green → yellow → red
    const oppName=npcFight.kind==='barrows'? (npcFight.name.split(' ')[0]) : 'goblin';
    const parts=[];
    if(typeof m.youHit==='number') parts.push(`You hit ${m.youHit}${m.youSpecial?' (DRAGON SLASH!)':''}`);
@@ -4810,8 +4827,8 @@ function applyBtnPositions(){
    const p=pos[b.dataset.panel];
    if(p){ b.style.position='fixed'; b.style.left=p.l+'px'; b.style.top=p.t+'px'; b.style.zIndex='60'; }
  });
- let fp=null; try{ fp=JSON.parse(localStorage.getItem(FIGHT_POS_KEY)||'null'); }catch(e){}
- if(fp) for(const id of ['duelbar','fcbar']){ const el=$(id); if(el){ el.style.left=fp.l+'px'; el.style.top=fp.t+'px'; el.style.bottom='auto'; } }
+ // The fight bars are fixed bottom strips now — any saved fight-box
+ // position (FIGHT_POS_KEY) is deliberately ignored.
 }
 function wireHoldDrag(handle,moveEl,save){
  let sx=0,sy=0,pid=null,holdT=null,armed=false,dragging=false,startL=0,startT=0;
@@ -4853,12 +4870,6 @@ function wireHoldDrag(handle,moveEl,save){
 document.querySelectorAll('#railset .rbtn').forEach(b=>{
  wireHoldDrag(b,b,(l,t)=>{ const pos=loadBtnPos(); pos[b.dataset.panel]={l,t}; try{ localStorage.setItem(BTN_POS_KEY,JSON.stringify(pos)); }catch(e){} });
 });
-function saveFightPos(l,t){
- try{ localStorage.setItem(FIGHT_POS_KEY,JSON.stringify({l,t})); }catch(e){}
- for(const id of ['duelbar','fcbar']){ const el=$(id); if(el){ el.style.left=l+'px'; el.style.top=t+'px'; el.style.bottom='auto'; } }
-}
-wireHoldDrag($('dueltitle'),$('duelbar'),saveFightPos); // drag by the banner — inner buttons still tap
-wireHoldDrag($('fctitle'),$('fcbar'),saveFightPos);
 applyBtnPositions();
 let railClearArmed=false, railClearTimer=null;
 $('railclear').onclick=()=>{
@@ -4872,7 +4883,6 @@ $('railclear').onclick=()=>{
  $('railclear').textContent='🧹 Clear'; $('railclear').classList.remove('sure');
  try{ localStorage.removeItem(BTN_POS_KEY); localStorage.removeItem(FIGHT_POS_KEY); }catch(e){}
  document.querySelectorAll('#railset .rbtn').forEach(b=>{ b.style.position=''; b.style.left=''; b.style.top=''; b.style.zIndex=''; });
- for(const id of ['duelbar','fcbar']){ const el=$(id); if(el){ el.style.left=''; el.style.top=''; el.style.bottom=''; } }
  toast('🧹 Button spots reset.');
 };
 </script>
