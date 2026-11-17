@@ -36,6 +36,7 @@
  .orb.pr .fill{background:#2456c8}.orb.pr{background:#0a1740}
  .orb.sp .fill{background:#c9a227}.orb.sp{background:#40340a}
  .orb.sp.ready{box-shadow:0 0 12px 3px #c9a227}
+.orb.run{background:#2b2118}.orb.run.on{background:#40340a;box-shadow:0 0 12px 3px #c9a227}
  /* right rail */
  #rail{position:fixed;right:6px;top:190px;z-index:30;display:flex;flex-direction:column;gap:6px}
  .rbtn{width:46px;height:46px;border-radius:10px;background:rgba(23,19,16,var(--uia));border:2px solid #7a6748;color:#e8d9b0;font-size:20px;cursor:pointer}
@@ -120,7 +121,7 @@
  #chatrow{display:flex;gap:5px;padding:5px}
  #chatrow input{flex:1;min-width:0}
  /* duel banner */
- #duelbar{position:fixed;top:42px;left:50%;transform:translateX(-50%);z-index:45;width:min(440px,94vw);background:rgba(23,19,16,var(--uia));border:2px solid #8e2f32;border-radius:12px;padding:8px 10px;display:none}
+ #duelbar{position:fixed;left:8px;bottom:206px;z-index:45;width:min(360px,82vw);background:rgba(23,19,16,var(--uia));border:2px solid #8e2f32;border-radius:12px;padding:8px 10px;display:none}
  #duelbar.open{display:block}
  #duelbar .t{font-weight:900;color:#e3c766;text-align:center;font-size:14px;margin-bottom:5px}
  .hprow{display:flex;align-items:center;gap:7px;font-size:12px;margin:3px 0}
@@ -153,7 +154,7 @@
  #toast{position:fixed;top:44px;left:50%;transform:translateX(-50%);z-index:55;background:rgba(43,33,24,var(--uia));border:2px solid #c9a227;color:#e8d9b0;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:700;display:none;max-width:92vw;text-align:center}
  /* Fight Caves (Stage 4) */
  .plabel .fcname{color:#ffc9a8}
- #fcbar{position:fixed;top:42px;left:50%;transform:translateX(-50%);z-index:45;width:min(440px,94vw);background:rgba(23,19,16,var(--uia));border:2px solid #ff7b24;border-radius:12px;padding:8px 10px;display:none}
+ #fcbar{position:fixed;left:8px;bottom:206px;z-index:45;width:min(330px,74vw);background:rgba(23,19,16,var(--uia));border:2px solid #ff7b24;border-radius:12px;padding:8px 10px;display:none}
  #fcbar.open{display:block}
  #fcbar .t{font-weight:900;color:#ffb03a;text-align:center;font-size:14px;margin-bottom:5px}
  #fcquick{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;align-items:center}
@@ -166,6 +167,12 @@
  #jadwarn{position:fixed;top:26%;left:50%;transform:translateX(-50%);z-index:56;width:min(430px,92vw);background:rgba(90,16,4,.94);border:3px solid #ff7b24;border-radius:14px;padding:14px 12px;text-align:center;display:none;cursor:pointer;box-shadow:0 0 30px #ff5a1f88;animation:fcflash .28s ease-in-out infinite alternate}
  #jadwarntxt{font-size:21px;font-weight:900;color:#f0dfae;text-shadow:0 2px 4px #000}
  #jadwarnhint{font-size:12px;color:#ffd9c2;margin-top:5px}
+ /* Stage 12: duel countdown overlay (3 · 2 · 1 · FIGHT!) */
+ #countdown{position:fixed;top:38%;left:50%;transform:translate(-50%,-50%);z-index:57;display:none;pointer-events:none;text-align:center}
+ #countdowntxt{font-size:96px;font-weight:900;color:#e3c766;line-height:1;text-shadow:0 3px 0 #7a5b12,0 6px 18px #000,0 0 34px rgba(227,199,102,.45)}
+ #countdown.fight #countdowntxt{font-size:54px;color:#ff6a4d;text-shadow:0 3px 0 #6d0f14,0 6px 18px #000,0 0 34px rgba(255,90,60,.5)}
+ #countdown.pop{animation:cdpop .25s ease-out}
+ @keyframes cdpop{0%{transform:translate(-50%,-50%) scale(1.55)}100%{transform:translate(-50%,-50%) scale(1)}}
  .note{font-size:11px;color:#b8a888}
  /* Barrows (Stage 5) */
  .plabel .bname{color:#e3d5ff}
@@ -182,6 +189,51 @@
  .puzbtns{display:flex;gap:6px;justify-content:center;margin:8px 0}
  .puzbtn{font-size:24px;background:#221a13;border:2px solid #4a3a28;border-radius:10px;padding:6px 12px;cursor:pointer}
  .puzbtn:active{border-color:#c9a227}
+ /* Stage 9+10 additions */
+ .tapfx{position:fixed;z-index:200;pointer-events:none;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;border:2px solid #e8c96a;background:radial-gradient(circle,#ffe9a8 0 3px,rgba(232,201,106,0) 4px);opacity:0.95;animation:tapfxA .35s ease-out forwards}
+ @keyframes tapfxA{to{transform:scale(3.1);opacity:0}}
+ #usechip{position:fixed;top:84px;left:50%;transform:translateX(-50%);z-index:46;background:linear-gradient(180deg,#3a2c17,#241a0d);border:2px solid #e8c96a;border-radius:999px;color:#ffe9a8;font-weight:700;font-size:13px;padding:7px 14px;display:none;box-shadow:0 4px 14px rgba(0,0,0,.55);cursor:pointer;max-width:92vw;text-align:center}
+ .cell.usearm{outline:3px solid #e8c96a;outline-offset:-3px;animation:usePulse .7s ease-in-out infinite alternate}
+ @keyframes usePulse{from{box-shadow:inset 0 0 4px #e8c96a}to{box-shadow:inset 0 0 14px #ffe9a8}}
+ .parchment{background:linear-gradient(180deg,#efdfae,#dcc78f);color:#2b2118;border:2px solid #7a6748;box-shadow:inset 0 0 30px rgba(122,103,72,.45),0 10px 30px rgba(0,0,0,.6)}
+ .parchment .t{color:#5d4028;text-shadow:none}
+ .parchment .note{color:#4a3826}
+ .parchment .act{background:linear-gradient(180deg,#8e2f32,#5d1d20);border-color:#c9a227;color:#ffe9a8}
+ .parchment .ghost{background:rgba(43,33,24,.12);color:#2b2118;border-color:#7a6748}
+ .parchment input[type=number]{background:#f4ead0;color:#2b2118}
+ #railclear{width:46px;min-height:30px;border-radius:10px;border:2px solid #7a6748;background:linear-gradient(180deg,#3a2f22,#241c13);color:#e8d9b0;font-size:10px;font-weight:700;cursor:pointer;padding:2px 0}
+ #railclear.sure{background:#8e2f32;color:#ffe9a8;border-color:#e8c96a}
+ .dragghost{position:fixed;z-index:190;pointer-events:none;font-size:30px;width:52px;height:52px;line-height:52px;text-align:center;background:rgba(36,26,13,.9);border:2px solid #e8c96a;border-radius:12px;transform:translate(-50%,-50%)}
+ .dragghost img{width:40px;height:40px;border-radius:8px;vertical-align:middle}
+ .dragging{opacity:.45}
+ /* Medieval login (Derek's picture) */
+ #auth{background:#0b0906 url('login-bg.jpg') center/cover no-repeat}
+ #auth::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(0,0,0,.18) 40%,rgba(0,0,0,.72) 100%)}
+ #auth .card{position:relative;background:linear-gradient(180deg,#2e2620,#171310 70%);border:3px solid #7a6748;border-radius:14px;box-shadow:inset 0 0 0 2px #241c13,inset 0 0 34px rgba(0,0,0,.7),0 14px 44px rgba(0,0,0,.8);padding:34px 22px 20px;margin-top:26px}
+ #auth .card::before,#auth .card::after{content:'';position:absolute;width:9px;height:9px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#e8d9b0,#7a6748 70%);top:8px}
+ #auth .card::before{left:8px} #auth .card::after{right:8px}
+ #crownmedal{position:absolute;top:-27px;left:50%;transform:translateX(-50%);width:56px;height:56px;border-radius:50%;background:radial-gradient(circle at 38% 32%,#c33,#7d1d20 62%,#4d1013);border:3px solid #c9a227;box-shadow:0 4px 14px rgba(0,0,0,.7),inset 0 0 10px rgba(232,201,106,.5);display:flex;align-items:center;justify-content:center;font-size:28px;z-index:2}
+ #auth h1{font-family:Georgia,'Times New Roman',serif;letter-spacing:4px;color:#f0dfae;font-size:21px;margin:6px 0 2px;text-shadow:0 2px 6px rgba(0,0,0,.8)}
+ #auth .sub{font-family:Georgia,'Times New Roman',serif;letter-spacing:2px;color:#b39b6d;font-size:10.5px;margin-bottom:14px}
+ .authfield{position:relative;margin:10px 0}
+ .authfield .ai{position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:15px;opacity:.85}
+ .authfield input{margin:0;padding-left:36px;background:#100d0a;border:2px solid #57462e;color:#f0dfae}
+ #authgo{width:100%;padding:13px;margin-top:8px;background:linear-gradient(180deg,#a03438,#6d1f23);border:2px solid #c9a227;border-radius:10px;color:#ffe9a8;font-family:Georgia,'Times New Roman',serif;font-size:16px;font-weight:700;letter-spacing:2px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.6)}
+ #quicklogin{width:100%;padding:12px;margin-top:4px;background:linear-gradient(180deg,#e8c96a,#b8933a);border:2px solid #ffe9a8;border-radius:10px;color:#2b1d05;font-size:14.5px;font-weight:800;cursor:pointer;box-shadow:0 0 16px rgba(232,201,106,.65);display:none}
+ .ordiv{display:flex;align-items:center;gap:10px;color:#b39b6d;font-size:11px;letter-spacing:2px;margin:14px 0 4px}
+ .ordiv::before,.ordiv::after{content:'';flex:1;height:1px;background:#57462e}
+ #rememberrow{display:flex;align-items:center;gap:8px;justify-content:center;color:#d8c49a;font-size:13px;margin-top:12px;cursor:pointer}
+ #rememberrow input{width:auto;margin:0;accent-color:#c9a227}
+ #authtoggle{color:#e8c96a;font-size:13.5px;margin-top:12px;cursor:pointer;text-decoration:underline}
+ /* Appearance sheet */
+ .appsw{display:inline-block;width:30px;height:30px;border-radius:50%;border:2px solid #7a6748;cursor:pointer;vertical-align:middle;margin:2px}
+ .appsw.sel{border-color:#b8860b;box-shadow:0 0 0 3px #e8c96a}
+ .approw{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:6px 0}
+ .approw .alab{width:52px;font-weight:700;font-size:13px;color:#5d4028}
+ .appcyc{background:rgba(43,33,24,.14);border:2px solid #7a6748;color:#2b2118;border-radius:8px;padding:5px 10px;font-weight:700;cursor:pointer}
+ .appseg{padding:7px 14px;border-radius:9px;border:2px solid #7a6748;background:rgba(43,33,24,.12);color:#2b2118;font-weight:700;cursor:pointer}
+ .appseg.sel{background:linear-gradient(180deg,#8e2f32,#5d1d20);color:#ffe9a8;border-color:#c9a227}
+ .appseg.dis{opacity:.4;pointer-events:none}
 </style></head><body>
 <div id="scene"></div>
 <div id="labels"></div>
@@ -195,12 +247,14 @@
   <div class="orb hp" id="orbhp"><div class="fill"></div><div class="txt"><span>HP</span><span id="orbhpv">99</span></div></div>
   <div class="orb pr" id="orbpr" title="Prayers"><div class="fill"></div><div class="txt"><span>🙏</span><span id="orbprv">25</span></div></div>
   <div class="orb sp" id="orbsp" title="Special attack"><div class="fill"></div><div class="txt"><span>⚡</span><span id="orbspv">0%</span></div></div>
+  <div class="orb run" id="orbrun" title="Run toggle"><div class="txt"><span>🏃</span><span id="orbrunv">RUN</span></div></div>
  </div>
  <div id="xpdrops"></div>
 </div>
 
 <div id="rail">
- <button id="gearbtn" title="Menu">⚙</button>
+ <button id="gearbtn" title="Show / hide all buttons">🎛️</button>
+ <button id="railclear" title="Reset all button spots">🧹 Clear</button>
  <div id="railset">
   <button class="rbtn" data-panel="backpack" title="Backpack">🎒</button>
   <button class="rbtn" data-panel="worn" title="Worn items">🗡️</button>
@@ -232,6 +286,7 @@
 </div>
 
 <div id="followchip"><span id="followtxt">🚶 Following</span><button class="ghost" id="followstop">✖ Stop</button></div>
+<div id="usechip" title="Tap to cancel"></div>
 
 <div id="duelbar">
  <div class="t" id="dueltitle">⚔️ Duel</div>
@@ -239,6 +294,7 @@
  <div class="hprow"><span class="nm">You</span><div class="hpbar"><div id="hpyou" style="width:100%"></div></div><span id="hpyouv">99</span></div>
  <div class="hprow"><span class="nm" id="dueloppname">Opponent</span><div class="hpbar"><div id="hpopp" style="width:100%"></div></div><span id="hpoppv">99</span></div>
  <div id="duellast" class="note" style="text-align:center"></div>
+ <div id="duelhint" style="display:none;text-align:center;font-weight:800;color:#ffd75e;font-size:13px;margin:2px 0">⚔️ Tap your opponent to attack!</div>
  <div id="duelquick"></div>
  <div id="duelflee" style="display:none;text-align:center;margin-top:6px"><button class="ghost" id="fleebtn">🏃 Flee</button></div>
 </div>
@@ -272,8 +328,8 @@
  <div class="note" id="barrowshint" style="text-align:center"></div>
 </div>
 
-<div id="chatbox">
- <div id="chathead"><span>💬 Chat / game log</span><span id="chatchev">▾</span></div>
+<div id="chatbox" class="closed">
+ <div id="chathead"><span>💬 Chat / game log</span><span id="chatchev">▸</span></div>
  <div id="chatbody"><div id="log"></div><div id="chatrow"><input id="chat" placeholder="Say something…" maxlength="140"><button class="act" id="sendchat">Send</button></div></div>
 </div>
 
@@ -292,19 +348,31 @@
 <div class="modal" id="partyinvitemodal"><div class="sheet" id="partyinvitesheet"></div></div>
 <div class="modal" id="tradeincomingmodal"><div class="sheet" id="tradeincomingsheet"></div></div>
 <div class="modal" id="trademodal"><div class="sheet wide" id="tradesheet"></div></div>
+<div class="modal" id="signmodal"><div class="sheet parchment" id="signsheet"></div></div>
+<div class="modal" id="notemodal"><div class="sheet parchment" id="notesheet"></div></div>
+<div class="modal" id="notereqmodal"><div class="sheet" id="notereqsheet"></div></div>
+<div class="modal" id="ctxmodal"><div class="sheet" id="ctxsheet"></div></div>
+<div class="modal" id="appmodal"><div class="sheet parchment" id="appsheet"></div></div>
 
 <div id="toast"></div>
 
 <div id="jadwarn"><div id="jadwarntxt"></div><div id="jadwarnhint"></div></div>
 
+<div id="countdown"><div id="countdowntxt"></div></div>
+
 <div id="auth"><div class="card">
- <h1>⚔️ nallystake — Online 🏰</h1>
- <p style="margin:2px 0 8px">Gold only. No real money. Real players, server-run duels, saving on the server.</p>
- <input id="name" placeholder="Player name" maxlength="16" autocomplete="username">
- <input id="pass" type="password" placeholder="Password (6+)" autocomplete="current-password">
- <div style="display:flex;gap:8px;margin-top:6px"><button class="act" id="reg">Create account</button><button class="act" id="login">Sign in</button></div>
+ <div id="crownmedal">👑</div>
+ <h1 id="authhead">WELCOME BACK</h1>
+ <div class="sub" id="authsub">LOGIN TO CONTINUE YOUR ADVENTURE</div>
+ <div class="authfield"><span class="ai">👤</span><input id="name" placeholder="Username" maxlength="16" autocomplete="username"></div>
+ <div class="authfield"><span class="ai">🔒</span><input id="pass" type="password" placeholder="Password (6+)" autocomplete="current-password"></div>
+ <button id="authgo">LOGIN</button>
+ <div class="ordiv" id="ordiv">— OR —</div>
+ <button id="quicklogin">⚡ QUICK LOGIN — Tap to Login Instantly</button>
  <div id="authmsg"></div>
- <p class="note">Stage 6: 🌳 Awaken a tree into a Tree Guardian who follows you and fights beside you — and a 🤸 Jump button: jump while moving to flip in the direction you're travelling! Stage 5: Barrows, duel arenas, drop piles. Stage 8: a medieval realm — tournament dais, knight armour, walk-up melee with weapon swings and hitsplats. Plus the Fight Caves, Emberfall Mine &amp; Smithy, Training &amp; Gathering caves, Fishing Cove, skills &amp; XP, Goblin Camp, twin sticks, rotating minimap, settings, quick sets.</p>
+ <label id="rememberrow"><input type="checkbox" id="rememberme" checked> Remember Me</label>
+ <div style="text-align:center"><span id="authtoggle">New Player? Create Account</span></div>
+ <p class="note" style="text-align:center;margin-top:10px">Gold only — no real money, ever. Real players, server-run duels, your progress saved on the server.</p>
 </div></div>
 
 <div id="loaderror"><div><h2 style="color:#e3c766">Couldn't load 3D 😕</h2><p>The 3D library (Three.js) failed to load, so the plaza can't be drawn.<br>Check your connection and reload the page.</p></div></div>
@@ -360,17 +428,23 @@ function isAdminOrOwner(){ const r=myRole(); return r==='admin'||r==='owner'; }
 
 /* ================= settings (localStorage) ================= */
 const SETTINGS_KEY='nallystake_settings_v1';
-let settings={camSpeed:1.5,tapMode:'walk',uiAlpha:0.78,hidden:{}};
+let settings={camSpeed:1.5,tapMode:'walk',uiAlpha:0.78,run:true,hidden:{}};
 try{ const s=JSON.parse(localStorage.getItem(SETTINGS_KEY)||'null'); if(s&&typeof s==='object') settings=Object.assign(settings,s); }catch(e){}
 if(typeof settings.camSpeed!=='number') settings.camSpeed=1.5;
 if(settings.tapMode!=='face') settings.tapMode='walk';
 if(typeof settings.uiAlpha!=='number') settings.uiAlpha=0.78;
+if(typeof settings.run!=='boolean') settings.run=true; // run toggle defaults ON; a saved off stays off
 if(!settings.hidden||typeof settings.hidden!=='object') settings.hidden={};
 function saveSettings(){ try{ localStorage.setItem(SETTINGS_KEY,JSON.stringify(settings)); }catch(e){} applySettings(); }
-let railOpen=false;
+/* Stage 9+10 §4: ONE master button (🎛️) shows/hides the WHOLE rail of
+   panel buttons as a group. It never hides itself, collapsing the rail
+   never closes an open panel, and the choice persists on this device. */
+let railOpen=true;
+try{ railOpen=localStorage.getItem('nallystake_rail_open')!=='0'; }catch(e){}
 function applyRailVisibility(){
  const rs=$('railset'); if(rs) rs.classList.toggle('open',railOpen);
- const gb=$('gearbtn'); if(gb) gb.textContent=railOpen?'✕':'⚙';
+ const gb=$('gearbtn'); if(gb) gb.textContent=railOpen?'✕':'🎛️';
+ const rc=$('railclear'); if(rc) rc.style.display=railOpen?'':'none';
  document.querySelectorAll('#railset .rbtn').forEach(b=>{ b.style.display=settings.hidden[b.dataset.panel]?'none':''; });
  refreshToolsBtn();
 }
@@ -386,7 +460,7 @@ function applySettings(){
  document.documentElement.style.setProperty('--uia',settings.uiAlpha);
  applyRailVisibility();
 }
-window.toggleRail=function(){ railOpen=!railOpen; if(!railOpen) closeDrawer(); applyRailVisibility(); };
+window.toggleRail=function(){ railOpen=!railOpen; try{ localStorage.setItem('nallystake_rail_open',railOpen?'1':'0'); }catch(e){} applyRailVisibility(); };
 $('gearbtn').onclick=()=>toggleRail();
 window.setCamSpeed=function(v){ settings.camSpeed=clamp(parseFloat(v)||1.5,0.25,3); const el=$('camspeedval'); if(el) el.textContent=settings.camSpeed+'×'; saveSettings(); };
 window.setTapMode=function(m){ settings.tapMode=(m==='face')?'face':'walk'; saveSettings(); renderDrawer(); };
@@ -447,26 +521,71 @@ $('awakenbtn').onclick=()=>{ send({type:'awaken_tree'}); };
 $('jumpbtn').onclick=()=>{ const a=me?avatars[me.username]:null; if(a) startJump(a,true); };
 
 /* ================= auth & websocket ================= */
+/* Stage 9+10 §5: medieval login. One primary button whose label/action
+   follows the mode; "Remember Me" stores the session token on this
+   device so the gold QUICK LOGIN button can reconnect with it. Server
+   sessions reset on restart — a dead stored token falls back to the
+   form with a clear message. No Forgot Password: no reset system exists. */
+let authMode='login'; // 'login' | 'register'
+let quickAttempt=false, welcomed=false;
+function storedSession(){ try{ const s=JSON.parse(localStorage.getItem('nallystake_session')||'null'); return (s&&s.token&&s.username)? s : null; }catch(e){ return null; } }
+function saveStoredSession(){ try{ if($('rememberme').checked&&token&&me) localStorage.setItem('nallystake_session',JSON.stringify({token,username:me.username})); else localStorage.removeItem('nallystake_session'); }catch(e){} refreshQuickLogin(); }
+function refreshQuickLogin(){
+ const s=storedSession(), q=$('quicklogin'); if(!q) return;
+ q.style.display=s? 'block':'none';
+ const od=$('ordiv'); if(od) od.style.display=s? 'flex':'none';
+ if(s&&!$('name').value) $('name').value=s.username;
+}
+function setAuthMode(m){
+ authMode=m;
+ $('authhead').textContent=m==='register'? 'CREATE YOUR ACCOUNT':'WELCOME BACK';
+ $('authsub').textContent=m==='register'? 'CREATE AN ACCOUNT TO BEGIN YOUR ADVENTURE':'LOGIN TO CONTINUE YOUR ADVENTURE';
+ $('authgo').textContent=m==='register'? 'CREATE ACCOUNT':'LOGIN';
+ $('authtoggle').textContent=m==='register'? 'Already have an account? Sign In':'New Player? Create Account';
+ $('authmsg').textContent='';
+}
 async function auth(path){
  const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('name').value,password:$('pass').value})});
  const d=await r.json(); if(!r.ok){ $('authmsg').textContent=d.error||'Sign-in failed.'; return; }
  token=d.token; me=d.profile;
+ saveStoredSession();
  $('auth').style.display='none';
  renderAll();
  connect();
+ maybeOpenAppearance();
 }
-$('reg').onclick=()=>auth('/api/register');
-$('login').onclick=()=>auth('/api/login');
-$('pass').addEventListener('keydown',e=>{ if(e.key==='Enter') auth('/api/login'); });
+$('authgo').onclick=()=>auth(authMode==='register'? '/api/register':'/api/login');
+$('authtoggle').onclick=()=>setAuthMode(authMode==='register'? 'login':'register');
+$('pass').addEventListener('keydown',e=>{ if(e.key==='Enter') $('authgo').click(); });
+$('quicklogin').onclick=()=>{
+ const s=storedSession(); if(!s) return;
+ token=s.token; quickAttempt=true; welcomed=false;
+ $('auth').style.display='none';
+ connect();
+};
+refreshQuickLogin();
 
 function connect(){
+ welcomed=false;
  ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws?token=${token}`);
  ws.onmessage=e=>{ let m; try{ m=JSON.parse(e.data); }catch{ return; } onMsg(m); };
- ws.onclose=()=>{ logLine('⚠️ Connection closed. Reload the page to reconnect.'); };
+ ws.onclose=()=>{
+   if(quickAttempt&&!welcomed){ // stored session is dead (server restarted)
+     quickAttempt=false;
+     try{ localStorage.removeItem('nallystake_session'); }catch(e){}
+     token=null; refreshQuickLogin();
+     $('auth').style.display='flex';
+     toast('That login expired — log in again.');
+     logLine('⚠️ Saved login expired — please log in again.');
+     return;
+   }
+   quickAttempt=false;
+   logLine('⚠️ Connection closed. Reload the page to reconnect.');
+ };
  ws.onerror=()=>{ logLine('⚠️ Connection problem.'); };
 }
 function onMsg(m){
- if(m.type==='welcome'){ me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); }
+ if(m.type==='welcome'){ welcomed=true; quickAttempt=false; me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); }
  if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(drawerPanel==='shop') renderDrawer(); renderQuickButtons(); }
  if(m.type==='exchange_prices'){ goods={}; for(const g of (m.goods||[])) goods[g.id]=g; if(drawerPanel==='exchange') renderDrawer(); drawMinimap(); }
  if(m.type==='state'){ if(m.area&&m.area!==curArea) setArea(m.area); players=m.players||[]; initMyPos(); syncAvatars(); if(drawerPanel==='players') renderDrawer(); drawMinimap(); }
@@ -494,9 +613,13 @@ function onMsg(m){
  if(m.type==='smith_state'){ onSmithState(m); }
  if(m.type==='upgrade_result'){ if(m.ok){ toast(`⬆️ Upgraded to ${nameOf(m.item)}!`); logLine(`⬆️ Upgraded to ${nameOf(m.item)} (+${m.xp||0} Smithing XP)`); } else { toast('⬆️ The upgrade failed — the bar was lost, your item is unharmed.'); logLine('⬆️ Upgrade failed — bar lost, item unharmed.'); } }
  if(m.type==='xp'){ onXpDrop(m); }
- if(m.type==='profile'){ me=m.profile; renderAll(); }
+ if(m.type==='profile'){ me=m.profile; renderAll(); onProfileForNotes(); onProfileForAppearance(); maybeOpenAppearance(); }
+ if(m.type==='note_text'){ openNoteReader(m); }
+ if(m.type==='note_request'){ queueNoteRequest(m); }
+ if(m.type==='admin_notes'){ lastAdminNotes=m.notes||[]; if(drawerPanel==='admin') renderDrawer(); }
  if(m.type==='chat'){ logLine(`${m.from}: ${m.text}`); showBubble(m.from,m.text); }
  if(m.type==='error'){ toast('⚠️ '+m.message); logLine('⚠️ '+m.message);
+   if(pendingGiveAfterSign){ pendingGiveAfterSign=null; } // the sign failed — the error above says why
    if(/Wrong combination/.test(m.message||'')){ puzzleAnswer=[]; renderPuzzle(); /* the server auto-sends a fresh puzzle */ }
    if(/chest is locked behind the puzzle door/.test(m.message||'')){ puzzleSolved=false; renderBarrowsBar(); openPuzzle(); }
    if(activeNode && /level|used up|not here|No such spot/.test(m.message||'')) stopGather();
@@ -560,10 +683,12 @@ function renderOrbs(){
  $('orbspv').textContent=en+'%';
  $('orbsp').querySelector('.fill').style.height=clamp(en,0,100)+'%';
  $('orbsp').classList.toggle('ready', en>=50);
+ const ro=$('orbrun'); if(ro){ ro.classList.toggle('on',!!settings.run); $('orbrunv').textContent=settings.run?'RUN':'WALK'; }
 }
 $('orbpr').onclick=()=>togglePanel('prayers');
 $('orbsp').onclick=()=>{ if(duel||npcFight||fcRun) send({type:'special'}); else toast('Special attack is for fights — it charges as you land hits.'); };
 $('orbhp').onclick=()=>{ if(duel||npcFight||fcRun) toast('Eat food or drink a restore potion from your backpack to heal mid-fight.'); };
+$('orbrun').onclick=()=>{ settings.run=!settings.run; saveSettings(); renderOrbs(); toast(settings.run?'🏃 Run on — full speed':'🚶 Run off — walking pace'); };
 
 /* ================= XP drops ================= */
 const SKILL_DEFS=[['attack','⚔️','Attack'],['strength','💪','Strength'],['defence','🛡️','Defence'],['hitpoints','❤️','Hitpoints'],['ranged','🏹','Ranged'],['magic','🔮','Magic'],['prayer','🙏','Prayer'],['mining','⛏️','Mining'],['smithing','🔨','Smithing'],['woodcutting','🪓','Woodcutting'],['firemaking','🔥','Firemaking'],['fishing','🎣','Fishing'],['cooking','🍳','Cooking']];
@@ -1404,15 +1529,21 @@ const HERALDIC=[
 ];
 /* A limb that hangs from a pivot at its top: tapered cylinder + a
    sphere joint at the pivot, so rotating the pivot swings it. */
-function limbPart(r,len,mat){
+function limbPart(r,len,mat,endMat){
  const grp=new THREE.Group();
  const m=new THREE.Mesh(new THREE.CylinderGeometry(r*0.8,r,len,10),mat);
  m.position.y=-len/2; grp.add(m);
  const j=new THREE.Mesh(new THREE.SphereGeometry(r*1.05,10,8),mat); grp.add(j);
- const hand=new THREE.Mesh(new THREE.SphereGeometry(r*0.9,8,8),mat); hand.position.y=-len; grp.add(hand);
+ const hand=new THREE.Mesh(new THREE.SphereGeometry(r*0.9,8,8),endMat||mat); hand.position.y=-len; grp.add(hand);
  return grp;
 }
-function makeKnight(isMe,name){
+/* Stage 9+10 §9: saved player appearance. Skin for head/hands, hair
+   colour for the cap + beard, outfit palette per body part. A knight
+   with NO appearance keeps the classic Stage 8 steel-and-heraldic look. */
+const SKIN_TONES=[0xf2c9a0,0xd9a066,0x8a5a33];
+const HAIR_COLORS=[0xe8c96a,0x6b4226,0x1c1a18];
+const OUTFIT_COLORS=[0x8a6b4a,0x5d4028,0x3f7a3a,0x2c4a8a,0x8e2f32,0x555a60];
+function makeKnight(isMe,name,app){
  const g=new THREE.Group();
  // Stage 6: the body rides on an inner pivot so a jump can lift it
  // (pivot.position.y) and flip it (pivot.rotation.x/z) without moving
@@ -1425,31 +1556,51 @@ function makeKnight(isMe,name){
  const steelDarkMat=new THREE.MeshLambertMaterial({color:0x5d6167});
  const mainMat=new THREE.MeshLambertMaterial({color:main});
  const trimMat=new THREE.MeshLambertMaterial({color:trim});
- // legs on hip pivots (walk cycle swings them)
- const legL=limbPart(0.13,0.72,steelDarkMat); legL.position.set(-0.18,0.80,0); pivot.add(legL);
- const legR=limbPart(0.13,0.72,steelDarkMat); legR.position.set(0.18,0.80,0); pivot.add(legR);
- // torso: tapered cylinder of steel, heraldic tabard down the front
- const torso=new THREE.Mesh(new THREE.CylinderGeometry(0.30,0.41,0.85,12),steelMat); torso.position.y=1.22; pivot.add(torso);
- box(0.46,0.66,0.07,main,0,1.18,0.31,pivot); // tabard
+ const hasApp=!!(app&&typeof app==='object');
+ const skinMat=new THREE.MeshLambertMaterial({color:hasApp? (SKIN_TONES[app.skin]||SKIN_TONES[1]) : 0xd9a066});
+ const outMat=i=>new THREE.MeshLambertMaterial({color:OUTFIT_COLORS[i]||OUTFIT_COLORS[0]});
+ // legs on hip pivots (walk cycle swings them); feet = the end spheres
+ const legMat=hasApp? outMat(app.legs) : steelDarkMat;
+ const footMat=hasApp? outMat(app.feet) : steelDarkMat;
+ const legL=limbPart(0.13,0.72,legMat,footMat); legL.position.set(-0.18,0.80,0); pivot.add(legL);
+ const legR=limbPart(0.13,0.72,legMat,footMat); legR.position.set(0.18,0.80,0); pivot.add(legR);
+ // torso: tapered cylinder; appearance repaints it + the tabard in the
+ // outfit colour, classic knights keep steel + heraldic tabard
+ const female=hasApp&&app.gender==='female';
+ const torsoMat=hasApp? outMat(app.torso) : steelMat;
+ const torso=new THREE.Mesh(new THREE.CylinderGeometry(0.30*(female?0.88:1),0.41*(female?0.88:1),0.85,12),torsoMat); torso.position.y=1.22; pivot.add(torso);
+ box(0.46*(female?0.88:1),0.66,0.07,hasApp? (OUTFIT_COLORS[app.torso]||OUTFIT_COLORS[0]) : main,0,1.18,0.31,pivot); // tabard
  const belt=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.43,0.10,12),trimMat); belt.position.y=0.84; pivot.add(belt);
- // arms on shoulder pivots; the RIGHT arm is the weapon arm
- const armL=limbPart(0.11,0.64,steelMat); armL.position.set(-0.47,1.58,0); pivot.add(armL);
- const armR=limbPart(0.11,0.64,steelMat); armR.position.set(0.47,1.58,0); pivot.add(armR);
+ // arms on shoulder pivots; the RIGHT arm is the weapon arm; hands are skin
+ const armMat=hasApp? outMat(app.arms) : steelMat;
+ const armL=limbPart(0.11,0.64,armMat,hasApp?skinMat:null); armL.position.set(-0.47,1.58,0); pivot.add(armL);
+ const armR=limbPart(0.11,0.64,armMat,hasApp?skinMat:null); armR.position.set(0.47,1.58,0); pivot.add(armR);
  const sword=new THREE.Group(); sword.position.set(0,-0.68,0.05); armR.add(sword);
  box(0.07,0.85,0.14,0xd9dee6,0,0.32,0,sword); // blade
  box(0.3,0.08,0.2,trim,0,-0.12,0,sword); // crossguard (trim metal)
  box(0.09,0.24,0.09,0x5a4020,0,-0.28,0,sword); // grip
- // head: sphere, with a steel helmet cap (half-sphere) + gold band
- const head=new THREE.Mesh(new THREE.SphereGeometry(0.27,14,12),new THREE.MeshLambertMaterial({color:0xd9a066})); head.position.y=1.94; pivot.add(head);
- const helm=new THREE.Mesh(new THREE.SphereGeometry(0.305,14,10,0,Math.PI*2,0,Math.PI/2),steelMat); helm.position.y=1.99; pivot.add(helm);
- const band=new THREE.Mesh(new THREE.CylinderGeometry(0.315,0.315,0.07,14),trimMat); band.position.y=2.0; pivot.add(band);
+ // head: skin sphere. Appearance knights wear their HAIR as the cap with
+ // a thin steel circlet (still reads armoured); classic knights keep the
+ // steel helmet cap + trim band. Beards for male appearance knights.
+ const head=new THREE.Mesh(new THREE.SphereGeometry(0.27,14,12),skinMat); head.position.y=1.94; pivot.add(head);
+ if(hasApp){
+   const hairMat=new THREE.MeshLambertMaterial({color:HAIR_COLORS[app.hair]||HAIR_COLORS[1]});
+   const cap=new THREE.Mesh(new THREE.SphereGeometry(0.295,14,10,0,Math.PI*2,0,Math.PI/2),hairMat); cap.position.y=1.99; pivot.add(cap);
+   const circlet=new THREE.Mesh(new THREE.CylinderGeometry(0.30,0.30,0.055,14),steelMat); circlet.position.y=2.0; pivot.add(circlet);
+   if(female){ box(0.44,0.52,0.09,(HAIR_COLORS[app.hair]||HAIR_COLORS[1]),0,1.72,-0.235,pivot); } // long back panel
+   else if(app.beard===1){ box(0.26,0.12,0.08,(HAIR_COLORS[app.hair]||HAIR_COLORS[1]),0,1.79,0.235,pivot); } // short beard
+   else if(app.beard>=2){ box(0.31,0.24,0.10,(HAIR_COLORS[app.hair]||HAIR_COLORS[1]),0,1.745,0.225,pivot); } // full beard
+ } else {
+   const helm=new THREE.Mesh(new THREE.SphereGeometry(0.305,14,10,0,Math.PI*2,0,Math.PI/2),steelMat); helm.position.y=1.99; pivot.add(helm);
+   const band=new THREE.Mesh(new THREE.CylinderGeometry(0.315,0.315,0.07,14),trimMat); band.position.y=2.0; pivot.add(band);
+ }
  shadowify(pivot);
  const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
  sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
  const label=document.createElement('div'); label.className='plabel';
- label.innerHTML=`<div class="bubble"></div><span class="rbadge"></span><span class="badge"></span><span class="abadge"></span><span class="cbadge"></span> <span class="nm">${esc(name)}</span>`;
+ label.innerHTML=`<div class="bubble"></div><span class="rbadge"></span><span class="badge"></span><span class="abadge"></span><span class="cbadge"></span> <span class="nm">${esc(name)}</span><div class="hpwrap"><div class="hpfill"></div></div>`;
  $('labels').appendChild(label);
- return {group:g,pivot,legL,legR,armL,armR,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),roleEl:label.querySelector('.rbadge'),actEl:label.querySelector('.abadge'),chalEl:label.querySelector('.cbadge'),
+ return {group:g,pivot,legL,legR,armL,armR,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),roleEl:label.querySelector('.rbadge'),actEl:label.querySelector('.abadge'),chalEl:label.querySelector('.cbadge'),hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),
    x:0,z:0,tx:0,tz:0,rot:0,jump:null,prayer:null,bubbleUntil:0,bob:Math.random()*6,isMe,
    swingStart:0,phase:Math.random()*6,moveAmt:0,px:0,pz:0,splatY:2.95};
 }
@@ -1477,8 +1628,18 @@ function syncAvatars(){
  for(const p of players){
    seen.add(p.username);
    let a=avatars[p.username];
+   const akey=JSON.stringify(p.appearance||null);
+   if(a&&a.akey!==akey&&!(typeof appOpen!=='undefined'&&appOpen&&me&&p.username===me.username)){ // appearance changed — rebuild the knight in place (but never under the open appearance sheet's live preview)
+     const keep={x:a.x,z:a.z,tx:a.tx,tz:a.tz,rot:a.rot};
+     scene.remove(a.group); a.label.remove();
+     a=makeKnight(p.username===me.username,p.username,p.appearance);
+     Object.assign(a,keep); a.akey=akey;
+     a.group.position.set(a.x,0,a.z); a.group.rotation.y=a.rot;
+     avatars[p.username]=a; scene.add(a.group);
+   }
    if(!a){
-     a=makeKnight(p.username===me.username,p.username);
+     a=makeKnight(p.username===me.username,p.username,p.appearance);
+     a.akey=akey;
      a.x=a.tx=sx2w(p.x); a.z=a.tz=sy2w(p.y);
      a.group.position.set(a.x,0,a.z); // spawn exactly here — the animate easing takes over from here
      if(a.isMe){ a.rot=localRot; a.group.rotation.y=localRot; }
@@ -2022,21 +2183,59 @@ function splatTexture(kind,dmg){
  splatTexCache.set(key,tex);
  return tex;
 }
+/* Same starburst as splatTexture but with arbitrary text — for the
+   Stage 12 outcome splats: blue shield "🛡️0" (blocked) and a grey
+   "Miss". Colours mirror the damage kinds: 'zero' blue, 'miss' grey. */
+function splatTextTexture(kind,txt){
+ const key='T'+kind+':'+txt;
+ if(splatTexCache.has(key)) return splatTexCache.get(key);
+ const c=document.createElement('canvas'); c.width=c.height=128;
+ const g=c.getContext('2d');
+ g.beginPath();
+ for(let i=0;i<24;i++){ const r=i%2? 36:57, a=i/24*Math.PI*2-Math.PI/2;
+   const x=64+Math.cos(a)*r, y=64+Math.sin(a)*r; i?g.lineTo(x,y):g.moveTo(x,y); }
+ g.closePath();
+ g.fillStyle= kind==='zero'? '#3a6fd8' : kind==='miss'? '#7d838c' : '#c0271b';
+ g.fill();
+ g.lineWidth=5; g.strokeStyle='rgba(20,5,0,0.65)'; g.stroke();
+ g.font='900 '+(txt.length>3?38:46)+'px system-ui'; g.textAlign='center'; g.textBaseline='middle';
+ g.lineWidth=8; g.strokeStyle='rgba(0,0,0,0.55)'; g.strokeText(txt,64,67);
+ g.fillStyle='#fff'; g.fillText(txt,64,67);
+ const tex=new THREE.CanvasTexture(c);
+ if(splatTexCache.size>80) splatTexCache.clear();
+ splatTexCache.set(key,tex);
+ return tex;
+}
 let liveSplats=[]; // {sp,av,born,baseY} — 3D damage splats
 const MAX_SPLATS=24; // phone performance cap
+function pushSplat(a,tex,sc){
+ if(liveSplats.length>=MAX_SPLATS){ const old=liveSplats.shift(); scene.remove(old.sp); old.sp.material.dispose(); }
+ const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthWrite:false}));
+ sp.scale.set(sc,sc,1);
+ sp.position.copy(a.group.position); sp.position.y=(a.splatY||2.6);
+ scene.add(sp);
+ liveSplats.push({sp,av:a,born:performance.now(),baseY:sp.position.y});
+}
 function spawnSplatOn(a,dmg,special){
  if(!a||!a.group||!scene) return;
  if(dmg===null||dmg===undefined) return; // closing tick: nobody swung — no splat
  dmg=Math.max(0,Math.round(dmg));
  const kind=special?'spec':(dmg===0?'zero':'hit');
- if(liveSplats.length>=MAX_SPLATS){ const old=liveSplats.shift(); scene.remove(old.sp); old.sp.material.dispose(); }
- const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:splatTexture(kind,dmg),transparent:true,depthWrite:false}));
- const sc=special?2.15:1.45; sp.scale.set(sc,sc,1);
- sp.position.copy(a.group.position); sp.position.y=(a.splatY||2.6);
- scene.add(sp);
- liveSplats.push({sp,av:a,born:performance.now(),baseY:sp.position.y});
+ pushSplat(a,splatTexture(kind,dmg),special?2.15:1.45);
 }
 function spawnSplat(name,dmg,special){ spawnSplatOn(avatars[name],dmg,special); }
+/* Stage 12 clarity: the server tags every swing with an outcome —
+   'hit' | 'blocked' | 'miss'. 'hit' keeps the red damage splat,
+   'blocked' is a blue shield burst with the 0 showing, 'miss' is a
+   smaller grey "Miss". Callers use this only when the field is
+   present; absent → the damage-derived splats above, unchanged. */
+function spawnOutcomeSplatOn(a,outcome,dmg,special){
+ if(!a||!a.group||!scene) return;
+ if(outcome==='miss'){ pushSplat(a,splatTextTexture('miss','Miss'),1.05); return; }
+ if(outcome==='blocked'){ pushSplat(a,splatTextTexture('zero','🛡️0'),1.45); return; }
+ spawnSplatOn(a,dmg,special);
+}
+function spawnOutcomeSplat(name,outcome,dmg,special){ spawnOutcomeSplatOn(avatars[name],outcome,dmg,special); }
 function updateLiveSplats(now){
  liveSplats=liveSplats.filter(s=>{
    const age=now-s.born;
@@ -2049,6 +2248,57 @@ function updateLiveSplats(now){
 }
 /* ---- Stage 8: weapon swings ---- */
 function startSwing(a){ if(a) a.swingStart=performance.now(); }
+/* ---- Stage 12 follow-up: swings must LOOK like they connect ----
+   The server only lets a swing happen inside melee reach (42 server
+   units), but the RENDERED avatars can still look far apart — a
+   remote knight's eased position trails its server position — and a
+   swing played across a visible gap reads as fake ("swinging from
+   across the room"). So the swing ANIMATION is gated on the rendered
+   distance: past ~62 server units apart it doesn't play (the
+   hitsplat on the target still shows — damage presentation is
+   unchanged). When a swing does play, the attacker turns to face the
+   target and lunges: a quick ~7-server-unit step-in and back, so the
+   hit visibly lands. Distances below are server units (÷W2S = world). */
+const SWING_SHOW_RANGE=62, LUNGE_DIST=7;
+function startSwingAt(attacker,target){
+ if(!attacker||!attacker.group) return;
+ if(!target||!target.group){ startSwing(attacker); return; } // no target entry — old behaviour
+ const dx=target.group.position.x-attacker.group.position.x;
+ const dz=target.group.position.z-attacker.group.position.z;
+ if(Math.hypot(dx,dz)*W2S>SWING_SHOW_RANGE) return; // too far apart on screen — no fake swing
+ startSwing(attacker);
+ faceTarget(attacker,dx,dz);
+ attacker.lunge={dx,dz,t0:performance.now()};
+}
+/* Turn the attacker to face its target on a swing. My knight turns
+   through localRot (animate() eases him); everyone else turns on the
+   spot — a fast turn is fine, and a.rot is kept in step so the
+   per-frame facing logic doesn't snap them back. */
+function faceTarget(a,dx,dz){
+ const ang=Math.atan2(dx,dz);
+ if(me&&avatars[me.username]===a){ localRot=ang; return; }
+ a.rot=ang; if(a.group) a.group.rotation.y=ang;
+}
+/* The lunge, applied in animate() AFTER the frame's position easing:
+   out to full reach in ~70ms, a short hold, back over ~120ms (≈ the
+   320ms swing). The offset actually applied is kept on a.lungeOff
+   and taken back off at the top of the next frame (clearLungeOff),
+   so it never feeds the position easing or piles up. */
+function applyLunge(a,now){
+ if(!a||!a.group||!a.lunge) return;
+ const t=now-a.lunge.t0;
+ if(t>=290){ a.lunge=null; return; }
+ const d=Math.hypot(a.lunge.dx,a.lunge.dz)||1;
+ const amt=(t<70? LUNGE_DIST*(t/70) : t<170? LUNGE_DIST : LUNGE_DIST*(1-(t-170)/120))/W2S;
+ const ox=a.lunge.dx/d*amt, oz=a.lunge.dz/d*amt;
+ a.group.position.x+=ox; a.group.position.z+=oz;
+ a.lungeOff={x:ox,z:oz};
+}
+function clearLungeOff(a){
+ if(!a) return;
+ if(a.lungeOff&&a.group){ a.group.position.x-=a.lungeOff.x; a.group.position.z-=a.lungeOff.z; }
+ a.lungeOff=null;
+}
 /* Swing pose: the weapon-arm pivot chops from raised to struck over
    ~120ms, then recovers over ~200ms. Entries with no arm pivot (most
    cave monsters) rock their whole mesh forward a little instead. For
@@ -2179,19 +2429,25 @@ addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
 (function(){
  const el=$('scene'); const pts=new Map();
  let downAt=0, downX=0, downY=0, dragged=false, pinchD=0;
- el.addEventListener('pointerdown',e=>{ pts.set(e.pointerId,{x:e.clientX,y:e.clientY}); downAt=Date.now(); downX=e.clientX; downY=e.clientY; dragged=false;
-   if(pts.size===2){ const [a,b]=[...pts.values()]; pinchD=Math.hypot(a.x-b.x,a.y-b.y); } });
+ let holdTimer=null, holdFired=false; // Stage 9+10 §8: tap-and-hold = context menu
+ function clearHold(){ if(holdTimer){ clearTimeout(holdTimer); holdTimer=null; } }
+ el.addEventListener('pointerdown',e=>{ pts.set(e.pointerId,{x:e.clientX,y:e.clientY}); downAt=Date.now(); downX=e.clientX; downY=e.clientY; dragged=false; holdFired=false;
+   if(pts.size===2){ const [a,b]=[...pts.values()]; pinchD=Math.hypot(a.x-b.x,a.y-b.y); clearHold(); }
+   else { clearHold(); const hx=e.clientX, hy=e.clientY;
+     holdTimer=setTimeout(()=>{ holdTimer=null; if(!dragged&&pts.size===1){ holdFired=true; handleLongPress(hx,hy); } },450); } });
  el.addEventListener('pointermove',e=>{
    if(!pts.has(e.pointerId)) return;
    const prev=pts.get(e.pointerId); pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
    if(pts.size===2){ const [a,b]=[...pts.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y);
-     if(pinchD>0) camDist=clamp(camDist*pinchD/d,10,42); pinchD=d; dragged=true; return; }
+     if(pinchD>0) camDist=clamp(camDist*pinchD/d,10,42); pinchD=d; dragged=true; clearHold(); return; }
    const dx=e.clientX-prev.x, dy=e.clientY-prev.y;
-   if(Math.hypot(e.clientX-downX,e.clientY-downY)>9) dragged=true;
+   if(Math.hypot(e.clientX-downX,e.clientY-downY)>9){ dragged=true; clearHold(); } // camera drag cancels a pending hold
    if(dragged && (e.pointerType==='mouse' ? e.buttons===1 : true)) camYaw-=dx*0.006*settings.camSpeed;
  });
  function up(e){
    pts.delete(e.pointerId);
+   clearHold();
+   if(holdFired){ holdFired=false; return; } // the hold already acted — swallow the release
    if(!dragged && Date.now()-downAt<400) handleTap(e.clientX,e.clientY);
  }
  el.addEventListener('pointerup',up); el.addEventListener('pointercancel',up);
@@ -2202,6 +2458,8 @@ function handleTap(cx,cy){
  stopGather(); // tapping anywhere interrupts auto-gather (a node tap below may restart it)
  const mouse=new THREE.Vector2((cx/innerWidth)*2-1,-(cy/innerHeight)*2+1);
  raycaster.setFromCamera(mouse,camera);
+ // Stage 9+10 §2: an armed Use-item consumes this tap entirely
+ if(useMode){ resolveUseTap(cx,cy); return; }
  // interactive props first (plaza only — its meshes are hidden elsewhere)
  if(curArea==='plaza'){
    const ih=raycaster.intersectObjects(interactives,false)[0];
@@ -2283,6 +2541,12 @@ function handleTap(cx,cy){
    if(d<44 && d<bestD){ best=name; bestD=d; }
  }
  if(best){
+   if(duel&&best===duel.opponent){
+     // Tap-to-engage: tell the server I'm attacking (repeats are no-ops
+     // server-side). Existing behaviour below (menu / closing) is kept.
+     send({type:'duel_attack'});
+     if(!duelEngaged){ duelEngaged=true; renderDuelHint(); }
+   }
    if(best!==me.username){
      // Derek's rule: a challenger wears the ❗. Tapping them while THEIR
      // challenge to me is still pending reopens the duel-rules sheet
@@ -2298,6 +2562,7 @@ function handleTap(cx,cy){
  if(gh){
    const pt={x:clamp(wx2s(gh.point.x),0,800), y:clamp(wz2s(gh.point.z),0,450)};
    pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false;
+   pendingUseCook=null; pendingUseLogs=null;
    stopFollow();
    if(settings.tapMode==='face') faceToward(pt); else tapTarget=pt;
  }
@@ -2340,8 +2605,15 @@ function checkPendingAttack(){
  }
 }
 let lastSend=0, lastSentPos=null;
+/* Run toggle (🏃 orb): ON = the usual full speed (15 world units/s),
+   OFF = half that (walking). Defaults ON; the choice saves in settings. */
+function moveSpeed(){ return settings.run? 15 : 7.5; }
 function stepMovement(dt){
  if(!myPos||!me) return;
+ // Stage 12: duel countdown — my knight stands still until FIGHT!
+ // (the server ignores duelists' moves during the count anyway; this
+ // stops the local knight sliding). Camera drag is separate and free.
+ if(duelCountdownLeft>0){ tapTarget=null; myVel={x:0,z:0}; finishStep(false); return; }
  let vx=0, vz=0; // world units / s
  const sYaw=Math.sin(camYaw), cYaw=Math.cos(camYaw);
  // camera forward on the ground (world): (-sinYaw, -cosYaw); right: (cosYaw, -sinYaw)
@@ -2349,20 +2621,20 @@ function stepMovement(dt){
  if(keys.w||keys.arrowup) f+=1; if(keys.s||keys.arrowdown) f-=1;
  if(keys.d||keys.arrowright) r+=1; if(keys.a||keys.arrowleft) r-=1;
  f+=-joyVec.y; r+=joyVec.x;
- if(f||r){ tapTarget=null; pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false; stopGather(); stopFollow(); const l=Math.hypot(f,r); f/=l; r/=l;
+ if(f||r){ tapTarget=null; pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false; stopGather(); const l=Math.hypot(f,r); f/=l; r/=l;
    vx=(-sYaw*f + cYaw*r); vz=(-cYaw*f - sYaw*r); myVel={x:vx,z:vz}; }
  else if(tapTarget){
    const dx=tapTarget.x-myPos.x, dy=tapTarget.y-myPos.y, d=Math.hypot(dx,dy);
    if(d<6){ tapTarget=null; myVel={x:0,z:0}; }
-   else { const sp=150*dt; // server units per step
+   else { const sp=moveSpeed()*10*dt; // server units per step
           localRot=Math.atan2(dx,dy);
-          myVel={x:(dx/d)*15,z:(dy/d)*15}; // world units/s, same speed as stick movement
+          myVel={x:(dx/d)*moveSpeed(),z:(dy/d)*moveSpeed()}; // world units/s, same speed as stick movement
           myPos.x+=(dx/d)*sp; myPos.y+=(dy/d)*sp;
           finishStep(true); return; }
  }
  if(vx||vz){
    localRot=Math.atan2(vx,vz);
-   const sp=15*dt; // world units/s
+   const sp=moveSpeed()*dt; // world units/s
    myPos.x=clamp(myPos.x+vx*sp*W2S,0,800);
    myPos.y=clamp(myPos.y+vz*sp*W2S,0,450);
    finishStep(true);
@@ -2381,7 +2653,7 @@ function finishStep(moved){
    lastSend=now;
  }
  checkGates();
- if(moved){ checkPendingAttack(); checkPendingNode(); checkPendingFcAttack(); checkPendingMound(); checkPendingPile(); checkPendingChest(); }
+ if(moved){ checkPendingAttack(); checkPendingNode(); checkPendingFcAttack(); checkPendingMound(); checkPendingPile(); checkPendingChest(); checkPendingUse(); }
 }
 /* ================= minimap (rotating, player-centred) ================= */
 const MM_S=128/520; // minimap px per server unit (~520 units across)
@@ -2517,6 +2789,7 @@ function animate(){
  // facings ease along the shortest arc, and the walk cycle's phase is
  // driven by the distance actually travelled this frame.
  for(const [name,a] of Object.entries(avatars)){
+   clearLungeOff(a); // last frame's lunge offset comes off before easing/walk math
    const gx0=a.group.position.x, gz0=a.group.position.z;
    if(me && name===me.username){
      const k=1-Math.exp(-18*dt); // tight: smooth but never laggy
@@ -2539,10 +2812,12 @@ function animate(){
    a.group.position.y=Math.abs(Math.sin(a.phase||0))*0.07*(a.moveAmt||0);
    applySwing(a,now);
    updateJump(a,now);
+   applyLunge(a,now);
  }
  // NPC meshes ease the same way (Stage 8: goblins and cave monsters
  // walk toward you server-side; brothers hold their anchor — no tx).
  for(const a of Object.values(npcAvatars)){
+   clearLungeOff(a);
    if(a.tx!==undefined){
      const k=1-Math.exp(-12*dt);
      a.x+=(a.tx-a.x)*k; a.z+=(a.tz-a.z)*k;
@@ -2551,8 +2826,10 @@ function animate(){
      if(Math.hypot(dx,dz)>0.05) easeRot(a,Math.atan2(dx,dz),dt);
    }
    applySwing(a,now);
+   applyLunge(a,now);
  }
  for(const a of Object.values(fcAvatars)){
+   clearLungeOff(a);
    if(a.tx!==undefined){
      const k=1-Math.exp(-12*dt);
      a.group.position.x+=(a.tx-a.group.position.x)*k;
@@ -2561,6 +2838,7 @@ function animate(){
      if(Math.hypot(dx,dz)>0.05) easeRot(a,Math.atan2(dx,dz),dt);
    }
    applySwing(a,now);
+   applyLunge(a,now);
  }
  // Brazier flames flicker (tournament dais)
  for(const f of flickerLights){
@@ -2642,7 +2920,7 @@ function openPanel(name){ drawerPanel=name; selStack=null; if(name==='backpack')
  if(name==='tools'&&isAdminOrOwner()) send({type:'ref_lists'}); }
 function closeDrawer(){ drawerPanel=null; $('drawer').classList.remove('open');
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.remove('on')); }
-document.querySelectorAll('.rbtn').forEach(b=>b.onclick=()=>{ togglePanel(b.dataset.panel); railOpen=false; applyRailVisibility(); });
+document.querySelectorAll('.rbtn').forEach(b=>b.onclick=()=>{ if(b._suppressClickUntil&&Date.now()<b._suppressClickUntil) return; togglePanel(b.dataset.panel); });
 $('drawerx').onclick=closeDrawer;
 function itemCell(s,onclick,extra){
  const hl=highlights.has(s.item);
@@ -2667,6 +2945,8 @@ function renderDrawer(){
  if(drawerPanel==='settings') b.innerHTML=pSettings();
  if(drawerPanel==='bank') applyBankFilter();
  if(drawerPanel==='tools') initToolCanvas(); // Stage 8: restore the drawing canvas after every tools render
+ if(drawerPanel==='backpack') wireBpCells(); // Stage 9+10 §8: tap / hold / drag gestures
+ if(drawerPanel==='bank') wireBankDrag(); // Stage 9+10 §8: drag a backpack cell onto the bank grid = deposit
 }
 /* ---- Backpack ---- */
 window.selBp=function(item){ selStack=selStack===item?null:item; examineStack=null; renderDrawer(); };
@@ -2723,15 +3003,17 @@ function pBackpack(){
  }
  // Display order only — the server's stack order is untouched. Pack sorts
  // carried stacks (kind, then name) to the top; empty cells fill to 28.
- let stacks=me.backpack.slice();
- if(packSorted) stacks.sort((a,b)=>{
-   const ka=(catalog[a.item]&&catalog[a.item].kind)||'zzz', kb=(catalog[b.item]&&catalog[b.item].kind)||'zzz';
+ // Each cell still carries its TRUE index in me.backpack (data-idx) so
+ // drag-swap (inv_swap) hits the right server slots even when sorted.
+ let pairs=me.backpack.map((s,i)=>({s,i}));
+ if(packSorted) pairs.sort((a,b)=>{
+   const ka=(catalog[a.s.item]&&catalog[a.s.item].kind)||'zzz', kb=(catalog[b.s.item]&&catalog[b.s.item].kind)||'zzz';
    if(ka!==kb) return ka<kb?-1:1;
-   return nameOf(a.item).localeCompare(nameOf(b.item));
+   return nameOf(a.s.item).localeCompare(nameOf(b.s.item));
  });
- let cells=stacks.map(s=>itemCell(s,`selBp('${s.item}')`,selStack===s.item?'sel':'')).join('');
- for(let i=stacks.length;i<28;i++) cells+=`<div class="cell empty"></div>`;
- h+=`<div class="grid">${cells}</div>`;
+ let cells=pairs.map(({s,i})=>bpCell(s,i)).join('');
+ for(let i=pairs.length;i<28;i++) cells+=`<div class="cell empty"></div>`;
+ h+=`<div class="grid" id="bpgrid">${cells}</div>`;
  h+=`<div class="note" style="margin-top:6px">${me.backpack.length} / 28 stacks</div>`;
  if(selStack){
    const s=me.backpack.find(x=>x.item===selStack), d=catalog[selStack];
@@ -2757,6 +3039,8 @@ function pBackpack(){
      if(s.item==='raw_trout'||s.item==='raw_shrimps') h+=`<button class="act" onclick="cookItem('${s.item}')">🍳 Cook on fire</button>`;
      const smithM=s.item.startsWith('smith_')? s.item.match(/^smith_([a-z]+)_(?:sword|platebody)(?:_u(\d))?$/) : null;
      if(smithM&&(+ (smithM[2]||0))<4) h+=`<button class="act" onclick="send({type:'smith_upgrade',item:'${s.item}'})">⬆️ Upgrade (+1)</button>`;
+     if(s.item==='certificate') h+=`<button class="act" onclick="openSignScreen(null)">✍️ Sign note</button>`;
+     h+=`<button class="act" onclick="armUse('${s.item}')">✋ Use</button>`;
      h+=`<button class="ghost" onclick="toggleHighlight('${s.item}')">⭐ Highlights: ${highlights.has(s.item)?'On':'Off'}</button>`;
      h+=`<button class="ghost" onclick="toggleExamine('${s.item}')">🔍 Examine</button>`;
      h+=`</div>`;
@@ -2837,7 +3121,7 @@ window.bankSearchInput=function(v){ bankSearch=v||''; applyBankFilter(); };
 function bankValue(){ return (me?me.bank:[]).reduce((t,s)=>{ const d=catalog[s.item]; const v=d? d.buy : (goods[s.item]? goods[s.item].price : 0); return t+v*s.qty; },0); }
 function qtyFor(owned){ if(bankQty==='all') return owned; if(bankQty==='x') return Math.min(owned,bankXQty); return Math.min(owned, bankQty==='10'?10 : bankQty==='5'?5 : 1); }
 function bankCell(s,onclick){
- return `<div class="cell" data-cat="${bankCat(s.item)}" data-name="${esc(nameOf(s.item)).toLowerCase()}" onclick="${onclick}"><span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${itemIconHTML(s.item,24)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
+ return `<div class="cell" data-cat="${bankCat(s.item)}" data-item="${s.item}" data-qty="${s.qty}" data-name="${esc(nameOf(s.item)).toLowerCase()}" onclick="${onclick}"><span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${itemIconHTML(s.item,24)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
 }
 function applyBankFilter(){
  if(drawerPanel!=='bank') return;
@@ -2907,10 +3191,11 @@ function pPlayers(){
 }
 /* ---- Admin (Stage 7A) ---- */
 let lastAdminList=null, lastOnlineList=null;
+let lastAdminNotes=null; // Stage 9+10 §3: pending signed notes (admin_notes reply)
 let fightSelA='', fightSelB='';
 let spawnItemSel='', spawnQtyVal=1, spawnTargetVal='';
 window.refreshAdminLists=function(){
- if(isAdminOrOwner()) send({type:'admin_list'});
+ if(isAdminOrOwner()){ send({type:'admin_list'}); send({type:'admin_notes'}); }
  const r=myRole(); if(r==='mod'||r==='admin'||r==='owner') send({type:'online_list'});
 };
 window.adminSetRole=function(target,role){ send({type:'set_role',target,role}); setTimeout(refreshAdminLists,400); };
@@ -2941,6 +3226,12 @@ function pAdmin(){
  if(myQty('certificate')>=1){
    h+=`<button class="act" style="width:100%;margin:4px 0" onclick="send({type:'exchange_cert'})">📜 Exchange Certificate → 250g</button>`;
    h+=`<p class="note">An admin must be online to approve the exchange.</p>`;
+ }
+ if(isAdminOrOwner()){
+   h+=`<h4 style="margin:12px 0 5px;color:#e3c766">📝 Signed notes</h4>`;
+   if(lastAdminNotes===null) h+=`<p class="note">Loading signed notes…</p>`;
+   else if(!lastAdminNotes.length) h+=`<p class="note">No signed notes waiting.</p>`;
+   else h+=lastAdminNotes.map(n=>`<div class="rowline"><span class="ic">📝</span><span class="grow"><b>${esc(n.from)}</b><br><span class="sub">${esc(String(n.text||'').split('\n')[0])}</span></span><button class="act" onclick="openAdminNote('${esc(String(n.id))}')">Open</button></div>`).join('');
  }
  const canRun=role==='admin'||role==='owner'||(role==='mod'&&!!me.certified);
  if(canRun){
@@ -3324,7 +3615,8 @@ function pTeleport(){
 /* ---- Settings ---- */
 const PANEL_LIST=[['backpack','🎒 Backpack'],['worn','🗡️ Worn items'],['shop','🏪 Shops'],['bank','🏦 Bank'],['exchange','💱 Gold Exchange'],['prayers','🙏 Prayers'],['players','👥 Players'],['admin','👑 Admin'],['tools','🛠️ Admin Tools'],['skills','📊 Skills'],['smithy','🔥 Smithy'],['teleport','🌀 Teleport'],['settings','🎛️ Settings']];
 function pSettings(){
- let h=`<div class="setrow"><span class="grow">📷 Camera drag speed<br><span class="note">Screen-drag rotation &amp; camera stick</span></span><input type="range" min="0.25" max="3" step="0.25" value="${settings.camSpeed}" oninput="setCamSpeed(this.value)"><b id="camspeedval" style="color:#e3c766;min-width:34px;text-align:right">${settings.camSpeed}×</b></div>`;
+ let h=`<div class="setrow"><span class="grow">🎨 Appearance<br><span class="note">Change how your knight looks</span></span><button class="act" onclick="closeDrawer();openAppearance()">🎨 Appearance</button></div>`;
+ h+=`<div class="setrow"><span class="grow">📷 Camera drag speed<br><span class="note">Screen-drag rotation &amp; camera stick</span></span><input type="range" min="0.25" max="3" step="0.25" value="${settings.camSpeed}" oninput="setCamSpeed(this.value)"><b id="camspeedval" style="color:#e3c766;min-width:34px;text-align:right">${settings.camSpeed}×</b></div>`;
  h+=`<div class="setrow"><span class="grow">👆 Ground tap mode</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.tapMode==='walk'?'on':''}" onclick="setTapMode('walk')">🚶 Walk</button><button class="${settings.tapMode==='face'?'on':''}" onclick="setTapMode('face')">🧭 Face</button></div>`;
  h+=`<p class="note" style="margin:2px 0 8px">Walk: tapping the ground walks there. Face: tapping just turns your knight to face that spot.</p>`;
  h+=`<div class="setrow"><span class="grow">🔅 Interface transparency<br><span class="note">Sticks, panels &amp; buttons</span></span><input type="range" min="0.3" max="1" step="0.02" value="${settings.uiAlpha}" oninput="setUiAlpha(this.value)"></div>`;
@@ -3516,6 +3808,7 @@ function openTrade(m){
  <div class="btns"><button class="act" id="tradeconfirm">Confirm trade</button><button class="ghost" id="tradecancel">Cancel</button></div>`;
  $('trademodal').classList.add('open');
  renderTradeState();
+ applyPreOffer(); // Stage 9+10 §2: an item "used" on this player is pre-offered
  $('tradeupdate').onclick=()=>{ if(!trade) return; const g=clamp(Math.floor(+$('tradegold').value||0),0,me?me.gold:0); send({type:'trade_offer',tradeId:trade.id,gold:g,items:readPicker('trp')}); };
  $('tradeconfirm').onclick=()=>{ if(trade) send({type:'trade_confirm',tradeId:trade.id}); };
  $('tradecancel').onclick=()=>{ if(trade){ tradeCancelMine=true; send({type:'trade_cancel',tradeId:trade.id}); } trade=null; closeModal('trademodal'); };
@@ -3554,7 +3847,7 @@ function startFollow(name){
  followTarget=name; followPoint=null; followSetAt=0; followMissingAt=0;
  $('followtxt').textContent=`🚶 Following ${name}`;
  $('followchip').classList.add('on');
- toast(`🚶 Following ${name} — use the stick, tap the ground, or tap ✖ to stop.`);
+ toast(`🚶 Following ${name} — tap the ground to walk somewhere else, or tap ✖ to stop.`);
 }
 function stopFollow(){
  if(!followTarget) return;
@@ -3562,6 +3855,10 @@ function stopFollow(){
  $('followchip').classList.remove('on');
 }
 $('followstop').onclick=()=>{ stopFollow(); tapTarget=null; };
+/* Stage 9+10 §1: follow means standing ~30 units BEHIND the target
+   (opposite the way their knight faces) and staying there. Cancels ONLY
+   on: a ground/world tap that sets a new walk, the chip's ✖, a fight
+   starting, or the target being gone >10s. Panels/menus don't cancel. */
 function followTick(){
  if(!followTarget) return;
  if(duel||npcFight||fcRun){ stopFollow(); return; } // a fight started — following ends
@@ -3573,25 +3870,90 @@ function followTick(){
    return;
  }
  followMissingAt=0;
- const dx=p.x-myPos.x, dy=p.y-myPos.y, d=Math.hypot(dx,dy);
- if(d<=60){ // close enough — stand here
+ // a manual world tap set a walk somewhere else — that cancels follow
+ if(tapTarget&&followPoint&&(tapTarget.x!==followPoint.x||tapTarget.y!==followPoint.y)){ stopFollow(); return; }
+ const ta=avatars[followTarget];
+ // target facing from its rendered rotation (world angle == server angle:
+ // both planes share orientation, atan2(dx,dy) over the same deltas)
+ const rot=ta? ta.rot : Math.atan2(p.x-myPos.x,p.y-myPos.y);
+ const bx=p.x-Math.sin(rot)*30, by=p.y-Math.cos(rot)*30; // the behind-spot, server coords
+ const dSpot=Math.hypot(bx-myPos.x,by-myPos.y);
+ if(dSpot<=10){ // arrived — stand here, facing the way they face
    if(tapTarget&&followPoint&&tapTarget.x===followPoint.x&&tapTarget.y===followPoint.y) tapTarget=null;
+   localRot=rot;
    return;
  }
- // stand ~40 server units from them, on my side of them
- const pt={x:Math.round(clamp(p.x-(dx/d)*40,0,800)), y:Math.round(clamp(p.y-(dy/d)*40,0,450))};
+ const pt={x:Math.round(clamp(bx,0,800)), y:Math.round(clamp(by,0,450))};
  const now=Date.now();
- if(!followPoint||Math.hypot(pt.x-followPoint.x,pt.y-followPoint.y)>10||now-followSetAt>500){
+ if(!followPoint||Math.hypot(pt.x-followPoint.x,pt.y-followPoint.y)>6||now-followSetAt>500){
    followPoint=pt; followSetAt=now; tapTarget=pt; // stepMovement walks there + sends the moves
  }
 }
 /* ================= duel UI ================= */
 let duel=null;
 let npcFight=null;
+/* Tap-to-engage: my swings only start once I've tapped my opponent
+   (duel_attack) or the server's auto-retaliate kicks in. The hint shows
+   until I'm engaged — tapped, or one of my swings shows in a tick. */
+let duelEngaged=false;
+function renderDuelHint(){ const h=$('duelhint'); if(h) h.style.display=(duel&&!duelEngaged)?'block':'none'; }
+/* ================= Stage 12: combat clarity =================
+   Overhead HP bars (green → yellow → red as they drop) on my duel
+   opponent and on my current NPC-fight target, driven by the fight
+   ticks; plus the duel countdown overlay + local movement lock. */
+function hpBarColor(f){ return f>0.5? '#4caf50' : f>0.25? '#e8c33a' : '#e03a2a'; }
+function setHpBar(a,frac){
+ if(!a||!a.hpFill) return;
+ frac=clamp(frac,0,1);
+ a.hpFill.style.width=(frac*100)+'%';
+ a.hpFill.style.background=hpBarColor(frac);
+ if(a.hpWrap) a.hpWrap.style.display='block';
+}
+function hideHpBar(a){ if(a&&a.hpWrap) a.hpWrap.style.display='none'; }
+/* Countdown: duel_start carries countdownTicks (5); each duel_tick
+   carries countdownLeft. 5–4 shows "3", 3–2 shows "2", 1 shows "1",
+   and hitting 0 flashes "⚔️ FIGHT!" for ~600ms. While
+   duelCountdownLeft>0, stepMovement locks my movement input. NPC
+   fights have no countdown fields → no overlay, no lock. */
+let duelCountdownLeft=null, cdTimer=null, cdFlashUntil=0;
+function cdShow(txt,fight){
+ const el=$('countdown'); if(!el) return;
+ $('countdowntxt').textContent=txt;
+ el.classList.toggle('fight',!!fight);
+ el.style.display='block';
+ el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); // restart the pop
+}
+function cdHide(){ const el=$('countdown'); if(el) el.style.display='none'; if(cdTimer){ clearTimeout(cdTimer); cdTimer=null; } cdFlashUntil=0; }
+function setDuelCountdown(v){
+ if(typeof v!=='number') return; // field absent (NPC fight / old flow) — no overlay
+ if(v>0){
+   if(cdTimer){ clearTimeout(cdTimer); cdTimer=null; }
+   duelCountdownLeft=v;
+   cdShow(v>=4?'3':v>=2?'2':'1',false);
+ } else {
+   const wasCounting=duelCountdownLeft>0;
+   duelCountdownLeft=0;
+   if(wasCounting){ cdFlashUntil=performance.now()+600; cdShow('⚔️ FIGHT!',true); cdTimer=setTimeout(cdHide,600); }
+   else if(performance.now()>cdFlashUntil) cdHide();
+ }
+}
+function clearDuelCountdown(){ duelCountdownLeft=null; cdHide(); }
 function startDuelUI(m){
  stopGather();
  stopFollow();
+ cancelUse(true);
  duel={id:m.duelId,opponent:m.opponent,pot:m.pot,hpYou:99,hpOpponent:99,energyYou:Math.floor(me?me.specialEnergy||0:0),escrow:m.escrowItems||[],arena:m.arena||null};
+ duelEngaged=false; renderDuelHint();
+ // Stage 12: countdown overlay (locks my movement until FIGHT!) and
+ // the opponent's overhead HP bar, full at the start.
+ if(typeof m.countdownTicks==='number') setDuelCountdown(m.countdownTicks); else clearDuelCountdown();
+ const oppAv0=avatars[m.opponent]; if(oppAv0) setHpBar(oppAv0,duel.hpOpponent/99);
+ // Amendment B: both knights turn to face each other (visual only)
+ const oppP=players.find(x=>x.username===m.opponent), myP=me? players.find(x=>x.username===me.username):null;
+ if(oppP&&myP){
+   localRot=Math.atan2(oppP.x-myP.x,oppP.y-myP.y);
+   const oa=avatars[m.opponent]; if(oa) oa.rot=Math.atan2(myP.x-oppP.x,myP.y-oppP.y);
+ }
  me=m.profile;
  if(m.arena&&m.arena.id) setArenaVariant(m.arena.id); // recolour the pit for this duel
  $('duelflee').style.display='none';
@@ -3622,13 +3984,23 @@ function duelTickUI(m){
  if(!duel) return;
  duel.hpYou=m.hpYou; duel.hpOpponent=m.hpOpponent; duel.energyYou=m.energyYou;
  if(me) me.specialEnergy=m.energyYou;
+ setDuelCountdown(m.countdownLeft); // Stage 12: drives the 3·2·1 overlay + the move lock
+ const oppAv=avatars[duel.opponent]; if(oppAv) setHpBar(oppAv,duel.hpOpponent/99); // opponent's overhead bar
  applyClosing(m); // Stage 8: on a closing tick, walk into reach (moveTo)
  const closing=!!m.closing||typeof m.youHit!=='number';
  if(!closing){
    // Swings + hitsplats only on real swings (null hit = nobody swung).
-   if(typeof m.youHit==='number'){ startSwing(me?avatars[me.username]:null); spawnSplat(duel.opponent,m.youHit,m.youSpecial); }
-   if(typeof m.oppHit==='number'){ startSwing(avatars[duel.opponent]); spawnSplat(me.username,m.oppHit,m.oppSpecial); }
+   // Stage 12: when the server tags the swing with an outcome, the
+   // splat shows it — red damage / blue shield / grey Miss. Absent
+   // outcome → the damage-derived splat, exactly as before.
+   if(typeof m.youHit==='number'){ startSwingAt(me?avatars[me.username]:null,avatars[duel.opponent]);
+     if(typeof m.youOutcome==='string') spawnOutcomeSplat(duel.opponent,m.youOutcome,m.youHit,m.youSpecial);
+     else spawnSplat(duel.opponent,m.youHit,m.youSpecial); }
+   if(typeof m.oppHit==='number'){ startSwingAt(avatars[duel.opponent],me?avatars[me.username]:null);
+     if(typeof m.oppOutcome==='string') spawnOutcomeSplat(me.username,m.oppOutcome,m.oppHit,m.oppSpecial);
+     else spawnSplat(me.username,m.oppHit,m.oppSpecial); }
  }
+ if(typeof m.youHit==='number'&&!duelEngaged){ duelEngaged=true; renderDuelHint(); } // a swing of mine appeared — I'm engaged (tap or auto-retaliate)
  let last;
  if(closing) last=m.note||'⚔️ Too far apart — closing in to strike…';
  else {
@@ -3640,6 +4012,9 @@ function duelTickUI(m){
 }
 function endDuelUI(m){
  const wasDuel=duel; duel=null;
+ duelEngaged=false; renderDuelHint();
+ clearDuelCountdown(); // Stage 12: overlay off, movement unlocked
+ if(wasDuel){ const oppAv=avatars[wasDuel.opponent]; if(oppAv) hideHpBar(oppAv); } // opponent's overhead bar off
  $('duelflee').style.display='none';
  $('duelbar').classList.remove('open');
  $('duelofficial').style.display='none';
@@ -3672,6 +4047,7 @@ function npcFightUI(m){
    pendingAttack=null;
    stopGather();
    stopFollow();
+   cancelUse(true);
    npcFight={npcId:m.npcId,kind:m.kind||'goblin',name:m.name||'Goblin',combatLevel:m.combatLevel||5,hpYou:m.hpYou,maxHpYou:m.maxHpYou,hpNpc:m.hpNpc,maxHpNpc:m.maxHpNpc,energyYou:Math.floor(m.energyYou||0)};
    $('duelbar').classList.add('open');
    $('duelflee').style.display='block';
@@ -3691,6 +4067,7 @@ function npcFightUI(m){
      $('dueltitle').textContent=`🥊 Goblin · lvl ${npcFight.combatLevel}`;
      $('duellast').textContent='Fight! Land hits to charge your Dragon Slash (50%). Run with 🏃 Flee if it goes bad.';
    }
+   const sba=npcAvatars[m.npcId]; if(sba) setHpBar(sba,npcFight.hpNpc/Math.max(1,npcFight.maxHpNpc)); // Stage 12: overhead bar on my target
    renderNpcBar(); renderOrbs();
    return;
  }
@@ -3702,9 +4079,16 @@ function npcFightUI(m){
    const ba=npcAvatars[m.npcId];
    // Swings + hitsplats only on real swings — a null hit field means
    // that side never swung (closing tick / gated melee brother).
-   if(typeof m.youHit==='number'){ startSwing(me?avatars[me.username]:null); spawnSplatOn(ba,m.youHit,m.youSpecial); }
-   if(typeof m.npcHit==='number'){ startSwing(ba); spawnSplat(me.username,m.npcHit,false); }
-   if(ba&&ba.isBrother){ ba.hp=m.hpNpc; ba.maxHp=m.maxHpNpc; ba.hpFill.style.width=clamp(m.hpNpc/Math.max(1,m.maxHpNpc)*100,0,100)+'%'; ba.hpWrap.style.display='block'; }
+   // Stage 12: a present outcome field picks the splat (hit / blocked
+   // shield / Miss); absent → the damage-derived splat, as before.
+   if(typeof m.youHit==='number'){ startSwingAt(me?avatars[me.username]:null,ba);
+     if(typeof m.youOutcome==='string') spawnOutcomeSplatOn(ba,m.youOutcome,m.youHit,m.youSpecial);
+     else spawnSplatOn(ba,m.youHit,m.youSpecial); }
+   if(typeof m.npcHit==='number'){ startSwingAt(ba,me?avatars[me.username]:null);
+     if(typeof m.npcOutcome==='string') spawnOutcomeSplat(me.username,m.npcOutcome,m.npcHit,false);
+     else spawnSplat(me.username,m.npcHit,false); }
+   if(ba&&ba.isBrother){ ba.hp=m.hpNpc; ba.maxHp=m.maxHpNpc; }
+   if(ba) setHpBar(ba,m.hpNpc/Math.max(1,m.maxHpNpc)); // overhead bar tracks the fight, green → yellow → red
    const oppName=npcFight.kind==='barrows'? (npcFight.name.split(' ')[0]) : 'goblin';
    const parts=[];
    if(typeof m.youHit==='number') parts.push(`You hit ${m.youHit}${m.youSpecial?' (DRAGON SLASH!)':''}`);
@@ -3720,6 +4104,7 @@ function npcFightUI(m){
    const wasBarrows=(m.kind==='barrows');
    const bName=m.name||(npcFight&&npcFight.name)||'Barrows brother';
    npcFight=null;
+   const endBa=npcAvatars[m.npcId]; if(endBa&&!endBa.isBrother) hideHpBar(endBa); // goblin: fight over — the bar hands back to the snapshot rule (brothers' avatars are removed below)
    $('duelbar').classList.remove('open');
    $('duelflee').style.display='none';
    if(m.profile){ me=m.profile; }
@@ -3780,6 +4165,7 @@ function renderFcBar(){
 }
 function onFcState(m){
  stopFollow();
+ cancelUse(true);
  if(!fcRun){
    fcRun={wave:m.wave,hpYou:m.hpYou,maxHpYou:m.maxHpYou,targetId:null,targetHp:0,energyYou:Math.floor(me?me.specialEnergy||0:0)};
    $('fcbar').classList.add('open');
@@ -3819,14 +4205,14 @@ function onFcTick(m){
    const prev=prevFcHp[u.id];
    if(typeof prev==='number'&&u.hp<prev){
      spawnSplatOn(fcAvatars[u.id],prev-u.hp,false);
-     if(u.id===m.targetId) startSwing(me?avatars[me.username]:null);
+     if(u.id===m.targetId) startSwingAt(me?avatars[me.username]:null,fcAvatars[u.id]);
    }
    prevFcHp[u.id]=u.hp;
    if(fcMonsters[u.id]) fcMonsters[u.id].hp=u.hp;
  }
  for(const id of Object.keys(prevFcHp)){
    if(!aliveIds.has(id)){
-     if(prevFcHp[id]>0){ spawnSplatOn(fcAvatars[id],prevFcHp[id],false); if(id===m.targetId) startSwing(me?avatars[me.username]:null); }
+     if(prevFcHp[id]>0){ spawnSplatOn(fcAvatars[id],prevFcHp[id],false); if(id===m.targetId) startSwingAt(me?avatars[me.username]:null,fcAvatars[id]); }
      delete prevFcHp[id];
    }
  }
@@ -3925,5 +4311,549 @@ renderQuickButtons();
 setInterval(()=>{ if(smithState&&drawerPanel==='smithy') renderDrawer(); refreshChalBadges(); },1000);
 // Stage 7B: follow mode steering (checks 3× a second; stepMovement does the walking).
 setInterval(followTick,300);
+
+/* ================= Stage 9+10 ================= */
+/* ---- §6: click effect on every tap (pooled gold ring + dot) ---- */
+const tapFxPool=[]; let tapFxIdx=0;
+for(let i=0;i<8;i++){ const d=document.createElement('div'); d.className='tapfx'; d.style.display='none'; document.body.appendChild(d); tapFxPool.push(d); }
+document.addEventListener('pointerdown',e=>{
+ const d=tapFxPool[tapFxIdx++%tapFxPool.length];
+ d.style.display='none'; void d.offsetWidth; // restart the animation
+ d.style.left=e.clientX+'px'; d.style.top=e.clientY+'px'; d.style.display='block';
+ clearTimeout(d._t); d._t=setTimeout(()=>{ d.style.display='none'; },380);
+},true);
+
+/* ---- shared world-tap detection (use-mode + long-press) ---- */
+function detectWorldTap(cx,cy){
+ const mouse=new THREE.Vector2((cx/innerWidth)*2-1,-(cy/innerHeight)*2+1);
+ raycaster.setFromCamera(mouse,camera);
+ for(const f of (firesByArea[curArea]||[])){
+   const s=projectTo(sx2w(f.x),1.0,sy2w(f.y));
+   if(s&&Math.hypot(s.x-cx,s.y-cy)<52) return {kind:'fire',fire:f};
+ }
+ if(curArea==='goblins'){
+   for(const [id,a] of Object.entries(npcAvatars)){
+     const s=projectTo(a.group.position.x,1.1,a.group.position.z);
+     if(s&&Math.hypot(s.x-cx,s.y-cy)<48) return {kind:'npc',id};
+   }
+ }
+ if(curArea==='fightcaves'&&fcRun){
+   for(const [id,a] of Object.entries(fcAvatars)){
+     const s=projectTo(a.group.position.x,a.kind==='jad'?3.0:1.4,a.group.position.z);
+     if(s&&Math.hypot(s.x-cx,s.y-cy)<52) return {kind:'fc',id};
+   }
+ }
+ if(curArea==='barrows'){
+   for(const [id,p] of Object.entries(moundProps)){
+     const s=projectTo(p.x,1.4,p.z);
+     if(s&&Math.hypot(s.x-cx,s.y-cy)<52) return {kind:'mound',id};
+   }
+ }
+ if(Object.keys(pileProps).length){
+   for(const p of Object.values(pileProps)){
+     const s=projectTo(p.x,1.0,p.z);
+     if(s&&Math.hypot(s.x-cx,s.y-cy)<52) return {kind:'pile',pile:p.pile};
+   }
+ }
+ if(Object.keys(nodeProps).length){
+   for(const p of Object.values(nodeProps)){
+     const s=projectTo(p.x,1.4,p.z);
+     if(s&&Math.hypot(s.x-cx,s.y-cy)<52) return {kind:'node',node:p.node};
+   }
+ }
+ let best=null,bestD=1e9;
+ for(const [name,a] of Object.entries(avatars)){
+   const s=projectTo(a.group.position.x,1.4,a.group.position.z);
+   if(!s) continue;
+   const d=Math.hypot(s.x-cx,s.y-cy);
+   if(d<44&&d<bestD){ best=name; bestD=d; }
+ }
+ if(best) return {kind:'player',name:best};
+ const groundRoot=areaGroups[curArea];
+ const gh=groundRoot? raycaster.intersectObjects(groundRoot.children.filter(o=>o.geometry&&o.geometry.type==='PlaneGeometry'),false)[0] : null;
+ if(gh) return {kind:'ground',pt:{x:clamp(wx2s(gh.point.x),0,800), y:clamp(wz2s(gh.point.z),0,450)}};
+ return null;
+}
+
+/* ---- §2: use-item-on-target ---- */
+let useMode=null; // {item} while a Use is armed
+let pendingUseCook=null; // {item, fire:{x,y}} — walk to the fire, then cook
+let pendingUseLogs=null; // {x,y} — walk to the spot, then light a fire
+let pendingPreOffer=null; // {with, item} — pre-offer when the trade opens
+function renderUseChip(){
+ const c=$('usechip'); if(!c) return;
+ if(!useMode){ c.style.display='none'; c.innerHTML=''; return; }
+ c.innerHTML=`✋ Using ${itemIconHTML(useMode.item,18)} ${esc(nameOf(useMode.item))} — tap something to use it on · ✖`;
+ c.style.display='block';
+}
+function cancelUse(silent){
+ if(!useMode&&!pendingUseCook&&!pendingUseLogs) return;
+ useMode=null; pendingUseCook=null; pendingUseLogs=null;
+ renderUseChip();
+ if(drawerPanel==='backpack') renderDrawer();
+}
+window.armUse=function(item){
+ if(!me||myQty(item)<1){ toast("You don't have that any more."); return; }
+ useMode={item};
+ renderUseChip();
+ if(drawerPanel==='backpack') renderDrawer(); // paints the pulsing gold outline
+};
+$('usechip').onclick=()=>cancelUse();
+function resolveUseTap(cx,cy){
+ const item=useMode.item;
+ const hit=detectWorldTap(cx,cy);
+ if(!hit){ cancelUse(true); return; }
+ if(hit.kind==='fire'){
+   if(item==='raw_trout'||item==='raw_shrimps'){
+     cancelUse(true);
+     const f=hit.fire;
+     if(myPos&&Math.hypot(myPos.x-f.x,myPos.y-f.y)<=120) send({type:'cook',item});
+     else { pendingUseCook={item,fire:{x:f.x,y:f.y}}; tapTarget={x:f.x,y:f.y}; toast('🚶 Walking to the fire…'); }
+   } else { toast('Nothing happens.'); cancelUse(true); }
+   return;
+ }
+ if(hit.kind==='player'){
+   const name=hit.name;
+   if(me&&name===me.username){ cancelUse(true); return; }
+   const p=players.find(x=>x.username===name);
+   const adminTarget=!!p&&(p.role==='admin'||p.role==='owner');
+   if(item==='certificate'&&adminTarget){ cancelUse(true); openSignScreen(name); return; }
+   if(item==='note'&&adminTarget){ cancelUse(true); send({type:'give_note',to:name}); toast(`📝 You hand your signed note to ${name}.`); return; }
+   if(item==='certificate'||item==='note'){ toast('Those go to an admin.'); cancelUse(true); return; }
+   pendingPreOffer={with:name,item};
+   cancelUse(true);
+   send({type:'trade_request',target:name});
+   toast(`🤝 Trade request sent to ${name}.`);
+   return;
+ }
+ if(hit.kind==='ground'){
+   if(item==='logs'||item.endsWith('_logs')){
+     cancelUse(true);
+     const pt=hit.pt;
+     if(myPos&&Math.hypot(myPos.x-pt.x,myPos.y-pt.y)<=30) send({type:'light_fire'});
+     else { pendingUseLogs=pt; tapTarget=pt; toast('🚶 Walking there to light the fire…'); }
+   } else cancelUse(true); // plain ground cancels use-mode
+   return;
+ }
+ toast('Nothing happens.'); // npc / fc monster / mound / pile / node
+ cancelUse(true);
+}
+function checkPendingUse(){
+ if(!myPos) return;
+ if(pendingUseCook){
+   const f=pendingUseCook.fire;
+   if(Math.hypot(myPos.x-f.x,myPos.y-f.y)<=120){ const it=pendingUseCook.item; pendingUseCook=null; tapTarget=null; send({type:'cook',item:it}); }
+ }
+ if(pendingUseLogs&&Math.hypot(myPos.x-pendingUseLogs.x,myPos.y-pendingUseLogs.y)<=30){
+   pendingUseLogs=null; tapTarget=null; send({type:'light_fire'});
+ }
+}
+function applyPreOffer(){
+ if(!pendingPreOffer||!trade||trade.with!==pendingPreOffer.with) return;
+ const item=pendingPreOffer.item; pendingPreOffer=null;
+ if(!me) return;
+ const idx=me.backpack.findIndex(s=>s.item===item);
+ if(idx<0) return;
+ const inp=$('trp'+idx); if(!inp) return;
+ inp.value=1;
+ const upd=$('tradeupdate'); if(upd) upd.click();
+ toast(`✋ ${nameOf(item)} pre-offered — adjust the amounts, then confirm.`);
+}
+
+/* ---- §3: sign a note, read a note, admin note requests ---- */
+let signTarget=null; // admin username the sign is aimed at, or null
+let pendingGiveAfterSign=null, signSentAt=0, signToastPending=false;
+window.openSignScreen=function(adminName){
+ signTarget=adminName||null;
+ const nm=me? me.username:'';
+ $('signsheet').innerHTML=`<h3>✍️ Sign the note</h3>
+ <div style="font-size:15px;line-height:1.5;background:rgba(255,252,240,.5);border:1px dashed #7a6748;border-radius:8px;padding:10px 12px;margin:8px 0">${esc(nm)}'s request: exchange 1 certificate for 250g.<br>Signed: ${esc(nm)}</div>
+ <p class="note">Signing uses 1 📜 Certificate from your backpack and creates a signed 📝 Note${signTarget?` to hand to <b>${esc(signTarget)}</b>`:''}.</p>
+ <div class="btns"><button class="act" id="signconfirm">${signTarget? `✍️ Sign &amp; give to ${esc(signTarget)}`:'✍️ Sign'}</button><button class="ghost" onclick="closeModal('signmodal')">Cancel</button></div>`;
+ $('signmodal').classList.add('open');
+ $('signconfirm').onclick=()=>{
+   closeModal('signmodal');
+   signSentAt=Date.now();
+   if(signTarget){ pendingGiveAfterSign=signTarget; }
+   else signToastPending=true;
+   signTarget=null;
+   send({type:'sign_note'});
+ };
+};
+function onProfileForNotes(){
+ if(pendingGiveAfterSign){
+   if(myQty('note')>0){ const to=pendingGiveAfterSign; pendingGiveAfterSign=null; send({type:'give_note',to}); toast(`📝 Signed note handed to ${to}.`); }
+   else if(Date.now()-signSentAt>6000) pendingGiveAfterSign=null;
+ }
+ if(signToastPending){
+   if(myQty('note')>0){ signToastPending=false; toast('Signed note created — use it on an admin to hand it over.'); }
+   else if(Date.now()-signSentAt>6000) signToastPending=false;
+ }
+}
+function openNoteReader(m){
+ const when=m.at? new Date(m.at).toLocaleString() : '';
+ $('notesheet').innerHTML=`<h3>📝 Signed note</h3>
+ <div style="font-size:15px;line-height:1.55;background:rgba(255,252,240,.5);border:1px dashed #7a6748;border-radius:8px;padding:10px 12px;margin:8px 0">${esc(m.text||'').replace(/\n/g,'<br>')}</div>
+ <p class="note">from ${esc(m.from||'')}${when?` · ${esc(when)}`:''}</p>
+ <div class="btns"><button class="act" onclick="closeModal('notemodal');armUse('note')">✋ Use — give to an admin</button><button class="ghost" onclick="closeModal('notemodal')">Close</button></div>`;
+ $('notemodal').classList.add('open');
+}
+/* Admin side: note_requests are QUEUED — if one arrives while another
+   note's sheet is open, it waits and shows next (never stomps the open one). */
+let noteReqQueue=[], currentNoteReq=null;
+function queueNoteRequest(m){
+ if(currentNoteReq){ noteReqQueue.push(m); return; }
+ showNoteRequest(m);
+}
+function showNoteRequest(m){
+ currentNoteReq=m;
+ $('notereqsheet').innerHTML=`<div style="text-align:center;font-size:44px">📝</div>
+ <h3 style="text-align:center">Signed note from ${esc(m.from)}</h3>
+ <div class="detail" style="font-size:14px;line-height:1.5">${esc(m.text||'').replace(/\n/g,'<br>')}</div>
+ <p class="note" style="text-align:center">Yes pays them 250g for the certificate. No hands the note back.</p>
+ <div class="btns"><button class="act" id="noteyes">✅ Yes</button><button class="ghost" id="noteno">❌ No</button></div>`;
+ $('notereqmodal').classList.add('open');
+ $('noteyes').onclick=()=>answerNoteReq(true);
+ $('noteno').onclick=()=>answerNoteReq(false);
+}
+function answerNoteReq(accept){
+ if(!currentNoteReq) return;
+ send({type:'note_reply',id:currentNoteReq.id,accept});
+ currentNoteReq=null;
+ closeModal('notereqmodal');
+ if(isAdminOrOwner()) setTimeout(()=>send({type:'admin_notes'}),400);
+ if(noteReqQueue.length) showNoteRequest(noteReqQueue.shift());
+}
+window.openAdminNote=function(id){
+ const n=(lastAdminNotes||[]).find(x=>String(x.id)===String(id));
+ if(n) queueNoteRequest({id:n.id,from:n.from,text:n.text});
+};
+
+/* ---- §8: backpack gestures — tap = primary, hold = full sheet, drag = move/drop ---- */
+function bpCell(s,idx){
+ const hl=highlights.has(s.item);
+ const armed=useMode&&useMode.item===s.item;
+ return `<div class="cell bp-cell ${selStack===s.item?'sel':''}${armed?' usearm':''}" data-item="${s.item}" data-idx="${idx}">${hl?'<span class="hlb">⭐</span>':''}<span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${itemIconHTML(s.item,24)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
+}
+function bpPrimaryTap(item){
+ const d=catalog[item];
+ if(d&&(d.kind==='food'||d.kind==='potion')){ send({type:'use',item}); return; }
+ if(d&&d.slot){ send({type:'equip',item}); return; }
+ if(item==='note'){ send({type:'read_note'}); return; }
+ selStack=selStack===item?null:item; examineStack=null; renderDrawer(); // everything else just opens the sheet
+}
+function makeGhost(item){
+ const g=document.createElement('div'); g.className='dragghost'; g.innerHTML=itemIconHTML(item,30);
+ document.body.appendChild(g); return g;
+}
+function wireBpCells(){
+ document.querySelectorAll('#bpgrid .bp-cell').forEach(cell=>{
+   const item=cell.dataset.item, idx=+cell.dataset.idx;
+   let sx=0,sy=0,lx=0,ly=0,downAt=0,pid=null,holdT=null,holdFired=false,dragging=false,dead=false,ghost=null;
+   const clearHold=()=>{ if(holdT){ clearTimeout(holdT); holdT=null; } };
+   cell.addEventListener('pointerdown',e=>{
+     pid=e.pointerId; sx=lx=e.clientX; sy=ly=e.clientY; downAt=Date.now(); holdFired=false; dragging=false; dead=false;
+     if(useMode){ dead=true; toast('Nothing happens.'); cancelUse(true); return; } // a backpack tap resolves use-mode
+     holdT=setTimeout(()=>{ holdT=null; if(!dragging&&!dead){ holdFired=true; selStack=item; examineStack=null; renderDrawer(); } },450);
+   });
+   cell.addEventListener('pointermove',e=>{
+     if(pid===null||e.pointerId!==pid||dead) return;
+     lx=e.clientX; ly=e.clientY;
+     const dist=Math.hypot(lx-sx,ly-sy);
+     if(!dragging&&Date.now()-downAt<180&&dist>10){ dead=true; clearHold(); return; } // early move = panel scroll, not a gesture
+     if(dist>10) clearHold();
+     if(!dragging&&!holdFired&&Date.now()-downAt>=180&&dist>8){
+       dragging=true; cell.classList.add('dragging'); ghost=makeGhost(item);
+     }
+     if(dragging&&ghost){ ghost.style.left=lx+'px'; ghost.style.top=ly+'px'; }
+   });
+   const finish=e=>{
+     if(pid===null||(e.pointerId!==undefined&&e.pointerId!==pid)) return;
+     pid=null; clearHold();
+     if(ghost){ ghost.remove(); ghost=null; }
+     cell.classList.remove('dragging');
+     if(dead||e.type==='pointercancel') return;
+     if(dragging){
+       dragging=false;
+       const under=document.elementFromPoint(e.clientX,e.clientY);
+       const targetCell=under? under.closest('.bp-cell'):null;
+       if(targetCell&&targetCell!==cell){ send({type:'inv_swap',a:idx,b:+targetCell.dataset.idx}); return; }
+       const drawerEl=$('drawer');
+       if(drawerEl&&under&&!drawerEl.contains(under)){ // released over the 3D view = drop the stack
+         const s=me? me.backpack[idx]:null;
+         if(s&&s.item===item){
+           if(isTokenItem(s.item,catalog[s.item])||s.item==='note') toast("That can't be dropped.");
+           else { send({type:'drop',item:s.item,qty:s.qty}); toast(`⬇️ Dropped ${nameOf(s.item)}${s.qty>1?` x${s.qty}`:''}`); }
+         }
+       }
+       return; // a drag never fires tap/hold
+     }
+     if(holdFired) return; // the hold already opened the sheet — swallow the release
+     if(Math.hypot(lx-sx,ly-sy)>10) return; // it was a scroll
+     bpPrimaryTap(item);
+   };
+   cell.addEventListener('pointerup',finish);
+   cell.addEventListener('pointercancel',finish);
+ });
+}
+function wireBankDrag(){
+ const grids=document.querySelectorAll('#drawerbody .grid');
+ if(grids.length<2) return;
+ const bpGrid=grids[0], bankGrid=grids[1];
+ bpGrid.querySelectorAll('.cell[data-item]').forEach(cell=>{
+   const item=cell.dataset.item, qty=+cell.dataset.qty||1;
+   let sx=0,sy=0,downAt=0,pid=null,dragging=false,dead=false,ghost=null;
+   cell.addEventListener('pointerdown',e=>{ pid=e.pointerId; sx=e.clientX; sy=e.clientY; downAt=Date.now(); dragging=false; dead=false; });
+   cell.addEventListener('pointermove',e=>{
+     if(pid===null||e.pointerId!==pid||dead) return;
+     const dist=Math.hypot(e.clientX-sx,e.clientY-sy);
+     if(!dragging&&Date.now()-downAt<180&&dist>10){ dead=true; return; }
+     if(!dragging&&Date.now()-downAt>=180&&dist>8){
+       dragging=true; cell.classList.add('dragging'); ghost=makeGhost(item);
+       cell.dataset.savedOnclick=cell.getAttribute('onclick')||''; cell.removeAttribute('onclick'); // the drag must not also deposit on release
+     }
+     if(dragging&&ghost){ ghost.style.left=e.clientX+'px'; ghost.style.top=e.clientY+'px'; }
+   });
+   const finish=e=>{
+     if(pid===null||(e.pointerId!==undefined&&e.pointerId!==pid)) return;
+     pid=null;
+     if(ghost){ ghost.remove(); ghost=null; }
+     cell.classList.remove('dragging');
+     if(dragging){
+       dragging=false;
+       const under=document.elementFromPoint(e.clientX,e.clientY);
+       if(under&&bankGrid.contains(under)) send({type:'bank_deposit',item,qty});
+       setTimeout(()=>{ if(cell.dataset.savedOnclick!==undefined){ cell.setAttribute('onclick',cell.dataset.savedOnclick); delete cell.dataset.savedOnclick; } },60);
+     }
+   };
+   cell.addEventListener('pointerup',finish);
+   cell.addEventListener('pointercancel',finish);
+ });
+}
+
+/* ---- §8: world long-press context sheets ---- */
+function openCtxSheet(title,actions){
+ $('ctxsheet').innerHTML=`<h3>${title}</h3><div class="btns" style="flex-direction:column;align-items:stretch"></div>`;
+ const box=$('ctxsheet').querySelector('.btns');
+ for(const a of actions){
+   const b=document.createElement('button'); b.className='act'; b.textContent=a.label;
+   b.onclick=()=>{ closeModal('ctxmodal'); if(a.fn) a.fn(); };
+   box.appendChild(b);
+ }
+ $('ctxmodal').classList.add('open');
+}
+function ctxExamine(title,body){
+ $('ctxsheet').innerHTML=`<h3>${title}</h3><p>${body}</p><div class="btns"><button class="ghost" onclick="closeModal('ctxmodal')">Close</button></div>`;
+ $('ctxmodal').classList.add('open');
+}
+function handleLongPress(cx,cy){
+ if(!me) return;
+ lastManualTapAt=Date.now();
+ if(useMode){ toast('Nothing happens.'); cancelUse(true); return; }
+ const hit=detectWorldTap(cx,cy);
+ if(!hit) return;
+ if(hit.kind==='player'){
+   if(hit.name!==me.username) openPlayerMenu(hit.name);
+   return;
+ }
+ if(hit.kind==='npc'){
+   const n=npcList.find(x=>x.id===hit.id);
+   const nm=n? (n.name||'Goblin'):'Goblin';
+   openCtxSheet(`🥊 ${esc(nm)}`,[
+     {label:'⚔️ Attack',fn:()=>attackNpc(hit.id)},
+     {label:'🔍 Examine',fn:()=>ctxExamine(`🥊 ${esc(nm)}`,`Combat level ${n? (n.combatLevel||5):5}. It drops coins and goblin gear when beaten.`)}
+   ]);
+   return;
+ }
+ if(hit.kind==='fc'){
+   const mon=fcMonsters[hit.id];
+   const nm=mon? mon.name:'Monster';
+   openCtxSheet(`🌋 ${esc(nm)}`,[
+     {label:'⚔️ Attack',fn:()=>attackFcMonster(hit.id)},
+     {label:'🔍 Examine',fn:()=>ctxExamine(`🌋 ${esc(nm)}`,`${mon? `${Math.max(0,mon.hp)} / ${mon.maxHp} HP left in this wave.`:'A Fight Caves monster.'}`)}
+   ]);
+   return;
+ }
+ if(hit.kind==='node'){
+   const n=hit.node, v=GATHER_VERB[n.kind]||['✨','Work'];
+   openCtxSheet(`${v[0]} ${esc(n.name)}`,[
+     {label:`${v[0]} ${v[1]}`,fn:()=>tapNode(n)},
+     {label:'🔍 Examine',fn:()=>ctxExamine(`${v[0]} ${esc(n.name)}`,`Level ${n.level||1} ${v[1]}. ${n.depleted?'Used up right now — it grows back shortly.':'Tap it to get started.'}`)}
+   ]);
+   return;
+ }
+ if(hit.kind==='pile'){
+   const p=hit.pile;
+   openCtxSheet(`🎒 ${esc(nameOf(p.item))}${p.qty>1?` x${p.qty}`:''}`,[
+     {label:'🎒 Pick up',fn:()=>tapPile(p)},
+     {label:'🔍 Examine',fn:()=>ctxExamine(`🎒 ${esc(nameOf(p.item))}`,`A dropped pile on the ground${p.owner?` — dropped by ${esc(p.owner)}`:''}. Tap it to pick it up.`)}
+   ]);
+   return;
+ }
+ if(hit.kind==='mound'){
+   openCtxSheet('💀 Barrows mound',[
+     {label:'💀 Enter the crypt',fn:()=>tapMound(hit.id)},
+     {label:'🔍 Examine',fn:()=>ctxExamine('💀 Barrows mound','One of the six brothers sleeps below. Tap the mound to climb down and wake him.')}
+   ]);
+   return;
+ }
+ if(hit.kind==='ground'){
+   openCtxSheet('🚶 Ground',[
+     {label:'🚶 Walk here',fn:()=>{ stopFollow(); if(settings.tapMode==='face') faceToward(hit.pt); else tapTarget=hit.pt; }},
+     {label:'✖ Cancel',fn:null}
+   ]);
+   return;
+ }
+ if(hit.kind==='fire'){
+   ctxExamine('🔥 Fire','A crackling fire. Cook raw fish on it — use a raw trout or shrimps on the flames.');
+ }
+}
+
+/* ---- §9: appearance sheet ---- */
+const HAIR_NAMES=['Blonde','Brown','Black'];
+const BEARD_NAMES=['Clean Shaven','Short Beard','Full Beard'];
+const SKIN_NAMES=['Pale','Tan','Dark'];
+const OUTFIT_NAMES=['Leather','Dark Brown','Forest','Ocean','Crimson','Iron'];
+const SKIN_HEX=['#f2c9a0','#d9a066','#8a5a33'];
+const HAIR_HEX=['#e8c96a','#6b4226','#1c1a18'];
+const OUTFIT_HEX=['#8a6b4a','#5d4028','#3f7a3a','#2c4a8a','#8e2f32','#555a60'];
+const DEFAULT_APP={gender:'male',hair:1,beard:0,skin:1,torso:0,arms:0,legs:0,feet:0,chosen:false};
+let appDraft=null, appOpen=false, appShownThisSession=false, appAwaitSave=false;
+function savedAppearance(){ return (me&&me.appearance)? Object.assign({},DEFAULT_APP,me.appearance) : Object.assign({},DEFAULT_APP); }
+window.openAppearance=function(){
+ appDraft=savedAppearance();
+ appOpen=true; appShownThisSession=true;
+ renderAppSheet();
+ $('appmodal').classList.add('open');
+ rebuildMyKnight(appDraft,'__draft__'); // show the draft on my knight right away
+};
+function maybeOpenAppearance(){
+ if(!me||!me.appearance||me.appearance.chosen) return;
+ if(appShownThisSession||appOpen) return;
+ openAppearance();
+}
+function renderAppSheet(){
+ if(!appDraft) return;
+ const d=appDraft;
+ const sw=(hex,sel,fn)=>`<span class="appsw ${sel?'sel':''}" style="background:${hex}" onclick="${fn}"></span>`;
+ const outfitRow=(field,label)=>`<div class="approw"><span class="alab">${label}</span>${OUTFIT_HEX.map((hx,i)=>sw(hx,d[field]===i,`appSet('${field}',${i})`)).join('')}<span class="note" style="color:#4a3826">${OUTFIT_NAMES[d[field]]}</span></div>`;
+ $('appsheet').innerHTML=`<h3>🎨 Create your character</h3>
+ <div class="approw"><span class="alab">Gender</span><button class="appseg ${d.gender==='male'?'sel':''}" onclick="appSet('gender','male')">Male</button><button class="appseg ${d.gender==='female'?'sel':''}" onclick="appSet('gender','female')">Female</button></div>
+ <div class="approw"><span class="alab">Hair</span><button class="appcyc" onclick="appCycle('hair',-1)">◀</button><span class="appsw" style="background:${HAIR_HEX[d.hair]}"></span><b>${HAIR_NAMES[d.hair]}</b><button class="appcyc" onclick="appCycle('hair',1)">▶</button></div>
+ <div class="approw"><span class="alab">Beard</span><button class="appcyc ${d.gender==='female'?'dis':''}" onclick="appCycle('beard',-1)">◀</button><b>${d.gender==='female'?'—':BEARD_NAMES[d.beard]}</b><button class="appcyc ${d.gender==='female'?'dis':''}" onclick="appCycle('beard',1)">▶</button>${d.gender==='female'?'<span class="note" style="color:#4a3826">(male only)</span>':''}</div>
+ <div class="approw"><span class="alab">Skin</span>${SKIN_HEX.map((hx,i)=>sw(hx,d.skin===i,`appSet('skin',${i})`)).join('')}<span class="note" style="color:#4a3826">${SKIN_NAMES[d.skin]}</span></div>
+ <h4 style="margin:10px 0 2px;color:#5d4028">Outfit colours</h4>
+ ${outfitRow('torso','Torso')}${outfitRow('arms','Arms')}${outfitRow('legs','Legs')}${outfitRow('feet','Feet')}
+ <p class="note" style="color:#4a3826;margin-top:6px">Your knight updates live behind this sheet.</p>
+ <div class="btns" style="margin-top:8px"><button class="act" onclick="appAccept()">✔ Accept</button><button class="ghost" onclick="appCancel()">✖ Cancel</button></div>`;
+}
+window.appSet=function(f,v){ if(!appDraft) return; appDraft[f]=v; renderAppSheet(); rebuildMyKnight(appDraft,'__draft__'); };
+window.appCycle=function(f,dir){ if(!appDraft) return; appDraft[f]=(((appDraft[f]+dir)%3)+3)%3; renderAppSheet(); rebuildMyKnight(appDraft,'__draft__'); };
+window.appAccept=function(){
+ if(!appDraft) return;
+ appAwaitSave=true;
+ send({type:'set_appearance',appearance:Object.assign({},appDraft)});
+};
+window.appCancel=function(){
+ appOpen=false; appDraft=null;
+ closeModal('appmodal');
+ rebuildMyKnight(savedAppearance());
+};
+function onProfileForAppearance(){
+ if(appAwaitSave&&me&&me.appearance&&me.appearance.chosen){
+   appAwaitSave=false; appOpen=false; appDraft=null;
+   closeModal('appmodal');
+   rebuildMyKnight(savedAppearance());
+   toast('🎨 Appearance saved!');
+ }
+}
+function rebuildMyKnight(app,key){
+ if(!me) return;
+ const a=avatars[me.username]; if(!a) return;
+ const keep={x:a.x,z:a.z,tx:a.tx,tz:a.tz,rot:a.rot};
+ scene.remove(a.group); a.label.remove();
+ const na=makeKnight(true,me.username,app);
+ Object.assign(na,keep);
+ const sp=players.find(p=>p.username===me.username);
+ na.akey=(key!==undefined)? key : JSON.stringify((sp&&sp.appearance)||null);
+ na.group.position.set(na.x,0,na.z); na.group.rotation.y=na.rot;
+ avatars[me.username]=na; scene.add(na.group);
+ syncAvatars(); // re-applies badges / prayer / activity to the fresh label
+}
+
+/* ---- Amendment B: hold-and-drag buttons + fight box, Clear chip ---- */
+const BTN_POS_KEY='nallystake_btn_pos', FIGHT_POS_KEY='nallystake_fightbox_pos';
+function loadBtnPos(){ try{ return JSON.parse(localStorage.getItem(BTN_POS_KEY)||'{}')||{}; }catch(e){ return {}; } }
+function applyBtnPositions(){
+ const pos=loadBtnPos();
+ document.querySelectorAll('#railset .rbtn').forEach(b=>{
+   const p=pos[b.dataset.panel];
+   if(p){ b.style.position='fixed'; b.style.left=p.l+'px'; b.style.top=p.t+'px'; b.style.zIndex='60'; }
+ });
+ let fp=null; try{ fp=JSON.parse(localStorage.getItem(FIGHT_POS_KEY)||'null'); }catch(e){}
+ if(fp) for(const id of ['duelbar','fcbar']){ const el=$(id); if(el){ el.style.left=fp.l+'px'; el.style.top=fp.t+'px'; el.style.bottom='auto'; } }
+}
+function wireHoldDrag(handle,moveEl,save){
+ let sx=0,sy=0,pid=null,holdT=null,armed=false,dragging=false,startL=0,startT=0;
+ handle.addEventListener('pointerdown',e=>{
+   if(pid!==null) return;
+   pid=e.pointerId; sx=e.clientX; sy=e.clientY; armed=false; dragging=false;
+   try{ handle.setPointerCapture(pid); }catch(err){}
+   holdT=setTimeout(()=>{ holdT=null; armed=true; },450);
+ });
+ handle.addEventListener('pointermove',e=>{
+   if(pid===null||e.pointerId!==pid) return;
+   const dx=e.clientX-sx, dy=e.clientY-sy;
+   if(!armed&&holdT&&Math.hypot(dx,dy)>10){ clearTimeout(holdT); holdT=null; } // moved before the hold armed — plain press
+   if(armed&&!dragging){
+     dragging=true;
+     const r=moveEl.getBoundingClientRect();
+     moveEl.style.position='fixed'; moveEl.style.left=r.left+'px'; moveEl.style.top=r.top+'px'; moveEl.style.bottom='auto'; moveEl.style.zIndex='70';
+     startL=r.left; startT=r.top;
+   }
+   if(dragging){ moveEl.style.left=(startL+dx)+'px'; moveEl.style.top=(startT+dy)+'px'; }
+ });
+ const finish=e=>{
+   if(pid===null||(e.pointerId!==undefined&&e.pointerId!==pid)) return;
+   pid=null;
+   if(holdT){ clearTimeout(holdT); holdT=null; }
+   if(dragging){
+     dragging=false;
+     const r=moveEl.getBoundingClientRect();
+     save(Math.round(r.left),Math.round(r.top));
+     handle._suppressClickUntil=Date.now()+350; // a drag never fires the tap action
+   } else if(armed){
+     handle._suppressClickUntil=Date.now()+350; // a hold that ended where it started = no action
+   }
+   armed=false;
+ };
+ handle.addEventListener('pointerup',finish);
+ handle.addEventListener('pointercancel',finish);
+}
+document.querySelectorAll('#railset .rbtn').forEach(b=>{
+ wireHoldDrag(b,b,(l,t)=>{ const pos=loadBtnPos(); pos[b.dataset.panel]={l,t}; try{ localStorage.setItem(BTN_POS_KEY,JSON.stringify(pos)); }catch(e){} });
+});
+function saveFightPos(l,t){
+ try{ localStorage.setItem(FIGHT_POS_KEY,JSON.stringify({l,t})); }catch(e){}
+ for(const id of ['duelbar','fcbar']){ const el=$(id); if(el){ el.style.left=l+'px'; el.style.top=t+'px'; el.style.bottom='auto'; } }
+}
+wireHoldDrag($('dueltitle'),$('duelbar'),saveFightPos); // drag by the banner — inner buttons still tap
+wireHoldDrag($('fctitle'),$('fcbar'),saveFightPos);
+applyBtnPositions();
+let railClearArmed=false, railClearTimer=null;
+$('railclear').onclick=()=>{
+ if(!railClearArmed){
+   railClearArmed=true;
+   $('railclear').textContent='Sure?'; $('railclear').classList.add('sure');
+   railClearTimer=setTimeout(()=>{ railClearArmed=false; $('railclear').textContent='🧹 Clear'; $('railclear').classList.remove('sure'); },2500);
+   return;
+ }
+ clearTimeout(railClearTimer); railClearArmed=false;
+ $('railclear').textContent='🧹 Clear'; $('railclear').classList.remove('sure');
+ try{ localStorage.removeItem(BTN_POS_KEY); localStorage.removeItem(FIGHT_POS_KEY); }catch(e){}
+ document.querySelectorAll('#railset .rbtn').forEach(b=>{ b.style.position=''; b.style.left=''; b.style.top=''; b.style.zIndex=''; });
+ for(const id of ['duelbar','fcbar']){ const el=$(id); if(el){ el.style.left=''; el.style.top=''; el.style.bottom=''; } }
+ toast('🧹 Button spots reset.');
+};
 </script>
 </body></html>
