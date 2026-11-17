@@ -879,7 +879,7 @@ const server = http.createServer(async (req, res) => {
 // ---------- Real-time play ----------
 const wss = new WebSocketServer({ server, path: '/ws' });
 const online = new Map(); // usernameKey -> { ws, profile, x, y, area, duelId, npcFightId }
-const challenges = new Map(); // id -> { id, from, to, stake, items, itemsTo, rules, confirm: {from,to}, expires } (Stage 14)
+const challenges = new Map(); // id -> { id, from, to, stake, items, itemsTo, rules, freePlay, confirm: {from,to}, expires } (Stage 14/15)
 const duels = new Map(); // id -> duel
 // Stage 7A pending flows (session-only, like challenges):
 const fightOffers = new Map(); // id -> { id, runnerKey, aKey, bKey, accepted: Map/key->bool, expires, timer }
@@ -961,7 +961,7 @@ function challengeTermsMsg(ch) {
     from: fromU ? fromU.profile.username : ch.from,
     to: toU ? toU.profile.username : ch.to,
     stake: ch.stake, items: ch.items, itemsTo: ch.itemsTo,
-    rules: ch.rules, confirm: { from: ch.confirm.from, to: ch.confirm.to },
+    rules: ch.rules, freePlay: ch.freePlay, confirm: { from: ch.confirm.from, to: ch.confirm.to },
     seconds: Math.max(0, Math.ceil((ch.expires - Date.now()) / 1000)),
   };
 }
@@ -982,23 +982,36 @@ function applyChallengeTerms(ch, senderKey, m) {
   const mine = senderKey === ch.from ? ch.items : ch.itemsTo;
   const theirs = senderKey === ch.from ? ch.itemsTo : ch.items;
   let stake = ch.stake, rules = ch.rules, myItems = mine;
-  if (m.stake !== undefined) {
-    stake = Math.floor(+m.stake || 0);
-    if (stake < 0 || stake > sender.gold || stake > other.gold) return 'Gold stake must be up to what you both have.';
-  }
-  if (m.items !== undefined) {
-    myItems = sanitizeItems(m.items);
-    if (myItems.some((s) => s.item === 'note')) return NOTE_PERSONAL_MSG;
-    if (!hasItems(sender, myItems)) return 'You don\'t have all the items you tried to stake.';
+  let freePlay = ch.freePlay;
+  if (m.freePlay !== undefined) freePlay = !!m.freePlay;
+  if (freePlay) {
+    // Stage 15: Free Play coerces the terms — the gold stake is
+    // forced to 0 and BOTH item stakes are forced empty, whatever
+    // the screen sent. (Flipping Free Play on is itself a terms
+    // change: the confirms reset below, like any other change.)
+    stake = 0; myItems = [];
+  } else {
+    if (m.stake !== undefined) {
+      stake = Math.floor(+m.stake || 0);
+      if (stake < 0 || stake > sender.gold || stake > other.gold) return 'Gold stake must be up to what you both have.';
+    }
+    if (m.items !== undefined) {
+      myItems = sanitizeItems(m.items);
+      if (myItems.some((s) => s.item === 'note')) return NOTE_PERSONAL_MSG;
+      if (!hasItems(sender, myItems)) return 'You don\'t have all the items you tried to stake.';
+    }
   }
   if (m.rules !== undefined) rules = cleanDuelRules(m.rules);
-  if (stake < 1 && myItems.length === 0 && theirs.length === 0) return 'Stake at least 1g, or stake items.';
+  if (!freePlay && stake < 1 && myItems.length === 0 && theirs.length === 0) return 'Stake at least 1g, or stake items.';
   const changed = stake !== ch.stake
+    || freePlay !== ch.freePlay
     || JSON.stringify(rules) !== JSON.stringify(ch.rules)
-    || JSON.stringify(myItems) !== JSON.stringify(mine);
+    || JSON.stringify(myItems) !== JSON.stringify(mine)
+    || (freePlay && theirs.length > 0); // coercion also empties the OTHER side's item stake
   if (changed) {
-    ch.stake = stake; ch.rules = rules;
+    ch.stake = stake; ch.rules = rules; ch.freePlay = freePlay;
     if (senderKey === ch.from) ch.items = myItems; else ch.itemsTo = myItems;
+    if (freePlay) { ch.items = []; ch.itemsTo = []; }
     ch.confirm.from = false; ch.confirm.to = false;
   }
   return null;
@@ -1458,24 +1471,34 @@ function endDuel(duel, winnerKey, reason) {
   const winner = db.users[winnerKey].profile;
   const loserKey = duel.a === winnerKey ? duel.b : duel.a;
   const loser = db.users[loserKey].profile;
-  winner.gold += duel.pot; // escrow pays out — server held both stakes
-  // Item escrow: winner takes every staked item. Anything that cannot fit
-  // the winner's backpack overflows into their bank so nothing is lost.
   const itemsWon = [];
-  for (const s of duel.escrowItems) {
-    const leftover = addStacks(winner.backpack, s.item, s.qty, BACKPACK_MAX_STACKS);
-    if (leftover > 0) addStacks(winner.bank, s.item, leftover);
-    itemsWon.push({ item: s.item, qty: s.qty });
+  let officialRunner = null;
+  if (duel.freePlay) {
+    // Stage 15: a FREE PLAY duel is a practice fight — nothing was
+    // escrowed at the start, so nothing pays out here: no pot, no
+    // item transfer, NO rating change and NO win/loss record change
+    // for either player (win, lose, flee or forfeit alike). The
+    // saves below still run, so combat XP earned from damage dealt
+    // during the fight is kept exactly as in a staked duel.
+  } else {
+    winner.gold += duel.pot; // escrow pays out — server held both stakes
+    // Item escrow: winner takes every staked item. Anything that cannot fit
+    // the winner's backpack overflows into their bank so nothing is lost.
+    for (const s of duel.escrowItems) {
+      const leftover = addStacks(winner.backpack, s.item, s.qty, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(winner.bank, s.item, leftover);
+      itemsWon.push({ item: s.item, qty: s.qty });
+    }
+    // Stage 7A: an OFFICIAL duel (run by a certified mod / admin /
+    // owner for 1 NC) pays its winner a Certificate — backpack first,
+    // overflow to the bank, exactly like item escrow above. This runs
+    // before the saves and the duel_end profiles below, so the win is
+    // already visible in both.
+    officialRunner = duel.official && duel.official.runner ? String(duel.official.runner) : null;
+    if (officialRunner) addItemToProfile(winner, 'certificate', 1);
+    winner.wins += 1; loser.losses += 1;
+    winner.rating += 11; loser.rating = Math.max(0, loser.rating - 11);
   }
-  // Stage 7A: an OFFICIAL duel (run by a certified mod / admin /
-  // owner for 1 NC) pays its winner a Certificate — backpack first,
-  // overflow to the bank, exactly like item escrow above. This runs
-  // before the saves and the duel_end profiles below, so the win is
-  // already visible in both.
-  const officialRunner = duel.official && duel.official.runner ? String(duel.official.runner) : null;
-  if (officialRunner) addItemToProfile(winner, 'certificate', 1);
-  winner.wins += 1; loser.losses += 1;
-  winner.rating += 11; loser.rating = Math.max(0, loser.rating - 11);
   save(winnerKey); save(loserKey);
   for (const k of [duel.a, duel.b]) {
     const p = online.get(k);
@@ -1484,14 +1507,15 @@ function endDuel(duel, winnerKey, reason) {
       // Stage 5: the fight is over — both fighters return to the plaza.
       p.area = 'plaza';
       p.x = AREAS.plaza.spawn.x; p.y = AREAS.plaza.spawn.y;
-      send(p.ws, { type: 'duel_end', winner: winner.username, reason, pot: duel.pot, itemsWon, profile: publicProfile(db.users[k].profile) });
+      send(p.ws, { type: 'duel_end', winner: winner.username, reason, pot: duel.pot, itemsWon, freePlay: !!duel.freePlay, profile: publicProfile(db.users[k].profile) });
       send(p.ws, { type: 'area', area: 'plaza' });
       send(p.ws, pilesMsg('plaza'));
       send(p.ws, alliesMsg('plaza')); // Stage 6: your guardian waited for you in the plaza
       send(p.ws, objectsMsg('plaza')); // Stage 7D: placed objects in the plaza
     }
   }
-  broadcast({ type: 'chat', from: 'Duel Master', text: `${winner.username} beat ${loser.username} for ${duel.pot}g (${reason}).` });
+  if (duel.freePlay) broadcast({ type: 'chat', from: 'Duel Master', text: `🆓 ${winner.username} wins the free play fight against ${loser.username} (${reason}) — no stakes, no record.` });
+  else broadcast({ type: 'chat', from: 'Duel Master', text: `${winner.username} beat ${loser.username} for ${duel.pot}g (${reason}).` });
   // Stage 7A: official-duel settlement is announced game-wide, and
   // the runner hears it directly as well (the broadcast already
   // reaches them; the admin_note makes it unmissable in their feed).
@@ -1504,7 +1528,7 @@ function endDuel(duel, winnerKey, reason) {
   broadcastState();
 }
 
-function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null, rules = null) {
+function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null, rules = null, freePlay = false) {
   // Stage 7B: a duel starting cancels any open trade involving either
   // fighter first — the trade's other party is notified, nothing moves.
   for (const t of [...trades.values()]) {
@@ -1517,12 +1541,20 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
   // the prayer handler refuses to switch one on again.
   const duelRules = cleanDuelRules(rules);
   if (duelRules.noPrayer) { a.activePrayer = null; b.activePrayer = null; }
-  // Escrow: both gold stakes AND both item stakes leave purses/backpacks
-  // before the first tick. A decline never reaches here, so takes nothing.
-  a.gold -= stake; b.gold -= stake;
+  // Stage 15: Free Play is a practice fight — the stakes are forced
+  // to nothing HERE as well as on the challenge screen, so no caller
+  // can stake a free play duel by mistake, and escrow is skipped
+  // entirely: no gold or items leave anyone's purse or backpack.
+  const fp = !!freePlay;
+  if (fp) { stake = 0; itemsA = []; itemsB = []; }
   const escrowItems = [];
-  for (const s of itemsA) { removeStacks(a.backpack, s.item, s.qty); addStacks(escrowItems, s.item, s.qty); }
-  for (const s of itemsB) { removeStacks(b.backpack, s.item, s.qty); addStacks(escrowItems, s.item, s.qty); }
+  if (!fp) {
+    // Escrow: both gold stakes AND both item stakes leave purses/backpacks
+    // before the first tick. A decline never reaches here, so takes nothing.
+    a.gold -= stake; b.gold -= stake;
+    for (const s of itemsA) { removeStacks(a.backpack, s.item, s.qty); addStacks(escrowItems, s.item, s.qty); }
+    for (const s of itemsB) { removeStacks(b.backpack, s.item, s.qty); addStacks(escrowItems, s.item, s.qty); }
+  }
   save(aKey); save(bKey);
   const id = crypto.randomBytes(6).toString('hex');
   // Stage 5: this duel is fought in one of the four arenas, picked at
@@ -1544,6 +1576,7 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
     arena: { id: arenaDef.id, name: arenaDef.name },
     official: official || null, // Stage 7A: { runner: username } for mod-run fights
     rules: duelRules, // Stage 14: { noPrayer, noPotions, noFood, noSpecial } — enforced by the prayer/use/special handlers
+    freePlay: fp, // Stage 15: practice fight — endDuel settles nothing (no pot, no record, no rating)
   };
   duels.set(id, duel);
   const sessA = online.get(aKey), sessB = online.get(bKey);
@@ -1559,7 +1592,7 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
   for (const k of [aKey, bKey]) {
     const p = online.get(k);
     send(p.ws, { type: 'area', area: 'arena' });
-    send(p.ws, { type: 'duel_start', duelId: id, stake, pot: duel.pot, escrowItems, arena: duel.arena, official: duel.official, rules: duel.rules, countdownTicks: COUNTDOWN_TICKS, you: db.users[k].profile.username, opponent: db.users[k === aKey ? bKey : aKey].profile.username, profile: publicProfile(db.users[k].profile) });
+    send(p.ws, { type: 'duel_start', duelId: id, stake, pot: duel.pot, escrowItems, arena: duel.arena, official: duel.official, rules: duel.rules, freePlay: duel.freePlay, countdownTicks: COUNTDOWN_TICKS, you: db.users[k].profile.username, opponent: db.users[k === aKey ? bKey : aKey].profile.username, profile: publicProfile(db.users[k].profile) });
   }
   broadcast({ type: 'chat', from: 'Duel Master', text: `${a.username} vs ${b.username} — now fighting in the ${arenaDef.name}!` });
   broadcastState();
@@ -4386,8 +4419,13 @@ wss.on('connection', (ws, req) => {
     // ----- Challenges & duels -----
     if (m.type === 'challenge') {
       const targetKey = String(m.target || '').toLowerCase();
-      const stake = Math.floor(+m.stake || 0);
-      const items = sanitizeItems(m.items);
+      let stake = Math.floor(+m.stake || 0);
+      let items = sanitizeItems(m.items);
+      // Stage 15: a Free Play challenge stakes nothing — coerce here
+      // too, so the stored terms are already clean before the first
+      // challenge_terms push.
+      const freePlay = !!m.freePlay;
+      if (freePlay) { stake = 0; items = []; }
       if (items.some((s) => s.item === 'note')) return send(ws, { type: 'error', message: NOTE_PERSONAL_MSG }); // Stage 9: notes are personal
       const target = online.get(targetKey);
       if (!target || targetKey === key) return send(ws, { type: 'error', message: 'Pick another online player.' });
@@ -4395,7 +4433,7 @@ wss.on('connection', (ws, req) => {
       if (me.npcFightId || target.npcFightId) return send(ws, { type: 'error', message: 'One of you is fighting a monster.' });
       if (me.barrowsFightId || target.barrowsFightId) return send(ws, { type: 'error', message: 'One of you is fighting a Barrows brother.' });
       if (me.fcRunId || target.fcRunId) return send(ws, { type: 'error', message: 'One of you is in the Fight Caves.' });
-      if (items.length === 0 && stake < 1) return send(ws, { type: 'error', message: 'Stake at least 1g, or stake items.' });
+      if (!freePlay && items.length === 0 && stake < 1) return send(ws, { type: 'error', message: 'Stake at least 1g, or stake items.' });
       if (stake < 0 || stake > profile.gold || stake > target.profile.gold) return send(ws, { type: 'error', message: 'Gold stake must be up to what you both have.' });
       if (!hasItems(profile, items)) return send(ws, { type: 'error', message: 'You don\'t have all the items you tried to stake.' });
       const id = crypto.randomBytes(6).toString('hex');
@@ -4403,12 +4441,12 @@ wss.on('connection', (ws, req) => {
       // it carries the agreed rules and BOTH sides' stakes, and waits
       // for both confirms (challenge_confirm) instead of starting on
       // the target's accept.
-      const ch = { id, from: key, to: targetKey, stake, items, itemsTo: [], rules: cleanDuelRules(m.rules), confirm: { from: false, to: false }, expires: Date.now() + 30000 };
+      const ch = { id, from: key, to: targetKey, stake, items, itemsTo: [], rules: cleanDuelRules(m.rules), freePlay, confirm: { from: false, to: false }, expires: Date.now() + 30000 };
       challenges.set(id, ch);
-      send(target.ws, { type: 'challenge_incoming', challengeId: id, from: profile.username, stake, items, rules: ch.rules, seconds: 30 });
+      send(target.ws, { type: 'challenge_incoming', challengeId: id, from: profile.username, stake, items, rules: ch.rules, freePlay: ch.freePlay, seconds: 30 });
       broadcastChallenging(key, targetKey); // Stage 7C: '!' over the challenger
       pushChallengeTerms(ch); // both screens open on the same terms
-      send(ws, { type: 'chat', from: 'Game', text: `Challenge sent to ${target.profile.username} for ${stake}g${items.length ? ' + items' : ''}.` });
+      send(ws, { type: 'chat', from: 'Game', text: freePlay ? `Challenge sent to ${target.profile.username} — 🆓 free play, no stakes.` : `Challenge sent to ${target.profile.username} for ${stake}g${items.length ? ' + items' : ''}.` });
     }
     if (m.type === 'challenge_response') {
       const ch = challenges.get(m.challengeId);
@@ -4429,7 +4467,7 @@ wss.on('connection', (ws, req) => {
       // confirms reset if it changed anything, and the shared terms
       // go back out to both screens. The duel starts on the second
       // challenge_confirm (below). Escrow still only happens there.
-      const myItems = sanitizeItems(m.items);
+      const myItems = ch.freePlay ? [] : sanitizeItems(m.items); // Stage 15: Free Play stakes no items, whatever the accept carried
       if (myItems.some((s) => s.item === 'note')) return send(ws, { type: 'error', message: NOTE_PERSONAL_MSG }); // Stage 9: notes are personal
       if (!hasItems(profile, myItems)) return send(ws, { type: 'error', message: 'You don\'t have all the items you tried to stake.' });
       if (JSON.stringify(myItems) !== JSON.stringify(ch.itemsTo)) { ch.itemsTo = myItems; ch.confirm.from = false; ch.confirm.to = false; }
@@ -4476,7 +4514,7 @@ wss.on('connection', (ws, req) => {
       if (!hasItems(db.users[ch.to].profile, ch.itemsTo)) return failStart('The challenged player no longer has the staked items.');
       challenges.delete(m.challengeId);
       broadcastChallengeClear(ch.from); // Stage 7C: resolved — the '!' comes down
-      startDuel(ch.from, ch.to, ch.stake, ch.items, ch.itemsTo, null, ch.rules);
+      startDuel(ch.from, ch.to, ch.stake, ch.items, ch.itemsTo, null, ch.rules, ch.freePlay);
     }
     // Stage 14: either side cancels the configuration — the decline
     // path's twin for the challenger (and for a target who already
