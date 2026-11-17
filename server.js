@@ -6,9 +6,10 @@
 //
 // Phase 2 adds (all server-side, all saved per player): backpack / worn /
 // bank item state, an item catalog with 4 shops, tap-to-wear equipping,
-// consumables, Dragon Slash specials, item staking, the Bank of Gielinor
-// (items only — gold stays a profile number), a drifting Gold Exchange,
-// and OSRS Protect prayers (toggle/drain/badge).
+// consumables, Dragon Slash specials, item staking, the Bank of Gielinor,
+// a drifting Gold Exchange, and OSRS Protect prayers (toggle/drain/badge).
+// (Stage 16 later made gold itself a bankable coin-stack item — see
+// ITEMS.gold and the gold helpers.)
 //
 // Stage 1 (catch-up) adds: the skills foundation (13 skills on the real
 // OSRS XP curve, total level + OSRS combat level, saved per player), the
@@ -326,6 +327,23 @@ ITEMS.certificate = { name: 'Certificate', icon: '📜', kind: 'token', sellOnly
 // ({type:'give_note'}) as a request, so the drop / trade / duel-stake
 // paths all refuse it with NOTE_PERSONAL_MSG.
 ITEMS.note = { name: 'Note', icon: '📝', kind: 'note', sellOnly: 0 };
+// Stage 16: GOLD IS AN ITEM. Derek: "rework the gold for staking
+// and make it an item as well rather than it being stored in a
+// 'pouch'." A player's money is a stack of this in their backpack
+// and/or bank — kind 'currency': it IS money, so it is never sold
+// by shops (no `buy`), never on the Gold Exchange (not in GOODS),
+// and sellPrice() is 0 with the shop / Exchange handlers refusing
+// it outright. It stacks, banks, drops, pickups and trades like
+// any other stack; the duel item-stake picker excludes it (gold
+// staking stays the matched amount field — see GOLD_STAKE_MSG).
+// profile.gold survives ONLY as a synced mirror of the stack
+// total (goldTotal) for the leaderboard and legacy readers — the
+// stacks are the single source of truth, and every gold mutation
+// routes through addGold / takeGold below.
+ITEMS.gold = { name: 'Gold coins', icon: '🪙', kind: 'currency', sellOnly: 0 };
+// The ONE refusal every duel item-stake path answers when a client
+// tries to stake the gold stack itself as an item.
+const GOLD_STAKE_MSG = "Gold can't be staked as an item — use the gold amount.";
 // The ONE refusal every path that would move a note off its owner
 // (drop, trade offer, duel item stakes) answers with.
 const NOTE_PERSONAL_MSG = "A note is personal — it can't be dropped, traded, or staked.";
@@ -447,6 +465,7 @@ function sellPrice(itemId) {
   const def = itemDef(itemId);
   if (!def) return 0;
   if (def.kind === 'token' || def.kind === 'note') return 0; // Stage 7A/9: tokens and notes are never sellable
+  if (def.kind === 'currency') return 0; // Stage 16: gold IS money — it is never sold, it is spent
   if (def.custom) return 0; // Stage 7D: custom items are never sellable
   if (def.buy) return Math.max(1, Math.floor(def.buy * SHOP_SELLBACK));
   if (def.sellOnly) return def.sellOnly; // Stage 2 resources: fixed buy-back
@@ -463,6 +482,11 @@ function catalogList() {
     speed: d.speed || 0, // Stage 3: pickaxe speed multiplier (0 for non-tools)
     icon: d.icon || null, // Stage 7A: token icons (null for older items)
   }));
+  // Stage 16: the gold item rides along explicitly (it has no buy
+  // price and no sellOnly the filter above would keep): the client
+  // needs its name/kind to render the coin stack in backpack/bank.
+  // buy 0 / sell 0 / shop null keep it out of every shop list.
+  list.push({ id: 'gold', name: ITEMS.gold.name, kind: 'currency', slot: null, shop: null, buy: 0, sell: 0, heal: 0, prayerRestore: 0, accBonus: 0, maxBonus: 0, reduction: 0, speed: 0, icon: ITEMS.gold.icon });
   // Stage 7D: custom items ride along after the base catalog,
   // regardless of the buy/sellOnly filter above (they have neither).
   for (const def of [...customItems.values()].sort((a, b) => (a.num || 0) - (b.num || 0))) list.push(customCatalogEntry(def));
@@ -568,9 +592,12 @@ function newProfile(username) {
     username, gold: START_GOLD, rating: 1000, wins: 0, losses: 0,
     style: 'accurate', createdAt: new Date().toISOString(),
     appearance: defaultAppearance(), // Stage 10 — see cleanAppearance
-    backpack: [], // [{item, qty}] stacks, max BACKPACK_MAX_STACKS distinct
+    // Stage 16: the starter gold IS the backpack coin stack below;
+    // the `gold` number above is only its synced mirror (goldTotal).
+    backpack: [{ item: 'gold', qty: START_GOLD }], // [{item, qty}] stacks, max BACKPACK_MAX_STACKS distinct
     worn: emptyWorn(),
-    bank: [], // [{item, qty}] stacks — items only, gold stays a number
+    bank: [], // [{item, qty}] stacks — gold coins stack here too (Stage 16)
+    goldV: 2, // Stage 16: born migrated — money already lives in stacks
     prayerPoints: PRAYER_MAX, prayerMax: PRAYER_MAX, activePrayer: null,
     specialEnergy: 0,
     xp: defaultXp(), // Stage 1 skills — see SKILLS / XP_TABLE above
@@ -604,7 +631,8 @@ function newProfile(username) {
   };
 }
 // Migration: Phase 1 accounts gain the v2 fields with defaults. Existing
-// gold / rating / record / style are never touched.
+// rating / record / style are never touched; gold is CONVERTED (never
+// changed in amount) by the Stage 16 migration inside ensureV2.
 function ensureV2(p) {
   let changed = false;
   if (!Array.isArray(p.backpack)) { p.backpack = []; changed = true; }
@@ -689,6 +717,29 @@ function ensureV2(p) {
   else {
     const clean = cleanAppearance(p.appearance, null);
     if (JSON.stringify(clean) !== JSON.stringify(p.appearance)) { p.appearance = clean; changed = true; }
+  }
+  // Stage 16 migration: gold becomes an ITEM. A legacy profile
+  // carries its money ONLY as the `gold` number (the old "pouch").
+  // Exactly once (flagged goldV): if that number is positive and
+  // the profile holds NO gold stack anywhere, the amount becomes
+  // a stack — backpack if a slot is free, else the bank — and the
+  // number is re-synced as the mirror of the stack total. A
+  // profile that somehow already holds a stack keeps the stack as
+  // the truth and only the mirror is re-synced. Idempotent: once
+  // goldV is 2 this block never runs again, so a second boot
+  // cannot duplicate or move a single coin. Runs on load (the
+  // boot sweep) before anyone connects.
+  if (typeof p.goldV !== 'number' || !Number.isFinite(p.goldV)) { p.goldV = 1; changed = true; }
+  if (p.goldV < 2) {
+    const hasStack = stackQty(p.backpack, 'gold') > 0 || stackQty(p.bank, 'gold') > 0;
+    const legacy = Math.max(0, Math.floor(+p.gold || 0));
+    if (!hasStack && legacy > 0) {
+      const leftover = addStacks(p.backpack, 'gold', legacy, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(p.bank, 'gold', leftover); // full pack: the bank holds the coins
+    }
+    p.goldV = 2; changed = true;
+    const total = stackQty(p.backpack, 'gold') + stackQty(p.bank, 'gold');
+    if (p.gold !== total) p.gold = total; // the number is now just the mirror
   }
   return changed;
 }
@@ -816,6 +867,52 @@ function addItemToProfile(profile, item, qty) {
   if (leftover > 0) addStacks(profile.bank, item, leftover);
 }
 
+// ---------- Stage 16: gold helpers (the ONLY way gold moves) ----------
+// The coin stacks (backpack + bank) are the single source of truth
+// for a player's money; profile.gold is a synced MIRROR of their
+// total, kept so the leaderboard and legacy readers work unchanged.
+// Every gold mutation in the server routes through addGold /
+// takeGold — never write profile.gold directly.
+function goldTotal(profile) {
+  if (!profile) return 0;
+  return stackQty(profile.backpack || [], 'gold') + stackQty(profile.bank || [], 'gold');
+}
+function syncGoldMirror(profile) {
+  profile.gold = goldTotal(profile);
+  return profile.gold;
+}
+// Credit gold: top up the backpack stack if one exists, else the
+// bank stack if one exists, else open a backpack stack if a slot
+// is free, else open the bank stack. Gold can therefore be earned
+// with a completely full backpack — it is never silently lost.
+function addGold(profile, amt) {
+  ensureV2(profile);
+  amt = Math.floor(+amt || 0);
+  if (amt > 0) {
+    if (stackQty(profile.backpack, 'gold') > 0) addStacks(profile.backpack, 'gold', amt);
+    else if (stackQty(profile.bank, 'gold') > 0) addStacks(profile.bank, 'gold', amt);
+    else {
+      const leftover = addStacks(profile.backpack, 'gold', amt, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(profile.bank, 'gold', leftover);
+    }
+  }
+  syncGoldMirror(profile);
+}
+// Debit gold: backpack stack first, then the bank stack. Returns
+// false (and moves nothing) when the total cannot cover it.
+function takeGold(profile, amt) {
+  ensureV2(profile);
+  amt = Math.floor(+amt || 0);
+  if (amt <= 0) return true;
+  if (goldTotal(profile) < amt) return false;
+  let left = amt;
+  const inPack = Math.min(left, stackQty(profile.backpack, 'gold'));
+  if (inPack > 0) { removeStacks(profile.backpack, 'gold', inPack); left -= inPack; }
+  if (left > 0) removeStacks(profile.bank, 'gold', left);
+  syncGoldMirror(profile);
+  return true;
+}
+
 // ---------- HTTP: static client + account APIs ----------
 const tokens = new Map(); // token -> username (in-memory sessions)
 function json(res, code, obj) {
@@ -917,6 +1014,97 @@ const partyInvites = new Map(); // inviterKey -> { inviterKey, targetKey, expire
 const tradeRequests = new Map(); // tradeId -> { id, fromKey, toKey, expires, timer }
 const trades = new Map(); // tradeId -> { id, aKey, bKey, offers, confirmed, expires, timer }
 
+// ---------- Stage 17: Stake Board offers (session-only) ----------
+// Derek's south-west Stake Board: a player posts a gold bid at the
+// sparkling sign, anyone can accept it, both hit Ready (the first
+// ready fighter waits in the Waiting Area), and the second Ready
+// starts a normal startDuel for the matched stake — the winner
+// takes the pot (2x stake). Offers/matches are session-only, like
+// challenges: nothing is escrowed until startDuel runs.
+const stakeOffers = new Map(); // id -> { id, fromKey, stake, createdAt, status:'open'|'matched', toKey|null, ready:{from,to} }
+const STAKE_OFFER_TTL_MS = 10 * 60 * 1000; // open offers expire after 10 minutes
+function pruneStakeOffers() {
+  const now = Date.now();
+  let changed = false;
+  for (const [id, o] of [...stakeOffers]) {
+    if (o.status === 'open' && now - o.createdAt >= STAKE_OFFER_TTL_MS) { stakeOffers.delete(id); changed = true; }
+  }
+  return changed;
+}
+function stakeBoardMsg() {
+  pruneStakeOffers();
+  return {
+    type: 'stake_board',
+    offers: [...stakeOffers.values()].filter((o) => o.status === 'open').map((o) => ({
+      id: o.id,
+      username: db.users[o.fromKey] ? db.users[o.fromKey].profile.username : o.fromKey,
+      stake: o.stake, pot: o.stake * 2, ageMs: Date.now() - o.createdAt,
+    })),
+  };
+}
+function broadcastStakeBoard() {
+  const msg = stakeBoardMsg();
+  for (const p of online.values()) send(p.ws, msg);
+}
+function openStakeOfferForKey(key) {
+  for (const o of stakeOffers.values()) if (o.status === 'open' && o.fromKey === key) return o;
+  return null;
+}
+function stakeMatchForKey(key) {
+  for (const o of stakeOffers.values()) if (o.status === 'matched' && (o.fromKey === key || o.toKey === key)) return o;
+  return null;
+}
+function stakeBusy(sess) {
+  return !!(sess && (sess.duelId || sess.npcFightId || sess.barrowsFightId || sess.fcRunId));
+}
+function stakeOpponentKey(match, key) { return match.fromKey === key ? match.toKey : match.fromKey; }
+function stakeMatchUpdateMsg(match, forKey) {
+  const oppKey = stakeOpponentKey(match, forKey);
+  const opp = db.users[oppKey];
+  return {
+    type: 'stake_match_update', matchId: match.id,
+    opponent: opp ? opp.profile.username : oppKey, opponentName: opp ? opp.profile.username : oppKey,
+    stake: match.stake, pot: match.stake * 2,
+    readyMine: forKey === match.fromKey ? match.ready.from : match.ready.to,
+    readyOpponent: forKey === match.fromKey ? match.ready.to : match.ready.from,
+  };
+}
+function sendStakeMatchUpdate(match) {
+  for (const k of [match.fromKey, match.toKey]) {
+    const s = online.get(k);
+    if (s) send(s.ws, stakeMatchUpdateMsg(match, k));
+  }
+}
+// Move a session into an area exactly like a travel arrival (area
+// message + the per-area state lists the client rebuilds from).
+function moveSessionToArea(sess, area, x, y) {
+  sess.area = area; sess.x = x; sess.y = y;
+  send(sess.ws, { type: 'area', area });
+  send(sess.ws, nodesMsg(area));
+  send(sess.ws, firesMsg(area));
+  send(sess.ws, pilesMsg(area));
+  send(sess.ws, alliesMsg(area));
+  send(sess.ws, objectsMsg(area));
+}
+// Cancel a matched stake match before the fight starts: no gold
+// ever moves, a party standing in the Waiting Area is returned to
+// the plaza spawn, and BOTH parties are told (stake_match_cancelled
+// + a chat line). Used by stake_match_cancel, disconnect cleanup,
+// the second-Ready validation failure, and startDuel's guard.
+function cancelStakeMatch(match, reason) {
+  if (!match || match.status !== 'matched') return;
+  stakeOffers.delete(match.id);
+  for (const k of [match.fromKey, match.toKey]) {
+    const s = online.get(k);
+    if (!s) continue;
+    if (s.area === 'waiting') moveSessionToArea(s, 'plaza', AREAS.plaza.spawn.x, AREAS.plaza.spawn.y);
+    send(s.ws, { type: 'stake_match_cancelled', matchId: match.id, reason });
+    send(s.ws, { type: 'chat', from: 'Stake Board', text: reason });
+  }
+  broadcastStakeBoard();
+  broadcastState();
+}
+
 // ---------- Stage 7C: challenge '!' markers ----------
 // Derek's design: the CHALLENGER wears the '!', not the target. When a
 // challenge goes out, everyone hears who is challenging whom (clients
@@ -993,9 +1181,10 @@ function applyChallengeTerms(ch, senderKey, m) {
   } else {
     if (m.stake !== undefined) {
       stake = Math.floor(+m.stake || 0);
-      if (stake < 0 || stake > sender.gold || stake > other.gold) return 'Gold stake must be up to what you both have.';
+      if (stake < 0 || stake > goldTotal(sender) || stake > goldTotal(other)) return 'Gold stake must be up to what you both have.';
     }
     if (m.items !== undefined) {
+      if (Array.isArray(m.items) && m.items.some((e) => e && e.item === 'gold')) return GOLD_STAKE_MSG; // Stage 16: coins stake via the amount
       myItems = sanitizeItems(m.items);
       if (myItems.some((s) => s.item === 'note')) return NOTE_PERSONAL_MSG;
       if (!hasItems(sender, myItems)) return 'You don\'t have all the items you tried to stake.';
@@ -1037,6 +1226,10 @@ const AREAS = {
   barrows: { name: 'Barrows', spawn: { x: 800, y: 800 } },
   barrows_tunnels: { name: 'Barrows Tunnels', spawn: { x: 800, y: 450 } },
   arena: { name: 'Duel Arena', spawn: { x: 800, y: 450 } },
+  // Stage 17: the Stake Board waiting area — NOT travel-reachable;
+  // only the stake-match flow moves players in (stake_ready), and
+  // startDuel / a match cancel moves them back out.
+  waiting: { name: 'Waiting Area', spawn: { x: 800, y: 450 } },
 };
 const NPC_RANGE = 150; // server units — attack / stay-in-combat range (15 tiles at 10 units/tile)
 
@@ -1303,15 +1496,18 @@ function executeTrade(trade) {
   const aProf = aUser.profile, bProf = bUser.profile;
   ensureV2(aProf); ensureV2(bProf);
   const offerA = trade.offers[trade.aKey], offerB = trade.offers[trade.bKey];
-  const validA = offerA.gold <= aProf.gold && hasItems(aProf, offerA.items);
-  const validB = offerB.gold <= bProf.gold && hasItems(bProf, offerB.items);
+  const validA = offerA.gold <= goldTotal(aProf) && hasItems(aProf, offerA.items);
+  const validB = offerB.gold <= goldTotal(bProf) && hasItems(bProf, offerB.items);
   if (!validA || !validB) { cancelTrade(trade, 'The trade fell through — an item or the gold was no longer there.'); return; }
-  aProf.gold -= offerA.gold; bProf.gold -= offerB.gold;
+  takeGold(aProf, offerA.gold); takeGold(bProf, offerB.gold);
   for (const s of offerA.items) removeStacks(aProf.backpack, s.item, s.qty);
   for (const s of offerB.items) removeStacks(bProf.backpack, s.item, s.qty);
-  aProf.gold += offerB.gold; bProf.gold += offerA.gold;
+  addGold(aProf, offerB.gold); addGold(bProf, offerA.gold);
   for (const s of offerB.items) addItemToProfile(aProf, s.item, s.qty);
   for (const s of offerA.items) addItemToProfile(bProf, s.item, s.qty);
+  // Stage 16: a gold stack offered AS an item also just moved via
+  // the stack paths above — re-sync both mirrors from the stacks.
+  syncGoldMirror(aProf); syncGoldMirror(bProf);
   save(trade.aKey); save(trade.bKey);
   closeTrade(trade);
   sendProfile(trade.aKey); sendProfile(trade.bKey);
@@ -1481,7 +1677,7 @@ function endDuel(duel, winnerKey, reason) {
     // saves below still run, so combat XP earned from damage dealt
     // during the fight is kept exactly as in a staked duel.
   } else {
-    winner.gold += duel.pot; // escrow pays out — server held both stakes
+    addGold(winner, duel.pot); // escrow pays out — the pot lands on the winner's coin stack
     // Item escrow: winner takes every staked item. Anything that cannot fit
     // the winner's backpack overflows into their bank so nothing is lost.
     for (const s of duel.escrowItems) {
@@ -1534,6 +1730,15 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
   for (const t of [...trades.values()]) {
     if (t.aKey === aKey || t.bKey === aKey || t.aKey === bKey || t.bKey === bKey) cancelTrade(t, 'Trade cancelled — a duel is starting.');
   }
+  // Stage 17: a duel starting any other way cancels a pending stake
+  // match involving either fighter (the stake flow itself deletes
+  // its match before calling startDuel, so this only fires for
+  // challenges / official fights). No gold moves on the cancel.
+  for (const m of [...stakeOffers.values()]) {
+    if (m.status === 'matched' && (m.fromKey === aKey || m.toKey === aKey || m.fromKey === bKey || m.toKey === bKey)) {
+      cancelStakeMatch(m, 'Stake match cancelled — a duel is starting.');
+    }
+  }
   const a = db.users[aKey].profile, b = db.users[bKey].profile;
   // Stage 14: rules agreed on the challenge configuration screen
   // (null for mod-run fights and every other caller = no
@@ -1551,7 +1756,10 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
   if (!fp) {
     // Escrow: both gold stakes AND both item stakes leave purses/backpacks
     // before the first tick. A decline never reaches here, so takes nothing.
-    a.gold -= stake; b.gold -= stake;
+    // Stage 16: the gold stake is drawn from the coin stacks
+    // (backpack first, then bank) by takeGold — the confirm path
+    // already validated both totals cover it.
+    takeGold(a, stake); takeGold(b, stake);
     for (const s of itemsA) { removeStacks(a.backpack, s.item, s.qty); addStacks(escrowItems, s.item, s.qty); }
     for (const s of itemsB) { removeStacks(b.backpack, s.item, s.qty); addStacks(escrowItems, s.item, s.qty); }
   }
@@ -1706,7 +1914,7 @@ function combatXpGains(style, dmg) {
 // 15% prayer potion, 25% ranarr herbs, 60% no item.
 function rollNpcDrops(profile) {
   const gold = 2 + Math.floor(Math.random() * 7);
-  profile.gold += gold;
+  addGold(profile, gold); // Stage 16: the coins land on the coin stack
   const items = [];
   const r = Math.random();
   const item = r < 0.15 ? 'prayer_potion' : r < 0.40 ? 'herbs' : null;
@@ -2199,7 +2407,7 @@ const BARROWS_LOOT_ITEMS = [
 const BARROWS_WEAPONS = ['dharoks_greataxe', 'guthans_warspear', 'torags_hammers', 'veracs_flail', 'ahrims_staff', 'karils_crossbow'];
 function rollBarrowsLoot(profile, killCount) {
   const gold = Math.round((300 + Math.floor(Math.random() * 601)) * (killCount / 6));
-  profile.gold += gold;
+  addGold(profile, gold); // Stage 16: the coins land on the coin stack
   const items = [];
   const give = (item, qty) => {
     const leftover = addStacks(profile.backpack, item, qty, BACKPACK_MAX_STACKS);
@@ -2588,7 +2796,7 @@ function endFcRun(run, reason) {
   if (reason === 'complete') {
     p.fc.completions += 1;
     if (!p.fc.bestTimeMs || timeMs < p.fc.bestTimeMs) p.fc.bestTimeMs = timeMs;
-    p.gold += 500;
+    addGold(p, 500); // Stage 16: the coins land on the coin stack
     const leftover = addStacks(p.backpack, 'fire_cape', 1, BACKPACK_MAX_STACKS);
     if (leftover > 0) addStacks(p.bank, 'fire_cape', leftover); // full pack: bank it, never lose the cape
     reward = { gold: 500, item: 'fire_cape' };
@@ -2925,6 +3133,7 @@ wss.on('connection', (ws, req) => {
   send(ws, objectsMsg('plaza')); // Stage 7D: any placed objects in the plaza
   send(ws, { type: 'catalog', items: catalogList(), shops: SHOPS });
   send(ws, { type: 'exchange_prices', goods: goodsList() });
+  send(ws, stakeBoardMsg()); // Stage 17: the current Stake Board offers
   broadcast({ type: 'chat', from: 'Game', text: `${profile.username} entered the plaza.` }, key);
   broadcastState();
 
@@ -2980,7 +3189,14 @@ wss.on('connection', (ws, req) => {
     if (m.type === 'travel') {
       const to = String(m.to || '');
       if (!AREAS[to]) return send(ws, { type: 'error', message: 'Unknown destination.' });
+      // Stage 17: the Waiting Area is not travel-reachable — only
+      // the stake-match flow moves players in and out of it.
+      if (to === 'waiting') return send(ws, { type: 'error', message: 'The Waiting Area is only for stake matches — ready up at the Stake Board.' });
       if (me.duelId) return send(ws, { type: 'error', message: 'You cannot travel during a duel.' });
+      // Stage 17: a player in a matched stake match cannot travel
+      // (they are either about to ready up or standing in the
+      // Waiting Area) — cancel the match first.
+      if (stakeMatchForKey(key)) return send(ws, { type: 'error', message: 'You have a stake match waiting — ready up or cancel it at the Stake Board.' });
       if (me.npcFightId) { const f = npcFights.get(me.npcFightId); if (f) finishNpcFight(f, 'travel'); }
       // Stage 5: travelling abandons a Barrows crypt fight (kills kept).
       if (me.barrowsFightId) { const f = barrowsFights.get(me.barrowsFightId); if (f) finishBarrowsFight(f, 'travel'); }
@@ -3169,11 +3385,12 @@ wss.on('connection', (ws, req) => {
       const item = String(m.item || '');
       const def = itemDef(item);
       const qty = Math.max(1, Math.min(9999, Math.floor(+m.qty || 1)));
-      if (!def) return send(ws, { type: 'error', message: 'Unknown item. (Gold is not an item — it cannot be dropped.)' });
+      if (!def) return send(ws, { type: 'error', message: 'Unknown item.' });
       if (def.kind === 'note') return send(ws, { type: 'error', message: NOTE_PERSONAL_MSG }); // Stage 9: notes are personal
       if (me.duelId) return send(ws, { type: 'error', message: 'You cannot drop items during a duel.' });
       if (me.fcRunId) return send(ws, { type: 'error', message: 'You cannot drop items during a Fight Caves run.' });
       if (!removeStacks(profile.backpack, item, qty)) return send(ws, { type: 'error', message: `You don't have ${qty} x ${def.name}.` });
+      if (item === 'gold') syncGoldMirror(profile); // Stage 16: dropped coins leave the stack total
       const id = crypto.randomBytes(6).toString('hex');
       piles.set(id, { id, item, qty, x: me.x, y: me.y, area: me.area, owner: profile.username, bornAt: Date.now() });
       save(key);
@@ -3185,6 +3402,16 @@ wss.on('connection', (ws, req) => {
       if (!pile) return send(ws, { type: 'error', message: 'That pile is gone.' });
       if (me.area !== pile.area) return send(ws, { type: 'error', message: 'That pile is not here.' });
       if (Math.hypot(me.x - pile.x, me.y - pile.y) > NPC_RANGE) return send(ws, { type: 'error', message: 'Too far away — walk closer to the pile.' });
+      if (pile.item === 'gold') {
+        // Stage 16: picked-up coins join the coin stack (addGold —
+        // backpack stack, bank stack, or a fresh stack): a gold
+        // pile always fits whole, it never stays on the ground.
+        addGold(profile, pile.qty);
+        piles.delete(pile.id);
+        save(key);
+        broadcastPiles(me.area);
+        return sendProfile(key);
+      }
       const leftover = addStacks(profile.backpack, pile.item, pile.qty, BACKPACK_MAX_STACKS);
       if (leftover === pile.qty) return send(ws, { type: 'error', message: 'Backpack full (28 stacks).' });
       if (leftover > 0) pile.qty = leftover; // partial pickup: the rest stays on the ground
@@ -3444,9 +3671,9 @@ wss.on('connection', (ws, req) => {
       const qty = Math.max(1, Math.min(999, Math.floor(+m.qty || 1)));
       if (!def || !def.buy) return send(ws, { type: 'error', message: 'That is not sold in the shops.' });
       const cost = def.buy * qty;
-      if (profile.gold < cost) return send(ws, { type: 'error', message: `Not enough gold — ${def.name} x${qty} costs ${cost}g.` });
+      if (goldTotal(profile) < cost) return send(ws, { type: 'error', message: `Not enough gold — ${def.name} x${qty} costs ${cost}g.` });
       if (addStacks(profile.backpack, item, qty, BACKPACK_MAX_STACKS) > 0) return send(ws, { type: 'error', message: 'Backpack full (28 stacks).' });
-      profile.gold -= cost;
+      takeGold(profile, cost); // Stage 16: paid from the coin stacks
       save(key);
       send(ws, { type: 'shop', action: 'buy', shop: def.shop, item, qty, total: cost });
       return sendProfile(key);
@@ -3457,13 +3684,14 @@ wss.on('connection', (ws, req) => {
       const qty = Math.max(1, Math.min(999, Math.floor(+m.qty || 1)));
       if (!def) return send(ws, { type: 'error', message: 'Unknown item.' });
       if (def.kind === 'token' || def.kind === 'note') return send(ws, { type: 'error', message: "That can't be sold." });
+      if (def.kind === 'currency') return send(ws, { type: 'error', message: "That can't be sold." }); // Stage 16: gold IS money — spend it, don't sell it
       if (def.custom) return send(ws, { type: 'error', message: "That can't be sold." }); // Stage 7D: customs, same treatment as tokens
       // Shops buy anything with a sell price: their own stock at 60%
       // back, and Stage 2 gathered resources at their fixed sellOnly.
       if (!sellPrice(item)) return send(ws, { type: 'error', message: 'The shops don\'t buy that — try the Gold Exchange.' });
       if (!removeStacks(profile.backpack, item, qty)) return send(ws, { type: 'error', message: `You don't have ${qty} x ${def.name}.` });
       const total = sellPrice(item) * qty;
-      profile.gold += total;
+      addGold(profile, total); // Stage 16: the payment lands on the coin stack
       save(key);
       send(ws, { type: 'shop', action: 'sell', shop: def.shop, item, qty, total });
       return sendProfile(key);
@@ -3613,7 +3841,7 @@ wss.on('connection', (ws, req) => {
       return sendProfile(key);
     }
 
-    // ----- Bank of Gielinor (items only; gold stays a profile number) -----
+    // ----- Bank of Gielinor (Stage 16: coin stacks bank here too) -----
     if (m.type === 'bank_deposit' || m.type === 'bank_withdraw') {
       const item = String(m.item || '');
       const def = itemDef(item);
@@ -3635,23 +3863,24 @@ wss.on('connection', (ws, req) => {
     if (m.type === 'exchange_buy' || m.type === 'exchange_sell') {
       // Stage 7A: tokens are never Exchange goods — a sell attempt
       // gets the token error, not the generic unknown-good one.
+      // Stage 16: the gold item gets the same refusal — it IS money.
       const wantedGood = String(m.good || '');
-      if (itemDef(wantedGood) && (itemDef(wantedGood).kind === 'token' || itemDef(wantedGood).kind === 'note')) return send(ws, { type: 'error', message: "That can't be sold." });
+      if (itemDef(wantedGood) && (itemDef(wantedGood).kind === 'token' || itemDef(wantedGood).kind === 'note' || itemDef(wantedGood).kind === 'currency')) return send(ws, { type: 'error', message: "That can't be sold." });
       const good = GOODS.find((g) => g.id === wantedGood);
       const qty = Math.max(1, Math.min(999, Math.floor(+m.qty || 1)));
       if (!good) return send(ws, { type: 'error', message: 'Unknown exchange good.' });
       const price = exchangePrices[good.id];
       if (m.type === 'exchange_buy') {
         const cost = price * qty;
-        if (profile.gold < cost) return send(ws, { type: 'error', message: `Not enough gold — ${good.name} x${qty} costs ${cost}g.` });
+        if (goldTotal(profile) < cost) return send(ws, { type: 'error', message: `Not enough gold — ${good.name} x${qty} costs ${cost}g.` });
         if (addStacks(profile.backpack, good.id, qty, BACKPACK_MAX_STACKS) > 0) return send(ws, { type: 'error', message: 'Backpack full (28 stacks).' });
-        profile.gold -= cost;
+        takeGold(profile, cost); // Stage 16: paid from the coin stacks
         save(key);
         send(ws, { type: 'exchange', action: 'buy', good: good.id, qty, price, total: cost });
       } else {
         if (!removeStacks(profile.backpack, good.id, qty)) return send(ws, { type: 'error', message: `You don't have ${qty} x ${good.name}.` });
         const total = Math.floor(price * qty * EXCHANGE_SELLBACK);
-        profile.gold += total;
+        addGold(profile, total); // Stage 16: the payment lands on the coin stack
         save(key);
         send(ws, { type: 'exchange', action: 'sell', good: good.id, qty, price, total });
       }
@@ -3821,7 +4050,10 @@ wss.on('connection', (ws, req) => {
       const targetUser = db.users[targetKey];
       if (!targetUser) return send(ws, { type: 'error', message: 'No such player.' });
       ensureV2(targetUser.profile);
-      addItemToProfile(targetUser.profile, item, qty);
+      // Stage 16: spawning gold credits the coin stacks via addGold
+      // (an admin grant of money, not a loose stack placement).
+      if (item === 'gold') addGold(targetUser.profile, qty);
+      else addItemToProfile(targetUser.profile, item, qty);
       save(targetKey);
       const targetSess = online.get(targetKey);
       if (targetSess) {
@@ -3969,7 +4201,7 @@ wss.on('connection', (ws, req) => {
         return send(ws, { type: 'error', message: line });
       }
       removeStacks(requesterProfile.backpack, 'certificate', 1);
-      requesterProfile.gold += 250;
+      addGold(requesterProfile, 250); // Stage 16: paid onto the coin stack
       save(requesterKey); save(key);
       if (requesterSess) {
         sendProfile(requesterKey);
@@ -4052,7 +4284,7 @@ wss.on('connection', (ws, req) => {
       if (m.accept === true) {
         // Settled on the signer's SAVED profile — they are paid even
         // if they have gone offline since handing the note over.
-        signerProfile.gold += 250;
+        addGold(signerProfile, 250); // Stage 16: paid onto the coin stack
         save(req.fromKey); save(key);
         if (signerSess) {
           sendProfile(req.fromKey);
@@ -4381,7 +4613,7 @@ wss.on('connection', (ws, req) => {
       if (!trade || (trade.aKey !== key && trade.bKey !== key)) return send(ws, { type: 'error', message: 'That trade is gone.' });
       const gold = m.gold === undefined ? 0 : +m.gold;
       if (!Number.isFinite(gold) || gold < 0 || Math.floor(gold) !== gold) return send(ws, { type: 'error', message: 'Invalid gold amount.' });
-      if (gold > profile.gold) return send(ws, { type: 'error', message: 'You don\'t have that much gold.' });
+      if (gold > goldTotal(profile)) return send(ws, { type: 'error', message: 'You don\'t have that much gold.' });
       const rawItems = m.items === undefined ? [] : m.items;
       if (!Array.isArray(rawItems)) return send(ws, { type: 'error', message: 'Invalid items.' });
       const merged = new Map();
@@ -4427,6 +4659,7 @@ wss.on('connection', (ws, req) => {
       const freePlay = !!m.freePlay;
       if (freePlay) { stake = 0; items = []; }
       if (items.some((s) => s.item === 'note')) return send(ws, { type: 'error', message: NOTE_PERSONAL_MSG }); // Stage 9: notes are personal
+      if (Array.isArray(m.items) && m.items.some((e) => e && e.item === 'gold')) return send(ws, { type: 'error', message: GOLD_STAKE_MSG }); // Stage 16: coins stake via the amount
       const target = online.get(targetKey);
       if (!target || targetKey === key) return send(ws, { type: 'error', message: 'Pick another online player.' });
       if (me.duelId || target.duelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
@@ -4434,7 +4667,7 @@ wss.on('connection', (ws, req) => {
       if (me.barrowsFightId || target.barrowsFightId) return send(ws, { type: 'error', message: 'One of you is fighting a Barrows brother.' });
       if (me.fcRunId || target.fcRunId) return send(ws, { type: 'error', message: 'One of you is in the Fight Caves.' });
       if (!freePlay && items.length === 0 && stake < 1) return send(ws, { type: 'error', message: 'Stake at least 1g, or stake items.' });
-      if (stake < 0 || stake > profile.gold || stake > target.profile.gold) return send(ws, { type: 'error', message: 'Gold stake must be up to what you both have.' });
+      if (stake < 0 || stake > goldTotal(profile) || stake > goldTotal(target.profile)) return send(ws, { type: 'error', message: 'Gold stake must be up to what you both have.' });
       if (!hasItems(profile, items)) return send(ws, { type: 'error', message: 'You don\'t have all the items you tried to stake.' });
       const id = crypto.randomBytes(6).toString('hex');
       // Stage 14: the challenge now opens the configuration screen —
@@ -4469,6 +4702,7 @@ wss.on('connection', (ws, req) => {
       // challenge_confirm (below). Escrow still only happens there.
       const myItems = ch.freePlay ? [] : sanitizeItems(m.items); // Stage 15: Free Play stakes no items, whatever the accept carried
       if (myItems.some((s) => s.item === 'note')) return send(ws, { type: 'error', message: NOTE_PERSONAL_MSG }); // Stage 9: notes are personal
+      if (Array.isArray(m.items) && m.items.some((e) => e && e.item === 'gold')) return send(ws, { type: 'error', message: GOLD_STAKE_MSG }); // Stage 16: coins stake via the amount
       if (!hasItems(profile, myItems)) return send(ws, { type: 'error', message: 'You don\'t have all the items you tried to stake.' });
       if (JSON.stringify(myItems) !== JSON.stringify(ch.itemsTo)) { ch.itemsTo = myItems; ch.confirm.from = false; ch.confirm.to = false; }
       ch.expires = Date.now() + 30000;
@@ -4509,7 +4743,7 @@ wss.on('connection', (ws, req) => {
       if (fromSess.npcFightId || toSess.npcFightId) return failStart('One of you is fighting a monster.');
       if (fromSess.barrowsFightId || toSess.barrowsFightId) return failStart('One of you is fighting a Barrows brother.');
       if (fromSess.fcRunId || toSess.fcRunId) return failStart('One of you is in the Fight Caves.');
-      if (db.users[ch.from].profile.gold < ch.stake || db.users[ch.to].profile.gold < ch.stake) return failStart('Someone no longer has the gold.');
+      if (goldTotal(db.users[ch.from].profile) < ch.stake || goldTotal(db.users[ch.to].profile) < ch.stake) return failStart('Someone no longer has the gold.');
       if (!hasItems(db.users[ch.from].profile, ch.items)) return failStart('The challenger no longer has the staked items.');
       if (!hasItems(db.users[ch.to].profile, ch.itemsTo)) return failStart('The challenged player no longer has the staked items.');
       challenges.delete(m.challengeId);
@@ -4530,6 +4764,108 @@ wss.on('connection', (ws, req) => {
         send(other.ws, { type: 'challenge_closed', challengeId: ch.id });
       }
       send(ws, { type: 'challenge_closed', challengeId: ch.id });
+    }
+
+    // ----- Stage 17: Stake Board (south-west sparkling sign) -----
+    // Post a gold bid -> anyone accepts -> both Ready (first ready
+    // waits in the Waiting Area) -> second Ready starts the duel
+    // through startDuel, which escrows and pays the winner the pot.
+    if (m.type === 'stake_board_get') {
+      if (pruneStakeOffers()) broadcastStakeBoard();
+      send(ws, stakeBoardMsg());
+    }
+    if (m.type === 'stake_offer_create') {
+      const stake = Math.floor(+m.stake || 0);
+      if (stakeMatchForKey(key)) return send(ws, { type: 'error', message: 'You already have a stake match — ready up or cancel it first.' });
+      if (stakeBusy(me)) return send(ws, { type: 'error', message: 'You are in a fight right now.' });
+      if (stake < 1) return send(ws, { type: 'error', message: 'Stake at least 1g.' });
+      if (stake > goldTotal(profile)) return send(ws, { type: 'error', message: 'You don\'t have that much gold.' });
+      // One OPEN offer per player: posting again replaces the old one.
+      const old = openStakeOfferForKey(key);
+      if (old) stakeOffers.delete(old.id);
+      const offer = { id: crypto.randomBytes(6).toString('hex'), fromKey: key, stake, createdAt: Date.now(), status: 'open', toKey: null, ready: { from: false, to: false } };
+      stakeOffers.set(offer.id, offer);
+      broadcastStakeBoard();
+      broadcast({ type: 'chat', from: 'Stake Board', text: `${profile.username} offers a ${stake}g fight at the Stake Board — tap the sparkling sign in the south-west of the plaza to take it.` });
+      send(ws, { type: 'chat', from: 'Stake Board', text: `Your ${stake}g offer is on the board — winner takes ${stake * 2}g. It expires in 10 minutes.` });
+    }
+    if (m.type === 'stake_offer_cancel') {
+      const offer = stakeOffers.get(String(m.offerId || ''));
+      if (!offer || offer.fromKey !== key || offer.status !== 'open') return send(ws, { type: 'error', message: 'That offer is gone.' });
+      stakeOffers.delete(offer.id);
+      broadcastStakeBoard();
+      send(ws, { type: 'chat', from: 'Stake Board', text: 'Your stake offer was taken down. No gold moved.' });
+    }
+    if (m.type === 'stake_offer_accept') {
+      pruneStakeOffers();
+      const offer = stakeOffers.get(String(m.offerId || ''));
+      if (!offer || offer.status !== 'open') { broadcastStakeBoard(); return send(ws, { type: 'error', message: 'That offer is gone.' }); }
+      if (offer.fromKey === key) return send(ws, { type: 'error', message: 'You can\'t accept your own offer.' });
+      if (stakeMatchForKey(key)) return send(ws, { type: 'error', message: 'You already have a stake match — ready up or cancel it first.' });
+      if (stakeMatchForKey(offer.fromKey)) return send(ws, { type: 'error', message: 'That player already has a stake match.' });
+      const poster = online.get(offer.fromKey);
+      if (!poster) { stakeOffers.delete(offer.id); broadcastStakeBoard(); return send(ws, { type: 'error', message: 'That offer is gone — the player left.' }); }
+      if (stakeBusy(me) || stakeBusy(poster)) return send(ws, { type: 'error', message: 'One of you is in a fight right now.' });
+      if (goldTotal(profile) < offer.stake) return send(ws, { type: 'error', message: 'You don\'t have enough gold to match that bid.' });
+      if (goldTotal(poster.profile) < offer.stake) { stakeOffers.delete(offer.id); broadcastStakeBoard(); return send(ws, { type: 'error', message: 'The poster no longer has the gold — the offer is gone.' }); }
+      // Matched: my own open offer (if any) comes down — I'm taken.
+      const myOpen = openStakeOfferForKey(key);
+      if (myOpen) stakeOffers.delete(myOpen.id);
+      offer.status = 'matched';
+      offer.toKey = key;
+      broadcastStakeBoard(); // the matched offer leaves the open board
+      // Notify BOTH fighters clearly.
+      for (const k of [offer.fromKey, offer.toKey]) {
+        const s = online.get(k);
+        if (!s) continue;
+        const oppName = db.users[stakeOpponentKey(offer, k)].profile.username;
+        send(s.ws, { type: 'stake_matched', matchId: offer.id, opponent: oppName, stake: offer.stake, pot: offer.stake * 2 });
+        send(s.ws, { type: 'chat', from: 'Stake Board', text: `🤝 Stake match! ${poster.profile.username} vs ${profile.username} for ${offer.stake}g each — winner takes ${offer.stake * 2}g. Hit Ready when you're set.` });
+      }
+    }
+    if (m.type === 'stake_ready') {
+      const match = stakeOffers.get(String(m.matchId || ''));
+      if (!match || match.status !== 'matched' || (match.fromKey !== key && match.toKey !== key)) return send(ws, { type: 'error', message: 'That stake match is gone.' });
+      if (stakeBusy(me)) return send(ws, { type: 'error', message: 'You are in a fight right now.' });
+      const isFrom = match.fromKey === key;
+      if (isFrom ? match.ready.from : match.ready.to) { sendStakeMatchUpdate(match); return; } // already ready — just refresh
+      if (isFrom) match.ready.from = true; else match.ready.to = true;
+      const oppKey = stakeOpponentKey(match, key);
+      const oppSess = online.get(oppKey);
+      const oppName = db.users[oppKey] ? db.users[oppKey].profile.username : oppKey;
+      if (match.ready.from && match.ready.to) {
+        // SECOND ready: re-validate everything at this moment, then
+        // the existing startDuel escrows both stakes, moves both to
+        // the arena and runs the countdown — winner takes the pot.
+        const fromSess = online.get(match.fromKey), toSess = online.get(match.toKey);
+        const fail = !fromSess || !toSess ? 'A fighter has left.'
+          : (stakeBusy(fromSess) || stakeBusy(toSess)) ? 'One of you is in a fight right now.'
+          : (goldTotal(db.users[match.fromKey].profile) < match.stake || goldTotal(db.users[match.toKey].profile) < match.stake) ? 'Someone no longer has the gold for the stake.'
+          : null;
+        if (fail) { cancelStakeMatch(match, `Stake match cancelled — ${fail} No gold was taken.`); return; }
+        const { fromKey, toKey, stake } = match;
+        stakeOffers.delete(match.id);
+        broadcastStakeBoard();
+        for (const k of [fromKey, toKey]) {
+          const s = online.get(k);
+          if (s) send(s.ws, { type: 'chat', from: 'Stake Board', text: `⚔️ Both fighters are ready — the ${stake}g stake fight starts now! Winner takes ${stake * 2}g.` });
+        }
+        startDuel(fromKey, toKey, stake, [], [], null, null, false);
+        return;
+      }
+      // FIRST ready: this fighter spawns into the Waiting Area
+      // (poster on the west pad, acceptor on the east pad).
+      moveSessionToArea(me, 'waiting', isFrom ? 700 : 900, 450);
+      send(ws, { type: 'stake_waiting', matchId: match.id, opponent: oppName, stake: match.stake, pot: match.stake * 2 });
+      send(ws, { type: 'chat', from: 'Stake Board', text: `⏳ You're in the Waiting Area — the fight starts the moment ${oppName} is ready.` });
+      if (oppSess) send(oppSess.ws, { type: 'chat', from: 'Stake Board', text: `⏳ ${profile.username} is ready and waiting in the Waiting Area — hit Ready to start the fight!` });
+      sendStakeMatchUpdate(match);
+      broadcastState();
+    }
+    if (m.type === 'stake_match_cancel') {
+      const match = stakeOffers.get(String(m.matchId || ''));
+      if (!match || match.status !== 'matched' || (match.fromKey !== key && match.toKey !== key)) return send(ws, { type: 'error', message: 'That stake match is gone.' });
+      cancelStakeMatch(match, `${profile.username} cancelled the stake match — no gold was taken.`);
     }
   });
 
@@ -4555,6 +4891,19 @@ wss.on('connection', (ws, req) => {
     // them — clear the challenger's '!' marker either way.
     for (const [cid, ch] of [...challenges]) {
       if (ch.from === key || ch.to === key) { challenges.delete(cid); broadcastChallengeClear(ch.from); }
+    }
+    // Stage 17: the leaver's open stake offers come down, and a
+    // matched stake match is cancelled — the other party (if they
+    // were standing in the Waiting Area) is returned to the plaza
+    // and notified. No gold ever moves on a cancel.
+    {
+      let boardChanged = false;
+      for (const [oid, o] of [...stakeOffers]) {
+        if (o.status === 'open' && o.fromKey === key) { stakeOffers.delete(oid); boardChanged = true; }
+      }
+      if (boardChanged) broadcastStakeBoard();
+      const myMatch = stakeMatchForKey(key);
+      if (myMatch) cancelStakeMatch(myMatch, `${profile.username} left — the stake match is cancelled. No gold was taken.`);
     }
     // Stage 7A: pending official-fight offers and certificate
     // requests involving the leaver are cancelled (nothing is spent).
