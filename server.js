@@ -879,7 +879,7 @@ const server = http.createServer(async (req, res) => {
 // ---------- Real-time play ----------
 const wss = new WebSocketServer({ server, path: '/ws' });
 const online = new Map(); // usernameKey -> { ws, profile, x, y, area, duelId, npcFightId }
-const challenges = new Map(); // id -> { from, to, stake, items, expires }
+const challenges = new Map(); // id -> { id, from, to, stake, items, itemsTo, rules, confirm: {from,to}, expires } (Stage 14)
 const duels = new Map(); // id -> duel
 // Stage 7A pending flows (session-only, like challenges):
 const fightOffers = new Map(); // id -> { id, runnerKey, aKey, bKey, accepted: Map/key->bool, expires, timer }
@@ -938,6 +938,70 @@ function broadcastChallengeClear(challengerKey) {
   const msg = { type: 'challenge_clear', from: name };
   if (from) msg.area = from.area; // challenger offline: no current area to report
   broadcast(msg);
+}
+
+// ---------- Stage 14: duel challenge configuration ----------
+// Derek's reference screen: ONE configuration sheet that both
+// duelists edit until BOTH confirm — the rules (No Prayer / No
+// Potions / No Food / No Special Attacks; melee-only is a constant
+// of this game, not a toggle), the matched gold stake, and each
+// side's item stake. Any terms change resets BOTH confirms (the
+// trade flow's rule). The duel — escrow and all — starts only on
+// the second confirm, through the existing startDuel path.
+const DUEL_RULE_KEYS = ['noPrayer', 'noPotions', 'noFood', 'noSpecial'];
+function cleanDuelRules(r) {
+  const out = { noPrayer: false, noPotions: false, noFood: false, noSpecial: false };
+  if (r && typeof r === 'object') for (const k of DUEL_RULE_KEYS) out[k] = !!r[k];
+  return out;
+}
+function challengeTermsMsg(ch) {
+  const fromU = db.users[ch.from], toU = db.users[ch.to];
+  return {
+    type: 'challenge_terms', challengeId: ch.id,
+    from: fromU ? fromU.profile.username : ch.from,
+    to: toU ? toU.profile.username : ch.to,
+    stake: ch.stake, items: ch.items, itemsTo: ch.itemsTo,
+    rules: ch.rules, confirm: { from: ch.confirm.from, to: ch.confirm.to },
+    seconds: Math.max(0, Math.ceil((ch.expires - Date.now()) / 1000)),
+  };
+}
+function pushChallengeTerms(ch) {
+  const msg = challengeTermsMsg(ch);
+  const a = online.get(ch.from), b = online.get(ch.to);
+  if (a) send(a.ws, msg);
+  if (b) send(b.ws, msg);
+}
+// Applies a terms edit (challenge_update / challenge_confirm) to a
+// pending challenge. `items` in m are always the SENDER's own side —
+// nobody can edit the other player's stake. Returns an error
+// string, or null on success. Any actual change resets both
+// confirms: the editor must re-confirm, and so must the other side.
+function applyChallengeTerms(ch, senderKey, m) {
+  const sender = db.users[senderKey].profile;
+  const other = db.users[senderKey === ch.from ? ch.to : ch.from].profile;
+  const mine = senderKey === ch.from ? ch.items : ch.itemsTo;
+  const theirs = senderKey === ch.from ? ch.itemsTo : ch.items;
+  let stake = ch.stake, rules = ch.rules, myItems = mine;
+  if (m.stake !== undefined) {
+    stake = Math.floor(+m.stake || 0);
+    if (stake < 0 || stake > sender.gold || stake > other.gold) return 'Gold stake must be up to what you both have.';
+  }
+  if (m.items !== undefined) {
+    myItems = sanitizeItems(m.items);
+    if (myItems.some((s) => s.item === 'note')) return NOTE_PERSONAL_MSG;
+    if (!hasItems(sender, myItems)) return 'You don\'t have all the items you tried to stake.';
+  }
+  if (m.rules !== undefined) rules = cleanDuelRules(m.rules);
+  if (stake < 1 && myItems.length === 0 && theirs.length === 0) return 'Stake at least 1g, or stake items.';
+  const changed = stake !== ch.stake
+    || JSON.stringify(rules) !== JSON.stringify(ch.rules)
+    || JSON.stringify(myItems) !== JSON.stringify(mine);
+  if (changed) {
+    ch.stake = stake; ch.rules = rules;
+    if (senderKey === ch.from) ch.items = myItems; else ch.itemsTo = myItems;
+    ch.confirm.from = false; ch.confirm.to = false;
+  }
+  return null;
 }
 
 // ---------- Areas (Stage 1) ----------
@@ -1440,13 +1504,19 @@ function endDuel(duel, winnerKey, reason) {
   broadcastState();
 }
 
-function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null) {
+function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null, rules = null) {
   // Stage 7B: a duel starting cancels any open trade involving either
   // fighter first — the trade's other party is notified, nothing moves.
   for (const t of [...trades.values()]) {
     if (t.aKey === aKey || t.bKey === aKey || t.aKey === bKey || t.bKey === bKey) cancelTrade(t, 'Trade cancelled — a duel is starting.');
   }
   const a = db.users[aKey].profile, b = db.users[bKey].profile;
+  // Stage 14: rules agreed on the challenge configuration screen
+  // (null for mod-run fights and every other caller = no
+  // restrictions). A No Prayer duel starts with both prayers off —
+  // the prayer handler refuses to switch one on again.
+  const duelRules = cleanDuelRules(rules);
+  if (duelRules.noPrayer) { a.activePrayer = null; b.activePrayer = null; }
   // Escrow: both gold stakes AND both item stakes leave purses/backpacks
   // before the first tick. A decline never reaches here, so takes nothing.
   a.gold -= stake; b.gold -= stake;
@@ -1473,6 +1543,7 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null)
     done: false, timer: null,
     arena: { id: arenaDef.id, name: arenaDef.name },
     official: official || null, // Stage 7A: { runner: username } for mod-run fights
+    rules: duelRules, // Stage 14: { noPrayer, noPotions, noFood, noSpecial } — enforced by the prayer/use/special handlers
   };
   duels.set(id, duel);
   const sessA = online.get(aKey), sessB = online.get(bKey);
@@ -1488,7 +1559,7 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null)
   for (const k of [aKey, bKey]) {
     const p = online.get(k);
     send(p.ws, { type: 'area', area: 'arena' });
-    send(p.ws, { type: 'duel_start', duelId: id, stake, pot: duel.pot, escrowItems, arena: duel.arena, official: duel.official, countdownTicks: COUNTDOWN_TICKS, you: db.users[k].profile.username, opponent: db.users[k === aKey ? bKey : aKey].profile.username, profile: publicProfile(db.users[k].profile) });
+    send(p.ws, { type: 'duel_start', duelId: id, stake, pot: duel.pot, escrowItems, arena: duel.arena, official: duel.official, rules: duel.rules, countdownTicks: COUNTDOWN_TICKS, you: db.users[k].profile.username, opponent: db.users[k === aKey ? bKey : aKey].profile.username, profile: publicProfile(db.users[k].profile) });
   }
   broadcast({ type: 'chat', from: 'Duel Master', text: `${a.username} vs ${b.username} — now fighting in the ${arenaDef.name}!` });
   broadcastState();
@@ -3422,6 +3493,15 @@ wss.on('connection', (ws, req) => {
       const def = itemDef(item);
       if (!def || (def.kind !== 'food' && def.kind !== 'potion')) return send(ws, { type: 'error', message: 'That can\'t be used.' });
       if (stackQty(profile.backpack, item) < 1) return send(ws, { type: 'error', message: `No ${def.name} in your backpack.` });
+      // Stage 14: duel rules gate consumables for BOTH duelists,
+      // before anything is consumed (prayer potions included — they
+      // are kind 'potion'). Only a duel is ever checked: NPC,
+      // Barrows and Fight Caves fights are not duels.
+      const rulesDuel = me.duelId ? duels.get(me.duelId) : null;
+      if (rulesDuel && rulesDuel.rules) {
+        if (rulesDuel.rules.noFood && def.kind === 'food') return send(ws, { type: 'error', message: '🚫 No Food in this duel.' });
+        if (rulesDuel.rules.noPotions && def.kind === 'potion') return send(ws, { type: 'error', message: '🚫 No Potions in this duel.' });
+      }
       if (def.prayerRestore) {
         if (profile.prayerPoints >= profile.prayerMax) return send(ws, { type: 'error', message: 'Prayer points already full.' });
         removeStacks(profile.backpack, item, 1);
@@ -3551,6 +3631,13 @@ wss.on('connection', (ws, req) => {
       if (want !== null && !['melee', 'missiles', 'magic'].includes(want)) {
         return send(ws, { type: 'error', message: 'Unknown prayer.' });
       }
+      // Stage 14: a duel agreed as No Prayer rejects ACTIVATIONS for
+      // both duelists. Switching a prayer off (want null, or tapping
+      // the active one) is always allowed.
+      const prayerDuel = me.duelId ? duels.get(me.duelId) : null;
+      if (prayerDuel && prayerDuel.rules && prayerDuel.rules.noPrayer && want !== null && want !== profile.activePrayer) {
+        return send(ws, { type: 'error', message: '🚫 No Prayer in this duel.' });
+      }
       // Tapping the active prayer turns it off; a different one replaces it
       // (the previous switches off automatically — only one is ever active).
       profile.activePrayer = (want === null || want === profile.activePrayer) ? null : want;
@@ -3589,6 +3676,10 @@ wss.on('connection', (ws, req) => {
       const fc = !duel && !nf && me.fcRunId ? fcRuns.get(me.fcRunId) : null; // Stage 4: specials work in the caves too
       const bf = !duel && !nf && !fc && me.barrowsFightId ? barrowsFights.get(me.barrowsFightId) : null; // Stage 5: and in Barrows crypts
       if (!duel && !nf && !fc && !bf) return send(ws, { type: 'error', message: 'You are not in a duel.' });
+      // Stage 14: a No Special Attacks duel rejects queueing
+      // outright — the special can never fire. (NPC / Barrows /
+      // Fight Caves specials are not duels and never see this.)
+      if (duel && duel.rules && duel.rules.noSpecial) return send(ws, { type: 'error', message: '🚫 No Special Attacks in this duel.' });
       if (profile.specialEnergy < SPECIAL_COST) return send(ws, { type: 'error', message: `Dragon Slash needs ${SPECIAL_COST} special energy (you have ${Math.floor(profile.specialEnergy)}).` });
       if (duel) {
         if (duel.specialQueued[key]) return send(ws, { type: 'error', message: 'Special already queued for the next tick.' });
@@ -4308,29 +4399,99 @@ wss.on('connection', (ws, req) => {
       if (stake < 0 || stake > profile.gold || stake > target.profile.gold) return send(ws, { type: 'error', message: 'Gold stake must be up to what you both have.' });
       if (!hasItems(profile, items)) return send(ws, { type: 'error', message: 'You don\'t have all the items you tried to stake.' });
       const id = crypto.randomBytes(6).toString('hex');
-      challenges.set(id, { from: key, to: targetKey, stake, items, expires: Date.now() + 30000 });
-      send(target.ws, { type: 'challenge_incoming', challengeId: id, from: profile.username, stake, items, seconds: 30 });
+      // Stage 14: the challenge now opens the configuration screen —
+      // it carries the agreed rules and BOTH sides' stakes, and waits
+      // for both confirms (challenge_confirm) instead of starting on
+      // the target's accept.
+      const ch = { id, from: key, to: targetKey, stake, items, itemsTo: [], rules: cleanDuelRules(m.rules), confirm: { from: false, to: false }, expires: Date.now() + 30000 };
+      challenges.set(id, ch);
+      send(target.ws, { type: 'challenge_incoming', challengeId: id, from: profile.username, stake, items, rules: ch.rules, seconds: 30 });
       broadcastChallenging(key, targetKey); // Stage 7C: '!' over the challenger
+      pushChallengeTerms(ch); // both screens open on the same terms
       send(ws, { type: 'chat', from: 'Game', text: `Challenge sent to ${target.profile.username} for ${stake}g${items.length ? ' + items' : ''}.` });
     }
     if (m.type === 'challenge_response') {
       const ch = challenges.get(m.challengeId);
       if (!ch || ch.to !== key || ch.expires < Date.now()) { if (ch) broadcastChallengeClear(ch.from); challenges.delete(m.challengeId); return send(ws, { type: 'error', message: 'That challenge is gone.' }); }
-      challenges.delete(m.challengeId);
-      broadcastChallengeClear(ch.from); // Stage 7C: answered — the '!' comes down
-      const fromP = online.get(ch.from);
-      if (!fromP) return;
-      if (!m.accept) { send(fromP.ws, { type: 'chat', from: 'Game', text: `${profile.username} declined. No gold or items were taken.` }); return; }
-      if (me.npcFightId || fromP.npcFightId) return send(ws, { type: 'error', message: 'One of you is fighting a monster.' });
-      if (me.barrowsFightId || fromP.barrowsFightId) return send(ws, { type: 'error', message: 'One of you is fighting a Barrows brother.' });
-      if (me.fcRunId || fromP.fcRunId) return send(ws, { type: 'error', message: 'One of you is in the Fight Caves.' });
+      if (!m.accept) {
+        // Decline: exactly the old path — nothing is taken, the '!' comes down.
+        challenges.delete(m.challengeId);
+        broadcastChallengeClear(ch.from); // Stage 7C: answered — the '!' comes down
+        const fromP = online.get(ch.from);
+        if (fromP) {
+          send(fromP.ws, { type: 'chat', from: 'Game', text: `${profile.username} declined. No gold or items were taken.` });
+          send(fromP.ws, { type: 'challenge_closed', challengeId: ch.id }); // Stage 14: close the challenger's config screen
+        }
+        return;
+      }
+      // Stage 14: accepting no longer starts the duel — it JOINS the
+      // configuration. The target's item stake is recorded, both
+      // confirms reset if it changed anything, and the shared terms
+      // go back out to both screens. The duel starts on the second
+      // challenge_confirm (below). Escrow still only happens there.
       const myItems = sanitizeItems(m.items);
       if (myItems.some((s) => s.item === 'note')) return send(ws, { type: 'error', message: NOTE_PERSONAL_MSG }); // Stage 9: notes are personal
-      // Re-check purses AND backpacks at accept time — escrow only happens now.
-      if (db.users[ch.from].profile.gold < ch.stake || profile.gold < ch.stake) return send(ws, { type: 'error', message: 'Someone no longer has the gold.' });
-      if (!hasItems(db.users[ch.from].profile, ch.items)) return send(ws, { type: 'error', message: 'The challenger no longer has the staked items.' });
       if (!hasItems(profile, myItems)) return send(ws, { type: 'error', message: 'You don\'t have all the items you tried to stake.' });
-      startDuel(ch.from, key, ch.stake, ch.items, myItems);
+      if (JSON.stringify(myItems) !== JSON.stringify(ch.itemsTo)) { ch.itemsTo = myItems; ch.confirm.from = false; ch.confirm.to = false; }
+      ch.expires = Date.now() + 30000;
+      pushChallengeTerms(ch);
+    }
+    // Stage 14: either duelist edits the shared terms (their own
+    // item side, the matched gold, the rules). Any change resets
+    // both confirms — see applyChallengeTerms.
+    if (m.type === 'challenge_update') {
+      const ch = challenges.get(m.challengeId);
+      if (!ch || (ch.from !== key && ch.to !== key)) return send(ws, { type: 'error', message: 'That challenge is gone.' });
+      if (ch.expires < Date.now()) { challenges.delete(m.challengeId); broadcastChallengeClear(ch.from); return send(ws, { type: 'error', message: 'That challenge is gone.' }); }
+      const err = applyChallengeTerms(ch, key, m);
+      if (err) return send(ws, { type: 'error', message: err });
+      ch.expires = Date.now() + 30000; // an active negotiation stays alive
+      pushChallengeTerms(ch);
+    }
+    // Stage 14: confirm. The message may carry the sender's current
+    // screen state (stake / own items / rules) — applied first, so a
+    // confirm with fresh edits resets the OTHER side's confirm
+    // before this side's is set. On the second confirm the terms are
+    // re-validated end to end (busy states, purses, backpacks — the
+    // old accept-time checks) and the existing startDuel path takes
+    // the escrow with the agreed rules.
+    if (m.type === 'challenge_confirm') {
+      const ch = challenges.get(m.challengeId);
+      if (!ch || (ch.from !== key && ch.to !== key)) return send(ws, { type: 'error', message: 'That challenge is gone.' });
+      if (ch.expires < Date.now()) { challenges.delete(m.challengeId); broadcastChallengeClear(ch.from); return send(ws, { type: 'error', message: 'That challenge is gone.' }); }
+      const err = applyChallengeTerms(ch, key, m);
+      if (err) return send(ws, { type: 'error', message: err });
+      if (key === ch.from) ch.confirm.from = true; else ch.confirm.to = true;
+      ch.expires = Date.now() + 30000;
+      if (!(ch.confirm.from && ch.confirm.to)) { pushChallengeTerms(ch); return; }
+      const fromSess = online.get(ch.from), toSess = online.get(ch.to);
+      if (!fromSess || !toSess) { challenges.delete(m.challengeId); broadcastChallengeClear(ch.from); return send(ws, { type: 'error', message: 'That challenge is gone.' }); }
+      const failStart = (msg) => { ch.confirm.from = false; ch.confirm.to = false; pushChallengeTerms(ch); return send(ws, { type: 'error', message: msg }); };
+      if (fromSess.duelId || toSess.duelId) return failStart('One of you is already in a duel.');
+      if (fromSess.npcFightId || toSess.npcFightId) return failStart('One of you is fighting a monster.');
+      if (fromSess.barrowsFightId || toSess.barrowsFightId) return failStart('One of you is fighting a Barrows brother.');
+      if (fromSess.fcRunId || toSess.fcRunId) return failStart('One of you is in the Fight Caves.');
+      if (db.users[ch.from].profile.gold < ch.stake || db.users[ch.to].profile.gold < ch.stake) return failStart('Someone no longer has the gold.');
+      if (!hasItems(db.users[ch.from].profile, ch.items)) return failStart('The challenger no longer has the staked items.');
+      if (!hasItems(db.users[ch.to].profile, ch.itemsTo)) return failStart('The challenged player no longer has the staked items.');
+      challenges.delete(m.challengeId);
+      broadcastChallengeClear(ch.from); // Stage 7C: resolved — the '!' comes down
+      startDuel(ch.from, ch.to, ch.stake, ch.items, ch.itemsTo, null, ch.rules);
+    }
+    // Stage 14: either side cancels the configuration — the decline
+    // path's twin for the challenger (and for a target who already
+    // joined). No escrow is ever taken on a cancel.
+    if (m.type === 'challenge_cancel') {
+      const ch = challenges.get(m.challengeId);
+      if (!ch || (ch.from !== key && ch.to !== key)) return send(ws, { type: 'error', message: 'That challenge is gone.' });
+      challenges.delete(m.challengeId);
+      broadcastChallengeClear(ch.from);
+      const other = online.get(ch.from === key ? ch.to : ch.from);
+      if (other) {
+        send(other.ws, { type: 'chat', from: 'Game', text: `${profile.username} cancelled the challenge. No gold or items were taken.` });
+        send(other.ws, { type: 'challenge_closed', challengeId: ch.id });
+      }
+      send(ws, { type: 'challenge_closed', challengeId: ch.id });
     }
   });
 
