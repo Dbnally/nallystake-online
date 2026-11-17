@@ -729,17 +729,20 @@ function onXpDrop(m){
 
 /* ================= 3D world ================= */
 const W2S=10; // world units -> server coords
-const sx2w=x=>x/W2S-40, sy2w=y=>y/W2S-22.5; // server -> world
-const wx2s=x=>(x+40)*W2S, wz2s=z=>(z+22.5)*W2S; // world -> server
-const BANK_POS={x:400,y:225};
-const SHOP_SPOTS=[ // server coords
- {shop:'Potion',x:170,y:110,color:0x7a4fd0},
- {shop:'Weapon',x:630,y:110,color:0xb03a2e},
- {shop:'Armour',x:630,y:340,color:0x2e6db0},
- {shop:'Food & Supplies',x:170,y:340,color:0x3f9e4d},
+// Stage 13: the world doubled — server coords run 0..1600 x 0..900,
+// so the rendered world spans -80..80 x -45..45 world units.
+const WORLD_W=1600, WORLD_H=900; // server units (mirror of the server's)
+const sx2w=x=>x/W2S-80, sy2w=y=>y/W2S-45; // server -> world
+const wx2s=x=>(x+80)*W2S, wz2s=z=>(z+45)*W2S; // world -> server
+const BANK_POS={x:800,y:450};
+const SHOP_SPOTS=[ // server coords (Stage 13: old spots x2 — must match the server's plaza layout)
+ {shop:'Potion',x:340,y:220,color:0x7a4fd0},
+ {shop:'Weapon',x:1260,y:220,color:0xb03a2e},
+ {shop:'Armour',x:1260,y:680,color:0x2e6db0},
+ {shop:'Food & Supplies',x:340,y:680,color:0x3f9e4d},
 ];
-const BOARD_POS={x:492,y:225};
-let renderer, scene, camera, raycaster;
+const BOARD_POS={x:984,y:450};
+let renderer, scene, camera, raycaster, sunLight=null;
 let curArea='plaza';
 let areaGroups={}; // 'plaza' | 'goblins' -> THREE.Group (only the current one is visible)
 let npcList=[]; // latest npc_state npcs for the goblin camp
@@ -835,11 +838,11 @@ function shadowify(root){
 let flickerLights=[];
 function buildPlaza(root){
  const scene=root; // build into the plaza area group (box()/add calls below target it)
- // ground: dark grass (subtle noise texture)
- const grass=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({map:noiseTexture('#3a5230',['#324628','#425c34','#2c4024'],8,5)}));
+ // ground: dark grass (subtle noise texture) — Stage 13: 160x90 world units
+ const grass=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:noiseTexture('#3a5230',['#324628','#425c34','#2c4024'],16,10)}));
  grass.rotation.x=-Math.PI/2; grass.receiveShadow=true; scene.add(grass);
  // cobblestone-paved centre
- const stone=new THREE.Mesh(new THREE.PlaneGeometry(42,27),new THREE.MeshLambertMaterial({map:stoneTexture(9,6)}));
+ const stone=new THREE.Mesh(new THREE.PlaneGeometry(84,54),new THREE.MeshLambertMaterial({map:stoneTexture(18,12)}));
  stone.rotation.x=-Math.PI/2; stone.position.y=0.02; stone.receiveShadow=true; scene.add(stone);
  // bank chest on a stone dais (centre)
  const dais=new THREE.Mesh(new THREE.CylinderGeometry(3.4,3.8,0.5,8),new THREE.MeshLambertMaterial({color:0x7c7565}));
@@ -868,7 +871,7 @@ function buildPlaza(root){
  box(2.8,1.7,0.12,0x8a6d1f,0,1.7,0,bg,{type:'players'});
  const dbl=textSprite('⚔️ DUEL BOARD','#e3c766','rgba(23,19,12,0.85)'); dbl.position.set(0,3.2,0); bg.add(dbl);
  // Duel Master — static figure standing by the board (Fisher Wren pattern)
- const dm=new THREE.Group(); dm.position.set(11.5,0,2.8); scene.add(dm);
+ const dm=new THREE.Group(); dm.position.set(23,0,5.6); scene.add(dm); // Stage 13: x2, still beside the duel board
  box(0.24,0.7,0.24,0x241a12,-0.16,0.35,0,dm); box(0.24,0.7,0.24,0x241a12,0.16,0.35,0,dm); // legs
  box(0.7,0.8,0.4,0x6b4a7a,0,1.1,0,dm); // purple robe body
  box(0.44,0.44,0.44,0xd9a066,0,1.75,0,dm); // head
@@ -877,11 +880,12 @@ function buildPlaza(root){
  const dmlabel=document.createElement('div'); dmlabel.className='plabel';
  dmlabel.innerHTML=`<div class="nname">⚔️ Duel Master</div>`;
  $('labels').appendChild(dmlabel);
- worldLabels.push({el:dmlabel,x:11.5,y:3.1,z:2.8,area:'plaza',kind:'static'});
+ worldLabels.push({el:dmlabel,x:23,y:3.1,z:5.6,area:'plaza',kind:'static'});
  // ⚔️ TOURNAMENT DAIS (Stage 8, replaces the concert stage) — north
- // side, centred server (400,70); its front edge sits at server y≈45,
- // clear of the north gate strip (y<40). Same footprint as before.
- const stage=new THREE.Group(); stage.position.set(sx2w(400),0,sy2w(70)); scene.add(stage);
+ // side, centred server (800,140) (Stage 13: x2); its front edge sits
+ // at server y≈90, clear of the north gate strip (y<80). Same
+ // footprint as before.
+ const stage=new THREE.Group(); stage.position.set(sx2w(800),0,sy2w(140)); scene.add(stage);
  boxM(14,0.8,5,new THREE.MeshLambertMaterial({map:woodTexture('#5d4020')}),0,0.4,0,stage); // wooden platform
  box(14.6,0.25,5.6,0x55504a,0,0.92,0,stage); // stone front step
  box(14.4,0.3,0.5,0x4a443c,0,1.12,0,stage); // stone lip
@@ -914,8 +918,9 @@ function buildPlaza(root){
  const stglabel=document.createElement('div'); stglabel.className='plabel';
  stglabel.innerHTML=`<div class="nname">⚔️ Tournament Dais</div>`;
  $('labels').appendChild(stglabel);
- worldLabels.push({el:stglabel,x:sx2w(400),y:6.9,z:sy2w(70),area:'plaza',kind:'static'});
- // perimeter fences with gaps at the four gates
+ worldLabels.push({el:stglabel,x:sx2w(800),y:6.9,z:sy2w(140),area:'plaza',kind:'static'});
+ // perimeter fences with gaps at the four gates (Stage 13: the
+ // perimeter is at +-80 x +-45 world units; gate gaps are +-7)
  const fenceMat=0x6b4e26;
  function fenceRun(x1,z1,x2,z2){
    const len=Math.hypot(x2-x1,z2-z1), n=Math.max(2,Math.round(len/4));
@@ -924,45 +929,47 @@ function buildPlaza(root){
    const rail=box(0.08,0.12,len,fenceMat,midx,0.85,midz,scene); rail.rotation.y=ang;
    const rail2=box(0.08,0.12,len,fenceMat,midx,0.45,midz,scene); rail2.rotation.y=ang;
  }
- fenceRun(-40,-22.5,-3.5,-22.5); fenceRun(3.5,-22.5,40,-22.5); // north, gap at gate
- fenceRun(-40,22.5,-3.5,22.5); fenceRun(3.5,22.5,40,22.5); // south
- fenceRun(-40,-22.5,-40,-3.5); fenceRun(-40,3.5,-40,22.5); // west
- fenceRun(40,-22.5,40,-3.5); fenceRun(40,3.5,40,22.5); // east
+ fenceRun(-80,-45,-7,-45); fenceRun(7,-45,80,-45); // north, gap at gate
+ fenceRun(-80,45,-7,45); fenceRun(7,45,80,45); // south
+ fenceRun(-80,-45,-80,-7); fenceRun(-80,7,-80,45); // west
+ fenceRun(80,-45,80,-7); fenceRun(80,7,80,45); // east
  // gate posts N/E/S/W (visual only — Phase 3 areas later)
- for(const [gx,gz] of [[0,-22.5],[0,22.5],[-40,0],[40,0]]){
+ for(const [gx,gz] of [[0,-45],[0,45],[-80,0],[80,0]]){
    const horiz=Math.abs(gz)>Math.abs(gx);
-   const dx=horiz?2.6:0, dz=horiz?0:2.6;
+   const dx=horiz?5.2:0, dz=horiz?0:5.2;
    box(0.5,3.4,0.5,0x7c7565,gx-dx,1.7,gz-dz,scene); box(0.5,3.4,0.5,0x7c7565,gx+dx,1.7,gz+dz,scene);
-   box(horiz?5.7:0.6,0.4,horiz?0.6:5.7,0xd4af37,gx,3.3,gz,scene);
+   box(horiz?11.4:0.6,0.4,horiz?0.6:11.4,0xd4af37,gx,3.3,gz,scene);
  }
- // trees scattered away from the centre
- const treeSpots=[[-34,-17],[-26,16],[-14,-19],[14,19],[26,-17],[34,16],[36,-6],[-36,5],[20,-20],[-20,20],[30,4],[-30,-5],[8,20],[-8,-20]];
+ // trees scattered away from the centre (Stage 13: the original spots
+ // x2, plus a second ring filling the new outer ground)
+ const treeSpots=[[-68,-34],[-52,32],[-28,-38],[28,38],[52,-34],[68,32],[72,-12],[-72,10],[40,-40],[-40,40],[60,8],[-60,-10],[16,40],[-16,-40],
+   [-58,-24],[58,24],[-46,38],[46,-38],[74,20],[-74,-20],[24,26],[-24,-26],[64,-40],[-64,40]];
  for(const [tx,tz] of treeSpots){
    box(0.35,1.4,0.35,0x5a4020,tx,0.7,tz,scene);
    const cone=new THREE.Mesh(new THREE.ConeGeometry(1.7,3.4,7),new THREE.MeshLambertMaterial({color:0x2c5e26}));
    cone.position.set(tx,3.1,tz); scene.add(cone);
  }
- // a few rocks / bushes for feel
- for(const [rx,rz] of [[-18,8],[18,-9],[24,12],[-24,-12],[6,-18],[-6,17]]){
+ // a few rocks / bushes for feel (x2 + extras, as above)
+ for(const [rx,rz] of [[-36,16],[36,-18],[48,24],[-48,-24],[12,-36],[-12,34],[-56,-32],[56,34],[30,-28],[-30,28],[70,-4],[-70,6]]){
    const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.7),new THREE.MeshLambertMaterial({color:0x8a8578}));
    rock.position.set(rx,0.4,rz); scene.add(rock);
  }
 }
 function buildGoblinCamp(root){
  const S=root;
- // dirt/grass ground
- const grass=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({color:0x55702f}));
+ // dirt/grass ground (Stage 13: 160x90 world units, dirt patch x2)
+ const grass=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x55702f}));
  grass.rotation.x=-Math.PI/2; S.add(grass);
- const dirt=new THREE.Mesh(new THREE.PlaneGeometry(48,31),new THREE.MeshLambertMaterial({color:0x77683f}));
+ const dirt=new THREE.Mesh(new THREE.PlaneGeometry(96,62),new THREE.MeshLambertMaterial({color:0x77683f}));
  dirt.rotation.x=-Math.PI/2; dirt.position.y=0.02; S.add(dirt);
- // tents
- for(const [tx,tz] of [[-14,-9],[9,11],[21,-12]]){
+ // tents (spots x2; the +1.9 doorway offset is the tent's own geometry and stays)
+ for(const [tx,tz] of [[-28,-18],[18,22],[42,-24]]){
    const tent=new THREE.Mesh(new THREE.ConeGeometry(2.6,3.2,4),new THREE.MeshLambertMaterial({color:0x8a4b2a}));
    tent.position.set(tx,1.6,tz); tent.rotation.y=0.78; S.add(tent);
    box(1.0,1.4,0.15,0x3a2410,tx,0.7,tz+1.9,S); // dark doorway
  }
  // campfire
- const fire=new THREE.Group(); fire.position.set(2,0,3); S.add(fire);
+ const fire=new THREE.Group(); fire.position.set(4,0,6); S.add(fire);
  box(1.6,0.25,0.3,0x5a4020,0,0.15,0,fire);
  const log2=box(1.6,0.25,0.3,0x5a4020,0,0.15,0,fire); log2.rotation.y=1.57;
  const flame=new THREE.Mesh(new THREE.ConeGeometry(0.55,1.5,6),new THREE.MeshBasicMaterial({color:0xff7b24})); flame.position.set(0,0.95,0); fire.add(flame);
@@ -976,23 +983,23 @@ function buildGoblinCamp(root){
    const rail=box(0.08,0.12,len,fenceMat,midx,0.85,midz,S); rail.rotation.y=ang;
    const rail2=box(0.08,0.12,len,fenceMat,midx,0.45,midz,S); rail2.rotation.y=ang;
  }
- fenceRun(-40,-22.5,40,-22.5); // north
- fenceRun(-40,22.5,40,22.5); // south
- fenceRun(-40,-22.5,-40,-3.5); fenceRun(-40,3.5,-40,22.5); // west, gap at gate
- fenceRun(40,-22.5,40,22.5); // east
+ fenceRun(-80,-45,80,-45); // north
+ fenceRun(-80,45,80,45); // south
+ fenceRun(-80,-45,-80,-7); fenceRun(-80,7,-80,45); // west, gap at gate
+ fenceRun(80,-45,80,45); // east
  // gate posts at the west gap
- box(0.5,3.4,0.5,0x7c7565,-40,1.7,-2.6,S); box(0.5,3.4,0.5,0x7c7565,-40,1.7,2.6,S);
- box(0.6,0.4,5.7,0xd4af37,-40,3.3,0,S);
+ box(0.5,3.4,0.5,0x7c7565,-80,1.7,-5.2,S); box(0.5,3.4,0.5,0x7c7565,-80,1.7,5.2,S);
+ box(0.6,0.4,11.4,0xd4af37,-80,3.3,0,S);
  // signpost by the west gate
- box(0.18,2.2,0.18,0x5a4020,-36,1.1,4.2,S);
- const sp=textSprite('👺 Goblin Camp','#e3c766','rgba(23,19,12,0.85)'); sp.position.set(-36,3.0,4.2); S.add(sp);
- // trees + rocks
- for(const [tx,tz] of [[-30,-16],[-21,15],[27,16],[33,-8],[-8,-19],[14,20]]){
+ box(0.18,2.2,0.18,0x5a4020,-72,1.1,8.4,S);
+ const sp=textSprite('👺 Goblin Camp','#e3c766','rgba(23,19,12,0.85)'); sp.position.set(-72,3.0,8.4); S.add(sp);
+ // trees + rocks (Stage 13: original spots x2 + extras in the new ground)
+ for(const [tx,tz] of [[-60,-32],[-42,30],[54,32],[66,-16],[-16,-38],[28,40],[-70,18],[70,22],[-50,-40],[36,-36]]){
    box(0.35,1.4,0.35,0x5a4020,tx,0.7,tz,S);
    const cone=new THREE.Mesh(new THREE.ConeGeometry(1.7,3.4,7),new THREE.MeshLambertMaterial({color:0x3d5e22}));
    cone.position.set(tx,3.1,tz); S.add(cone);
  }
- for(const [rx,rz] of [[-16,5],[18,-5],[-27,-8],[11,15]]){
+ for(const [rx,rz] of [[-32,10],[36,-10],[-54,-16],[22,30],[58,8],[-64,28]]){
    const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.7),new THREE.MeshLambertMaterial({color:0x8a8578}));
    rock.position.set(rx,0.4,rz); S.add(rock);
  }
@@ -1006,9 +1013,11 @@ function rockWallRun(root,x1,z1,x2,z2){
 }
 function gatePosts(root,gx,gz){
  const onNS=Math.abs(gz)>=Math.abs(gx); // gate sits on a north/south wall -> posts offset in x
- const dx=onNS?2.6:0, dz=onNS?0:2.6;
+ // Stage 13: posts sit +-5.2 from the gate centre (the wall gaps are
+ // +-7 world units now); post cross-sections are unchanged.
+ const dx=onNS?5.2:0, dz=onNS?0:5.2;
  box(0.5,3.4,0.5,0x7c7565,gx-dx,1.7,gz-dz,root); box(0.5,3.4,0.5,0x7c7565,gx+dx,1.7,gz+dz,root);
- box(onNS?5.7:0.6,0.4,onNS?0.6:5.7,0xd4af37,gx,3.3,gz,root);
+ box(onNS?11.4:0.6,0.4,onNS?0.6:11.4,0xd4af37,gx,3.3,gz,root);
 }
 function buildTorch(root,x,z){
  box(0.16,2.0,0.16,0x5a4020,x,1.0,z,root);
@@ -1023,54 +1032,54 @@ function buildCampfire(parent){
 }
 function buildTrainingCave(root){
  const S=root;
- const floor=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({color:0x3a3a40}));
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x3a3a40}));
  floor.rotation.x=-Math.PI/2; S.add(floor);
- const stone=new THREE.Mesh(new THREE.PlaneGeometry(62,14),new THREE.MeshLambertMaterial({map:stoneTexture(),color:0x888888}));
+ const stone=new THREE.Mesh(new THREE.PlaneGeometry(124,28),new THREE.MeshLambertMaterial({map:stoneTexture(12,8),color:0x888888}));
  stone.rotation.x=-Math.PI/2; stone.position.y=0.02; S.add(stone);
  // rock walls, gap at the SOUTH gate (walk out to return to the plaza)
- rockWallRun(S,-40,-22.5,40,-22.5); // north
- rockWallRun(S,-40,22.5,-3.5,22.5); rockWallRun(S,3.5,22.5,40,22.5); // south, gap at gate
- rockWallRun(S,-40,-22.5,-40,22.5); // west
- rockWallRun(S,40,-22.5,40,22.5); // east
- gatePosts(S,0,22.5);
- buildTorch(S,-14,-20); buildTorch(S,14,-20);
+ rockWallRun(S,-80,-45,80,-45); // north
+ rockWallRun(S,-80,45,-7,45); rockWallRun(S,7,45,80,45); // south, gap at gate
+ rockWallRun(S,-80,-45,-80,45); // west
+ rockWallRun(S,80,-45,80,45); // east
+ gatePosts(S,0,45);
+ buildTorch(S,-28,-40); buildTorch(S,28,-40);
  // signpost by the south gate (stations themselves render from node data)
- box(0.18,2.2,0.18,0x5a4020,5.5,1.1,19.5,S);
- const sp=textSprite('🏋️ Training Cave','#e3c766','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,19.5); S.add(sp);
+ box(0.18,2.2,0.18,0x5a4020,11,1.1,39,S);
+ const sp=textSprite('🏋️ Training Cave','#e3c766','rgba(23,19,12,0.85)'); sp.position.set(11,3.0,39); S.add(sp);
 }
 function buildGatheringCave(root){
  const S=root;
- const floor=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({color:0x453f36}));
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x453f36}));
  floor.rotation.x=-Math.PI/2; S.add(floor);
- // pool on the east side, under the fishing spots (world x +18..+40)
- const pool=new THREE.Mesh(new THREE.PlaneGeometry(22,45),new THREE.MeshLambertMaterial({color:0x2e6db0}));
- pool.rotation.x=-Math.PI/2; pool.position.set(29,0.02,0); S.add(pool);
+ // pool on the east side, under the fishing spots (world x +36..+80)
+ const pool=new THREE.Mesh(new THREE.PlaneGeometry(44,90),new THREE.MeshLambertMaterial({color:0x2e6db0}));
+ pool.rotation.x=-Math.PI/2; pool.position.set(58,0.02,0); S.add(pool);
  // rock walls, gap at the NORTH gate (walk out to return to the plaza)
- rockWallRun(S,-40,-22.5,-3.5,-22.5); rockWallRun(S,3.5,-22.5,40,-22.5); // north, gap at gate
- rockWallRun(S,-40,22.5,40,22.5); // south
- rockWallRun(S,-40,-22.5,-40,22.5); // west
- rockWallRun(S,40,-22.5,40,22.5); // east
- gatePosts(S,0,-22.5);
- buildTorch(S,-14,20); buildTorch(S,14,20);
- // scattered decor rocks (nodes render separately, from data)
- for(const [rx,rz] of [[-30,14],[-18,-14],[2,16],[-6,-18],[12,-16]]){
+ rockWallRun(S,-80,-45,-7,-45); rockWallRun(S,7,-45,80,-45); // north, gap at gate
+ rockWallRun(S,-80,45,80,45); // south
+ rockWallRun(S,-80,-45,-80,45); // west
+ rockWallRun(S,80,-45,80,45); // east
+ gatePosts(S,0,-45);
+ buildTorch(S,-28,40); buildTorch(S,28,40);
+ // scattered decor rocks (nodes render separately, from data) — x2 + extras
+ for(const [rx,rz] of [[-60,28],[-36,-28],[4,32],[-12,-36],[24,-32],[-66,-8],[40,36],[-44,40]]){
    const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.6),new THREE.MeshLambertMaterial({color:0x6b675e}));
    rock.position.set(rx,0.35,rz); S.add(rock);
  }
- box(0.18,2.2,0.18,0x5a4020,5.5,1.1,-19.5,S);
- const sp=textSprite('⛏️ Gathering Cave','#e3c766','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,-19.5); S.add(sp);
+ box(0.18,2.2,0.18,0x5a4020,11,1.1,-39,S);
+ const sp=textSprite('⛏️ Gathering Cave','#e3c766','rgba(23,19,12,0.85)'); sp.position.set(11,3.0,-39); S.add(sp);
 }
 function buildFishingCove(root){
  const S=root;
- const grass=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({color:0x3a5230}));
+ const grass=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x3a5230}));
  grass.rotation.x=-Math.PI/2; grass.receiveShadow=true; S.add(grass);
- // lake covering the east third (world x +13..+40)
- const lake=new THREE.Mesh(new THREE.PlaneGeometry(27,45),new THREE.MeshLambertMaterial({color:0x2e6db0}));
- lake.rotation.x=-Math.PI/2; lake.position.set(26.5,0.02,0); S.add(lake);
+ // lake covering the east third (world x +26..+80)
+ const lake=new THREE.Mesh(new THREE.PlaneGeometry(54,90),new THREE.MeshLambertMaterial({color:0x2e6db0}));
+ lake.rotation.x=-Math.PI/2; lake.position.set(53,0.02,0); S.add(lake);
  // wooden dock jutting into the lake by the middle fishing spot (z=0)
- box(9,0.25,2.4,0x74552a,17.5,0.35,0,S);
- box(0.25,0.9,0.25,0x5a4020,13.5,0.1,-1,S); box(0.25,0.9,0.25,0x5a4020,13.5,0.1,1,S);
- box(0.25,0.9,0.25,0x5a4020,21.5,0.1,-1,S); box(0.25,0.9,0.25,0x5a4020,21.5,0.1,1,S);
+ box(18,0.25,2.4,0x74552a,35,0.35,0,S);
+ box(0.25,0.9,0.25,0x5a4020,27,0.1,-1,S); box(0.25,0.9,0.25,0x5a4020,27,0.1,1,S);
+ box(0.25,0.9,0.25,0x5a4020,43,0.1,-1,S); box(0.25,0.9,0.25,0x5a4020,43,0.1,1,S);
  // fences north + south; west shore open (gate), east is the lake
  const fenceMat=0x6b4e26;
  function fenceRun(x1,z1,x2,z2){
@@ -1080,14 +1089,14 @@ function buildFishingCove(root){
    const rail=box(0.08,0.12,len,fenceMat,midx,0.85,midz,S); rail.rotation.y=ang;
    const rail2=box(0.08,0.12,len,fenceMat,midx,0.45,midz,S); rail2.rotation.y=ang;
  }
- fenceRun(-40,-22.5,40,-22.5); // north
- fenceRun(-40,22.5,40,22.5); // south
- gatePosts(S,-40,0);
+ fenceRun(-80,-45,80,-45); // north
+ fenceRun(-80,45,80,45); // south
+ gatePosts(S,-80,0);
  // signpost by the west gate
- box(0.18,2.2,0.18,0x5a4020,-36,1.1,4.2,S);
- const sp=textSprite('🎣 Fishing Cove','#e3c766','rgba(23,19,12,0.85)'); sp.position.set(-36,3.0,4.2); S.add(sp);
+ box(0.18,2.2,0.18,0x5a4020,-72,1.1,8.4,S);
+ const sp=textSprite('🎣 Fishing Cove','#e3c766','rgba(23,19,12,0.85)'); sp.position.set(-72,3.0,8.4); S.add(sp);
  // Fisher Wren — decorative angler on the shore by the dock
- const wren=new THREE.Group(); wren.position.set(-8,0,6); S.add(wren);
+ const wren=new THREE.Group(); wren.position.set(-16,0,12); S.add(wren);
  box(0.24,0.7,0.24,0x4a3520,-0.16,0.35,0,wren); box(0.24,0.7,0.24,0x4a3520,0.16,0.35,0,wren); // legs
  box(0.7,0.8,0.4,0x6e4a1f,0,1.1,0,wren); // body
  box(0.44,0.44,0.44,0xd9a066,0,1.75,0,wren); // head
@@ -1097,9 +1106,9 @@ function buildFishingCove(root){
  const wlabel=document.createElement('div'); wlabel.className='plabel';
  wlabel.innerHTML=`<div class="nname">🎣 Fisher Wren</div>`;
  $('labels').appendChild(wlabel);
- worldLabels.push({el:wlabel,x:-8,y:3.1,z:6,area:'cove',kind:'static'});
+ worldLabels.push({el:wlabel,x:-16,y:3.1,z:12,area:'cove',kind:'static'});
  // decorative unlit campfire ring, centre-west (real fires come from the fires state)
- const ringC=new THREE.Group(); ringC.position.set(-20,0,5); S.add(ringC);
+ const ringC=new THREE.Group(); ringC.position.set(-40,0,10); S.add(ringC);
  for(let i=0;i<8;i++){ const a=i/8*Math.PI*2;
    const r=new THREE.Mesh(new THREE.DodecahedronGeometry(0.22),new THREE.MeshLambertMaterial({color:0x8a8578}));
    r.position.set(Math.cos(a)*1.1,0.12,Math.sin(a)*1.1); ringC.add(r); }
@@ -1108,36 +1117,36 @@ function buildFishingCove(root){
 }
 function buildMine(root){
  const S=root;
- const floor=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({color:0x3f3a33}));
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x3f3a33}));
  floor.rotation.x=-Math.PI/2; S.add(floor);
  // rock walls, gap at the SOUTH gate (walk out to return to the plaza)
- rockWallRun(S,-40,-22.5,40,-22.5); // north
- rockWallRun(S,-40,22.5,-3.5,22.5); rockWallRun(S,3.5,22.5,40,22.5); // south, gap at gate
- rockWallRun(S,-40,-22.5,-40,22.5); // west
- rockWallRun(S,40,-22.5,40,22.5); // east
- gatePosts(S,0,22.5);
- buildTorch(S,-14,-20); buildTorch(S,14,-20); buildTorch(S,36,-6);
+ rockWallRun(S,-80,-45,80,-45); // north
+ rockWallRun(S,-80,45,-7,45); rockWallRun(S,7,45,80,45); // south, gap at gate
+ rockWallRun(S,-80,-45,-80,45); // west
+ rockWallRun(S,80,-45,80,45); // east
+ gatePosts(S,0,45);
+ buildTorch(S,-28,-40); buildTorch(S,28,-40); buildTorch(S,72,-12);
  // signpost by the south gate (the rocks themselves render from node data)
- box(0.18,2.2,0.18,0x5a4020,5.5,1.1,19.5,S);
- const sp=textSprite('⛏️🔥 Emberfall','#e3c766','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,19.5); S.add(sp);
+ box(0.18,2.2,0.18,0x5a4020,11,1.1,39,S);
+ const sp=textSprite('⛏️🔥 Emberfall','#e3c766','rgba(23,19,12,0.85)'); sp.position.set(11,3.0,39); S.add(sp);
  // FURNACE — south-east: stone body, dark mouth facing west, flames inside, chimney
- const furn=new THREE.Group(); furn.position.set(31,0,13); S.add(furn);
+ const furn=new THREE.Group(); furn.position.set(62,0,26); S.add(furn);
  box(3.2,2.2,2.6,0x6b675e,0,1.1,0,furn); // body
  box(3.6,0.3,3.0,0x55555e,0,2.35,0,furn); // top slab
  box(0.9,2.4,0.9,0x55555e,0.7,3.4,-0.5,furn); // chimney
  box(0.25,1.15,1.6,0x140d06,-1.65,0.85,0,furn); // dark mouth (west face)
  const ffl=new THREE.Mesh(new THREE.ConeGeometry(0.42,1.1,6),new THREE.MeshBasicMaterial({color:0xff7b24})); ffl.rotation.z=Math.PI/2; ffl.position.set(-1.95,0.85,0); furn.add(ffl);
  const ffl2=new THREE.Mesh(new THREE.ConeGeometry(0.24,0.7,6),new THREE.MeshBasicMaterial({color:0xffd75e})); ffl2.rotation.z=Math.PI/2; ffl2.position.set(-1.9,0.85,0); furn.add(ffl2);
- const flb=textSprite('🔥 Furnace','#e3c766','rgba(23,19,12,0.85)'); flb.position.set(31,3.6,13); S.add(flb);
+ const flb=textSprite('🔥 Furnace','#e3c766','rgba(23,19,12,0.85)'); flb.position.set(62,3.6,26); S.add(flb);
  // ANVIL — next to the furnace
- const anv=new THREE.Group(); anv.position.set(25,0,16.5); S.add(anv);
+ const anv=new THREE.Group(); anv.position.set(50,0,33); S.add(anv);
  box(1.5,0.5,0.9,0x2e2e33,0,0.25,0,anv); // base
  box(0.7,0.5,0.6,0x3a3a41,0,0.75,0,anv); // waist
  box(2.0,0.35,0.75,0x4a4a52,0,1.18,0,anv); // top plate
  const horn=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.26,1.0,8),new THREE.MeshLambertMaterial({color:0x4a4a52})); horn.rotation.z=Math.PI/2; horn.position.set(1.35,1.18,0); anv.add(horn);
- const alb=textSprite('🔨 Anvil','#e3c766','rgba(23,19,12,0.85)'); alb.position.set(25,2.6,16.5); S.add(alb);
+ const alb=textSprite('🔨 Anvil','#e3c766','rgba(23,19,12,0.85)'); alb.position.set(50,2.6,33); S.add(alb);
  // Pickaxe Pete — miner standing by the smithy (his pickaxes are in the Shops panel)
- const pete=new THREE.Group(); pete.position.set(27,0,7); S.add(pete);
+ const pete=new THREE.Group(); pete.position.set(54,0,14); S.add(pete);
  box(0.24,0.7,0.24,0x3a2c1c,-0.16,0.35,0,pete); box(0.24,0.7,0.24,0x3a2c1c,0.16,0.35,0,pete); // legs
  box(0.7,0.8,0.4,0x6e4a1f,0,1.1,0,pete); // body
  box(0.44,0.44,0.44,0xd9a066,0,1.75,0,pete); // head
@@ -1148,20 +1157,21 @@ function buildMine(root){
  const plabel=document.createElement('div'); plabel.className='plabel';
  plabel.innerHTML=`<div class="nname">⛏️ Pickaxe Pete</div>`;
  $('labels').appendChild(plabel);
- worldLabels.push({el:plabel,x:27,y:3.1,z:7,area:'mine',kind:'static'});
- // scattered decor rocks (nodes render separately, from data)
- for(const [rx,rz] of [[-34,16],[-8,18],[14,18],[36,4],[-36,-4]]){
+ worldLabels.push({el:plabel,x:54,y:3.1,z:14,area:'mine',kind:'static'});
+ // scattered decor rocks (nodes render separately, from data) — x2 + extras
+ for(const [rx,rz] of [[-68,32],[-16,36],[28,36],[72,8],[-72,-8],[-40,-30],[16,-34],[60,30]]){
    const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.6),new THREE.MeshLambertMaterial({color:0x5d574c}));
    rock.position.set(rx,0.35,rz); S.add(rock);
  }
 }
 /* ---- Stage 4: Fight Caves scene ---- */
 // Lava pool spots in SERVER coords — shared by the scene and the minimap.
-const FC_LAVA=[[150,110],[650,110],[400,55],[110,330],[690,330]];
+// (Stage 13: old spots x2.)
+const FC_LAVA=[[300,220],[1300,220],[800,110],[220,660],[1380,660]];
 function buildFightCaves(root){
  const S=root;
  // dark basalt floor (near-black brown)
- const floor=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({color:0x241a12}));
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x241a12}));
  floor.rotation.x=-Math.PI/2; S.add(floor);
  // glowing lava pools (basic material = always bright, reads as emissive)
  for(const [lx,ly] of FC_LAVA){
@@ -1173,35 +1183,38 @@ function buildFightCaves(root){
    const rim=new THREE.Mesh(new THREE.RingGeometry(2.7,3.15,18),new THREE.MeshLambertMaterial({color:0x17100b}));
    rim.rotation.x=-Math.PI/2; rim.position.set(wx,0.025,wz); S.add(rim);
  }
- // lava cracks: thin glowing strips across the floor
- for(const [lx,ly,len,rot] of [[300,300,9,0.5],[520,210,11,-0.35],[210,60,7,0.9],[600,380,8,0.2],[430,150,6,-0.7]]){
+ // lava cracks: thin glowing strips across the floor. The spots are
+ // SERVER coords (Stage 13: old spots x2) — they now go through
+ // sx2w/sy2w like everything else (previously they were passed raw
+ // as world coords, which put them far off the map, invisible).
+ for(const [lx,ly,len,rot] of [[600,600,9,0.5],[1040,420,11,-0.35],[420,120,7,0.9],[1200,760,8,0.2],[860,300,6,-0.7]]){
    const crack=new THREE.Mesh(new THREE.PlaneGeometry(len,0.32),new THREE.MeshBasicMaterial({color:0xff7b24}));
-   crack.rotation.x=-Math.PI/2; crack.rotation.z=rot; crack.position.set(lx,0.035,ly); S.add(crack);
+   crack.rotation.x=-Math.PI/2; crack.rotation.z=rot; crack.position.set(sx2w(lx),0.035,sy2w(ly)); S.add(crack);
  }
  // rock walls, gap at the SOUTH entrance (walk out to return to the plaza)
- rockWallRun(S,-40,-22.5,40,-22.5); // north
- rockWallRun(S,-40,22.5,-3.5,22.5); rockWallRun(S,3.5,22.5,40,22.5); // south, gap at entrance
- rockWallRun(S,-40,-22.5,-40,22.5); // west
- rockWallRun(S,40,-22.5,40,22.5); // east
- gatePosts(S,0,22.5);
- buildTorch(S,-14,20); buildTorch(S,14,20); buildTorch(S,-36,-14); buildTorch(S,36,-14);
+ rockWallRun(S,-80,-45,80,-45); // north
+ rockWallRun(S,-80,45,-7,45); rockWallRun(S,7,45,80,45); // south, gap at entrance
+ rockWallRun(S,-80,-45,-80,45); // west
+ rockWallRun(S,80,-45,80,45); // east
+ gatePosts(S,0,45);
+ buildTorch(S,-28,40); buildTorch(S,28,40); buildTorch(S,-72,-28); buildTorch(S,72,-28);
  // basalt columns / stalagmites for feel (kept off the monster grid centre)
- for(const [rx,rz,rs] of [[-33,-16,1.2],[33,-18,1.5],[-24,8,0.9],[25,2,1.1],[-36,14,0.8],[18,-20,0.7]]){
+ for(const [rx,rz,rs] of [[-66,-32,1.2],[66,-36,1.5],[-48,16,0.9],[50,4,1.1],[-72,28,0.8],[36,-40,0.7]]){
    const col=new THREE.Mesh(new THREE.ConeGeometry(0.9*rs,3.4*rs,6),new THREE.MeshLambertMaterial({color:0x33261c}));
    col.position.set(rx,1.7*rs,rz); S.add(col);
  }
  // signpost by the south entrance (monsters render from fc_state data)
- box(0.18,2.2,0.18,0x5a4020,5.5,1.1,19.5,S);
- const sp=textSprite('🌋 Fight Caves','#ffb03a','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,19.5); S.add(sp);
+ box(0.18,2.2,0.18,0x5a4020,11,1.1,39,S);
+ const sp=textSprite('🌋 Fight Caves','#ffb03a','rgba(23,19,12,0.85)'); sp.position.set(11,3.0,39); S.add(sp);
 }
 /* ================= Stage 5: Barrows, duel arenas, drop piles ================= */
-const BARROWS_CLIENT={
- dharok:{name:'Dharok the Wretched',lvl:115,type:'melee',x:150,y:110,tint:0x7a9a4d,short:'Dharok'},
- guthan:{name:'Guthan the Infested',lvl:115,type:'melee',x:330,y:80,tint:0xb59a6a,short:'Guthan'},
- torag:{name:'Torag the Corrupted',lvl:115,type:'melee',x:510,y:80,tint:0x7a8a9a,short:'Torag'},
- verac:{name:'Verac the Defiled',lvl:115,type:'melee',x:660,y:110,tint:0x8a5aa8,short:'Verac'},
- ahrim:{name:'Ahrim the Blighted',lvl:98,type:'magic',x:240,y:220,tint:0xa83a3a,short:'Ahrim'},
- karil:{name:'Karil the Tainted',lvl:98,type:'missiles',x:560,y:220,tint:0x5d4a38,short:'Karil'}
+const BARROWS_CLIENT={ // mound spots in server coords — MUST match the server's BARROWS_BROTHERS mounds (Stage 13: old spots x2)
+ dharok:{name:'Dharok the Wretched',lvl:115,type:'melee',x:300,y:220,tint:0x7a9a4d,short:'Dharok'},
+ guthan:{name:'Guthan the Infested',lvl:115,type:'melee',x:660,y:160,tint:0xb59a6a,short:'Guthan'},
+ torag:{name:'Torag the Corrupted',lvl:115,type:'melee',x:1020,y:160,tint:0x7a8a9a,short:'Torag'},
+ verac:{name:'Verac the Defiled',lvl:115,type:'melee',x:1320,y:220,tint:0x8a5aa8,short:'Verac'},
+ ahrim:{name:'Ahrim the Blighted',lvl:98,type:'magic',x:480,y:440,tint:0xa83a3a,short:'Ahrim'},
+ karil:{name:'Karil the Tainted',lvl:98,type:'missiles',x:1120,y:440,tint:0x5d4a38,short:'Karil'}
 };
 const BARROWS_ORDER=['dharok','guthan','torag','verac','ahrim','karil'];
 const PRAYER_FOR_TYPE={melee:['🛡️','Protect from Melee'],magic:['🔮','Protect from Magic'],missiles:['🏹','Protect from Missiles']};
@@ -1217,26 +1230,26 @@ const PUZZLE_EMOJI={circle:'⚪',square:'🟦',triangle:'🔺',diamond:'🔷'};
 
 function buildBarrows(root){
  const S=root;
- const floor=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({map:noiseTexture('#3f4433',['#363b2c','#4a5040','#2e3325'],8,5),color:0xbfc4b0}));
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:noiseTexture('#3f4433',['#363b2c','#4a5040','#2e3325'],16,10),color:0xbfc4b0}));
  floor.rotation.x=-Math.PI/2; S.add(floor);
  // rock walls, gap at the SOUTH gate (walk out to return to the plaza)
- rockWallRun(S,-40,-22.5,40,-22.5); // north
- rockWallRun(S,-40,22.5,-3.5,22.5); rockWallRun(S,3.5,22.5,40,22.5); // south, gap at gate
- rockWallRun(S,-40,-22.5,-40,22.5); // west
- rockWallRun(S,40,-22.5,40,22.5); // east
- gatePosts(S,0,22.5);
- buildTorch(S,-6,20); buildTorch(S,6,20);
+ rockWallRun(S,-80,-45,80,-45); // north
+ rockWallRun(S,-80,45,-7,45); rockWallRun(S,7,45,80,45); // south, gap at gate
+ rockWallRun(S,-80,-45,-80,45); // west
+ rockWallRun(S,80,-45,80,45); // east
+ gatePosts(S,0,45);
+ buildTorch(S,-12,40); buildTorch(S,12,40);
  // signpost by the south gate
- box(0.18,2.2,0.18,0x5a4020,5.5,1.1,19.5,S);
- const sp=textSprite('💀 Barrows','#d8b4fe','rgba(23,19,12,0.85)'); sp.position.set(5.5,3.0,19.5); S.add(sp);
- // dead trees
- for(const [tx,tz] of [[-33,-17],[-14,-19],[30,-18],[36,12],[-36,8],[8,17],[-24,19]]){
+ box(0.18,2.2,0.18,0x5a4020,11,1.1,39,S);
+ const sp=textSprite('💀 Barrows','#d8b4fe','rgba(23,19,12,0.85)'); sp.position.set(11,3.0,39); S.add(sp);
+ // dead trees (x2 + extras; the +0.4/-0.35 branch offsets are the trees' own geometry and stay)
+ for(const [tx,tz] of [[-66,-34],[-28,-38],[60,-36],[72,24],[-72,16],[16,34],[-48,38],[-58,30],[44,40]]){
    box(0.3,2.2,0.3,0x2e2620,tx,1.1,tz,S);
    const br=box(0.14,1.4,0.14,0x2e2620,tx+0.4,2.6,tz,S); br.rotation.z=-0.7;
    const br2=box(0.12,1.1,0.12,0x2e2620,tx-0.35,2.5,tz,S); br2.rotation.z=0.6;
  }
- // scattered rocks
- for(const [rx,rz] of [[-20,-6],[16,-12],[24,14],[-10,8],[34,-4]]){
+ // scattered rocks (x2 + extras)
+ for(const [rx,rz] of [[-40,-12],[32,-24],[48,28],[-20,16],[68,-8],[-62,-28],[10,-40]]){
    const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.6),new THREE.MeshLambertMaterial({color:0x55554e}));
    rock.position.set(rx,0.35,rz); S.add(rock);
  }
@@ -1277,12 +1290,12 @@ function refreshBarrowsMounds(){
 }
 function buildBarrowsTunnels(root){
  const S=root;
- const floor=new THREE.Mesh(new THREE.PlaneGeometry(80,45),new THREE.MeshLambertMaterial({color:0x14101c}));
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x14101c}));
  floor.rotation.x=-Math.PI/2; S.add(floor);
- rockWallRun(S,-40,-22.5,40,-22.5); rockWallRun(S,-40,22.5,40,22.5);
- rockWallRun(S,-40,-22.5,-40,22.5); rockWallRun(S,40,-22.5,40,22.5);
- buildTorch(S,-14,-14); buildTorch(S,14,-14); buildTorch(S,-14,14); buildTorch(S,14,14); buildTorch(S,0,-20);
- // reward chest at the centre (server 400,225 -> world 0,0)
+ rockWallRun(S,-80,-45,80,-45); rockWallRun(S,-80,45,80,45);
+ rockWallRun(S,-80,-45,-80,45); rockWallRun(S,80,-45,80,45);
+ buildTorch(S,-28,-28); buildTorch(S,28,-28); buildTorch(S,-28,28); buildTorch(S,28,28); buildTorch(S,0,-40);
+ // reward chest at the centre (server 800,450 -> world 0,0)
  const chest=new THREE.Group(); chest.position.set(0,0,0); S.add(chest);
  box(1.8,0.9,1.1,0x6b4a1f,0,0.45,0,chest);
  box(1.9,0.35,1.2,0x8a6d1f,0,1.05,0,chest);
@@ -1291,14 +1304,14 @@ function buildBarrowsTunnels(root){
  clabel.innerHTML=`<div class="nname">💰 Reward chest</div>`;
  $('labels').appendChild(clabel);
  worldLabels.push({el:clabel,x:0,y:2.2,z:0,area:'barrows_tunnels',kind:'static'});
- // ladder near the spawn corner (server 435,260)
- const lad=new THREE.Group(); lad.position.set(sx2w(435),0,sy2w(260)); S.add(lad);
+ // ladder near the spawn corner (server 870,520 — Stage 13: x2)
+ const lad=new THREE.Group(); lad.position.set(sx2w(870),0,sy2w(520)); S.add(lad);
  box(0.14,2.6,0.14,0x8a6d4a,-0.35,1.3,0,lad); box(0.14,2.6,0.14,0x8a6d4a,0.35,1.3,0,lad);
  for(let i=0;i<4;i++) box(0.85,0.1,0.1,0xa8845a,0,0.5+i*0.55,0,lad);
  const llabel=document.createElement('div'); llabel.className='plabel';
  llabel.innerHTML=`<div class="nname">🪜 Climb out</div>`;
  $('labels').appendChild(llabel);
- worldLabels.push({el:llabel,x:sx2w(435),y:3.2,z:sy2w(260),area:'barrows_tunnels',kind:'static'});
+ worldLabels.push({el:llabel,x:sx2w(870),y:3.2,z:sy2w(520),area:'barrows_tunnels',kind:'static'});
 }
 /* ---- Duel arena (Stage 5): one pit, recoloured per duel variant ---- */
 const ARENA_VARIANTS={
@@ -1310,24 +1323,24 @@ const ARENA_VARIANTS={
 let arenaVariant='sand', arenaFloorMat=null, arenaDecor={ember:[],azure:[],violet:[]};
 function buildArena(root){
  const S=root;
- arenaFloorMat=new THREE.MeshLambertMaterial({map:noiseTexture('#d8c491',['#c9b37e','#e8d9a8','#bfa96e'],8,5)});
- const floor=new THREE.Mesh(new THREE.PlaneGeometry(80,45),arenaFloorMat);
+ arenaFloorMat=new THREE.MeshLambertMaterial({map:noiseTexture('#d8c491',['#c9b37e','#e8d9a8','#bfa96e'],16,10)});
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(160,90),arenaFloorMat);
  floor.rotation.x=-Math.PI/2; S.add(floor);
- rockWallRun(S,-40,-22.5,40,-22.5); rockWallRun(S,-40,22.5,40,22.5);
- rockWallRun(S,-40,-22.5,-40,22.5); rockWallRun(S,40,-22.5,40,22.5);
- for(const [px,pz] of [[-38,-20.5],[38,-20.5],[-38,20.5],[38,20.5]]) box(0.6,3.2,0.6,0x7c7565,px,1.6,pz,S); // corner posts
- buildTorch(S,-20,-20); buildTorch(S,20,-20); buildTorch(S,-20,20); buildTorch(S,20,20);
+ rockWallRun(S,-80,-45,80,-45); rockWallRun(S,-80,45,80,45);
+ rockWallRun(S,-80,-45,-80,45); rockWallRun(S,80,-45,80,45);
+ for(const [px,pz] of [[-76,-41],[76,-41],[-76,41],[76,41]]) box(0.6,3.2,0.6,0x7c7565,px,1.6,pz,S); // corner posts
+ buildTorch(S,-40,-40); buildTorch(S,40,-40); buildTorch(S,-40,40); buildTorch(S,40,40);
  arenaDecor={ember:[],azure:[],violet:[]};
- // ember: glowing lava cracks
- for(const [lx,lz,lw] of [[-12,6,7],[10,-8,9],[0,14,6],[-20,-12,5]]){
+ // ember: glowing lava cracks (positions x2; crack lengths are sizes and stay)
+ for(const [lx,lz,lw] of [[-24,12,7],[20,-16,9],[0,28,6],[-40,-24,5]]){
    const crack=new THREE.Mesh(new THREE.BoxGeometry(lw,0.06,0.35),new THREE.MeshBasicMaterial({color:0xff5a1f}));
    crack.position.set(lx,0.05,lz); crack.rotation.y=lx*0.7; S.add(crack); arenaDecor.ember.push(crack);
  }
  // azure / violet: coloured banners on the north wall
  for(const [key,col] of [['azure',0x2e7fd9],['violet',0x6b4a7a]]){
-   for(const bx of [-16,0,16]){
-     const pole=box(0.14,3.4,0.14,0x5a4020,bx,1.7,-21.6,S);
-     const ban=box(1.5,1.9,0.08,col,bx,2.2,-21.5,S);
+   for(const bx of [-32,0,32]){
+     const pole=box(0.14,3.4,0.14,0x5a4020,bx,1.7,-43.2,S);
+     const ban=box(1.5,1.9,0.08,col,bx,2.2,-43.0,S);
      arenaDecor[key].push(pole,ban);
    }
  }
@@ -1419,13 +1432,13 @@ function tapChest(){
  if(curArea!=='barrows_tunnels'||!myPos) return;
  if(npcFight){ toast('Finish this fight first!'); return; }
  if(!puzzleSolved){ openPuzzle(); return; }
- const d=Math.hypot(myPos.x-400,myPos.y-225);
+ const d=Math.hypot(myPos.x-800,myPos.y-450);
  if(d<=140){ send({type:'barrows_loot'}); }
- else { pendingChest=true; tapTarget={x:400,y:225}; toast('🚶 Walking to the reward chest…'); }
+ else { pendingChest=true; tapTarget={x:800,y:450}; toast('🚶 Walking to the reward chest…'); }
 }
 function checkPendingChest(){
  if(!pendingChest||!myPos) return;
- if(Math.hypot(myPos.x-400,myPos.y-225)<=140){ pendingChest=false; tapTarget=null; tapChest(); }
+ if(Math.hypot(myPos.x-800,myPos.y-450)<=140){ pendingChest=false; tapTarget=null; tapChest(); }
 }
 function onBarrowsLoot(m){
  if(m.profile) me=m.profile;
@@ -1459,7 +1472,7 @@ function makeBrother(m){
  const label=document.createElement('div'); label.className='plabel';
  label.innerHTML=`<div class="gname">${esc(b.name||m.name)} · lvl ${b.lvl||m.combatLevel||''}</div><div class="hpwrap"><div class="hpfill"></div></div>`;
  $('labels').appendChild(label);
- const anchor=(curArea==='barrows_tunnels')? {x:400,y:225} : {x:b.x,y:b.y};
+ const anchor=(curArea==='barrows_tunnels')? {x:800,y:450} : {x:b.x,y:b.y}; // tunnels anchor = the chest (server BARROWS_CHEST)
  return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),
    x:sx2w(anchor.x),z:sy2w(anchor.y),hp:100,maxHp:100,isBrother:true,swingStart:0,splatY:2.9};
 }
@@ -2507,7 +2520,7 @@ function handleTap(cx,cy){
  if(curArea==='barrows_tunnels'){
    const cs=projectTo(0,1.2,0);
    if(cs && Math.hypot(cs.x-cx,cs.y-cy)<56){ tapChest(); return; }
-   const ls=projectTo(sx2w(435),1.6,sy2w(260));
+   const ls=projectTo(sx2w(870),1.6,sy2w(520));
    if(ls && Math.hypot(ls.x-cx,ls.y-cy)<48){ send({type:'barrows_leave_tunnel'}); return; }
  }
  // drop piles (tap to pick up; walks over first if too far)
@@ -2560,7 +2573,7 @@ function handleTap(cx,cy){
  const groundRoot=areaGroups[curArea];
  const gh=groundRoot? raycaster.intersectObjects(groundRoot.children.filter(o=>o.geometry&&o.geometry.type==='PlaneGeometry'),false)[0] : null;
  if(gh){
-   const pt={x:clamp(wx2s(gh.point.x),0,800), y:clamp(wz2s(gh.point.z),0,450)};
+   const pt={x:clamp(wx2s(gh.point.x),0,WORLD_W), y:clamp(wz2s(gh.point.z),0,WORLD_H)};
    pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false;
    pendingUseCook=null; pendingUseLogs=null;
    stopFollow();
@@ -2577,22 +2590,23 @@ function checkGates(){
  if(!myPos||!me||Date.now()<gateCooldownUntil) return;
  const go=(to,msg)=>{ gateCooldownUntil=Date.now()+2000; stopGather(); send({type:'travel',to}); toast(msg); };
  if(curArea==='plaza'){
-   // corners first, then edges
-   if(myPos.x>=790&&myPos.y>=430){ go('training','🚪 South-east gate → Training Cave…'); return; }
-   if(myPos.x<=10&&myPos.y>=430){ go('gathering','🚪 South-west gate → Gathering Cave…'); return; }
-   if(myPos.x>=790&&myPos.y<=20){ go('mine','🚪 North-east gate → Emberfall Mine & Smithy…'); return; }
-   if(myPos.x>=795){ go('goblins','🚪 East gate → Goblin Camp…'); return; }
-   if(myPos.x<=5){ go('cove','🚪 West gate → Fishing Cove…'); return; }
-   if(myPos.y<=5&&myPos.x>=300&&myPos.x<=500){ go('fightcaves','🚪 North gate → Fight Caves…'); return; }
-   if(myPos.y>=445&&myPos.x>=300&&myPos.x<=500){ go('barrows','🚪 South gate → Barrows…'); return; }
+   // corners first, then edges (Stage 13: every trigger zone is the
+   // old zone x2, matching the doubled gate visuals)
+   if(myPos.x>=1580&&myPos.y>=860){ go('training','🚪 South-east gate → Training Cave…'); return; }
+   if(myPos.x<=20&&myPos.y>=860){ go('gathering','🚪 South-west gate → Gathering Cave…'); return; }
+   if(myPos.x>=1580&&myPos.y<=40){ go('mine','🚪 North-east gate → Emberfall Mine & Smithy…'); return; }
+   if(myPos.x>=1590){ go('goblins','🚪 East gate → Goblin Camp…'); return; }
+   if(myPos.x<=10){ go('cove','🚪 West gate → Fishing Cove…'); return; }
+   if(myPos.y<=10&&myPos.x>=600&&myPos.x<=1000){ go('fightcaves','🚪 North gate → Fight Caves…'); return; }
+   if(myPos.y>=890&&myPos.x>=600&&myPos.x<=1000){ go('barrows','🚪 South gate → Barrows…'); return; }
  }
- else if(curArea==='barrows'&&myPos.y>=445){ go('plaza','🚪 South gate → Plaza…'); }
- else if(curArea==='goblins'&&myPos.x<=5){ go('plaza','🚪 West gate → Plaza…'); }
- else if(curArea==='cove'&&myPos.x<=5){ go('plaza','🚪 West gate → Plaza…'); }
- else if(curArea==='training'&&myPos.y>=445){ go('plaza','🚪 South gate → Plaza…'); }
- else if(curArea==='gathering'&&myPos.y<=5){ go('plaza','🚪 North gate → Plaza…'); }
- else if(curArea==='mine'&&myPos.y>=445){ go('plaza','🚪 South gate → Plaza…'); }
- else if(curArea==='fightcaves'&&myPos.y>=445){ go('plaza','🚪 South entrance → Plaza…'); }
+ else if(curArea==='barrows'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
+ else if(curArea==='goblins'&&myPos.x<=10){ go('plaza','🚪 West gate → Plaza…'); }
+ else if(curArea==='cove'&&myPos.x<=10){ go('plaza','🚪 West gate → Plaza…'); }
+ else if(curArea==='training'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
+ else if(curArea==='gathering'&&myPos.y<=10){ go('plaza','🚪 North gate → Plaza…'); }
+ else if(curArea==='mine'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
+ else if(curArea==='fightcaves'&&myPos.y>=890){ go('plaza','🚪 South entrance → Plaza…'); }
 }
 function checkPendingAttack(){
  if(!pendingAttack||!myPos) return;
@@ -2635,8 +2649,8 @@ function stepMovement(dt){
  if(vx||vz){
    localRot=Math.atan2(vx,vz);
    const sp=moveSpeed()*dt; // world units/s
-   myPos.x=clamp(myPos.x+vx*sp*W2S,0,800);
-   myPos.y=clamp(myPos.y+vz*sp*W2S,0,450);
+   myPos.x=clamp(myPos.x+vx*sp*W2S,0,WORLD_W);
+   myPos.y=clamp(myPos.y+vz*sp*W2S,0,WORLD_H);
    finishStep(true);
  } else { myVel={x:0,z:0}; finishStep(false); }
 }
@@ -2656,7 +2670,7 @@ function finishStep(moved){
  if(moved){ checkPendingAttack(); checkPendingNode(); checkPendingFcAttack(); checkPendingMound(); checkPendingPile(); checkPendingChest(); checkPendingUse(); }
 }
 /* ================= minimap (rotating, player-centred) ================= */
-const MM_S=128/520; // minimap px per server unit (~520 units across)
+const MM_S=128/520; // minimap px per server unit (~520 units across — Stage 13 kept the same view window: the map is player-centred, so a bigger world just means more of it lies off-map; every feature below is drawn in the new 0..1600 x 0..900 server coords)
 function mapTheta(){
  // Facing on the ground (server plane) is (-sinYaw, -cosYaw); rotate the
  // map so that direction points straight up. Player stays centred.
@@ -2676,11 +2690,11 @@ function drawMinimap(){
  g.fillStyle= curArea==='barrows'? '#333a2a'
    : curArea==='barrows_tunnels'? '#0d0a12'
    : curArea==='arena'? ARENA_VARIANTS[arenaVariant].css
-   : caveBg? (curArea==='fightcaves'? '#241a12' : '#2b2b30') : (curArea==='goblins')? '#55702f' : '#241d15'; g.fillRect(0,0,800,450);
+   : caveBg? (curArea==='fightcaves'? '#241a12' : '#2b2b30') : (curArea==='goblins')? '#55702f' : '#241d15'; g.fillRect(0,0,1600,900);
  if(curArea==='plaza'){
-   g.fillStyle='#8a7a5f'; g.fillRect(400-210,225-135,420,270); // cobblestone centre
-   g.fillStyle='#6e4a1f'; g.fillRect(400-70,70-25,140,50); // tournament dais (wood)
-   g.fillStyle='#8e2f32'; g.fillRect(400-58,70-19,116,38); // dais banners (deep red)
+   g.fillStyle='#8a7a5f'; g.fillRect(800-420,450-270,840,540); // cobblestone centre
+   g.fillStyle='#6e4a1f'; g.fillRect(800-140,140-50,280,100); // tournament dais (wood)
+   g.fillStyle='#8e2f32'; g.fillRect(800-116,140-38,232,76); // dais banners (deep red)
    g.fillStyle='#e3c766'; g.fillRect(BANK_POS.x-14,BANK_POS.y-14,28,28); // bank
    for(const s of SHOP_SPOTS){ g.fillStyle='#'+s.color.toString(16).padStart(6,'0'); g.fillRect(s.x-12,s.y-12,24,24); }
    g.fillStyle='#fff'; g.fillRect(BOARD_POS.x-8,BOARD_POS.y-8,16,16);
@@ -2692,20 +2706,20 @@ function drawMinimap(){
      if(barrowsState.tunnel===id){ g.strokeStyle='#b26bff'; g.lineWidth=5; g.beginPath(); g.arc(b.x,b.y,19,0,7); g.stroke(); }
    }
  } else if(curArea==='barrows_tunnels'){
-   g.fillStyle='#e3c766'; g.fillRect(400-14,225-14,28,28); // reward chest
+   g.fillStyle='#e3c766'; g.fillRect(800-14,450-14,28,28); // reward chest
  } else if(curArea==='goblins'){
-   g.fillStyle='#77683f'; g.fillRect(400-240,225-155,480,310); // dirt patch
-   g.fillStyle='#ff7b24'; g.fillRect(420-10,255-10,20,20); // campfire
+   g.fillStyle='#77683f'; g.fillRect(800-480,450-310,960,620); // dirt patch
+   g.fillStyle='#ff7b24'; g.fillRect(840-10,510-10,20,20); // campfire
    g.fillStyle='#3f7d2c';
    for(const n of npcList){ g.beginPath(); g.arc(n.x,n.y,11,0,7); g.fill(); } // goblins
  } else if(curArea==='cove'){
-   g.fillStyle='#2e6db0'; g.fillRect(530,0,270,450); // lake, east third
+   g.fillStyle='#2e6db0'; g.fillRect(1060,0,540,900); // lake, east third
  } else if(curArea==='training'){
-   g.fillStyle='#3d3d44'; g.fillRect(400-310,225-70,620,140); // station hall floor
+   g.fillStyle='#3d3d44'; g.fillRect(800-620,450-140,1240,280); // station hall floor
  } else if(curArea==='gathering'){
-   g.fillStyle='#2e6db0'; g.fillRect(580,0,220,450); // pool, east side
+   g.fillStyle='#2e6db0'; g.fillRect(1160,0,440,900); // pool, east side
  } else if(curArea==='mine'){
-   g.fillStyle='#ff7b24'; g.fillRect(688,333,44,44); // furnace & anvil, south-east
+   g.fillStyle='#ff7b24'; g.fillRect(1376,666,88,88); // furnace & anvil, south-east
  } else if(curArea==='fightcaves'){
    g.fillStyle='#ff5a1f';
    for(const [lx,ly] of FC_LAVA){ g.beginPath(); g.arc(lx,ly,26,0,7); g.fill(); } // lava pools
@@ -2768,7 +2782,7 @@ $('minimap').addEventListener('pointerdown',e=>{
  pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false;
  stopGather();
  stopFollow();
- tapTarget={x:clamp(myPos.x+lx,0,800), y:clamp(myPos.y+ly,0,450)};
+ tapTarget={x:clamp(myPos.x+lx,0,WORLD_W), y:clamp(myPos.y+ly,0,WORLD_H)};
 });
 /* ================= main loop / init ================= */
 let lastT=performance.now();
@@ -2866,6 +2880,9 @@ function animate(){
  const cy=Math.sin(camPitch)*camDist;
  camera.position.set(cx,cy,cz);
  camera.lookAt(fx,1.1,fz);
+ // Stage 13: the shadow camera follows the local player (its box is
+ // roughly the old 80x45 footprint), keeping the same sun angle.
+ if(sunLight){ sunLight.position.set(fx+30,50,fz+20); sunLight.target.position.set(fx,0,fz); sunLight.target.updateMatrixWorld(); }
  updateLabels(now);
  renderer.render(scene,camera);
 }
@@ -2882,21 +2899,24 @@ function initThree(){
  $('scene').appendChild(renderer.domElement);
  scene=new THREE.Scene();
  scene.background=new THREE.Color(0x232830); // dark slate sky
- scene.fog=new THREE.Fog(0x232830,55,110);
+ scene.fog=new THREE.Fog(0x232830,85,175); // Stage 13: pushed out modestly for the bigger world — distant scenery fades instead of popping
  camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.1,300);
  raycaster=new THREE.Raycaster();
  scene.add(new THREE.AmbientLight(0xffe2b8,0.5)); // warmer, dimmer fill
  const sun=new THREE.DirectionalLight(0xffd9a0,1.0); sun.position.set(30,50,20);
  sun.castShadow=true;
  sun.shadow.mapSize.set(2048,2048);
- // The shadow camera covers the WHOLE play area: every area shares the
- // same 80x45-world-unit footprint, so one fixed box fits them all (no
- // need for the smaller ~500-server-unit fallback).
+ // Stage 13: the world is 160x90 world units now — a fixed shadow box
+ // over all of it would halve shadow resolution. Instead the shadow
+ // camera keeps roughly the OLD footprint (92x64 world units) and
+ // FOLLOWS the local player (see the camera-follow code in animate):
+ // shadows stay crisp wherever you are standing.
  sun.shadow.camera.left=-46; sun.shadow.camera.right=46;
  sun.shadow.camera.top=32; sun.shadow.camera.bottom=-32;
  sun.shadow.camera.near=5; sun.shadow.camera.far=140;
  sun.shadow.bias=-0.0006;
  scene.add(sun); scene.add(sun.target);
+ sunLight=sun;
  buildAreas();
  // Static scenery: grounds receive shadows, solid props cast them.
  for(const a of Object.values(areaGroups)) a.traverse(o=>{
@@ -3420,8 +3440,8 @@ window.adminPlaceObject=function(){
  // atan2(dx,dy) convention over server deltas (the faceToward /
  // stepMovement convention — server deltas scale 1:1 with world
  // deltas), so the facing unit vector is (sin(rot), cos(rot)).
- const x=Math.round(clamp(myPos.x+Math.sin(localRot)*45,0,800));
- const y=Math.round(clamp(myPos.y+Math.cos(localRot)*45,0,450));
+ const x=Math.round(clamp(myPos.x+Math.sin(localRot)*45,0,WORLD_W));
+ const y=Math.round(clamp(myPos.y+Math.cos(localRot)*45,0,WORLD_H));
  send({type:'place_object', kind, x, y});
 };
 window.adminRemoveObject=function(id){ send({type:'remove_object', id}); };
@@ -3883,7 +3903,7 @@ function followTick(){
    localRot=rot;
    return;
  }
- const pt={x:Math.round(clamp(bx,0,800)), y:Math.round(clamp(by,0,450))};
+ const pt={x:Math.round(clamp(bx,0,WORLD_W)), y:Math.round(clamp(by,0,WORLD_H))};
  const now=Date.now();
  if(!followPoint||Math.hypot(pt.x-followPoint.x,pt.y-followPoint.y)>6||now-followSetAt>500){
    followPoint=pt; followSetAt=now; tapTarget=pt; // stepMovement walks there + sends the moves
@@ -4371,7 +4391,7 @@ function detectWorldTap(cx,cy){
  if(best) return {kind:'player',name:best};
  const groundRoot=areaGroups[curArea];
  const gh=groundRoot? raycaster.intersectObjects(groundRoot.children.filter(o=>o.geometry&&o.geometry.type==='PlaneGeometry'),false)[0] : null;
- if(gh) return {kind:'ground',pt:{x:clamp(wx2s(gh.point.x),0,800), y:clamp(wz2s(gh.point.z),0,450)}};
+ if(gh) return {kind:'ground',pt:{x:clamp(wx2s(gh.point.x),0,WORLD_W), y:clamp(wz2s(gh.point.z),0,WORLD_H)}};
  return null;
 }
 
