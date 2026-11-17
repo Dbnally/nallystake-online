@@ -140,6 +140,14 @@ const PORT = process.env.PORT || 8080;
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'db.json');
 const PUBLIC = path.join(__dirname, 'public');
 const TICK_MS = 600;
+// Stage 13: the world doubled. Every area's playable space is now
+// 0..WORLD_W x 0..WORLD_H server units (was 0..800 x 0..450); every
+// world position (spawns, nodes, mounds, gates' destinations, ...)
+// sits at its x2 spot so the layout spreads out proportionally,
+// while gameplay distances (MELEE_REACH, NPC_RANGE, ranges) and
+// object sizes are unchanged — the world grew around them.
+const WORLD_W = 1600;
+const WORLD_H = 900;
 const START_GOLD = 100;
 const BACKPACK_MAX_STACKS = 28;
 const PRAYER_MAX = 25; // Phase 2 prayer pool (documented choice)
@@ -582,6 +590,11 @@ function newProfile(username) {
     // records, so world-shared data rides on its owner's profile and
     // is aggregated into runtime registries at boot.
     customItems: {}, placedObjects: [],
+    // Stage 13: world-layout version of this profile's stored
+    // coordinates (only placedObjects carry any). New profiles are
+    // born at the current version; older ones are scaled once by
+    // the ensureV2 migration below.
+    worldV: 2,
     // Stage 9: the texts of the signed Notes this player currently
     // HOLDS, oldest first ([{ text, from, at }] — from is the signer).
     // One entry per held 'note' item, FIFO-matched: signing creates
@@ -649,6 +662,18 @@ function ensureV2(p) {
     const clean = p.placedObjects.filter((o) => o && typeof o.id === 'string' && typeof o.area === 'string'
       && PROP_KINDS.includes(o.kind) && Number.isFinite(+o.x) && Number.isFinite(+o.y));
     if (clean.length !== p.placedObjects.length) { p.placedObjects = clean; changed = true; }
+  }
+  // Stage 13 migration: the world doubled (800x450 -> 1600x900).
+  // placedObjects are the only coordinates a profile stores, so
+  // they scale x2 exactly once, flagged by worldV. This runs on
+  // load (the boot sweep calls ensureV2 for every profile BEFORE
+  // buildStage7DRegistry aggregates placedObjects, and the boot
+  // sweep saves when ensureV2 reports a change), so the runtime
+  // registry only ever sees migrated coordinates.
+  if (typeof p.worldV !== 'number' || !Number.isFinite(p.worldV)) { p.worldV = 1; changed = true; }
+  if (p.worldV < 2) {
+    for (const o of p.placedObjects) { o.x = Math.round((+o.x || 0) * 2); o.y = Math.round((+o.y || 0) * 2); }
+    p.worldV = 2; changed = true;
   }
   // Stage 9 migration: unread note texts. Only the container shape is
   // enforced (entries are server-created): malformed entries drop.
@@ -916,23 +941,25 @@ function broadcastChallengeClear(challengerKey) {
 }
 
 // ---------- Areas (Stage 1) ----------
-// Each area has its own 0..800 x 0..450 coordinate space. A player's area
-// is SESSION-ONLY state (not saved): everyone logs back into the plaza.
-// Movement, snapshots and NPCs are per-area; chat stays global.
+// Each area has its own 0..1600 x 0..900 coordinate space (Stage 13:
+// doubled from 0..800 x 0..450 — every spawn below is the old spot x2).
+// A player's area is SESSION-ONLY state (not saved): everyone logs
+// back into the plaza. Movement, snapshots and NPCs are per-area;
+// chat stays global.
 const AREAS = {
-  plaza: { name: 'Plaza', spawn: { x: 400, y: 225 } },
-  goblins: { name: 'Goblin Camp', spawn: { x: 100, y: 225 } },
-  training: { name: 'Training Cave', spawn: { x: 400, y: 360 } },
-  gathering: { name: 'Gathering Cave', spawn: { x: 400, y: 225 } },
-  cove: { name: 'Fishing Cove', spawn: { x: 90, y: 225 } },
-  mine: { name: 'Emberfall Mine & Smithy', spawn: { x: 400, y: 380 } },
-  fightcaves: { name: 'Fight Caves', spawn: { x: 400, y: 400 } },
+  plaza: { name: 'Plaza', spawn: { x: 800, y: 450 } },
+  goblins: { name: 'Goblin Camp', spawn: { x: 200, y: 450 } },
+  training: { name: 'Training Cave', spawn: { x: 800, y: 720 } },
+  gathering: { name: 'Gathering Cave', spawn: { x: 800, y: 450 } },
+  cove: { name: 'Fishing Cove', spawn: { x: 180, y: 450 } },
+  mine: { name: 'Emberfall Mine & Smithy', spawn: { x: 800, y: 760 } },
+  fightcaves: { name: 'Fight Caves', spawn: { x: 800, y: 800 } },
   // Stage 5: the Barrows field (south entrance) and its tunnels; the
   // duel arena is not travel-reachable in normal play — duels move
   // both fighters in and back out (see startDuel / endDuel).
-  barrows: { name: 'Barrows', spawn: { x: 400, y: 400 } },
-  barrows_tunnels: { name: 'Barrows Tunnels', spawn: { x: 400, y: 225 } },
-  arena: { name: 'Duel Arena', spawn: { x: 400, y: 225 } },
+  barrows: { name: 'Barrows', spawn: { x: 800, y: 800 } },
+  barrows_tunnels: { name: 'Barrows Tunnels', spawn: { x: 800, y: 450 } },
+  arena: { name: 'Duel Arena', spawn: { x: 800, y: 450 } },
 };
 const NPC_RANGE = 150; // server units — attack / stay-in-combat range (15 tiles at 10 units/tile)
 
@@ -983,15 +1010,15 @@ const MELEE_SPEED = 4; // OSRS melee weapon speed: one swing per 4 ticks (2.4s)
 const DUEL_LEVEL = 40; // duels only: both fighters' effective Attack/Strength/Defence for the rolls
 // The point a client should walk its player to so they end up next
 // to a target: MELEE_REACH*0.75 from the target, on the line from
-// the player toward it, clamped to the area bounds (0..800 x 0..450).
+// the player toward it, clamped to the area bounds (0..1600 x 0..900).
 function approachPoint(px, py, tx, ty) {
   const dx = tx - px, dy = ty - py;
   const d = Math.hypot(dx, dy);
-  if (d === 0) return { x: Math.max(0, Math.min(800, Math.round(tx))), y: Math.max(0, Math.min(450, Math.round(ty))) };
+  if (d === 0) return { x: Math.max(0, Math.min(WORLD_W, Math.round(tx))), y: Math.max(0, Math.min(WORLD_H, Math.round(ty))) };
   const back = MELEE_REACH * 0.75;
   return {
-    x: Math.max(0, Math.min(800, Math.round(tx - (dx / d) * back))),
-    y: Math.max(0, Math.min(450, Math.round(ty - (dy / d) * back))),
+    x: Math.max(0, Math.min(WORLD_W, Math.round(tx - (dx / d) * back))),
+    y: Math.max(0, Math.min(WORLD_H, Math.round(ty - (dy / d) * back))),
   };
 }
 // Step a server-owned monster (any object with x/y) toward a point
@@ -1009,7 +1036,7 @@ function stepToward(obj, tx, ty, step) {
 // ---------- NPCs (Stage 1): Goblin Camp ----------
 // Goblins are stationary at their spawn points this stage (no wandering).
 const GOBLIN_DEF = { kind: 'goblin', name: 'Goblin', combatLevel: 5, maxHp: 12, maxHit: 2, acc: 0.55, attackType: 'melee', respawnMs: 10000 };
-const GOBLIN_SPAWNS = [[200, 225], [320, 160], [420, 260], [520, 180], [380, 340], [600, 300]];
+const GOBLIN_SPAWNS = [[400, 450], [640, 320], [840, 520], [1040, 360], [760, 680], [1200, 600]]; // Stage 13: old spots x2
 const npcs = new Map(); // id -> live NPC instance (all in the goblins area)
 GOBLIN_SPAWNS.forEach(([x, y], i) => {
   const id = 'goblin' + (i + 1);
@@ -1451,11 +1478,13 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null)
   const sessA = online.get(aKey), sessB = online.get(bKey);
   sessA.duelId = id; sessB.duelId = id;
   // Stage 8: a duel starts toe-to-toe — the fighters spawn within
-  // melee reach of each other (380 vs 420, 40 apart). From then on
-  // the closing rule in the tick governs: run apart and the swings
-  // stop until someone walks back in.
-  sessA.area = 'arena'; sessA.x = 380; sessA.y = 225;
-  sessB.area = 'arena'; sessB.x = 420; sessB.y = 225;
+  // melee reach of each other, either side of the arena centre
+  // (780 vs 820, still 40 apart: Stage 13 doubled the arena centre
+  // to (800,450), but the 40-unit gap is a gameplay distance and
+  // does not scale). From then on the closing rule in the tick
+  // governs: run apart and the swings stop until someone walks back.
+  sessA.area = 'arena'; sessA.x = 780; sessA.y = 450;
+  sessB.area = 'arena'; sessB.x = 820; sessB.y = 450;
   for (const k of [aKey, bKey]) {
     const p = online.get(k);
     send(p.ws, { type: 'area', area: 'arena' });
@@ -1815,14 +1844,14 @@ setInterval(() => {
 //   - Prayer drain in crypt fights is the ordinary active-prayer
 //     drain only — no extra Barrows drain (parity with goblin fights).
 const BARROWS_BROTHERS = {
-  dharok: { id: 'dharok', name: 'Dharok the Wretched', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 8, acc: 0.60, mound: { x: 150, y: 110 } },
-  guthan: { id: 'guthan', name: 'Guthan the Infested', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 9, acc: 0.60, mound: { x: 330, y: 80 } },
-  torag:  { id: 'torag', name: 'Torag the Corrupted', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 7, acc: 0.60, mound: { x: 510, y: 80 } },
-  verac:  { id: 'verac', name: 'Verac the Defiled', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 10, acc: 0.62, mound: { x: 660, y: 110 } },
-  ahrim:  { id: 'ahrim', name: 'Ahrim the Blighted', combatLevel: 98, attackType: 'magic', maxHp: 90, maxHit: 11, acc: 0.60, mound: { x: 240, y: 220 } },
-  karil:  { id: 'karil', name: 'Karil the Tainted', combatLevel: 98, attackType: 'missiles', maxHp: 90, maxHit: 11, acc: 0.62, mound: { x: 560, y: 220 } },
+  dharok: { id: 'dharok', name: 'Dharok the Wretched', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 8, acc: 0.60, mound: { x: 300, y: 220 } },
+  guthan: { id: 'guthan', name: 'Guthan the Infested', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 9, acc: 0.60, mound: { x: 660, y: 160 } },
+  torag:  { id: 'torag', name: 'Torag the Corrupted', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 7, acc: 0.60, mound: { x: 1020, y: 160 } },
+  verac:  { id: 'verac', name: 'Verac the Defiled', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 10, acc: 0.62, mound: { x: 1320, y: 220 } },
+  ahrim:  { id: 'ahrim', name: 'Ahrim the Blighted', combatLevel: 98, attackType: 'magic', maxHp: 90, maxHit: 11, acc: 0.60, mound: { x: 480, y: 440 } },
+  karil:  { id: 'karil', name: 'Karil the Tainted', combatLevel: 98, attackType: 'missiles', maxHp: 90, maxHit: 11, acc: 0.62, mound: { x: 1120, y: 440 } },
 };
-const BARROWS_CHEST = { x: 400, y: 225 }; // centre of the tunnels = the tunnels spawn
+const BARROWS_CHEST = { x: 800, y: 450 }; // centre of the tunnels = the tunnels spawn (Stage 13: x2)
 const BARROWS_PUZZLE_SYMBOLS = ['circle', 'square', 'triangle', 'diamond'];
 const barrowsFights = new Map(); // id -> fight (instanced, one per player)
 
@@ -2132,13 +2161,14 @@ const FC_WAVES = [null,
   [0,0,1,1,1],[1,0,1,1,1],[2,0,1,1,1],[0,1,1,1,1],[1,1,1,1,1],[2,1,1,1,1],[0,2,1,1,1],[0,0,2,1,1],[0,0,0,2,1],[0,0,0,0,2],
 ]; // index = wave number (1..62)
 // Deterministic spawn grid across the cave's north two-thirds (the
-// entrance is at the south, y=400). Since Stage 8 the melee monsters
+// entrance is at the south, y=800). Since Stage 8 the melee monsters
 // walk toward the player (see the approach pass in fcTick); the
 // ranged monsters, healers and Jad stay where they spawn.
+// (Stage 13: every point is the old spot x2.)
 const FC_SPAWN_POINTS = [
-  [400, 90], [250, 90], [550, 90], [120, 150], [680, 150],
-  [250, 170], [550, 170], [400, 170], [120, 240], [680, 240],
-  [250, 250], [550, 250], [400, 250], [180, 60], [620, 60],
+  [800, 180], [500, 180], [1100, 180], [240, 300], [1360, 300],
+  [500, 340], [1100, 340], [800, 340], [240, 480], [1360, 480],
+  [500, 500], [1100, 500], [800, 500], [360, 120], [1240, 120],
 ];
 const FC_RANGE = NPC_RANGE; // 150 units — attack / stay-in-combat range
 const FC_WAVE_PAUSE_MS = 2000; // breather between waves
@@ -2172,7 +2202,7 @@ function spawnFcWave(run, wave) {
   run.betweenWaves = false;
   run.monsters.clear();
   run.jadPending = null;
-  if (wave === 63) addFcMonster(run, 'jad', 400, 110); // wave 63: TzTok-Jad alone
+  if (wave === 63) addFcMonster(run, 'jad', 800, 220); // wave 63: TzTok-Jad alone (Stage 13: x2)
   else {
     const counts = FC_WAVES[wave];
     FC_WAVE_KINDS.forEach((kind, i) => { for (let n = 0; n < counts[i]; n++) addFcMonster(run, kind); });
@@ -2217,7 +2247,7 @@ function killFcMonster(run, mon) {
   run.rosterChanged = true;
   if (mon.kind === 'tzkek') {
     addFcMonster(run, 'tzkek_small', Math.max(0, mon.x - 25), mon.y);
-    addFcMonster(run, 'tzkek_small', Math.min(800, mon.x + 25), mon.y);
+    addFcMonster(run, 'tzkek_small', Math.min(WORLD_W, mon.x + 25), mon.y); // +-25 is a separation distance, not a position: unscaled
   }
   if (mon.kind === 'jad') run.jadDead = true;
 }
@@ -2229,7 +2259,7 @@ function maybeSpawnFcHealers(run) {
   if (!jad || jad.hp > jad.maxHp / 2) return;
   run.healersSpawned = true;
   run.rosterChanged = true;
-  for (const [hx, hy] of [[340, 70], [460, 70], [340, 160], [460, 160]]) addFcMonster(run, 'hurkot', hx, hy);
+  for (const [hx, hy] of [[680, 140], [920, 140], [680, 320], [920, 320]]) addFcMonster(run, 'hurkot', hx, hy); // Stage 13: old spots x2 (healers heal Jad at any range, so the wider ring is safe)
 }
 function fcTick(run) {
   if (run.done) return;
@@ -2478,45 +2508,45 @@ function defNode(id, area, kind, name, skill, levelReq, item, xp, charges, respa
 }
 // Gathering Cave — rocks on the west side, fishing spots at the east pool,
 // trees scattered through the middle.
-defNode('copper_rock', 'gathering', 'rock', 'Copper rock', 'mining', 1, 'copper_ore', 18, 3, 8000, 120, 110);
-defNode('tin_rock', 'gathering', 'rock', 'Tin rock', 'mining', 1, 'tin_ore', 18, 3, 8000, 120, 230);
-defNode('iron_rock', 'gathering', 'rock', 'Iron rock', 'mining', 15, 'iron_ore', 35, 2, 15000, 120, 350);
-defNode('coal_rock', 'gathering', 'rock', 'Coal rock', 'mining', 30, 'coal', 50, 2, 20000, 240, 160);
-defNode('gem_rock', 'gathering', 'rock', 'Gem rock', 'mining', 40, 'uncut_gem', 65, 1, 30000, 240, 300);
-defNode('shrimp_spot', 'gathering', 'fish', 'Shrimp spot', 'fishing', 1, 'raw_shrimps', 10, 4, 8000, 640, 140);
-defNode('trout_spot_g', 'gathering', 'fish', 'Trout spot', 'fishing', 20, 'raw_trout', 30, 3, 12000, 640, 300);
-defNode('tree_g', 'gathering', 'tree', 'Tree', 'woodcutting', 1, 'logs', 25, 3, 10000, 420, 90);
-defNode('oak_g', 'gathering', 'tree', 'Oak tree', 'woodcutting', 15, 'oak_logs', 38, 3, 15000, 470, 360);
+defNode('copper_rock', 'gathering', 'rock', 'Copper rock', 'mining', 1, 'copper_ore', 18, 3, 8000, 240, 220);
+defNode('tin_rock', 'gathering', 'rock', 'Tin rock', 'mining', 1, 'tin_ore', 18, 3, 8000, 240, 460);
+defNode('iron_rock', 'gathering', 'rock', 'Iron rock', 'mining', 15, 'iron_ore', 35, 2, 15000, 240, 700);
+defNode('coal_rock', 'gathering', 'rock', 'Coal rock', 'mining', 30, 'coal', 50, 2, 20000, 480, 320);
+defNode('gem_rock', 'gathering', 'rock', 'Gem rock', 'mining', 40, 'uncut_gem', 65, 1, 30000, 480, 600);
+defNode('shrimp_spot', 'gathering', 'fish', 'Shrimp spot', 'fishing', 1, 'raw_shrimps', 10, 4, 8000, 1280, 280);
+defNode('trout_spot_g', 'gathering', 'fish', 'Trout spot', 'fishing', 20, 'raw_trout', 30, 3, 12000, 1280, 600);
+defNode('tree_g', 'gathering', 'tree', 'Tree', 'woodcutting', 1, 'logs', 25, 3, 10000, 840, 180);
+defNode('oak_g', 'gathering', 'tree', 'Oak tree', 'woodcutting', 15, 'oak_logs', 38, 3, 15000, 940, 720);
 // Fishing Cove — trees on the west shore, trout spots along the east lake
 // edge. Cove trout are Fishing 1 on purpose: the cove is the starter
 // fishing spot (Derek's cove spec names no level); the cave trout spot
 // above is the level-20 one.
-defNode('tree_c1', 'cove', 'tree', 'Tree', 'woodcutting', 1, 'logs', 25, 3, 10000, 120, 100);
-defNode('tree_c2', 'cove', 'tree', 'Tree', 'woodcutting', 1, 'logs', 25, 3, 10000, 120, 230);
-defNode('tree_c3', 'cove', 'tree', 'Tree', 'woodcutting', 1, 'logs', 25, 3, 10000, 120, 360);
-defNode('trout_spot_c1', 'cove', 'fish', 'Trout spot', 'fishing', 1, 'raw_trout', 30, 3, 12000, 660, 100);
-defNode('trout_spot_c2', 'cove', 'fish', 'Trout spot', 'fishing', 1, 'raw_trout', 30, 3, 12000, 660, 225);
-defNode('trout_spot_c3', 'cove', 'fish', 'Trout spot', 'fishing', 1, 'raw_trout', 30, 3, 12000, 660, 350);
+defNode('tree_c1', 'cove', 'tree', 'Tree', 'woodcutting', 1, 'logs', 25, 3, 10000, 240, 200);
+defNode('tree_c2', 'cove', 'tree', 'Tree', 'woodcutting', 1, 'logs', 25, 3, 10000, 240, 460);
+defNode('tree_c3', 'cove', 'tree', 'Tree', 'woodcutting', 1, 'logs', 25, 3, 10000, 240, 720);
+defNode('trout_spot_c1', 'cove', 'fish', 'Trout spot', 'fishing', 1, 'raw_trout', 30, 3, 12000, 1320, 200);
+defNode('trout_spot_c2', 'cove', 'fish', 'Trout spot', 'fishing', 1, 'raw_trout', 30, 3, 12000, 1320, 450);
+defNode('trout_spot_c3', 'cove', 'fish', 'Trout spot', 'fishing', 1, 'raw_trout', 30, 3, 12000, 1320, 700);
 // Training Cave — one station per combat skill, in a row. XP only.
-defNode('attack_dummy', 'training', 'station', 'Attack dummy', 'attack', 1, null, 12, Infinity, 0, 140, 225);
-defNode('strength_dummy', 'training', 'station', 'Strength dummy', 'strength', 1, null, 12, Infinity, 0, 240, 225);
-defNode('defence_dummy', 'training', 'station', 'Defence dummy', 'defence', 1, null, 12, Infinity, 0, 340, 225);
-defNode('ranged_target', 'training', 'station', 'Ranged target', 'ranged', 1, null, 12, Infinity, 0, 440, 225);
-defNode('magic_dummy', 'training', 'station', 'Magic dummy', 'magic', 1, null, 12, Infinity, 0, 540, 225);
-defNode('prayer_altar', 'training', 'station', 'Prayer altar', 'prayer', 1, null, 6, Infinity, 0, 640, 225);
+defNode('attack_dummy', 'training', 'station', 'Attack dummy', 'attack', 1, null, 12, Infinity, 0, 280, 450);
+defNode('strength_dummy', 'training', 'station', 'Strength dummy', 'strength', 1, null, 12, Infinity, 0, 480, 450);
+defNode('defence_dummy', 'training', 'station', 'Defence dummy', 'defence', 1, null, 12, Infinity, 0, 680, 450);
+defNode('ranged_target', 'training', 'station', 'Ranged target', 'ranged', 1, null, 12, Infinity, 0, 880, 450);
+defNode('magic_dummy', 'training', 'station', 'Magic dummy', 'magic', 1, null, 12, Infinity, 0, 1080, 450);
+defNode('prayer_altar', 'training', 'station', 'Prayer altar', 'prayer', 1, null, 6, Infinity, 0, 1280, 450);
 // Emberfall Mine (Stage 3) — nine rocks across the west/north half;
 // the south-east quadrant stays clear for the furnace + anvil (actions,
 // not nodes). Iron is Mining 10 here per Derek's mine spec (the
 // Gathering Cave's iron rock keeps its 15).
-defNode('copper_rock_m', 'mine', 'rock', 'Copper rock', 'mining', 1, 'copper_ore', 18, 4, 8000, 120, 90);
-defNode('tin_rock_m', 'mine', 'rock', 'Tin rock', 'mining', 1, 'tin_ore', 18, 4, 8000, 120, 200);
-defNode('iron_rock_m', 'mine', 'rock', 'Iron rock', 'mining', 10, 'iron_ore', 35, 3, 12000, 120, 320);
-defNode('silver_rock', 'mine', 'rock', 'Silver rock', 'mining', 20, 'silver_ore', 40, 3, 15000, 250, 90);
-defNode('coal_rock_m', 'mine', 'rock', 'Coal rock', 'mining', 30, 'coal', 50, 3, 18000, 250, 200);
-defNode('gold_rock', 'mine', 'rock', 'Gold rock', 'mining', 40, 'gold_ore', 65, 2, 20000, 380, 90);
-defNode('mithril_rock', 'mine', 'rock', 'Mithril rock', 'mining', 55, 'mithril_ore', 80, 2, 25000, 380, 200);
-defNode('adamantite_rock', 'mine', 'rock', 'Adamantite rock', 'mining', 70, 'adamantite_ore', 100, 2, 30000, 510, 90);
-defNode('runite_rock', 'mine', 'rock', 'Runite rock', 'mining', 85, 'runite_ore', 125, 1, 40000, 510, 200);
+defNode('copper_rock_m', 'mine', 'rock', 'Copper rock', 'mining', 1, 'copper_ore', 18, 4, 8000, 240, 180);
+defNode('tin_rock_m', 'mine', 'rock', 'Tin rock', 'mining', 1, 'tin_ore', 18, 4, 8000, 240, 400);
+defNode('iron_rock_m', 'mine', 'rock', 'Iron rock', 'mining', 10, 'iron_ore', 35, 3, 12000, 240, 640);
+defNode('silver_rock', 'mine', 'rock', 'Silver rock', 'mining', 20, 'silver_ore', 40, 3, 15000, 500, 180);
+defNode('coal_rock_m', 'mine', 'rock', 'Coal rock', 'mining', 30, 'coal', 50, 3, 18000, 500, 400);
+defNode('gold_rock', 'mine', 'rock', 'Gold rock', 'mining', 40, 'gold_ore', 65, 2, 20000, 760, 180);
+defNode('mithril_rock', 'mine', 'rock', 'Mithril rock', 'mining', 55, 'mithril_ore', 80, 2, 25000, 760, 400);
+defNode('adamantite_rock', 'mine', 'rock', 'Adamantite rock', 'mining', 70, 'adamantite_ore', 100, 2, 30000, 1020, 180);
+defNode('runite_rock', 'mine', 'rock', 'Runite rock', 'mining', 85, 'runite_ore', 125, 1, 40000, 1020, 400);
 
 function nodesMsg(area) {
   const now = Date.now();
@@ -2783,7 +2813,8 @@ wss.on('connection', (ws, req) => {
   const profile = db.users[key].profile;
   ensureV2(profile);
   // Everyone logs into the plaza (area is session-only, never saved).
-  online.set(key, { ws, profile, x: 100 + Math.random() * 500, y: 100 + Math.random() * 250, area: 'plaza', duelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsPuzzleSolved: false, actSkill: null, actAt: 0 });
+  // Stage 13: the login scatter is the old 100..600 x 100..350 box x2.
+  online.set(key, { ws, profile, x: 200 + Math.random() * 1000, y: 200 + Math.random() * 500, area: 'plaza', duelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsPuzzleSolved: false, actSkill: null, actAt: 0 });
   send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot('plaza'), area: 'plaza' });
   send(ws, pilesMsg('plaza')); // Stage 5: any drop piles waiting in the plaza
   send(ws, alliesMsg('plaza')); // Stage 6: any Tree Guardians standing in the plaza
@@ -2805,8 +2836,8 @@ wss.on('connection', (ws, req) => {
       const duelNow = me.duelId ? duels.get(me.duelId) : null;
       const frozen = !!(duelNow && duelNow.tickCount <= COUNTDOWN_TICKS);
       if (!frozen) {
-        me.x = Math.max(0, Math.min(800, +m.x || 0));
-        me.y = Math.max(0, Math.min(450, +m.y || 0));
+        me.x = Math.max(0, Math.min(WORLD_W, +m.x || 0));
+        me.y = Math.max(0, Math.min(WORLD_H, +m.y || 0));
       }
       broadcastState();
     }
@@ -4027,12 +4058,12 @@ wss.on('connection', (ws, req) => {
       if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'You do not have permission to do that.' });
       const pd = PROP_DEFS.find((p) => p.kind === String(m.kind || ''));
       if (!pd) return send(ws, { type: 'error', message: 'Unknown object kind.' });
-      // Coordinates clamp inside my current area (0..800 x 0..450);
+      // Coordinates clamp inside my current area (0..1600 x 0..900);
       // a missing/invalid coordinate falls back to where I stand.
       let px = Math.floor(+m.x); if (!Number.isFinite(px)) px = Math.round(me.x);
       let py = Math.floor(+m.y); if (!Number.isFinite(py)) py = Math.round(me.y);
-      px = Math.max(0, Math.min(800, px));
-      py = Math.max(0, Math.min(450, py));
+      px = Math.max(0, Math.min(WORLD_W, px));
+      py = Math.max(0, Math.min(WORLD_H, py));
       ensureV2(profile);
       const entry = { id: `obj_${++objectSeq}`, area: me.area, kind: pd.kind, x: px, y: py };
       profile.placedObjects.push(entry); // saved on MY profile (see the storage note at the top)
