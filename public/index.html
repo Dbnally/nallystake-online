@@ -273,6 +273,20 @@
  /* Stage 23: Grab mode is modal — a standing hint while it's on */
  #grabhint{position:fixed;top:calc(92px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:58;display:none;max-width:94vw;background:rgba(43,33,24,.95);border:2px solid #66bb6a;color:#eaffea;border-radius:999px;padding:8px 14px;font-size:12.5px;font-weight:800;text-align:center;pointer-events:none;box-shadow:0 4px 18px rgba(0,0,0,.5)}
  body.grabbing #grabhint{display:block}
+ /* Stage 24: placed spell buttons (dragged out of the 📖 spellbook).
+    Interface, not world: a fixed layer over the canvas, under the
+    modals (50) and the login screen (60). The container never eats
+    taps; each button does. Armed = gold glow. */
+ #spellbtns{position:fixed;inset:0;z-index:45;pointer-events:none}
+ .spellbtn{position:fixed;width:60px;padding:6px 2px 5px;border-radius:12px;background:rgba(23,19,16,.88);border:2px solid #7a6748;color:#e8d9b0;font-family:inherit;cursor:pointer;pointer-events:auto;display:flex;flex-direction:column;align-items:center;gap:1px;box-shadow:0 3px 10px rgba(0,0,0,.45);touch-action:none}
+ .spellbtn .sic{font-size:21px;line-height:1}
+ .spellbtn .snm{font-size:9.5px;font-weight:800;line-height:1.1;text-align:center}
+ .spellbtn.armed{border-color:#ffd75e;background:#3a2c1c;box-shadow:0 0 14px #ffd75e99}
+ body.grabbing .spellbtn{cursor:grab;outline:2px dashed rgba(102,187,106,.65);outline-offset:-2px}
+ .spellghost{position:fixed;z-index:90;width:60px;padding:6px 2px 5px;border-radius:12px;background:rgba(58,44,28,.92);border:2px solid #ffd75e;color:#e8d9b0;display:flex;flex-direction:column;align-items:center;gap:1px;pointer-events:none}
+ .spellghost .sic{font-size:21px;line-height:1}
+ .spellghost .snm{font-size:9.5px;font-weight:800}
+ #spellpop{position:fixed;z-index:65;background:rgba(23,19,16,.96);border:2px solid #c9a227;border-radius:12px;padding:10px;box-shadow:0 6px 22px rgba(0,0,0,.55);color:#e8d9b0;font-size:13px}
  .dragghost{position:fixed;z-index:190;pointer-events:none;font-size:30px;width:52px;height:52px;line-height:52px;text-align:center;background:rgba(36,26,13,.9);border:2px solid #e8c96a;border-radius:12px;transform:translate(-50%,-50%)}
  .dragghost img{width:40px;height:40px;border-radius:8px;vertical-align:middle}
  .dragging{opacity:.45}
@@ -447,6 +461,8 @@
 
 <div id="toast"></div>
 <div id="grabhint">✋ Grab mode — drag the buttons where you want them. Everything else is paused — tap ✋ Grab again to lock.</div>
+<div id="spellbtns"></div>
+<div id="spellpop" style="display:none"></div>
 
 <div id="banner"><div id="bannertext"></div><div id="bannerhint"></div></div>
 
@@ -762,7 +778,7 @@ window.pickActivity=function(act){
 };
 function onMsg(m){
  if(m.type==='welcome'){ welcomed=true; quickAttempt=false; me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); maybeShowActivityPicker(); }
- if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(Array.isArray(m.spells)) spellList=m.spells; if(drawerPanel==='shop') renderDrawer(); renderQuickButtons(); }
+ if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(Array.isArray(m.spells)) spellList=m.spells; if(drawerPanel==='shop') renderDrawer(); renderQuickButtons(); renderSpellBtns(); }
  if(m.type==='exchange_prices'){ goods={}; for(const g of (m.goods||[])) goods[g.id]=g; if(drawerPanel==='exchange') renderDrawer(); drawMinimap(); }
  if(m.type==='state'){ if(m.area&&m.area!==curArea) setArea(m.area); players=m.players||[]; initMyPos(); syncAvatars(); if(drawerPanel==='players') renderDrawer(); drawMinimap(); }
  if(m.type==='area'){ setArea(m.area); }
@@ -842,6 +858,7 @@ function onMsg(m){
  if(m.type==='trade_open'){ openTrade(m); }
  if(m.type==='trade_update'){ onTradeUpdate(m); }
  if(m.type==='trade_done'){ onTradeDone(m); }
+ if(m.type==='cast_result'){ onCastResult(m); }
  if(m.type==='duel_start'){ startDuelUI(m); }
  if(m.type==='duel_tick'){ duelTickUI(m); }
  if(m.type==='duel_end'){ endDuelUI(m); }
@@ -2094,9 +2111,9 @@ function makeKnight(isMe,name,app){
  const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
  sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
  const label=document.createElement('div'); label.className='plabel';
- label.innerHTML=`<div class="bubble"></div><span class="rbadge"></span><span class="badge"></span><span class="abadge"></span><span class="cbadge"></span> <span class="nm">${esc(name)}</span><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
+ label.innerHTML=`<div class="bubble"></div><span class="rbadge"></span><span class="badge"></span><span class="abadge"></span><span class="cbadge"></span><span class="fbadge"></span> <span class="nm">${esc(name)}</span><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
  $('labels').appendChild(label);
- return {group:g,pivot,legL,legR,armL,armR,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),roleEl:label.querySelector('.rbadge'),actEl:label.querySelector('.abadge'),chalEl:label.querySelector('.cbadge'),hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
+ return {group:g,pivot,legL,legR,armL,armR,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),roleEl:label.querySelector('.rbadge'),actEl:label.querySelector('.abadge'),chalEl:label.querySelector('.cbadge'),fzEl:label.querySelector('.fbadge'),hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
    x:0,z:0,tx:0,tz:0,rot:0,jump:null,prayer:null,bubbleUntil:0,bob:Math.random()*6,isMe,
    swingStart:0,phase:Math.random()*6,moveAmt:0,px:0,pz:0,splatY:2.95};
 }
@@ -2142,6 +2159,8 @@ function syncAvatars(){
      avatars[p.username]=a; scene.add(a.group);
    }
    if(p.username!==me.username){ a.tx=sx2w(p.x); a.tz=sy2w(p.y); }
+   a.frozenUntil=p.frozenUntil||0; // Stage 24: Freeze root (❄️ shell + badge, refreshed by the Stage 24 interval)
+   if(p.username===me.username) meFrozenUntil=p.frozenUntil||0;
    syncPartyHat(a,p); // Stage 21: worn party hat on the knight's head
    a.prayer=p.activePrayer||null;
    a.badgeEl.textContent=a.prayer?PRAYER_BADGE[a.prayer]:'';
@@ -2385,6 +2404,7 @@ function syncNpcs(){
      let a=npcAvatars[n.id];
      if(!a){ a=makeNpcAvatar(n); a.group.position.set(a.x,0,a.z); npcAvatars[n.id]=a; scene.add(a.group); }
      a.tx=sx2w(n.x); a.tz=sy2w(n.y); // Stage 8: goblins walk now — ease toward this
+     a.frozenUntil=n.frozenUntil||0; // Stage 24: Freeze root rides npc_state
      a.hp=n.hp; a.maxHp=n.maxHp;
      a.hpFill.style.width=clamp(n.hp/Math.max(1,n.maxHp)*100,0,100)+'%';
      a.hpFill.style.background=hpBarColor(n.hp/Math.max(1,n.maxHp));
@@ -2555,6 +2575,7 @@ function syncFcMonsters(){
      let a=fcAvatars[m.id];
      if(!a){ a=makeFcMonster(m); fcAvatars[m.id]=a; scene.add(a.group); }
      a.tx=sx2w(m.x); a.tz=sy2w(m.y); // Stage 8: melee monsters walk toward you — ease toward this
+     a.frozenUntil=m.frozenUntil||0; // Stage 24: Freeze root rides the FC roster
      a.hp=m.hp; a.maxHp=m.maxHp;
      a.hpFill.style.width=clamp(m.hp/Math.max(1,m.maxHp)*100,0,100)+'%';
      a.hpFill.style.background=hpBarColor(m.hp/Math.max(1,m.maxHp));
@@ -3130,6 +3151,14 @@ function handleTap(cx,cy){
  raycaster.setFromCamera(mouse,camera);
  // Stage 9+10 §2: an armed Use-item consumes this tap entirely
  if(useMode){ resolveUseTap(cx,cy); return; }
+ // Stage 24: an armed spell tapped onto my Barrows brother casts at
+ // him (brothers are fought standing in reach — there's no tap-to-
+ // engage for them — so the brother gets his own early branch).
+ if(armedSpell&&npcFight&&npcFight.kind==='barrows'){
+   const ba=npcAvatars[npcFight.npcId];
+   if(ba){ const s=projectTo(ba.group.position.x,1.4,ba.group.position.z);
+     if(s&&Math.hypot(s.x-cx,s.y-cy)<52){ if(armedCastAt('barrows',npcFight.npcId)) return; } }
+ }
  // interactive props first (plaza only — its meshes are hidden elsewhere)
  if(curArea==='plaza'){
    const ih=raycaster.intersectObjects(interactives,false)[0];
@@ -3149,8 +3178,13 @@ function handleTap(cx,cy){
  if(settings.tapMode==='menu'){
    const hit=detectWorldTap(cx,cy);
    if(hit&&(hit.kind==='player'||hit.kind==='npc'||hit.kind==='fc'||hit.kind==='node'||hit.kind==='pile'||hit.kind==='mound'||hit.kind==='modnpc')){
-     handleLongPress(cx,cy);
-     return;
+     // Stage 24: with a spell armed, a tap on a combat target casts
+     // (falls through to the normal branches below) instead of
+     // opening the menu — arming works the same in both tap modes.
+     if(!(armedSpell&&(hit.kind==='player'||hit.kind==='npc'||hit.kind==='fc'||hit.kind==='modnpc'))){
+       handleLongPress(cx,cy);
+       return;
+     }
    }
  }
  // shared NPCs — goblins / wizards / rangers (tap to attack; walks over first if too far)
@@ -3162,7 +3196,7 @@ function handleTap(cx,cy){
      const d=Math.hypot(s.x-cx,s.y-cy);
      if(d<48 && d<gbD){ gb=id; gbD=d; }
    }
-   if(gb){ attackNpc(gb); return; }
+   if(gb){ const n=npcList.find(x=>x.id===gb); if(n&&armedCastAt('npc',gb,n.x,n.y)) return; attackNpc(gb); return; }
  }
  // Stage 22: plaza moderators (tap opens the stake sheet — or, mid
  // mod-duel, taps my opponent to engage: tap-to-attack like a duel)
@@ -3174,7 +3208,7 @@ function handleTap(cx,cy){
      const d=Math.hypot(s.x-cx,s.y-cy);
      if(d<48 && d<mbD){ mb=id; mbD=d; }
    }
-   if(mb){ tapModNpc(mb); return; }
+   if(mb){ if(modDuel&&modDuel.npcId===mb){ const n=modNpcList.find(x=>x.id===mb); if(n&&armedCastAt('duel',mb,n.x,n.y)) return; } tapModNpc(mb); return; }
  }
  // Fight Caves monsters (tap to target; walks over first if too far)
  if(curArea==='fightcaves'&&fcRun){
@@ -3185,7 +3219,7 @@ function handleTap(cx,cy){
      const d=Math.hypot(s.x-cx,s.y-cy);
      if(d<52 && d<fbD){ fb=id; fbD=d; }
    }
-   if(fb){ attackFcMonster(fb); return; }
+   if(fb){ const fm=fcMonsters[fb]; if(fm&&armedCastAt('fc',fb,fm.x,fm.y)) return; attackFcMonster(fb); return; }
  }
  // Barrows mounds (tap to enter the crypt; walks over first if too far)
  if(curArea==='barrows'){
@@ -3237,6 +3271,12 @@ function handleTap(cx,cy){
  }
  if(best){
    if(duel&&best===duel.opponent){
+     // Stage 24: an armed spell casts at the opponent instead of
+     // the weapon tap (in range only — armedCastAt leaves the spell
+     // armed and returns false when too far, so the tap below still
+     // walks/engages as usual).
+     const op=players.find(p=>p.username===best);
+     if(op&&armedCastAt('duel',best,op.x,op.y)) return;
      // Tap-to-engage: tell the server I'm attacking (repeats are no-ops
      // server-side). Existing behaviour below (menu / closing) is kept.
      send({type:'duel_attack'});
@@ -3321,7 +3361,7 @@ function stepMovement(dt){
  // frozen positions.
  // Stage 23: Grab mode freezes the knight too — arranging the
  // interface is the only thing happening while it's on.
- if(grabMode||duelCountdownLeft>0||(duel&&duel.rules&&duel.rules.noMovement)){ tapTarget=null; myVel={x:0,z:0}; finishStep(false); return; }
+ if(grabMode||duelCountdownLeft>0||(duel&&duel.rules&&duel.rules.noMovement)||meFrozenNow()){ tapTarget=null; myVel={x:0,z:0}; finishStep(false); return; } // Stage 24: meFrozenNow — a Freeze root stops my knight locally too (the server ignores the moves anyway)
  let vx=0, vz=0; // world units / s
  const sYaw=Math.sin(camYaw), cYaw=Math.cos(camYaw);
  // camera forward on the ground (world): (-sinYaw, -cosYaw); right: (cosYaw, -sinYaw)
@@ -3706,6 +3746,7 @@ function renderDrawer(){
  if(drawerPanel==='tools') initToolCanvas(); // Stage 8: restore the drawing canvas after every tools render
  if(drawerPanel==='backpack') wireBpCells(); // Stage 9+10 §8: tap / hold / drag gestures
  if(drawerPanel==='bank') wireBankDrag(); // Stage 9+10 §8: drag a backpack cell onto the bank grid = deposit
+ if(drawerPanel==='spellbook') wireSpellPlace(); // Stage 24: 📌 drag-out placement for cast buttons
 }
 /* ---- Backpack ---- */
 window.selBp=function(item){ selStack=selStack===item?null:item; examineStack=null; renderDrawer(); };
@@ -3841,6 +3882,7 @@ function pSpellbook(){
  const capEl=(e)=>e.charAt(0).toUpperCase()+e.slice(1);
  let h=`<p class="note" style="margin-bottom:6px">Your Magic level: <b style="color:#e3c766">${mLvl}</b> · Selected: <b style="color:#e3c766">${esc(spellNameOf(me?me.spell:null))}</b></p>`;
  h+=`<p class="note" style="margin-bottom:8px">Wield a staff and your attacks cast the selected spell — runes are spent on every cast, hit or miss. Restock runes by killing wizards at the 🧙 Wizard Grounds (plaza north-west gate).</p>`;
+ h+=`<p class="note" style="margin-bottom:8px">🪄 <b style="color:#e3c766">Cast buttons:</b> drag a spell's 📌 out of this book onto the screen to place a button for it. Tap the button to arm the spell (it glows gold), then tap your opponent to cast it at them — no staff needed. Long-press a placed button to remove it; ✋ Grab mode moves them like any other button.</p>`;
  if(!spellList.length) h+=`<p class="note">The spell list has not arrived yet — reconnect and it will be here.</p>`;
  for(const el of ['air','water','earth','fire']){
    const spells=spellList.filter(s=>s.element===el);
@@ -3849,7 +3891,13 @@ function pSpellbook(){
    for(const s of spells){
      const have=me? stackQtyOf(me.backpack,`${el}_rune`):0;
      const ok=mLvl>=s.level, sel=me&&me.spell===s.id;
-     h+=`<div class="rowline"><span class="grow"><b>${esc(s.name)}</b>${sel?' <span class="cf">✅ selected</span>':''}<br><span class="sub">Magic lvl ${s.level} · costs ${s.runes} × ${capEl(el)} rune (you have ${have}) · max hit ${s.max}</span></span>${sel?'<span class="sub">Casting</span>':`<button class="act" ${ok?`onclick="send({type:'set_spell',spell:'${s.id}'})"`:'disabled style="opacity:.45"'}>${ok?'Select':`Lvl ${s.level}`}</button>`}</div>`;
+     // Stage 24: Freeze is button-cast only (no staff Select) and
+     // its line carries Derek's description instead of a max hit.
+     const detail=s.id==='freeze'? esc(s.desc||''): `max hit ${s.max}`;
+     const action=s.id==='freeze'? '<span class="sub">❄️ Button only</span>'
+       : sel? '<span class="sub">Casting</span>'
+       : `<button class="act" ${ok?`onclick="send({type:'set_spell',spell:'${s.id}'})"`:'disabled style="opacity:.45"'}>${ok?'Select':`Lvl ${s.level}`}</button>`;
+     h+=`<div class="rowline"><span class="grow"><b>${esc(s.name)}</b>${sel?' <span class="cf">✅ selected</span>':''}<br><span class="sub">Magic lvl ${s.level} · costs ${s.runes} × ${capEl(el)} rune (you have ${have}) · ${detail}</span></span>${action}<button class="act spellplace" data-spell="${s.id}" title="Drag onto the screen to place a cast button">📌</button></div>`;
    }
  }
  return h;
@@ -5185,6 +5233,7 @@ function npcFightUI(m){
      if(typeof m.npcOutcome==='string') spawnOutcomeSplat(me.username,m.npcOutcome,m.npcHit,false);
      else spawnSplat(me.username,m.npcHit,false); }
    if(ba&&ba.isBrother){ ba.hp=m.hpNpc; ba.maxHp=m.maxHpNpc; }
+   if(ba&&typeof m.npcFrozenUntil==='number') ba.frozenUntil=m.npcFrozenUntil; // Stage 24: Freeze root on my target
    if(ba) setHpBar(ba,m.hpNpc/Math.max(1,m.maxHpNpc),m.hpNpc,m.maxHpNpc); // overhead bar + number tracks the fight, green → yellow → red
    const oppName=(npcFight.name||'goblin').split(' ')[0].toLowerCase();
    const parts=[];
@@ -5280,6 +5329,7 @@ function modDuelUI(m){
    if(me) me.specialEnergy=m.energyYou;
    setDuelCountdown(m.countdownLeft);
    const ma=modAvatars[m.npcId];
+   if(ma&&typeof m.npcFrozenUntil==='number') ma.frozenUntil=m.npcFrozenUntil; // Stage 24: Freeze root on the mod
    if(ma) setHpBar(ma,m.hpNpc/99,m.hpNpc,99);
    const myAv=me?avatars[me.username]:null; if(myAv) setHpBar(myAv,m.hpYou/99,m.hpYou,99);
    applyClosing(m); // on a closing tick, walk into reach (moveTo)
@@ -6008,6 +6058,208 @@ function rebuildMyKnight(app,key){
  avatars[me.username]=na; scene.add(na.group);
  syncAvatars(); // re-applies badges / prayer / activity to the fresh label
 }
+
+/* ---- Stage 24: placed spell buttons + tap-to-cast + Freeze ----
+   Derek's design: drag a spell out of the 📖 spellbook onto the
+   screen to place a cast button for it. Tap the button → the spell
+   arms (gold glow, one at a time); tap it again → disarmed. While
+   armed, the next tap on an opponent sends cast_at to the server
+   (no staff needed — the button is the casting method) and disarms:
+   ONE cast per arming. Buttons persist in localStorage under their
+   own key (positions are screen pixels, like the rail buttons'
+   store, but the SET of placed spells is new state, so it gets a
+   dedicated key rather than extending BTN_POS). Long-press removes
+   a button; ✋ Grab mode drags them like the rail buttons, and the
+   Stage 23 modal gate keeps them inert (not armable/castable)
+   while Grab is on. */
+const SPELL_BTN_KEY='nallystake_spell_btns';
+let spellBtns=loadSpellBtns();
+let armedSpell=null; // spell id armed for the next opponent tap, or null
+let meFrozenUntil=0; // my own Freeze root expiry (server ms), fed by the snapshot + incoming cast_result
+function loadSpellBtns(){ try{ const v=JSON.parse(localStorage.getItem(SPELL_BTN_KEY)||'[]'); return Array.isArray(v)? v.filter(b=>b&&typeof b.spell==='string') : []; }catch(e){ return []; } }
+function saveSpellBtns(){ try{ localStorage.setItem(SPELL_BTN_KEY,JSON.stringify(spellBtns)); }catch(e){} }
+function spellIconOf(s){ if(!s) return '🪄'; if(s.icon) return s.icon; return {air:'💨',water:'💧',earth:'🪨',fire:'🔥'}[s.element]||'🪄'; }
+function meFrozenNow(){ return (meFrozenUntil||0)>Date.now(); }
+function renderSpellBtns(){
+ const wrap=$('spellbtns'); if(!wrap) return;
+ wrap.innerHTML='';
+ for(const b of spellBtns){
+   const s=spellList.find(x=>x.id===b.spell);
+   const el=document.createElement('button');
+   el.className='spellbtn'+(armedSpell===b.spell?' armed':'');
+   el.style.left=(b.l||0)+'px'; el.style.top=(b.t||0)+'px';
+   el.innerHTML=`<span class="sic">${spellIconOf(s)}</span><span class="snm">${esc(s?s.name:b.spell)}</span>`;
+   el.title=s? `${s.name} — tap to ${armedSpell===b.spell?'disarm':'arm'}, then tap your opponent to cast` : b.spell;
+   wireSpellBtn(el,b);
+   wrap.appendChild(el);
+ }
+}
+function wireSpellBtn(el,b){
+ // Tap = arm / disarm. The Stage 23 central click gate swallows
+ // every click while Grab is on, so arming can't happen while
+ // arranging; the grabMode check here is the second lock.
+ el.addEventListener('click',()=>{
+   if(grabMode) return;
+   if(el._suppressClickUntil&&Date.now()<el._suppressClickUntil) return;
+   closeSpellPop();
+   if(armedSpell===b.spell){ armedSpell=null; toast('🪄 Spell disarmed.'); }
+   else{ armedSpell=b.spell; const s=spellList.find(x=>x.id===b.spell); toast(`${spellIconOf(s)} ${s?s.name:b.spell} armed — tap your opponent to cast!`); }
+   renderSpellBtns();
+ });
+ let pid=null,sx=0,sy=0,startL=0,startT=0,dragging=false,pressTimer=null,pressX=0,pressY=0;
+ el.addEventListener('pointerdown',e=>{
+   if(grabMode){
+     // Grab drags placed spell buttons too (they are interface
+     // buttons); movement persists like the rail buttons'.
+     if(pid!==null) return;
+     pid=e.pointerId; sx=e.clientX; sy=e.clientY; dragging=false;
+     try{ el.setPointerCapture(pid); }catch(err){}
+     return;
+   }
+   // Long-press (outside Grab) opens the remove popup.
+   pressX=e.clientX; pressY=e.clientY;
+   pressTimer=setTimeout(()=>{ pressTimer=null; el._suppressClickUntil=Date.now()+600; openSpellPop(b,el); },600);
+ });
+ el.addEventListener('pointermove',e=>{
+   if(pressTimer&&Math.hypot(e.clientX-pressX,e.clientY-pressY)>10){ clearTimeout(pressTimer); pressTimer=null; }
+   if(pid===null||e.pointerId!==pid) return;
+   const dx=e.clientX-sx, dy=e.clientY-sy;
+   if(!dragging&&Math.hypot(dx,dy)>4){ dragging=true; const r=el.getBoundingClientRect(); startL=r.left; startT=r.top; }
+   if(dragging){ el.style.left=(startL+dx)+'px'; el.style.top=(startT+dy)+'px'; }
+ });
+ const finish=e=>{
+   if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; }
+   if(pid===null||(e.pointerId!==undefined&&e.pointerId!==pid)) return;
+   pid=null;
+   if(dragging){ dragging=false; const r=el.getBoundingClientRect(); b.l=Math.round(r.left); b.t=Math.round(r.top); saveSpellBtns(); }
+   el._suppressClickUntil=Date.now()+350;
+ };
+ el.addEventListener('pointerup',finish);
+ el.addEventListener('pointercancel',finish);
+}
+function openSpellPop(b,anchorEl){
+ const pop=$('spellpop'); if(!pop) return;
+ const s=spellList.find(x=>x.id===b.spell);
+ pop.innerHTML=`<div style="font-weight:800;margin-bottom:6px">${spellIconOf(s)} ${esc(s?s.name:b.spell)}</div><button class="act" id="spellpopremove">✖ Remove button</button> <button class="ghost" id="spellpopcancel">Keep</button>`;
+ const r=anchorEl.getBoundingClientRect();
+ pop.style.left=Math.max(4,Math.min(innerWidth-190,r.left))+'px';
+ pop.style.top=Math.max(4,r.top-92)+'px';
+ pop.style.display='block';
+ $('spellpopremove').onclick=()=>{ spellBtns=spellBtns.filter(x=>x.spell!==b.spell); if(armedSpell===b.spell) armedSpell=null; saveSpellBtns(); renderSpellBtns(); closeSpellPop(); toast('🗑️ Spell button removed.'); };
+ $('spellpopcancel').onclick=closeSpellPop;
+}
+function closeSpellPop(){ const pop=$('spellpop'); if(pop) pop.style.display='none'; }
+/* Drag-out placement: pointerdown on a spellbook row's 📌 starts a
+   ghost that follows the pointer; dropping OUTSIDE the drawer
+   places (or moves) that spell's button there. Dropping back on
+   the book cancels. The drawer stays open so several spells can be
+   placed in one visit. */
+function wireSpellPlace(){
+ document.querySelectorAll('.spellplace').forEach(btn=>{
+   if(btn._wired) return; btn._wired=true;
+   btn.addEventListener('pointerdown',e=>{ e.preventDefault(); e.stopPropagation(); startSpellDrag(e,btn.dataset.spell); });
+ });
+}
+function startSpellDrag(e,spellId){
+ const s=spellList.find(x=>x.id===spellId); if(!s) return;
+ const ghost=document.createElement('div');
+ ghost.className='spellghost';
+ ghost.innerHTML=`<span class="sic">${spellIconOf(s)}</span><span class="snm">${esc(s.name)}</span>`;
+ document.body.appendChild(ghost);
+ const moveGhost=(x,y)=>{ ghost.style.left=(x-30)+'px'; ghost.style.top=(y-30)+'px'; };
+ moveGhost(e.clientX,e.clientY);
+ const onMove=ev=>moveGhost(ev.clientX,ev.clientY);
+ const cleanup=()=>{ window.removeEventListener('pointermove',onMove); ghost.remove(); };
+ window.addEventListener('pointermove',onMove);
+ window.addEventListener('pointerup',ev=>{
+   cleanup();
+   const dr=$('drawer').getBoundingClientRect();
+   const overDrawer=ev.clientX>=dr.left&&ev.clientX<=dr.right&&ev.clientY>=dr.top&&ev.clientY<=dr.bottom;
+   if(!overDrawer) placeSpellBtn(spellId,Math.round(ev.clientX-30),Math.round(ev.clientY-30));
+ },{once:true});
+ window.addEventListener('pointercancel',cleanup,{once:true});
+}
+function placeSpellBtn(spellId,l,t){
+ const ex=spellBtns.find(b=>b.spell===spellId);
+ if(ex){ ex.l=l; ex.t=t; } else spellBtns.push({spell:spellId,l,t});
+ saveSpellBtns(); renderSpellBtns();
+ const s=spellList.find(x=>x.id===spellId);
+ toast(`🪄 ${s?s.name:spellId} button placed — tap it to arm, then tap your opponent to cast.`);
+}
+/* The armed tap itself, called from handleTap's target branches.
+   Returns true when the tap became a cast (and disarms — one cast
+   per arming). When the target's server position is known and out
+   of magic range, returns false WITHOUT disarming, so the tap
+   falls through to the normal walk/attack and the spell stays
+   armed. Server refusals (runes, level, No Magic…) still consume
+   the arming — the cast was attempted. */
+function armedCastAt(kind,id,tx,ty){
+ if(!armedSpell) return false;
+ if(typeof tx==='number'&&typeof ty==='number'&&myPos){
+   if(Math.hypot(myPos.x-tx,myPos.y-ty)>150) return false;
+ }
+ const spell=armedSpell; armedSpell=null; renderSpellBtns();
+ send({type:'cast_at',spell,targetKind:kind,targetId:id});
+ return true;
+}
+/* The server's answer to a cast: splat + swing on the target,
+   the fight bars sync from the authoritative HP, and Freeze gets
+   its shell + toasts. An incoming copy (someone cast at ME) splats
+   my own knight and, on a freeze, starts my local root. */
+function onCastResult(m){
+ const sp=spellList.find(x=>x.id===m.spell);
+ const spName=sp?sp.name:(m.spell||'spell');
+ const myAv=me?avatars[me.username]:null;
+ let av=null;
+ if(m.context==='duel') av=m.incoming? myAv : avatars[m.targetId];
+ else if(m.context==='modduel') av=modAvatars[m.targetId];
+ else if(m.context==='fc') av=fcAvatars[m.targetId];
+ else av=npcAvatars[m.targetId];
+ const showSplat=(targetAv)=>{
+   if(!targetAv) return;
+   if(m.froze){ targetAv.frozenUntil=m.frozenUntil||0; setFrozenShell(targetAv,true); pushSplat(targetAv,splatTextTexture('zero','❄️'),1.8); }
+   else spawnOutcomeSplatOn(targetAv,m.outcome,m.dmg,false);
+ };
+ if(m.incoming){
+   showSplat(av);
+   if(m.froze){ meFrozenUntil=m.frozenUntil||0; toast(`❄️ You're frozen by ${m.by||'a spell'} — you can't move for 5 seconds!`); }
+   if(duel&&typeof m.hpTarget==='number'){ duel.hpYou=m.hpTarget; renderDuelBar(); }
+   logLine(`🪄 ${m.by||'Someone'} cast ${spName} on you${m.froze?' — ❄️ FROZEN!':''}`);
+   return;
+ }
+ if(av){ startSwingAt(myAv,av); showSplat(av); }
+ if(m.context==='duel'&&duel&&typeof m.hpTarget==='number'){ duel.hpOpponent=m.hpTarget; renderDuelBar(); const oav=avatars[duel.opponent]; if(oav) setHpBar(oav,m.hpTarget/99,m.hpTarget,99); }
+ if(m.context==='modduel'&&modDuel&&typeof m.hpTarget==='number'){ modDuel.hpNpc=m.hpTarget; renderModDuelBar(); if(av) setHpBar(av,m.hpTarget/99,m.hpTarget,99); }
+ if((m.context==='npc'||m.context==='barrows')&&npcFight&&typeof m.hpTarget==='number'){ npcFight.hpNpc=m.hpTarget; renderNpcBar(); if(av) setHpBar(av,m.hpTarget/Math.max(1,m.maxHpTarget||npcFight.maxHpNpc),m.hpTarget,m.maxHpTarget||npcFight.maxHpNpc); }
+ if(m.context==='fc'&&fcRun){ if(fcMonsters[m.targetId]&&typeof m.hpTarget==='number'){ fcMonsters[m.targetId].hp=m.hpTarget; prevFcHp[m.targetId]=m.hpTarget; } syncFcMonsters(); renderFcBar(); }
+ if(m.froze) toast(`❄️ ${m.targetName||'Target'} is frozen solid for 5 seconds!`);
+ else if(m.outcome==='miss') logLine(`🪄 Your ${spName} missed ${m.targetName||'the target'}.`);
+ else if(m.outcome==='blocked') logLine(`🪄 Your ${spName} was blocked by ${m.targetName||'the target'}.`);
+}
+/* The ❄️ frozen look: a translucent ice shell around the avatar,
+   plus a ❄️ in knights' name labels. Shells are created lazily and
+   just toggled — the refresh interval below expires them cleanly
+   when frozenUntil passes, with no extra server traffic. */
+function setFrozenShell(a,on){
+ if(!a||!a.group) return;
+ if(on&&!a.iceShell){
+   const big=a.kind==='jad';
+   const geo=new THREE.BoxGeometry(big?3.4:1.15,big?6:2.5,big?3.4:1.15);
+   const mat=new THREE.MeshBasicMaterial({color:0x9fd8ef,transparent:true,opacity:0.35,depthWrite:false});
+   a.iceShell=new THREE.Mesh(geo,mat);
+   a.iceShell.position.y=big?3:1.25;
+   a.group.add(a.iceShell);
+ }
+ if(a.iceShell) a.iceShell.visible=!!on;
+}
+function refreshFrozenFx(){
+ const now=Date.now();
+ for(const a of Object.values(avatars)){ const on=(a.frozenUntil||0)>now; setFrozenShell(a,on); if(a.fzEl) a.fzEl.textContent=on?'❄️ ':''; }
+ for(const a of Object.values(npcAvatars)) setFrozenShell(a,(a.frozenUntil||0)>now);
+ for(const a of Object.values(fcAvatars)) setFrozenShell(a,(a.frozenUntil||0)>now);
+ for(const a of Object.values(modAvatars)) setFrozenShell(a,(a.frozenUntil||0)>now);
+}
+setInterval(refreshFrozenFx,400);
 
 /* ---- Stage 18: ✋ Grab mode replaces hold-drag + the Clear chip ----
    The rail buttons are LOCKED by default: taps fire their actions
