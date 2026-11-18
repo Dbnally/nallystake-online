@@ -762,6 +762,10 @@ function newProfile(username) {
     // ({ entryId: true }): the six Barrows brothers, the fire cape
     // and the six rare Barrows weapons (see clogEntryIds).
     clog: {},
+    // Stage 22: the mod NPC stake ladder — wins per tier against
+    // the three plaza moderators ({ t1, t2, t3 }, each capped at 3:
+    // 3 wins in a tier unlock the next). See MOD_NPCS / startModDuel.
+    modLadder: { wins: { t1: 0, t2: 0, t3: 0 } },
   };
 }
 // Migration: Phase 1 accounts gain the v2 fields with defaults. Existing
@@ -863,6 +867,17 @@ function ensureV2(p) {
     for (const id of clogEntryIds()) if (p.clog[id]) cleanClog[id] = true;
     if (JSON.stringify(cleanClog) !== JSON.stringify(p.clog)) { p.clog = cleanClog; changed = true; }
   }
+  // Stage 22 migration: mod NPC stake-ladder progress. Only the
+  // container shape is enforced; recorded wins are clamped to the
+  // 0..3 band the ladder stores (3 = tier complete) and never reset.
+  if (!p.modLadder || typeof p.modLadder !== 'object' || Array.isArray(p.modLadder)) { p.modLadder = { wins: { t1: 0, t2: 0, t3: 0 } }; changed = true; }
+  if (!p.modLadder.wins || typeof p.modLadder.wins !== 'object' || Array.isArray(p.modLadder.wins)) { p.modLadder.wins = { t1: 0, t2: 0, t3: 0 }; changed = true; }
+  else {
+    for (const t of ['t1', 't2', 't3']) {
+      const v = Math.max(0, Math.min(3, Math.floor(+p.modLadder.wins[t] || 0)));
+      if (p.modLadder.wins[t] !== v) { p.modLadder.wins[t] = v; changed = true; }
+    }
+  }
   // Stage 10 migration: character appearance. A missing one is
   // backfilled with the default; a present one is sanitised in
   // place (merged over the default — a set look is never wiped).
@@ -955,6 +970,9 @@ function publicProfile(p) {
     // 'starter' / 'clog' messages on welcome and on every change.
     starter: { done: { ...(p.starter && p.starter.done ? p.starter.done : {}) } },
     clog: clogEntryIds().filter((id) => p.clog && p.clog[id]),
+    // Stage 22: mod NPC stake-ladder wins per tier — also pushed as
+    // a dedicated 'mod_ladder' message on welcome and on every change.
+    modLadder: { wins: { t1: 0, t2: 0, t3: 0, ...((p.modLadder && p.modLadder.wins) || {}) } },
   };
 }
 function leaderboardProfile(p) {
@@ -1337,7 +1355,7 @@ function stakeMatchForKey(key) {
   return null;
 }
 function stakeBusy(sess) {
-  return !!(sess && (sess.duelId || sess.npcFightId || sess.barrowsFightId || sess.fcRunId));
+  return !!(sess && (sess.duelId || sess.modDuelId || sess.npcFightId || sess.barrowsFightId || sess.fcRunId));
 }
 function stakeOpponentKey(match, key) { return match.fromKey === key ? match.toKey : match.fromKey; }
 function stakeMatchUpdateMsg(match, forKey) {
@@ -1657,7 +1675,7 @@ function playersSnapshot(area) {
     // Stage 7C: what this player is visibly doing right now, so other
     // players can tell at a glance. A duel beats a monster fight,
     // which beats a just-used skill (4s window after the action).
-    act: p.duelId ? 'duel'
+    act: (p.duelId || p.modDuelId) ? 'duel'
       : (p.npcFightId || p.barrowsFightId || p.fcRunId) ? 'fight'
       : (p.actAt && now - p.actAt < 4000) ? (p.actSkill || null)
       : null,
@@ -2381,6 +2399,241 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
     else if (duel.hp[bKey] <= 0) endDuel(duel, aKey, 'KO');
     else if (duel.hp[aKey] <= 0) endDuel(duel, bKey, 'KO');
   }, TICK_MS);
+}
+
+// ---------- Mod NPC stake ladder (Stage 22) ----------
+// Derek's design: three NPC moderators stand in the plaza, one per
+// tier, offering stake duels. The stake doubles per tier — Tier 1
+// 100g, Tier 2 200g, Tier 3 400g — and winning 3 times in a tier
+// unlocks the next. (The names are placeholders Derek can rename.)
+//
+// ROUTE: the player-duel engine (startDuel) is welded to two real
+// player sessions — both fighters are db.users records with live
+// sockets, escrow runs through both profiles, and endDuel writes
+// win/loss + rating to both. A fake "user" for the mod would land
+// in the leaderboard / hiscores and the saved store, so instead
+// this is a dedicated engine that mirrors the duel tick's rules
+// exactly, fought IN PLACE in the plaza against the standing mod:
+//   - 99 HP pools, COUNTDOWN_TICKS countdown (movement frozen,
+//     engagement taps accepted), per-fighter swing timers at the
+//     wielded weapon's speed, tap-to-engage with NO auto-retaliate
+//     (the player engages only via {type:'mod_duel_attack'}; the
+//     mod engages itself the moment the countdown ends).
+//   - Rolls are the shared rollStyleAttack at DUEL_LEVEL for BOTH
+//     sides — the player's gear, style, special and XP are personal
+//     exactly as in a player duel; the mod fights from a synthetic
+//     profile (its tier's sword, Aggressive style, no armour, no
+//     prayers, no potions, no special).
+//   - Per-fighter closing exactly like the duel tick: a melee
+//     fighter out of MELEE_REACH does not swing and is told where
+//     to walk (moveTo); the mod never moves — mods hold their post.
+//   - Walking beyond NPC_RANGE (or leaving the plaza) forfeits:
+//     the escrowed stake is lost, as on a loss or a disconnect.
+//   - Settlement touches NO rating and NO win/loss record (these
+//     are not player duels) — but a win DOES complete the Stage 20
+//     "Win a duel" starter goal, like every other duel win.
+// One fight per mod at a time (the goblin pattern): a busy mod
+// refuses new challengers until its fight ends.
+const MOD_NPCS = [
+  { id: 'mod1', name: 'Mod Ash', tier: 1, stake: 100, x: 680, y: 300, weapon: 'steel_sword', style: 'aggressive', combatLevel: 40 },
+  { id: 'mod2', name: 'Mod Blair', tier: 2, stake: 200, x: 800, y: 280, weapon: 'mithril_sword', style: 'aggressive', combatLevel: 40 },
+  { id: 'mod3', name: 'Mod Vega', tier: 3, stake: 400, x: 920, y: 300, weapon: 'dragon_sword', style: 'aggressive', combatLevel: 40 },
+];
+const MOD_NPC_BY_ID = Object.fromEntries(MOD_NPCS.map((d) => [d.id, d]));
+const modLive = new Map(MOD_NPCS.map((d) => [d.id, { fightId: null }])); // npcId -> { fightId } (busy lock)
+const modDuels = new Map(); // fight id -> fight
+
+function modNpcsMsg() {
+  return {
+    type: 'mod_npcs',
+    npcs: MOD_NPCS.map((d) => ({ id: d.id, name: d.name, tier: d.tier, stake: d.stake, x: d.x, y: d.y, combatLevel: d.combatLevel, busy: !!modLive.get(d.id).fightId })),
+  };
+}
+function broadcastModNpcs() {
+  const msg = modNpcsMsg();
+  for (const p of online.values()) if (p.area === 'plaza') send(p.ws, msg);
+}
+function modLadderMsg(p) {
+  ensureV2(p);
+  return { type: 'mod_ladder', wins: { t1: p.modLadder.wins.t1, t2: p.modLadder.wins.t2, t3: p.modLadder.wins.t3 } };
+}
+// Tier 1 is always open; tier N (2/3) needs 3 wins in tier N-1.
+function modTierUnlocked(p, tier) {
+  ensureV2(p);
+  if (tier <= 1) return true;
+  return (p.modLadder.wins['t' + (tier - 1)] || 0) >= 3;
+}
+// The mod's half of the fight: a throwaway profile in exactly the
+// shape rollStyleAttack reads (style / worn / xp / backpack /
+// spell). Built fresh per fight so nothing (energy, arrows) leaks
+// between challengers. Melee only — it never touches the
+// arrow/rune paths.
+function modFightProfile(def) {
+  return {
+    username: def.name, style: def.style,
+    worn: { ...emptyWorn(), weapon: def.weapon },
+    xp: defaultXp(), backpack: [], spell: 'air_strike',
+    activePrayer: null, specialEnergy: 0,
+  };
+}
+function startModDuel(key, def) {
+  const sess = online.get(key);
+  if (!sess) return;
+  const profile = sess.profile;
+  takeGold(profile, def.stake); // escrow — the handler validated the total covers it
+  save(key);
+  const id = crypto.randomBytes(6).toString('hex');
+  const fight = {
+    id, playerKey: key, npcId: def.id, tier: def.tier, stake: def.stake, pot: def.stake * 2,
+    hpYou: 99, hpNpc: 99,
+    // Swing timers mirror the duel engine: the player starts
+    // UN-engaged (timer at Infinity) until their mod_duel_attack
+    // tap; the mod engages itself — its first swing is armed for
+    // the first live tick after the countdown.
+    tickCount: 0, engaged: false, nextSwingYou: Infinity, nextSwingNpc: COUNTDOWN_TICKS + 1,
+    specialQueued: false, done: false, timer: null,
+    modProfile: modFightProfile(def), lastRefuseTick: -99,
+  };
+  modDuels.set(id, fight);
+  modLive.get(def.id).fightId = id;
+  sess.modDuelId = id;
+  send(sess.ws, {
+    type: 'mod_duel', phase: 'start', npcId: def.id, name: def.name, tier: def.tier, stake: def.stake, pot: fight.pot,
+    countdownTicks: COUNTDOWN_TICKS, hpYou: 99, maxHpYou: 99, hpNpc: 99, maxHpNpc: 99,
+    energyYou: profile.specialEnergy, profile: publicProfile(profile),
+  });
+  broadcast({ type: 'chat', from: 'Duel Master', text: `${profile.username} takes on ${def.name} (Tier ${def.tier}) for ${def.stake}g — winner takes ${fight.pot}g!` });
+  broadcastModNpcs();
+  broadcastState();
+  fight.timer = setInterval(() => modDuelTick(fight), TICK_MS);
+}
+function modDuelTick(fight) {
+  const sess = online.get(fight.playerKey);
+  const def = MOD_NPC_BY_ID[fight.npcId];
+  if (!sess || !def) { endModDuel(fight, 'forfeit'); return; } // session vanished mid-tick (the close handler settles first; this is the belt-and-braces path)
+  const profile = sess.profile;
+  fight.tickCount += 1;
+  const tick = fight.tickCount;
+  const countdownLeft = Math.max(0, COUNTDOWN_TICKS - tick + 1);
+  const dist = Math.hypot(sess.x - def.x, sess.y - def.y);
+  // Walking off forfeits the stake — checked every tick, though it
+  // cannot trigger during the countdown (moves are frozen then and
+  // travel is refused), and the start required standing in range.
+  if (sess.area !== 'plaza' || dist > NPC_RANGE) { endModDuel(fight, 'forfeit'); return; }
+  if (countdownLeft > 0) {
+    // Countdown ticks: positions frozen, nobody swings — but the
+    // client overlay counts down from these, exactly like a duel.
+    send(sess.ws, {
+      type: 'mod_duel', phase: 'tick', npcId: def.id,
+      hpYou: fight.hpYou, maxHpYou: 99, hpNpc: fight.hpNpc, maxHpNpc: 99,
+      youHit: null, npcHit: null, youOutcome: null, npcOutcome: null, youSpecial: false,
+      energyYou: profile.specialEnergy, countdownLeft,
+    });
+    return;
+  }
+  // Per-fighter closing, mirroring the duel tick: the player's
+  // reach depends on their wielded style; the mod (melee) needs
+  // MELEE_REACH. Both out = a closing tick: nobody swings, the
+  // player is told where to walk. Only the player out = the mod
+  // fights on while the player closes; only the mod out = the
+  // player fights on (a bow/staff holder picks the mod apart from
+  // range — the mod holds its post and cannot answer).
+  const pStyle = attackStyleOf(profile);
+  const playerOut = dist > styleRange(pStyle);
+  const npcOut = dist > MELEE_REACH;
+  if (playerOut && npcOut) {
+    send(sess.ws, {
+      type: 'mod_duel', phase: 'tick', npcId: def.id,
+      hpYou: fight.hpYou, maxHpYou: 99, hpNpc: fight.hpNpc, maxHpNpc: 99,
+      youHit: null, npcHit: null, youOutcome: null, npcOutcome: null, youSpecial: false,
+      energyYou: profile.specialEnergy, countdownLeft,
+      closing: true, moveTo: approachPoint(sess.x, sess.y, def.x, def.y),
+    });
+    return;
+  }
+  const notes = [];
+  let youHit = null, youOutcome = null, youSpecial = false;
+  if (fight.engaged && tick >= fight.nextSwingYou && !playerOut) {
+    const res = rollStyleAttack(profile, fight.modProfile, fight.specialQueued, DUEL_LEVEL);
+    if (res.refused) {
+      // Out of arrows / runes: nothing consumed, timer and queued
+      // special untouched — the refusal note is throttled like the
+      // duel engine's (once per 8 ticks).
+      if (tick - fight.lastRefuseTick >= 8) { notes.push(res.refused); fight.lastRefuseTick = tick; }
+    } else {
+      fight.nextSwingYou = tick + swingSpeed(res.style);
+      youSpecial = fight.specialQueued; fight.specialQueued = false;
+      if (youSpecial) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
+      youHit = res.dmg; youOutcome = res.outcome;
+      if (res.notes && res.notes.length) notes.push(...res.notes);
+      // Combat XP from damage dealt, per attack style — duels
+      // grant swing XP for every style (Stage 19), mod duels too.
+      addXp(fight.playerKey, swingXpGains(profile.style, res.style, res.dmg, res.spell));
+      if (res.dmg > 0) profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
+      fight.hpNpc -= res.dmg;
+    }
+  }
+  let npcHit = null, npcOutcome = null;
+  if (tick >= fight.nextSwingNpc && !npcOut) {
+    fight.nextSwingNpc = tick + MELEE_SPEED;
+    const res = rollStyleAttack(fight.modProfile, profile, false, DUEL_LEVEL);
+    if (!res.refused) { npcHit = res.dmg; npcOutcome = res.outcome; fight.hpYou -= res.dmg; }
+  }
+  send(sess.ws, {
+    type: 'mod_duel', phase: 'tick', npcId: def.id,
+    hpYou: Math.max(0, fight.hpYou), maxHpYou: 99, hpNpc: Math.max(0, fight.hpNpc), maxHpNpc: 99,
+    youHit, npcHit, youOutcome, npcOutcome, youSpecial,
+    energyYou: profile.specialEnergy, countdownLeft,
+    ...(playerOut ? { closing: true, moveTo: approachPoint(sess.x, sess.y, def.x, def.y) } : {}),
+    note: notes.length ? notes.join(' ') : undefined,
+  });
+  // The kill counts even on a double-drop tick (the NPC-fight
+  // precedent: "the kill still counts"), so the mod's death is
+  // checked first.
+  if (fight.hpNpc <= 0) endModDuel(fight, 'win');
+  else if (fight.hpYou <= 0) endModDuel(fight, 'loss');
+}
+function endModDuel(fight, result) { // 'win' | 'loss' | 'forfeit'
+  if (fight.done) return;
+  fight.done = true;
+  clearInterval(fight.timer);
+  modDuels.delete(fight.id);
+  const def = MOD_NPC_BY_ID[fight.npcId];
+  const live = modLive.get(fight.npcId);
+  if (live && live.fightId === fight.id) live.fightId = null;
+  const key = fight.playerKey;
+  const u = db.users[key];
+  if (!u || !def) { broadcastModNpcs(); return; }
+  const profile = u.profile;
+  ensureV2(profile);
+  let payout = 0;
+  let winsNow = profile.modLadder.wins['t' + fight.tier] || 0;
+  let unlockedNext = false;
+  if (result === 'win') {
+    payout = fight.pot; // the escrowed stake back + the mod's matching stake
+    addGold(profile, payout);
+    winsNow = Math.min(3, winsNow + 1); // stored wins cap at 3 — the tier is complete there
+    profile.modLadder.wins['t' + fight.tier] = winsNow;
+    unlockedNext = winsNow >= 3 && fight.tier < 3;
+  }
+  save(key);
+  // Stage 20: a mod-duel win is a duel win for the starter goal.
+  if (result === 'win') completeStarterGoal(key, 'win_duel');
+  const sess = online.get(key);
+  if (sess) {
+    if (sess.modDuelId === fight.id) sess.modDuelId = null;
+    send(sess.ws, {
+      type: 'mod_duel', phase: 'end', npcId: def.id, name: def.name, tier: fight.tier,
+      stake: fight.stake, pot: fight.pot, result, payout,
+      wins: winsNow, unlockedNext, profile: publicProfile(profile),
+    });
+    send(sess.ws, modLadderMsg(profile));
+  }
+  if (result === 'win') {
+    broadcast({ type: 'chat', from: 'Duel Master', text: `⭐ ${profile.username} beat ${def.name} (Tier ${fight.tier}) and won the ${fight.pot}g pot! (${winsNow}/3 Tier ${fight.tier} wins${unlockedNext ? ` — Tier ${fight.tier + 1} unlocked!` : ''})` });
+  }
+  broadcastModNpcs();
+  broadcastState();
 }
 
 // ---------- NPC combat (Stage 1) ----------
@@ -3738,8 +3991,10 @@ wss.on('connection', (ws, req) => {
   ensureV2(profile);
   // Everyone logs into the plaza (area is session-only, never saved).
   // Stage 13: the login scatter is the old 100..600 x 100..350 box x2.
-  online.set(key, { ws, profile, x: 200 + Math.random() * 1000, y: 200 + Math.random() * 500, area: 'plaza', duelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsPuzzleSolved: false, actSkill: null, actAt: 0 });
+  online.set(key, { ws, profile, x: 200 + Math.random() * 1000, y: 200 + Math.random() * 500, area: 'plaza', duelId: null, modDuelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsPuzzleSolved: false, actSkill: null, actAt: 0 });
   send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot('plaza'), area: 'plaza' });
+  send(ws, modNpcsMsg()); // Stage 22: the three plaza moderators + their busy flags
+  send(ws, modLadderMsg(profile)); // Stage 22: stake-ladder progress
   send(ws, pilesMsg('plaza')); // Stage 5: any drop piles waiting in the plaza
   send(ws, alliesMsg('plaza')); // Stage 6: any Tree Guardians standing in the plaza
   send(ws, objectsMsg('plaza')); // Stage 7D: any placed objects in the plaza
@@ -3762,13 +4017,17 @@ wss.on('connection', (ws, req) => {
       // still runs so every client keeps the authoritative spot.
       const duelNow = me.duelId ? duels.get(me.duelId) : null;
       const frozen = !!(duelNow && duelNow.tickCount <= COUNTDOWN_TICKS);
+      // Stage 22: a mod duel's countdown freezes the challenger the
+      // same way — the fight opens toe-to-toe with the mod.
+      const mdNow = me.modDuelId ? modDuels.get(me.modDuelId) : null;
+      const mdFrozen = !!(mdNow && mdNow.tickCount <= COUNTDOWN_TICKS);
       // Stage 18: a No Movement duel locks both fighters at their
       // duel-start spots for the WHOLE duel, not just the countdown.
       // They spawn toe-to-toe inside melee reach (780 vs 820), so the
       // standing fight works — swings, specials and eating all carry
       // on; only running away is off the table.
       const noMove = !!(duelNow && duelNow.rules && duelNow.rules.noMovement);
-      if (!frozen && !noMove) {
+      if (!frozen && !noMove && !mdFrozen) {
         me.x = Math.max(0, Math.min(WORLD_W, +m.x || 0));
         me.y = Math.max(0, Math.min(WORLD_H, +m.y || 0));
       }
@@ -3813,6 +4072,7 @@ wss.on('connection', (ws, req) => {
       // the stake-match flow moves players in and out of it.
       if (to === 'waiting') return send(ws, { type: 'error', message: 'The Waiting Area is only for stake matches — ready up at the Stake Board.' });
       if (me.duelId) return send(ws, { type: 'error', message: 'You cannot travel during a duel.' });
+      if (me.modDuelId) return send(ws, { type: 'error', message: 'You cannot travel during a duel.' });
       // Stage 17: a player in a matched stake match cannot travel
       // (they are either about to ready up or standing in the
       // Waiting Area) — cancel the match first.
@@ -3826,6 +4086,7 @@ wss.on('connection', (ws, req) => {
       me.x = AREAS[to].spawn.x; me.y = AREAS[to].spawn.y;
       if (to !== 'plaza') completeStarterGoal(key, 'visit_area'); // Stage 20: first trip out of the plaza
       send(ws, { type: 'area', area: to });
+      if (to === 'plaza') { send(ws, modNpcsMsg()); send(ws, modLadderMsg(profile)); } // Stage 22: the moderators stand in the plaza
       if (NPC_AREAS.includes(to)) send(ws, npcStateMsg(to));
       // Stage 2: every area entry also brings its node + fire state
       // (empty lists for areas that have none).
@@ -3852,6 +4113,7 @@ wss.on('connection', (ws, req) => {
       if (!npc) return send(ws, { type: 'error', message: 'No such creature.' });
       if (me.area !== npc.area) return send(ws, { type: 'error', message: 'That creature is not here.' });
       if (me.duelId) return send(ws, { type: 'error', message: 'You are in a duel.' });
+      if (me.modDuelId) return send(ws, { type: 'error', message: 'You are in a duel.' });
       if (me.npcFightId) return send(ws, { type: 'error', message: 'You are already fighting something.' });
       if (me.barrowsFightId) return send(ws, { type: 'error', message: 'You are already fighting a Barrows brother.' });
       if (!npc.alive) return send(ws, { type: 'error', message: 'It is already dead.' });
@@ -3873,6 +4135,7 @@ wss.on('connection', (ws, req) => {
     if (m.type === 'fc_start') {
       if (me.area !== 'fightcaves') return send(ws, { type: 'error', message: 'You need to be in the Fight Caves to start a run.' });
       if (me.duelId) return send(ws, { type: 'error', message: 'You are in a duel.' });
+      if (me.modDuelId) return send(ws, { type: 'error', message: 'You are in a duel.' });
       if (me.npcFightId) return send(ws, { type: 'error', message: 'You are already fighting something.' });
       if (me.barrowsFightId) return send(ws, { type: 'error', message: 'You are already fighting a Barrows brother.' });
       if (me.fcRunId) return send(ws, { type: 'error', message: 'You are already in a Fight Caves run — leave it first.' });
@@ -3900,6 +4163,7 @@ wss.on('connection', (ws, req) => {
       if (!def) return send(ws, { type: 'error', message: 'No such barrow.' });
       if (me.area !== 'barrows') return send(ws, { type: 'error', message: 'You need to be at the Barrows to enter a crypt.' });
       if (me.duelId) return send(ws, { type: 'error', message: 'You are in a duel.' });
+      if (me.modDuelId) return send(ws, { type: 'error', message: 'You are in a duel.' });
       if (me.npcFightId) return send(ws, { type: 'error', message: 'You are already fighting something.' });
       if (me.fcRunId) return send(ws, { type: 'error', message: 'You are in a Fight Caves run.' });
       if (me.barrowsFightId) return send(ws, { type: 'error', message: 'You are already fighting a Barrows brother.' });
@@ -4089,6 +4353,7 @@ wss.on('connection', (ws, req) => {
       if (!node) return send(ws, { type: 'error', message: 'No such spot.' });
       if (me.area !== node.area) return send(ws, { type: 'error', message: 'That spot is not here.' });
       if (me.duelId) return send(ws, { type: 'error', message: 'You are in a duel.' });
+      if (me.modDuelId) return send(ws, { type: 'error', message: 'You are in a duel.' });
       if (me.npcFightId) return send(ws, { type: 'error', message: 'You are fighting something.' });
       if (me.barrowsFightId) return send(ws, { type: 'error', message: 'You are fighting a Barrows brother.' });
       if (Math.hypot(me.x - node.x, me.y - node.y) > GATHER_RANGE) return send(ws, { type: 'error', message: 'Too far away — walk closer.' });
@@ -4448,6 +4713,25 @@ wss.on('connection', (ws, req) => {
       // Healing matters mid-fight; refuse (without consuming) outside one.
       const duel = me.duelId ? duels.get(me.duelId) : null;
       if (!duel) {
+        // Mod duel (Stage 22): food / restore potions heal the 99
+        // pool too. The echo tick carries null hit fields (not 0):
+        // a heal is not a swing, and the client reads a numeric
+        // youHit as engagement — the note alone carries the news.
+        const md = me.modDuelId ? modDuels.get(me.modDuelId) : null;
+        if (md) {
+          if (md.hpYou >= 99) return send(ws, { type: 'error', message: 'Already at full health.' });
+          removeStacks(profile.backpack, item, 1);
+          md.hpYou = Math.min(99, md.hpYou + def.heal);
+          save(key);
+          send(ws, {
+            type: 'mod_duel', phase: 'tick', npcId: md.npcId,
+            hpYou: md.hpYou, maxHpYou: 99, hpNpc: Math.max(0, md.hpNpc), maxHpNpc: 99,
+            youHit: null, npcHit: null, youOutcome: null, npcOutcome: null, youSpecial: false, energyYou: profile.specialEnergy,
+            countdownLeft: Math.max(0, COUNTDOWN_TICKS - md.tickCount + 1),
+            note: `${profile.username} used ${def.name} (+${def.heal} HP)`,
+          });
+          return sendProfile(key);
+        }
         // NPC fight (Stage 1): food / restore potions heal that pool too.
         const nf = me.npcFightId ? npcFights.get(me.npcFightId) : null;
         if (!nf) {
@@ -4615,12 +4899,46 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
+    // ----- Mod NPC stake ladder (Stage 22): challenge a moderator -----
+    if (m.type === 'mod_duel_start') {
+      const def = MOD_NPC_BY_ID[String(m.id || '')];
+      if (!def) return send(ws, { type: 'error', message: 'No such moderator.' });
+      if (me.area !== 'plaza') return send(ws, { type: 'error', message: 'The moderators are in the plaza.' });
+      if (me.duelId) return send(ws, { type: 'error', message: 'You are in a duel.' });
+      if (me.modDuelId) return send(ws, { type: 'error', message: 'You are already in a mod duel.' });
+      if (me.npcFightId) return send(ws, { type: 'error', message: 'You are already fighting something.' });
+      if (me.barrowsFightId) return send(ws, { type: 'error', message: 'You are already fighting a Barrows brother.' });
+      if (me.fcRunId) return send(ws, { type: 'error', message: 'You are in a Fight Caves run.' });
+      if (stakeMatchForKey(key)) return send(ws, { type: 'error', message: 'You have a stake match waiting — ready up or cancel it at the Stake Board.' });
+      if (modLive.get(def.id).fightId) return send(ws, { type: 'error', message: `${def.name} is in a fight right now — wait your turn.` });
+      if (Math.hypot(me.x - def.x, me.y - def.y) > NPC_RANGE) return send(ws, { type: 'error', message: 'Too far away — walk closer.' });
+      // The tier lock is enforced HERE, never trusted to the client.
+      if (!modTierUnlocked(profile, def.tier)) return send(ws, { type: 'error', message: `🔒 Tier ${def.tier} is locked — win 3 Tier ${def.tier - 1} fights first.` });
+      if (goldTotal(profile) < def.stake) return send(ws, { type: 'error', message: `You need ${def.stake}g for this stake (you have ${goldTotal(profile)}g).` });
+      startModDuel(key, def);
+      return;
+    }
+    if (m.type === 'mod_duel_attack') {
+      // Tap-to-engage, exactly the duel rule: the ONLY way the
+      // challenger starts swinging — being hit never engages them.
+      // Taps are accepted during the countdown; the first swing
+      // arms for the tick after the countdown (or the next tick).
+      const fight = me.modDuelId ? modDuels.get(me.modDuelId) : null;
+      if (!fight) return send(ws, { type: 'error', message: 'You are not in a mod duel.' });
+      if (!fight.engaged) {
+        fight.engaged = true;
+        fight.nextSwingYou = Math.max(COUNTDOWN_TICKS, fight.tickCount) + 1;
+      }
+      return;
+    }
+
     if (m.type === 'special') {
       const duel = me.duelId ? duels.get(me.duelId) : null;
       const nf = !duel && me.npcFightId ? npcFights.get(me.npcFightId) : null;
       const fc = !duel && !nf && me.fcRunId ? fcRuns.get(me.fcRunId) : null; // Stage 4: specials work in the caves too
       const bf = !duel && !nf && !fc && me.barrowsFightId ? barrowsFights.get(me.barrowsFightId) : null; // Stage 5: and in Barrows crypts
-      if (!duel && !nf && !fc && !bf) return send(ws, { type: 'error', message: 'You are not in a duel.' });
+      const md = !duel && !nf && !fc && !bf && me.modDuelId ? modDuels.get(me.modDuelId) : null; // Stage 22: and in mod duels
+      if (!duel && !nf && !fc && !bf && !md) return send(ws, { type: 'error', message: 'You are not in a duel.' });
       // Stage 14: a No Special Attacks duel rejects queueing
       // outright — the special can never fire. (NPC / Barrows /
       // Fight Caves specials are not duels and never see this.)
@@ -4635,6 +4953,9 @@ wss.on('connection', (ws, req) => {
       } else if (bf) {
         if (bf.specialQueued) return send(ws, { type: 'error', message: 'Special already queued for the next tick.' });
         bf.specialQueued = true;
+      } else if (md) {
+        if (md.specialQueued) return send(ws, { type: 'error', message: 'Special already queued for the next tick.' });
+        md.specialQueued = true;
       } else {
         if (nf.specialQueued) return send(ws, { type: 'error', message: 'Special already queued for the next tick.' });
         nf.specialQueued = true;
@@ -4768,6 +5089,7 @@ wss.on('connection', (ws, req) => {
       // Mirror the challenge busy-checks for the runner and both fighters.
       for (const sess of [me, sessA, sessB]) {
         if (sess.duelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
+        if (sess.modDuelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
         if (sess.npcFightId) return send(ws, { type: 'error', message: 'One of you is fighting a monster.' });
         if (sess.barrowsFightId) return send(ws, { type: 'error', message: 'One of you is fighting a Barrows brother.' });
         if (sess.fcRunId) return send(ws, { type: 'error', message: 'One of you is in the Fight Caves.' });
@@ -5247,6 +5569,7 @@ wss.on('connection', (ws, req) => {
       const target = online.get(targetKey);
       if (!target || targetKey === key) return send(ws, { type: 'error', message: 'Pick another online player.' });
       if (me.duelId || target.duelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
+      if (me.modDuelId || target.modDuelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
       if (me.npcFightId || target.npcFightId) return send(ws, { type: 'error', message: 'One of you is fighting a monster.' });
       if (me.barrowsFightId || target.barrowsFightId) return send(ws, { type: 'error', message: 'One of you is fighting a Barrows brother.' });
       if (me.fcRunId || target.fcRunId) return send(ws, { type: 'error', message: 'One of you is in the Fight Caves.' });
@@ -5349,6 +5672,7 @@ wss.on('connection', (ws, req) => {
       const target = online.get(targetKey);
       if (!target || targetKey === key) return send(ws, { type: 'error', message: 'Pick another online player.' });
       if (me.duelId || target.duelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
+      if (me.modDuelId || target.modDuelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
       if (me.npcFightId || target.npcFightId) return send(ws, { type: 'error', message: 'One of you is fighting a monster.' });
       if (me.barrowsFightId || target.barrowsFightId) return send(ws, { type: 'error', message: 'One of you is fighting a Barrows brother.' });
       if (me.fcRunId || target.fcRunId) return send(ws, { type: 'error', message: 'One of you is in the Fight Caves.' });
@@ -5426,6 +5750,7 @@ wss.on('connection', (ws, req) => {
       if (!fromSess || !toSess) { challenges.delete(m.challengeId); broadcastChallengeClear(ch.from); return send(ws, { type: 'error', message: 'That challenge is gone.' }); }
       const failStart = (msg) => { ch.confirm.from = false; ch.confirm.to = false; pushChallengeTerms(ch); return send(ws, { type: 'error', message: msg }); };
       if (fromSess.duelId || toSess.duelId) return failStart('One of you is already in a duel.');
+      if (fromSess.modDuelId || toSess.modDuelId) return failStart('One of you is already in a duel.');
       if (fromSess.npcFightId || toSess.npcFightId) return failStart('One of you is fighting a monster.');
       if (fromSess.barrowsFightId || toSess.barrowsFightId) return failStart('One of you is fighting a Barrows brother.');
       if (fromSess.fcRunId || toSess.fcRunId) return failStart('One of you is in the Fight Caves.');
@@ -5560,6 +5885,10 @@ wss.on('connection', (ws, req) => {
     if (me && me.duelId) {
       const duel = duels.get(me.duelId);
       if (duel) endDuel(duel, duel.a === key ? duel.b : duel.a, 'forfeit — left mid-duel');
+    }
+    if (me && me.modDuelId) {
+      const f = modDuels.get(me.modDuelId);
+      if (f) endModDuel(f, 'forfeit'); // the escrowed stake is lost, exactly like a duel forfeit
     }
     if (me && me.npcFightId) {
       const f = npcFights.get(me.npcFightId);
