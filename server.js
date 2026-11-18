@@ -361,6 +361,100 @@ for (const [id, name, accBonus, maxBonus] of [
 // port — there is no separate bolt item).
 ITEMS.ahrims_staff.style = 'magic';
 ITEMS.karils_crossbow.style = 'ranged';
+// Stage 28: the Barrows ARMOUR pieces, ported from the app version's
+// drop table (its kind:"barrows" gear — the whole brother-piece pool
+// there is these seven; the six weapons above stay in the table
+// too). Stat mapping from the app's fields: its `block` fraction is
+// the online `reduction`; its `acc` points are the online accBonus
+// fraction at the same x40 scale weaponAccPoints uses (acc 5 ->
+// 0.125, acc 8 -> 0.20 — and gear accuracy now counts from armour
+// slots too, see weaponAccPoints); its `hit` is maxBonus (counted
+// from armour now too, see maxHit). Loot-only like the weapons:
+// no `buy`; shops buy back at the same 800g sellOnly floor. The
+// app's examine texts ride along as `desc` (its "Never sold" means
+// shops never sell them — true here too: they are never stocked).
+const BARROWS_ARMOUR_PIECES = ['dharoks_helm', 'ahrims_hood', 'karils_coif', 'karils_top', 'guthans_chainskirt', 'karils_leatherskirt', 'karils_boots'];
+// Stage 28b (Derek's rules, ported from the app version's current
+// implementation): the Barrows TIER armour line — decayed, mossy,
+// ghost-green namesakes of the nine metal tiers (Barrows Bronze ->
+// Barrows Necro), head/body/legs/boots per tier, 36 pieces, from
+// the Barrows chest ONLY (never sold: sellOnly 0, like the fire
+// cape). The grant rules live in barrowsTierGrant / rollBarrowsLoot:
+// all six brothers killed that run, a single 1-in-20 roll, at most
+// one piece per chest, and the tier ladder is EARNED — the next
+// tier up only drops while you WEAR the full set of the tier below.
+// Stat mapping is the same as the brother pieces: the app's block
+// is `reduction`, its acc points are accBonus at the x40 scale, its
+// hit is maxBonus. The app's examine texts ride as `desc` (its
+// platebodies carry no desc there; online composes theirs from the
+// same formula its helms/legs/boots use, so every tier piece reads
+// its gate in-game).
+const BARROWS_TIER_NAMES = ['Bronze', 'Iron', 'Steel', 'Mithril', 'Adamant', 'Rune', 'Dragon', 'Torva', 'Necro'];
+const BARROWS_TIER_SLUG = ['bronze', 'iron', 'steel', 'mithril', 'adamant', 'rune', 'dragon', 'torva', 'necro'];
+const BARROWS_TIER_COLORS = ['#6e5a35', '#5f6b5e', '#8b968c', '#3f6b8a', '#2e7d46', '#2c4a7c', '#8e2f24', '#a8bfb2', '#4a2470'];
+const BARROWS_TIER_SUFFIX = { helm: 'Helm', platebody: 'Platebody', platelegs: 'Platelegs', boots: 'Boots' };
+const BARROWS_TIER_SLOT = { helm: 'head', platebody: 'body', platelegs: 'legs', boots: 'feet' };
+const BARROWS_TIER_ICON = { helm: '🪖', platebody: '🛡️', platelegs: '🦵', boots: '🥾' };
+const BARROWS_TIER_STATS = {
+  platebody: { block: [0.04, 0.08, 0.12, 0.16, 0.20, 0.24, 0.32, 0.36, 0.40] },
+  helm: { block: [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09], hit: [0, 0, 0, 0, 0, 0, 1, 1, 2] },
+  platelegs: { block: [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09] },
+  boots: { block: [0.01, 0.02, 0.03, 0.03, 0.04, 0.05, 0.05, 0.06, 0.07], acc: [0, 0, 0, 1, 1, 1, 2, 2, 3] },
+};
+const BARROWS_TIER_FLAVOUR = {
+  helm: ['a moss-eaten bronze helm, ghost-green mist curling off it', 'a rusted iron helm furred with grave moss', 'pale steel gone grey-green in the damp dark', "mithril's blue drowned to a ghostly teal", 'adamant green deepened to grave moss', 'dark rune blue with a necrotic green sheen', 'dragon red rusted dark, horns intact', 'pale Torva steel veiled in ghost mist, ice crystals gone green', 'Necro purple, spiked and lightless, the deepest prize in the chest'],
+  platebody: ['a moss-eaten bronze platebody, ghost-green mist curling off it', 'a rusted iron platebody furred with grave moss', 'a pale steel platebody gone grey-green in the damp dark', 'a mithril platebody drowned to a ghostly teal', 'an adamant platebody deepened to grave moss', 'a dark rune-blue platebody with a necrotic green sheen', 'a dragon platebody rusted dark', 'a pale Torva platebody veiled in ghost mist', 'a Necro purple platebody, spiked and lightless'],
+  platelegs: ['moss-eaten bronze platelegs', 'rusted iron platelegs furred with grave moss', 'pale steel platelegs gone grey-green', 'mithril platelegs drowned to a ghostly teal', 'adamant platelegs deepened to grave moss', 'dark rune-blue platelegs with a necrotic sheen', 'dragon platelegs rusted dark', 'pale Torva platelegs veiled in ghost mist', 'Necro purple platelegs, spiked and lightless'],
+  boots: ['moss-eaten bronze boots', 'rusted iron boots furred with grave moss', 'pale steel boots gone grey-green', 'mithril boots drowned to a ghostly teal', 'adamant boots deepened to grave moss', 'dark rune-blue boots with a necrotic sheen', 'dragon boots rusted dark', 'pale Torva boots veiled in ghost mist', 'Necro purple boots, spiked and lightless'],
+};
+const BARROWS_TIER_PIECES = [];
+for (const sfx of ['helm', 'platebody', 'platelegs', 'boots']) {
+  for (let t = 0; t < 9; t += 1) {
+    const id = `barrows_${BARROWS_TIER_SLUG[t]}_${sfx}`;
+    BARROWS_TIER_PIECES.push(id);
+    const st = BARROWS_TIER_STATS[sfx];
+    const gate = t === 0 ? "the chest's 1-in-20 prize on a 6/6 clear." : `drops only while you wear the full Barrows ${BARROWS_TIER_NAMES[t - 1]} set.`;
+    ITEMS[id] = {
+      name: `Barrows ${BARROWS_TIER_NAMES[t]} ${BARROWS_TIER_SUFFIX[sfx]}`, icon: BARROWS_TIER_ICON[sfx], kind: 'armour',
+      slot: BARROWS_TIER_SLOT[sfx], sellOnly: 0, color: BARROWS_TIER_COLORS[t],
+      accBonus: (st.acc ? st.acc[t] : 0) / 40, maxBonus: st.hit ? st.hit[t] : 0, reduction: st.block[t],
+      desc: `Decayed Barrows armour — ${BARROWS_TIER_FLAVOUR[sfx][t]}. Barrows tier ${t + 1} of 9: ${gate}`,
+    };
+  }
+}
+// Wearing the FULL set (helm, platebody, platelegs, boots) of tier t?
+function wearingBarrowsTierSet(profile, t) {
+  return ['helm', 'platebody', 'platelegs', 'boots'].every((sfx) => profile.worn && profile.worn[BARROWS_TIER_SLOT[sfx]] === `barrows_${BARROWS_TIER_SLUG[t]}_${sfx}`);
+}
+// The app's grantBarrowsTierPiece: eligibility climbs one rung at a
+// time — tier t is eligible only while the full set of tier t-1 is
+// WORN (Bronze, the entry tier, asks for nothing; the chain must be
+// unbroken). The piece is chosen from the eligible tier's pieces
+// not yet earned — online, "earned" is the collection log (a tier
+// piece enters it the moment it is granted, like the weapons).
+// Returns null when the whole eligible tier is already earned (the
+// caller pays 1200 coins instead, the app's fallback).
+function barrowsTierGrant(profile) {
+  let elig = 0;
+  for (let t = 1; t < 9; t += 1) { if (wearingBarrowsTierSet(profile, t - 1)) elig = t; else break; }
+  const earned = profile.clog || {}; // the saved log is an {id: true} map (publicProfile flattens it to an array)
+  const candidates = ['helm', 'platebody', 'platelegs', 'boots']
+    .map((sfx) => `barrows_${BARROWS_TIER_SLUG[elig]}_${sfx}`)
+    .filter((id) => !earned[id]);
+  if (!candidates.length) return null;
+  return candidates[Math.floor(Math.random() * candidates.length)];
+}
+for (const [id, name, icon, slot, color, accBonus, maxBonus, reduction, desc] of [
+  ['dharoks_helm', "Dharok's helm", '🪖', 'head', '#4a4a52', 0, 2, 0.04, "Dharok the Wretched's helm — Barrows loot from the chest at the south gate. Never sold."],
+  ['ahrims_hood', "Ahrim's hood", '🧙', 'head', '#6e2a3a', 0.125, 0, 0, "Ahrim the Blighted's hood — Barrows loot from the chest at the south gate. Never sold."],
+  ['karils_coif', "Karil's coif", '🪖', 'head', '#3a3f4a', 0.20, 0, 0.04, "Karil the Tainted's spiked coif — the head of the ranged line's Karil's tier. Barrows loot from the chest at the south gate. Never sold."],
+  ['karils_top', "Karil's top", '🛡️', 'body', null, 0.20, 0, 0.21, "Karil the Tainted's top — Barrows loot from the chest at the south gate. Never sold."],
+  ['guthans_chainskirt', "Guthan's chainskirt", '🦵', 'legs', '#5d7a3a', 0, 0, 0.05, "Guthan the Infested's chainskirt — Barrows loot from the chest at the south gate. Never sold."],
+  ['karils_leatherskirt', "Karil's leatherskirt", '🦵', 'legs', '#3a3f4a', 0.20, 0, 0.04, "Karil the Tainted's leatherskirt — the legs of the ranged line's Karil's tier. Barrows loot from the chest at the south gate. Never sold."],
+  ['karils_boots', "Karil's boots", '🥾', 'feet', '#3a3f4a', 0.20, 0, 0.04, "Karil the Tainted's boots — the feet of the ranged line's Karil's tier. Barrows loot from the chest at the south gate. Never sold."],
+]) {
+  ITEMS[id] = { name, icon, kind: 'armour', slot, sellOnly: 800, accBonus, maxBonus, reduction, desc, ...(color ? { color } : {}) };
+}
 // Stage 7A: NC and Certificate tokens. kind 'token': stackable like
 // any other backpack stack, but NEVER buyable in a shop, NEVER
 // sellable to a shop and NEVER on the Gold Exchange — sellOnly 0
@@ -502,12 +596,13 @@ const STARTER_GOALS = [
   { id: 'visit_area', label: 'Visit another area' },
 ];
 const STARTER_REWARD = 25;
-// Collection log entry ids (13): the six Barrows brothers (their
-// BARROWS_BROTHERS ids), the fire cape, and the six rare Barrows
-// weapons (the BARROWS_WEAPONS item ids). Built from the live
-// tables so it can never drift from them.
+// Collection log entry ids (56): the six Barrows brothers (their
+// BARROWS_BROTHERS ids), the fire cape, the six rare Barrows
+// weapons (the BARROWS_WEAPONS item ids), the seven Barrows armour
+// pieces, and — Stage 28b — the 36 Barrows tier armour pieces.
+// Built from the live tables so it can never drift from them.
 function clogEntryIds() {
-  return [...Object.keys(BARROWS_BROTHERS), 'fire_cape', ...BARROWS_WEAPONS];
+  return [...Object.keys(BARROWS_BROTHERS), 'fire_cape', ...BARROWS_WEAPONS, ...BARROWS_ARMOUR_PIECES, ...BARROWS_TIER_PIECES];
 }
 
 // ---------- Stage 7D: custom items + placed objects (registries) ----------
@@ -642,6 +737,7 @@ function catalogList() {
     id, name: d.name, kind: d.kind, slot: d.slot || null, shop: d.shop || null, buy: d.buy || 0, sell: sellPrice(id),
     heal: d.heal || 0, prayerRestore: d.prayerRestore || 0,
     accBonus: d.accBonus || 0, maxBonus: d.maxBonus || 0, reduction: d.reduction || 0,
+    desc: d.desc || null, // Stage 28: item examine text (the Barrows pieces carry the app's)
     speed: d.speed || 0, // Stage 3: pickaxe speed multiplier (0 for non-tools)
     icon: d.icon || null, // Stage 7A: token icons (null for older items)
     color: d.color || null, // Stage 21: tier tint (party hats) — same field customCatalogEntry emits for Stage 8 customs; null for everything else
@@ -772,7 +868,8 @@ function newProfile(username) {
     // crypt is the tunnel entrance (null until a run starts), and a
     // looted flag (the round resets the moment the chest is looted,
     // so this is never persisted as true — it completes the shape).
-    barrows: { kills: [], tunnel: null, looted: false },
+    barrows: { kills: [], tunnel: null, looted: false, puzzleSolved: false },
+    barrowsRuns: 0, // Stage 28b: completed Barrows runs (chests looted) — the app's "chests" counter
     // Stage 7A roles: stored role ('player' | 'mod' | 'admin') plus
     // the mod certification flag. The 'owner' role is never stored —
     // it is computed from the username (see effectiveRole).
@@ -844,7 +941,7 @@ function ensureV2(p) {
   // NEVER reset (leaving mid-run keeps them until the round ends) —
   // only a missing/corrupt record gains defaults, and the kills list
   // is cleaned down to known brother ids, deduped.
-  if (!p.barrows || typeof p.barrows !== 'object') { p.barrows = { kills: [], tunnel: null, looted: false }; changed = true; }
+  if (!p.barrows || typeof p.barrows !== 'object') { p.barrows = { kills: [], tunnel: null, looted: false, puzzleSolved: false }; changed = true; }
   else {
     if (!Array.isArray(p.barrows.kills)) { p.barrows.kills = []; changed = true; }
     else {
@@ -853,7 +950,13 @@ function ensureV2(p) {
     }
     if (p.barrows.tunnel !== null && !BARROWS_BROTHERS[p.barrows.tunnel]) { p.barrows.tunnel = null; changed = true; }
     if (typeof p.barrows.looted !== 'boolean') { p.barrows.looted = false; changed = true; }
+    // Stage 28: a solved puzzle door stays solved for the whole run
+    // (the app saves it in the run) — it used to be session-only and
+    // reset every time the player climbed out of the tunnels.
+    if (typeof p.barrows.puzzleSolved !== 'boolean') { p.barrows.puzzleSolved = false; changed = true; }
   }
+  // Stage 28b: the completed-runs counter (chests looted).
+  if (typeof p.barrowsRuns !== 'number' || !(p.barrowsRuns >= 0)) { p.barrowsRuns = 0; changed = true; }
   // Stage 7A migration: role + certified. An unknown/corrupt stored
   // role falls back to 'player'; certification is a plain boolean.
   if (p.role !== 'player' && p.role !== 'mod' && p.role !== 'admin') { p.role = 'player'; changed = true; }
@@ -1000,7 +1103,8 @@ function publicProfile(p) {
     // kills across all runs, completions, best full-clear time).
     fc: { ...p.fc },
     // Stage 5 Barrows run state (kills this round + tunnel crypt).
-    barrows: { kills: [...p.barrows.kills], tunnel: p.barrows.tunnel, looted: p.barrows.looted },
+    barrows: { kills: [...p.barrows.kills], tunnel: p.barrows.tunnel, looted: p.barrows.looted, puzzleSolved: !!p.barrows.puzzleSolved },
+    barrowsRuns: p.barrowsRuns || 0, // Stage 28b
     // Stage 7A: effective role (owner computed) + certification flag.
     role: effectiveRole(p), certified: !!p.certified,
     // Stage 10: character appearance (sanitised on the way in; the
@@ -1568,7 +1672,13 @@ const AREAS = {
   // duel arena is not travel-reachable in normal play — duels move
   // both fighters in and back out (see startDuel / endDuel).
   barrows: { name: 'Barrows', spawn: { x: 800, y: 800 } },
-  barrows_tunnels: { name: 'Barrows Tunnels', spawn: { x: 800, y: 450 } },
+  // Stage 28: the crypt is ONE room reused for every brother (the
+  // app version's structure): entering a mound puts you in the
+  // crypt; searching its sarcophagus starts the fight there. The
+  // tunnels spawn moved to the entry room of the new maze (the
+  // chest is no longer at the spawn — see BARROWS_CHEST).
+  barrows_crypt: { name: 'Barrows Crypt', spawn: { x: 800, y: 600 } },
+  barrows_tunnels: { name: 'Barrows Tunnels', spawn: { x: 800, y: 800 } },
   arena: { name: 'Duel Arena', spawn: { x: 800, y: 450 } },
   // Stage 17: the Stake Board waiting area — NOT travel-reachable;
   // only the stake-match flow moves players in (stake_ready), and
@@ -2027,13 +2137,22 @@ function capeBonus(p) {
 }
 function armourReduction(p) {
   let r = 0, filled = 0;
-  for (const slot of ['head', 'body', 'legs', 'shield']) {
+  // Stage 28: the reduction SUM now also reads the feet and hands
+  // slots (Karil's boots protect from the feet slot, as the app's
+  // worn block totals do). The full-set count stays over the
+  // original four slots, so existing sets behave exactly as before;
+  // no pre-Stage-28 item occupies feet/hands, so the sum is
+  // unchanged for every existing piece of gear.
+  for (const slot of ['head', 'body', 'legs', 'shield', 'feet', 'hands']) {
     const def = p.worn && p.worn[slot] ? itemDef(p.worn[slot]) : null;
     // Stage 21: only a piece that actually protects (reduction > 0)
     // counts toward the full-set bonus — a cosmetic party hat in the
     // head slot must never complete a set. Every real armour piece
     // has reduction >= 0.03, so existing sets are unchanged.
-    if (def && def.kind === 'armour') { r += def.reduction || 0; if (def.reduction > 0) filled += 1; }
+    if (def && def.kind === 'armour') {
+      r += def.reduction || 0;
+      if (def.reduction > 0 && ['head', 'body', 'legs', 'shield'].includes(slot)) filled += 1;
+    }
   }
   if (filled === 4) r += 0.05; // full-set bonus
   return Math.min(r, 0.45);
@@ -2047,7 +2166,26 @@ function weaponAccPoints(p) {
   if (w) pts += Math.round((w.accBonus || 0) * 40);
   const capeDef = capeBonus(p);
   if (capeDef) pts += Math.round((capeDef.accBonus || 0) * 40);
+  // Stage 28: accuracy worn on ARMOUR counts too — the app's gear
+  // totals sum acc from every worn piece (Ahrim's hood, Karil's
+  // coif/top/skirt/boots all carry it). No pre-Stage-28 armour has
+  // an accBonus, so every existing setup rolls exactly as before.
+  for (const slot of ['head', 'body', 'legs', 'shield', 'feet', 'hands', 'amulet', 'ring']) {
+    const def = p.worn && p.worn[slot] ? itemDef(p.worn[slot]) : null;
+    if (def && def.kind === 'armour' && def.accBonus) pts += Math.round(def.accBonus * 40);
+  }
   return pts;
+}
+// Stage 28: max-hit bonus worn on ARMOUR (the app's `hit` field —
+// Dharok's helm carries +2). Counted exactly like the weapon's and
+// cape's maxBonus in maxHit below; no pre-Stage-28 armour has one.
+function armourMaxBonus(p) {
+  let b = 0;
+  for (const slot of ['head', 'body', 'legs', 'shield', 'feet', 'hands', 'amulet', 'ring']) {
+    const def = p.worn && p.worn[slot] ? itemDef(p.worn[slot]) : null;
+    if (def && def.kind === 'armour') b += def.maxBonus || 0;
+  }
+  return b;
 }
 // The chance (0..1) that one swing connects, before the defender's
 // style block and armour are considered: OSRS attack roll vs defence
@@ -2085,6 +2223,7 @@ function maxHit(attackerProfile, useSpecial = false, levelOverride = null) {
   let max = BASE_MAX_HIT + Math.floor((lv.strength + (s.strBoost || 0) - 1) / 3) + (w ? w.maxBonus : 0);
   const capeDef = capeBonus(attackerProfile);
   if (capeDef) max += capeDef.maxBonus || 0;
+  max += armourMaxBonus(attackerProfile); // Stage 28: worn armour max-hit bonus (Dharok's helm)
   if (useSpecial) max = Math.floor(max * 1.5); // Dragon Slash
   return max;
 }
@@ -2993,6 +3132,12 @@ function respawnPlayer(key, note) {
   if (!sess) return;
   sess.area = 'plaza';
   sess.x = AREAS.plaza.spawn.x; sess.y = AREAS.plaza.spawn.y;
+  // Stage 28: death wakes you in the plaza, so the Barrows drains
+  // clear (the app clears them on plaza entry) and the crypt/tunnel
+  // session scratch goes with them. The RUN itself (kills, tunnel,
+  // solved puzzle) is saved on the profile and is NOT touched here.
+  sess.accDrain = 0; sess.strDrain = 0; sess.runDrainedUntil = 0;
+  sess.barrowsCrypt = null; sess.barrowsHp = null; sess.barrowsPuzzle = null;
   send(sess.ws, { type: 'area', area: 'plaza' });
   send(sess.ws, pilesMsg('plaza'));
   send(sess.ws, alliesMsg('plaza')); // Stage 6: guardians standing in the plaza (yours follows you here)
@@ -3220,7 +3365,7 @@ setInterval(() => {
   for (const a of touched) broadcastNpcState(a);
 }, 1000);
 
-// ---------- Barrows (Stage 5) ----------
+// ---------- Barrows (Stage 5, rebuilt Stage 28) ----------
 // Six brothers in six mounds across the north of the 'barrows' field.
 // DESIGN CHOICE: crypt fights are instanced per player (like Fight
 // Caves runs), NOT shared world NPCs like the goblins — a brother
@@ -3232,15 +3377,46 @@ setInterval(() => {
 // npcTick itself: brothers need per-brother mechanics (below) and the
 // goblin kill path is wired to goblin drops/respawns.
 //
+// Stage 28 rebuilt the minigame around the app (artifact) version's
+// structure, on Derek's "all three" + "Everything" decisions:
+//   - LAYOUT: every mound leads into a crypt (ONE room, reused for
+//     all six, as in the app) with a sarcophagus at its centre.
+//     Searching the sarcophagus starts the fight IN the crypt, the
+//     brother spawning right beside the player (see
+//     barrowsBrotherSpawn). One randomised crypt per run is the
+//     TUNNEL crypt: its sarcophagus is the way DOWN, not a fight —
+//     its brother is never fought in his crypt. A slain brother's
+//     mound offers no crypt action until the run completes, but the
+//     tunnel mound always lets you in and down.
+//   - The tunnels are a MAZE (entry room, corridor, middle band,
+//     puzzle-door corridor, chest room) — see TUNNEL_ROOMS. The
+//     puzzle door is the app's pattern puzzle (a shape sequence
+//     with its last shape missing; pick it from three options) and
+//     a WRONG answer bites for exactly 5 HP off the tunnel HP pool
+//     (sess.barrowsHp, dealt on descent, spent by the bite and by
+//     the ambush fight). The tunnel brother may AMBUSH at the
+//     puzzle door (a coin flip the first time you pass it) and is
+//     GUARANTEED to spring when you enter the chest room — or when
+//     you try the chest itself, the old guard trigger, kept as a
+//     backstop. The chest guard fight is gone; the ambush IS the
+//     guard. Loot follows the app's table (see rollBarrowsLoot).
+//   - FIGHTS: the brothers keep their online mechanics (below) under
+//     the Stage 27 Deflect system, plus the app's drains: Ahrim's
+//     landed hits can sap Strength, Karil's can sap Attack (30%
+//     each, -1 a time, capped at 5, until you return to the plaza),
+//     and Torag's landed hits drain your run (see the tick). Prayer
+//     drains at DOUBLE rate while you are in the tunnels.
+//   - NO GETTING STUCK (Derek, explicit): brothers MOVE now — a
+//     melee brother steps toward the player each tick and slides
+//     around the sarcophagus / chest via the same push-out the app
+//     uses (barrowsBrotherCollide), and every spawn point is
+//     validated clear, so a brother always reaches the player.
+//
 // Run state is SAVED on the profile (profile.barrows): the brothers
-// killed this round and which crypt is the tunnel entrance. Leaving
-// mid-run — walking out, logging out, even DYING — keeps the kills
-// until the round is finished at the chest (Derek's rule). One crypt
-// per run is the tunnel: entering it descends to 'barrows_tunnels'
-// instead of starting a crypt fight, and its brother waits by the
-// chest if he has not been killed yet. The puzzle door and the chest
-// live in the tunnels; climbing out (barrows_leave_tunnel) surfaces
-// above the tunnel mound with the run intact.
+// killed this round, which crypt is the tunnel entrance, and —
+// Stage 28 — whether the puzzle door has been solved. Leaving
+// mid-run — walking out, logging out, even DYING — keeps all of it
+// until the round is finished at the chest (Derek's rule).
 //
 // Brother tuning — combat levels are the OSRS ones (115 / 98); HP,
 // accuracy and max hit are this port's tuning, in line with the
@@ -3260,8 +3436,6 @@ setInterval(() => {
 //   - Guthan heals himself for the damage of a connecting hit, 25%
 //     of the time (the green swirl — here: the heal + a note).
 //   - Torag swings two hammers: two independent hit rolls per swing.
-//   - Prayer drain in crypt fights is the ordinary active-prayer
-//     drain only — no extra Barrows drain (parity with goblin fights).
 const BARROWS_BROTHERS = {
   dharok: { id: 'dharok', name: 'Dharok the Wretched', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 8, acc: 0.60, mound: { x: 300, y: 220 } },
   guthan: { id: 'guthan', name: 'Guthan the Infested', combatLevel: 115, attackType: 'melee', maxHp: 100, maxHit: 9, acc: 0.60, mound: { x: 660, y: 160 } },
@@ -3270,14 +3444,93 @@ const BARROWS_BROTHERS = {
   ahrim:  { id: 'ahrim', name: 'Ahrim the Blighted', combatLevel: 98, attackType: 'magic', maxHp: 90, maxHit: 11, acc: 0.60, mound: { x: 480, y: 440 } },
   karil:  { id: 'karil', name: 'Karil the Tainted', combatLevel: 98, attackType: 'missiles', maxHp: 90, maxHit: 11, acc: 0.62, mound: { x: 1120, y: 440 } },
 };
-const BARROWS_CHEST = { x: 800, y: 450 }; // centre of the tunnels = the tunnels spawn (Stage 13: x2)
-const BARROWS_PUZZLE_SYMBOLS = ['circle', 'square', 'triangle', 'diamond'];
+// Stage 28 geometry (server units, 1600x900 world). The crypt is
+// one room reused for all six brothers (the app's structure): a
+// sarcophagus at its centre, the player enters at the south end,
+// and the tunnel mouth sits in the north wall of the tunnel crypt.
+const CRYPT_ROOM = { x0: 560, x1: 1040, y0: 140, y1: 660 };
+const CRYPT_SARCO = { x: 800, y: 400, hx: 36, hy: 56 }; // solid stone coffin (centre + half-extents)
+const CRYPT_SPAWN = { x: 800, y: 600 };
+const CRYPT_MOUTH = { x: 800, y: 155 }; // tunnel entrance, in the tunnel crypt only
+const TUNNEL_LADDER = { x: 860, y: 800 }; // up to the field, above the tunnel mound
+// The tunnels maze: an entry room (ladder), a corridor north, a
+// middle band, a second corridor with the puzzle door across it,
+// and the chest room at the top. Room rects (x0..x1, y0..y1); the
+// client mirrors them for walls and collision.
+const TUNNEL_ROOMS = [
+  { x0: 680, x1: 920, y0: 690, y1: 860 },  // entry room (ladder at 860,800)
+  { x0: 764, x1: 836, y0: 470, y1: 690 },  // corridor A
+  { x0: 250, x1: 1360, y0: 385, y1: 475 }, // middle band (coffins west)
+  { x0: 764, x1: 836, y0: 215, y1: 385 },  // corridor B — the puzzle door bars it at y 378..392
+  { x0: 580, x1: 1020, y0: 60, y1: 215 },  // chest room
+];
+const TUNNEL_DOOR = { x0: 764, x1: 836, y0: 378, y1: 392 };
+const BARROWS_CHEST = { x: 800, y: 120 }; // in the chest room (was the tunnels spawn, pre-Stage-28)
+const TUNNEL_CHEST_SOLID = { x: 800, y: 120, hx: 46, hy: 30 };
 const barrowsFights = new Map(); // id -> fight (instanced, one per player)
 
 function barrowsStateMsg(sess) {
   ensureV2(sess.profile);
   const b = sess.profile.barrows;
-  return { type: 'barrows_state', kills: [...b.kills], tunnel: b.tunnel, inTunnels: sess.area === 'barrows_tunnels' };
+  return {
+    type: 'barrows_state', kills: [...b.kills], tunnel: b.tunnel, inTunnels: sess.area === 'barrows_tunnels',
+    // Stage 28: which brother's crypt the player is standing in
+    // (null outside the crypt), whether they are in the crypt at
+    // all, and the run's puzzle state (the client hides the door
+    // bars once it is solved).
+    crypt: sess.barrowsCrypt || null, inCrypt: sess.area === 'barrows_crypt',
+    puzzleSolved: !!b.puzzleSolved,
+    runs: sess.profile.barrowsRuns || 0, // Stage 28b: completed runs (the tracker shows it, like the app's Barrows HUD)
+  };
+}
+// Stage 28: the app's brotherSpawnPoint, in server units — a brother
+// always spawns NEXT TO the player: step from the player toward the
+// thing he guards (sarcophagus / chest) by the smaller of 30 units
+// or 55% of the distance, clamp inside the room, then push out of
+// solids so nobody wedges on the sarcophagus. If that somehow lands
+// out of melee reach (a big solid between), try ring points around
+// the player instead. The fight therefore starts immediately, in
+// reach, on verified-clear floor.
+function barrowsBoxPushOut(x, y, box) {
+  const dx = x - box.x, dy = y - box.y;
+  const px = box.hx - Math.abs(dx), py = box.hy - Math.abs(dy);
+  if (px <= 0 || py <= 0) return { x, y };
+  if (px < py) return { x: box.x + (dx < 0 ? -box.hx : box.hx), y };
+  return { x, y: box.y + (dy < 0 ? -box.hy : box.hy) };
+}
+function barrowsClampToArea(x, y, area) {
+  if (area === 'barrows_crypt') {
+    return { x: Math.max(CRYPT_ROOM.x0 + 14, Math.min(CRYPT_ROOM.x1 - 14, x)), y: Math.max(CRYPT_ROOM.y0 + 14, Math.min(CRYPT_ROOM.y1 - 14, y)) };
+  }
+  if (area === 'barrows_tunnels') {
+    // Brothers only ever fight in the chest room (the ambush) — keep
+    // them in the room containing their position.
+    for (const r of TUNNEL_ROOMS) if (x >= r.x0 - 20 && x <= r.x1 + 20 && y >= r.y0 - 20 && y <= r.y1 + 20) {
+      return { x: Math.max(r.x0 + 14, Math.min(r.x1 - 14, x)), y: Math.max(r.y0 + 14, Math.min(r.y1 - 14, y)) };
+    }
+    return { x: Math.max(40, Math.min(WORLD_W - 40, x)), y: Math.max(40, Math.min(WORLD_H - 40, y)) };
+  }
+  return { x: Math.max(20, Math.min(WORLD_W - 20, x)), y: Math.max(20, Math.min(WORLD_H - 20, y)) };
+}
+function barrowsBrotherCollide(x, y, area) {
+  let p = { x, y };
+  if (area === 'barrows_crypt') p = barrowsBoxPushOut(p.x, p.y, CRYPT_SARCO);
+  if (area === 'barrows_tunnels') p = barrowsBoxPushOut(p.x, p.y, TUNNEL_CHEST_SOLID);
+  return barrowsClampToArea(p.x, p.y, area);
+}
+function barrowsBrotherSpawn(me, guardX, guardY, area) {
+  const dist = Math.hypot(guardX - me.x, guardY - me.y);
+  const step = Math.min(30, dist * 0.55);
+  let bx = me.x, by = me.y;
+  if (dist > 1) { bx += (guardX - me.x) / dist * step; by += (guardY - me.y) / dist * step; }
+  const p = barrowsBrotherCollide(bx, by, area);
+  if (Math.hypot(p.x - me.x, p.y - me.y) <= MELEE_REACH) return p;
+  for (let i = 0; i < 8; i += 1) {
+    const a = (i / 8) * Math.PI * 2;
+    const q = barrowsBrotherCollide(me.x + Math.cos(a) * 30, me.y + Math.sin(a) * 30, area);
+    if (Math.hypot(q.x - me.x, q.y - me.y) <= MELEE_REACH) return q;
+  }
+  return p; // best effort — the tick's approach steering closes the rest
 }
 function sendBarrowsState(key) {
   const sess = online.get(key);
@@ -3295,16 +3548,26 @@ function ensureBarrowsRun(key) {
     save(key);
   }
 }
-function startBarrowsFight(key, def, area, anchorX, anchorY) {
+// Stage 28: the fight now starts where the player stands — the
+// brother spawns adjacent (barrowsBrotherSpawn) and MOVES with the
+// fight (fight.bx/by; the tick steers him). anchorX/anchorY remain
+// as the spawn point for the messages that read them (Stage 24
+// button casts validate against the anchor). opts.hpYou deals the
+// fight from a carried pool (the tunnel ambush spends the tunnel HP
+// pool); opts.pool marks that fight so its remaining HP is written
+// back to the pool when it ends.
+function startBarrowsFight(key, def, area, guardX, guardY, opts = {}) {
   const sess = online.get(key);
   const profile = sess.profile;
   const id = crypto.randomBytes(6).toString('hex');
   // Fight HP pool = the player's Hitpoints level (same as NPC fights).
   const maxHpYou = Math.max(1, levelForXp(profile.xp.hitpoints));
+  const spawn = barrowsBrotherSpawn(sess, guardX, guardY, area);
   const fight = {
     id, playerKey: key, brother: def.id, name: def.name, combatLevel: def.combatLevel,
-    attackType: def.attackType, area, anchorX, anchorY,
-    hpYou: maxHpYou, maxHpYou, hpNpc: def.maxHp, maxHpNpc: def.maxHp,
+    attackType: def.attackType, area, anchorX: spawn.x, anchorY: spawn.y, bx: spawn.x, by: spawn.y,
+    hpYou: opts.hpYou != null ? Math.max(1, Math.min(maxHpYou, opts.hpYou)) : maxHpYou, maxHpYou, hpNpc: def.maxHp, maxHpNpc: def.maxHp,
+    pool: !!opts.pool,
     specialQueued: false, done: false, timer: null, tickCount: 0, rageFlags: {},
     nextSwingYou: swingSpeed(attackStyleOf(profile)), nextSwingNpc: MELEE_SPEED, npcUnlocked: false, // Stage 12 swing timers + retaliate lock (Stage 19: first swing at the wielded style's speed)
     lastRefuseTick: -99, // Stage 19: throttles out-of-arrows/runes notes
@@ -3314,6 +3577,7 @@ function startBarrowsFight(key, def, area, anchorX, anchorY) {
   send(sess.ws, {
     type: 'npc_fight', phase: 'start', npcId: def.id, kind: 'barrows', name: def.name, combatLevel: def.combatLevel,
     hpYou: fight.hpYou, maxHpYou, hpNpc: fight.hpNpc, maxHpNpc: fight.maxHpNpc, energyYou: profile.specialEnergy,
+    bx: fight.bx, by: fight.by, // Stage 28: the brother's spawn point (adjacent to the player)
   });
   fight.timer = setInterval(() => barrowsTick(fight), TICK_MS);
 }
@@ -3323,6 +3587,10 @@ function finishBarrowsFight(fight, reason) {
   clearInterval(fight.timer);
   barrowsFights.delete(fight.id);
   const sess = online.get(fight.playerKey);
+  // Stage 28: a tunnel (ambush) fight spends the tunnel HP pool —
+  // whatever health the player had left is the pool they keep
+  // exploring with (on death the pool is spent entirely).
+  if (fight.pool && sess) sess.barrowsHp = reason === 'death' ? 0 : Math.max(0, fight.hpYou);
   if (reason === 'kill') {
     // The kill is banked on the SAVED run state at once — it survives
     // walking out, logging out and dying later in the round.
@@ -3348,23 +3616,45 @@ function barrowsTick(fight) {
   const def = BARROWS_BROTHERS[fight.brother];
   if (!sess || !def) { finishBarrowsFight(fight, 'gone'); return; }
   const profile = sess.profile;
-  // Walking too far from the crypt (or leaving the area) breaks it off.
-  if (sess.area !== fight.area || Math.hypot(sess.x - fight.anchorX, sess.y - fight.anchorY) > NPC_RANGE) { finishBarrowsFight(fight, 'range'); return; }
+  // Stage 28: the fight breaks off when the player leaves the area
+  // or walks beyond NPC_RANGE of the BROTHER (he moves now — the
+  // range is measured against his live position, not a fixed
+  // anchor, so fleeing still breaks it off and chasing still works).
+  if (sess.area !== fight.area || Math.hypot(sess.x - fight.bx, sess.y - fight.by) > NPC_RANGE) { finishBarrowsFight(fight, 'range'); return; }
   fight.tickCount += 1;
   const notes = [];
 
-  // Stage 8: melee adjacency. The brother stays at his anchor; if
-  // the player is not standing next to it, a MELEE player's swing
-  // cannot happen this tick (a CLOSING tick for the player: youHit
-  // null, a queued special stays queued, the guardian holds off,
-  // and the tick tells the player where to walk). A melee brother
-  // is gated the same way below; Karil (missiles) and Ahrim
-  // (magic) keep hitting at any range inside NPC_RANGE, as they
-  // always have. Stage 19: `closing` still measures MELEE
-  // adjacency (it gates melee brothers and the guardian), but the
-  // player's own swing now keys off their weapon's reach — see
-  // playerInReach below.
-  const closing = Math.hypot(sess.x - fight.anchorX, sess.y - fight.anchorY) > MELEE_REACH;
+  // Stage 28: brother movement (the app's approach steering). A
+  // melee brother who is out of reach steps toward the player by
+  // APPROACH_STEP, then collides (barrowsBrotherCollide pushes him
+  // out of the sarcophagus / chest and clamps him inside the room),
+  // so he slides around the coffin and always reaches the player —
+  // nobody gets stuck. A frozen brother (Stage 24) holds position.
+  // Karil (missiles) and Ahrim (magic) stay put and shoot, as they
+  // always have.
+  const brotherFrozen = fight.brotherFrozenUntil && fight.brotherFrozenUntil > Date.now();
+  if (def.attackType === 'melee' && !brotherFrozen) {
+    const d0 = Math.hypot(sess.x - fight.bx, sess.y - fight.by);
+    if (d0 > MELEE_REACH) {
+      const step = Math.min(APPROACH_STEP, d0);
+      const nx = fight.bx + (sess.x - fight.bx) / d0 * step;
+      const ny = fight.by + (sess.y - fight.by) / d0 * step;
+      const p = barrowsBrotherCollide(nx, ny, fight.area);
+      fight.bx = p.x; fight.by = p.y;
+    }
+  }
+  // Stage 8/28: melee adjacency, now measured against the brother's
+  // live position. If the player is not standing next to him, a
+  // MELEE player's swing cannot happen this tick (a CLOSING tick:
+  // youHit null, a queued special stays queued, the guardian holds
+  // off, and the tick tells the player where to walk — the brother
+  // is walking toward them too). A melee brother is gated the same
+  // way below; Karil (missiles) and Ahrim (magic) keep hitting at
+  // any range inside NPC_RANGE, as they always have. Stage 19:
+  // `closing` still measures MELEE adjacency (it gates melee
+  // brothers and the guardian), but the player's own swing keys off
+  // their weapon's reach — see playerInReach below.
+  const closing = Math.hypot(sess.x - fight.bx, sess.y - fight.by) > MELEE_REACH;
   const ally = helperAlly(fight.playerKey, sess.area);
   let useSpec = false;
   let youHit = null; // null when the player never swung (closing, or the swing is not due yet)
@@ -3373,12 +3663,26 @@ function barrowsTick(fight) {
   // Stage 19: the player's swing is gated on the reach of THEIR
   // wielded style, not on melee adjacency — a bow or staff fights
   // a brother from up to NPC_RANGE away (the fight itself still
-  // breaks off beyond NPC_RANGE from the anchor, checked above).
+  // breaks off beyond NPC_RANGE from the brother, checked above).
   // For a melee player playerInReach is exactly !closing, so melee
   // behaviour is unchanged. The Tree Guardian and Dharok's rage
   // stay inside !closing below: the guardian is a melee ally.
   const pStyleB = attackStyleOf(profile);
-  const playerInReach = Math.hypot(sess.x - fight.anchorX, sess.y - fight.anchorY) <= styleRange(pStyleB);
+  const playerInReach = Math.hypot(sess.x - fight.bx, sess.y - fight.by) <= styleRange(pStyleB);
+  // Stage 28: the app's stat drains ride on the player's swings — a
+  // player whose Attack / Strength have been sapped rolls with a
+  // drained copy of their profile (the app's effAtk/effStr): the
+  // attack/strength XP in the copy is set to the drained level, so
+  // every roll formula (accuracy, max hit) reads the lower level.
+  // The copy shares the backpack/worn references, so arrow and rune
+  // consumption still lands on the real profile.
+  let rollProfile = profile;
+  if ((sess.accDrain || 0) > 0 || (sess.strDrain || 0) > 0) {
+    rollProfile = { ...profile, xp: { ...profile.xp } };
+    const lv = levelsOf(profile);
+    if (sess.accDrain > 0) rollProfile.xp.attack = XP_TABLE[Math.max(1, lv.attack - sess.accDrain)];
+    if (sess.strDrain > 0) rollProfile.xp.strength = XP_TABLE[Math.max(1, lv.strength - sess.strDrain)];
+  }
   if (playerInReach) {
     // Stage 12: OSRS swing timer — the player swings once per
     // weapon-speed, the first swing one weapon-speed after
@@ -3389,7 +3693,7 @@ function barrowsTick(fight) {
     // nothing, leaves the timer and the queued special untouched,
     // and its reason rides the note, throttled).
     if (fight.tickCount >= (fight.nextSwingYou || MELEE_SPEED)) {
-      const atkRes = rollStyleAttack(profile, NPC_DEFENDER, fight.specialQueued);
+      const atkRes = rollStyleAttack(rollProfile, NPC_DEFENDER, fight.specialQueued); // Stage 28: drained copy when Ahrim/Karil have sapped you
       if (atkRes.refused) {
         if (fight.tickCount - (fight.lastRefuseTick || -99) >= 8) { notes.push(atkRes.refused); fight.lastRefuseTick = fight.tickCount; }
       } else {
@@ -3464,17 +3768,48 @@ function barrowsTick(fight) {
     let styleBlocked = false;
     let anyConnected = false; // a hammer was on target (even if armour absorbed it whole)
     let anyDeflected = false;
+    const throughs = []; // Stage 28: per-hammer damage that actually got through (the drains key off it)
     for (let sIdx = 0; sIdx < swings; sIdx++) {
-      if (Math.random() > def.acc) continue;
+      if (Math.random() > def.acc) { throughs.push(0); continue; }
       anyConnected = true;
       let maxHit = def.maxHit;
       // Dharok: +150% of base spread over his missing health (8 -> 20).
       if (def.id === 'dharok') maxHit = Math.round(def.maxHit * (1 + 1.5 * (1 - Math.max(0, fight.hpNpc) / fight.maxHpNpc)));
       const raw = 1 + Math.floor(Math.random() * maxHit);
       const dfl = monsterDeflect(profile, def.attackType, raw);
-      if (dfl > 0) { npcDeflected += dfl; anyDeflected = true; continue; }
-      if (Math.random() < styleBlockChance(profile)) { styleBlocked = true; continue; }
-      npcHit += Math.floor(raw * (1 - armourReduction(profile)));
+      if (dfl > 0) { npcDeflected += dfl; anyDeflected = true; throughs.push(0); continue; }
+      if (Math.random() < styleBlockChance(profile)) { styleBlocked = true; throughs.push(0); continue; }
+      const through = Math.floor(raw * (1 - armourReduction(profile)));
+      npcHit += through;
+      throughs.push(through);
+    }
+    // Stage 28: the app's brother drains, applied ONLY on damage
+    // that actually lands (the app checks dmg > 0 after prayer and
+    // armour — a deflected or blocked hit never triggers them):
+    //   - Torag: EVERY landed hammer drains run energy. Online has
+    //     no run-energy pool, so the analogue: your run is drained
+    //     for 5 seconds — the client walks (it cannot run) while
+    //     runDrainedUntil is in the future, and each new landed
+    //     hammer refreshes it. (App: -15 of a 100 pool that regens
+    //     3.2/s, i.e. about 4.7 seconds of lost running.)
+    //   - Ahrim: 30% per landed hit, Strength -1 (cap 5).
+    //   - Karil: 30% per landed hit, Attack -1 (cap 5).
+    // The stat drains lower your effective Attack/Strength in
+    // Barrows fights (see rollProfile above) and clear when you
+    // return to the plaza — the app clears them on plaza entry too.
+    for (const through of throughs) {
+      if (through <= 0) continue;
+      if (def.id === 'torag') {
+        sess.runDrainedUntil = Date.now() + 5000;
+        send(sess.ws, { type: 'run_drained', until: sess.runDrainedUntil });
+        if (!notes.some((n) => n.includes('run energy'))) notes.push('💨 Torag drains your run energy — you can only walk for a few seconds!');
+      } else if (def.id === 'ahrim' && Math.random() < 0.30 && (sess.strDrain || 0) < 5) {
+        sess.strDrain = (sess.strDrain || 0) + 1;
+        notes.push(`🌀 Ahrim's magic saps your Strength! (Strength -${sess.strDrain})`);
+      } else if (def.id === 'karil' && Math.random() < 0.30 && (sess.accDrain || 0) < 5) {
+        sess.accDrain = (sess.accDrain || 0) + 1;
+        notes.push(`🌀 Karil's bolts sap your Attack! (Attack -${sess.accDrain})`);
+      }
     }
     // One outcome for the whole swing: damage through = 'hit';
     // on target but fully stopped (prayer / style block / armour)
@@ -3510,12 +3845,17 @@ function barrowsTick(fight) {
     // npcDeflected = damage my Deflect prayer bounced back onto him.
     youBonus, npcDeflected,
     note: notes.length ? notes.join(' ') : undefined,
-    npcFrozenUntil: (fight.brotherFrozenUntil && fight.brotherFrozenUntil > Date.now()) ? fight.brotherFrozenUntil : 0, // Stage 24: brothers never move, so Freeze is visual here — but tracked and broadcast like everywhere else
+    npcFrozenUntil: (fight.brotherFrozenUntil && fight.brotherFrozenUntil > Date.now()) ? fight.brotherFrozenUntil : 0, // Stage 24: Freeze roots the brother (Stage 28: he moves now, so the root is real) — tracked and broadcast like everywhere else
+    // Stage 28: the brother's live position (he walks toward the
+    // player) and the drain state (Ahrim/Karil stat saps, Torag's
+    // run drain deadline) ride every tick.
+    bx: fight.bx, by: fight.by,
+    drains: { accDrain: sess.accDrain || 0, strDrain: sess.strDrain || 0, runDrainedUntil: sess.runDrainedUntil || 0 },
     // Stage 8: on a closing tick, where to walk to reach the brother.
     // Stage 19: "closing" is measured against the PLAYER's style
     // reach — a ranged/magic player inside 150 is fighting, not
     // closing, and is never auto-walked into melee range.
-    ...(!playerInReach ? { closing: true, moveTo: approachPoint(sess.x, sess.y, fight.anchorX, fight.anchorY) } : {}),
+    ...(!playerInReach ? { closing: true, moveTo: approachPoint(sess.x, sess.y, fight.bx, fight.by) } : {}),
   });
 
   if (fight.hpNpc <= 0) {
@@ -3532,50 +3872,113 @@ function barrowsTick(fight) {
     respawnPlayer(fight.playerKey, `${def.name} got you! You wake up in the plaza at full health. Your Barrows kills are kept — nothing else lost.`);
   }
 }
-// The tunnels puzzle door: a 3-symbol sequence drawn from 4 symbols.
-// The server sends the sequence (the client shows it as the door's
-// combination); the player answers it back. A wrong answer earns an
-// error and a fresh puzzle.
+// Stage 28: the tunnels puzzle door, ported from the app version —
+// a shape pattern with its LAST shape missing: one of four pattern
+// families over six shapes, the door shows the pattern minus its
+// last shape and offers three options (the answer and two random
+// others). Answering WRONG costs exactly 5 HP off the tunnel HP
+// pool and the SAME puzzle stays open (the app's rule — the old
+// online door dealt a fresh 3-symbol combination instead and only
+// cost an error message). Solving it is saved on the run.
+const BARROWS_PUZZLE_SHAPES = ['🔺', '🔵', '🟥', '⭐', '🌙', '💠'];
 function newBarrowsPuzzle(sess) {
-  const seq = [];
-  for (let i = 0; i < 3; i++) seq.push(BARROWS_PUZZLE_SYMBOLS[Math.floor(Math.random() * BARROWS_PUZZLE_SYMBOLS.length)]);
-  sess.barrowsPuzzle = seq;
-  return { type: 'barrows_puzzle', sequence: seq, options: [...BARROWS_PUZZLE_SYMBOLS] };
+  const shuffled = [...BARROWS_PUZZLE_SHAPES].sort(() => Math.random() - 0.5);
+  const [a, b, c] = shuffled;
+  const patterns = [
+    [a, b, a, b, a],
+    [a, a, b, a, a, b, a],
+    [a, b, c, a, b, c, a],
+    [c, b, a, c, b, a, c],
+  ];
+  const pattern = patterns[Math.floor(Math.random() * patterns.length)];
+  const answer = pattern[pattern.length - 1];
+  const options = [answer];
+  for (const s of shuffled) { if (options.length >= 3) break; if (!options.includes(s)) options.push(s); }
+  options.sort(() => Math.random() - 0.5);
+  sess.barrowsPuzzle = { shown: pattern.slice(0, -1), answer, options };
+  return { type: 'barrows_puzzle', shown: [...sess.barrowsPuzzle.shown, '❓'], options };
 }
-// The reward chest: OSRS-flavoured loot scaled by brothers killed
-// (6 = the full round, the best roll). Gold 300-900 scaled by kills/6;
-// two item rolls from the common table (existing items); and a rare
-// roll — 8% at 6 kills, proportionally less with fewer — for one of
-// the six Barrows weapons.
-const BARROWS_LOOT_ITEMS = [
-  { item: 'runes', min: 10, max: 30 },
-  { item: 'herbs', min: 2, max: 5 },
-  { item: 'gems', min: 1, max: 2 },
-  { item: 'bars', min: 1, max: 3 },
-  { item: 'coal', min: 5, max: 15 },
-];
+// Stage 28: the chest's loot, ported from the app version's table.
+// rolls = kills + 1 (7 with all six brothers). Each roll has a
+// 1/(450 − 58×kills) chance of a Barrows piece — exactly the app's
+// per-kill-count table [1/392, 1/334, 1/276, 1/218, 1/160, 1/102]
+// for kills 1..6 — drawn from the combined piece pool: the six
+// weapons plus the seven armour pieces above. A roll that is not a
+// piece pays the app's filler: 45% coins (250-800), 20% a prayer
+// potion, 20% a restore potion, 15% two food rations. With ZERO
+// kills there are no rolls at all — just 50-150 pity coins (the
+// app's rule). NOT ported, deliberately: the app's second, separate
+// "Barrows tier" prize roll (a wear-gated decayed armour line) is
+// part of its earned-gear progression system, which has no online
+// analogue; and the app's duplicate-piece conversion (1200 coins)
+// exists because its pieces are earned flags, not physical items —
+// online pieces are real items, so duplicates are normal loot.
 const BARROWS_WEAPONS = ['dharoks_greataxe', 'guthans_warspear', 'torags_hammers', 'veracs_flail', 'ahrims_staff', 'karils_crossbow'];
+const BARROWS_PIECES = [...BARROWS_WEAPONS, ...BARROWS_ARMOUR_PIECES];
 function rollBarrowsLoot(profile, killCount) {
-  const gold = Math.round((300 + Math.floor(Math.random() * 601)) * (killCount / 6));
-  addGold(profile, gold); // Stage 16: the coins land on the coin stack
   const items = [];
+  const rares = []; // Stage 28: every piece rolled (each lands as its own loot-beam pile)
+  const lines = []; // one breakdown line per roll, for the loot message
+  let gold = 0;
   const give = (item, qty) => {
     const leftover = addStacks(profile.backpack, item, qty, BACKPACK_MAX_STACKS);
     if (leftover > 0) addStacks(profile.bank, item, leftover); // full pack: bank it, never lose loot
     items.push({ item, qty });
   };
-  for (let roll = 0; roll < 2; roll++) {
-    const row = BARROWS_LOOT_ITEMS[Math.floor(Math.random() * BARROWS_LOOT_ITEMS.length)];
-    give(row.item, row.min + Math.floor(Math.random() * (row.max - row.min + 1)));
+  if (killCount <= 0) {
+    gold = randiRange(50, 150);
+    addGold(profile, gold); // Stage 16: the coins land on the coin stack
+    lines.push({ kind: 'coins', gold });
+    return { gold, items, rares, lines, rolls: 1 };
   }
-  // Stage 20: a rare weapon is NOT given straight to the backpack —
-  // it is returned separately so the loot handler can land it as a
-  // glowing rare drop pile (the loot-beam moment) instead.
-  let rare = null;
-  if (Math.random() < 0.08 * (killCount / 6)) {
-    rare = BARROWS_WEAPONS[Math.floor(Math.random() * BARROWS_WEAPONS.length)];
+  // Stage 28b (the app's structure, Derek's rules): the tier line
+  // rolls ONCE, separately, BEFORE the brother-piece rolls — only
+  // on a full 6/6 clear, at 1-in-20, at most one piece per chest
+  // (see barrowsTierGrant for the earned ladder). It never displaces
+  // a brother-piece roll. If the eligible tier is already fully
+  // earned, the prize pays 1200 coins instead (the app's fallback).
+  if (killCount === 6 && Math.random() < 1 / 20) {
+    const piece = barrowsTierGrant(profile);
+    if (piece) { rares.push(piece); lines.push({ kind: 'tierpiece', item: piece }); }
+    else { gold += 1200; addGold(profile, 1200); lines.push({ kind: 'tiercoins', gold: 1200 }); }
   }
-  return { gold, items, rare };
+  const rolls = killCount + 1;
+  const pieceChance = 1 / (450 - 58 * killCount);
+  for (let roll = 0; roll < rolls; roll++) {
+    if (Math.random() < pieceChance) {
+      const piece = BARROWS_PIECES[Math.floor(Math.random() * BARROWS_PIECES.length)];
+      rares.push(piece);
+      lines.push({ kind: 'piece', item: piece });
+      continue;
+    }
+    const r = Math.random();
+    if (r < 0.45) {
+      const g = randiRange(250, 800);
+      gold += g;
+      addGold(profile, g);
+      lines.push({ kind: 'coins', gold: g });
+    } else if (r < 0.65) { give('prayer_potion', 1); lines.push({ kind: 'item', item: 'prayer_potion', qty: 1 }); }
+    else if (r < 0.85) { give('restore_potion', 1); lines.push({ kind: 'item', item: 'restore_potion', qty: 1 }); }
+    else { give('ration', 2); lines.push({ kind: 'item', item: 'ration', qty: 2 }); }
+  }
+  return { gold, items, rares, lines, rolls };
+}
+// Stage 28: the tunnel brother's AMBUSH — he springs on the player
+// in the tunnels, beside them, on clear floor by the chest he
+// guards, and the fight spends the tunnel HP pool. Called from the
+// move handler (entering the chest room guarantees it; passing the
+// puzzle door rolls it) and from barrows_loot as a backstop.
+function startBarrowsAmbush(key) {
+  const sess = online.get(key);
+  if (!sess || sess.area !== 'barrows_tunnels' || sess.barrowsFightId) return false;
+  ensureBarrowsRun(key);
+  const b = sess.profile.barrows;
+  if (!b.tunnel || b.kills.includes(b.tunnel)) return false;
+  const def = BARROWS_BROTHERS[b.tunnel];
+  if (sess.barrowsHp == null) sess.barrowsHp = Math.max(1, levelForXp(sess.profile.xp.hitpoints));
+  startBarrowsFight(key, def, 'barrows_tunnels', BARROWS_CHEST.x, BARROWS_CHEST.y, { hpYou: sess.barrowsHp, pool: true });
+  send(sess.ws, { type: 'chat', from: 'Game', text: `${def.name} bursts from the shadows — ambush! He was waiting in the tunnels all along!` });
+  return true;
 }
 
 // ---------- Fight Caves (Stage 4): Derek's 63-wave OSRS table ----------
@@ -4308,12 +4711,14 @@ setInterval(() => {
 
 // Prayer drain: 1 point per 3 seconds while a Deflect prayer is active
 // (1/3 point per 1s tick). At 0 the prayer switches itself off.
+// Stage 28 (the app's rule): prayer drains at DOUBLE rate while the
+// player is in the Barrows tunnels (2/3 point per 1s tick there).
 setInterval(() => {
   let anyOff = false;
   for (const [k, p] of online) {
     const prof = p.profile;
     if (!prof.activePrayer) continue;
-    prof.prayerPoints = Math.max(0, prof.prayerPoints - 1 / 3);
+    prof.prayerPoints = Math.max(0, prof.prayerPoints - (p.area === 'barrows_tunnels' ? 2 / 3 : 1 / 3));
     if (prof.prayerPoints <= 0.01) {
       prof.prayerPoints = 0;
       prof.activePrayer = null;
@@ -4335,7 +4740,7 @@ wss.on('connection', (ws, req) => {
   ensureV2(profile);
   // Everyone logs into the plaza (area is session-only, never saved).
   // Stage 13: the login scatter is the old 100..600 x 100..350 box x2.
-  online.set(key, { ws, profile, x: 200 + Math.random() * 1000, y: 200 + Math.random() * 500, area: 'plaza', duelId: null, modDuelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsPuzzleSolved: false, actSkill: null, actAt: 0, castReadyAt: 0, frozenUntil: 0 }); // Stage 24: castReadyAt = placed-button cast cooldown; frozenUntil = Freeze root expiry
+  online.set(key, { ws, profile, x: 200 + Math.random() * 1000, y: 200 + Math.random() * 500, area: 'plaza', duelId: null, modDuelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsCrypt: null, barrowsHp: null, barrowsDoorRolled: false, accDrain: 0, strDrain: 0, runDrainedUntil: 0, actSkill: null, actAt: 0, castReadyAt: 0, frozenUntil: 0 }); // Stage 24: castReadyAt = placed-button cast cooldown; frozenUntil = Freeze root expiry. Stage 28: barrowsCrypt = which brother's crypt the player is in; barrowsHp = the tunnel HP pool; accDrain/strDrain/runDrainedUntil = the app's brother drains
   send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot('plaza'), area: 'plaza' });
   send(ws, modNpcsMsg()); // Stage 22: the three plaza moderators + their busy flags
   send(ws, modLadderMsg(profile)); // Stage 22: stake-ladder progress
@@ -4381,6 +4786,23 @@ wss.on('connection', (ws, req) => {
         me.x = Math.max(0, Math.min(WORLD_W, +m.x || 0));
         me.y = Math.max(0, Math.min(WORLD_H, +m.y || 0));
       }
+      // Stage 28: the tunnel brother's ambush. Entering the chest
+      // room GUARANTEES it while he lives (the app's rule); the
+      // first crossing of the puzzle-door line after solving rolls
+      // a coin flip for it (the door roll is this port's addition).
+      if (me.area === 'barrows_tunnels' && !me.barrowsFightId) {
+        ensureV2(profile);
+        const b = profile.barrows;
+        if (b.tunnel && !b.kills.includes(b.tunnel)) {
+          const chestRoom = TUNNEL_ROOMS[4];
+          const inChestRoom = me.x > chestRoom.x0 && me.x < chestRoom.x1 && me.y >= chestRoom.y0 && me.y < chestRoom.y1;
+          if (inChestRoom) startBarrowsAmbush(key);
+          else if (b.puzzleSolved && !me.barrowsDoorRolled && me.y < TUNNEL_DOOR.y0) {
+            me.barrowsDoorRolled = true;
+            if (Math.random() < 0.5) startBarrowsAmbush(key);
+          }
+        }
+      }
       broadcastState();
     }
     if (m.type === 'chat') {
@@ -4421,6 +4843,9 @@ wss.on('connection', (ws, req) => {
       // Stage 17: the Waiting Area is not travel-reachable — only
       // the stake-match flow moves players in and out of it.
       if (to === 'waiting') return send(ws, { type: 'error', message: 'The Waiting Area is only for stake matches — ready up at the Stake Board.' });
+      // Stage 28: the Barrows crypt is reached through a mound, not
+      // by travel (its spawn would not know whose crypt it is).
+      if (to === 'barrows_crypt') return send(ws, { type: 'error', message: 'Enter a crypt through its mound at the Barrows.' });
       if (me.duelId) return send(ws, { type: 'error', message: 'You cannot travel during a duel.' });
       if (me.modDuelId) return send(ws, { type: 'error', message: 'You cannot travel during a duel.' });
       // Stage 17: a player in a matched stake match cannot travel
@@ -4434,6 +4859,12 @@ wss.on('connection', (ws, req) => {
       if (me.fcRunId) { const r = fcRuns.get(me.fcRunId); if (r) endFcRun(r, 'left'); }
       me.area = to;
       me.x = AREAS[to].spawn.x; me.y = AREAS[to].spawn.y;
+      // Stage 28: travelling leaves any crypt/tunnel session scratch
+      // behind (the run itself is saved on the profile and kept).
+      me.barrowsCrypt = null; me.barrowsHp = null; me.barrowsPuzzle = null;
+      // Stage 28 (the app's rule): Ahrim's and Karil's stat drains
+      // clear when you return to the plaza.
+      if (to === 'plaza') { me.accDrain = 0; me.strDrain = 0; me.runDrainedUntil = 0; }
       if (to !== 'plaza') completeStarterGoal(key, 'visit_area'); // Stage 20: first trip out of the plaza
       send(ws, { type: 'area', area: to });
       if (to === 'plaza') { send(ws, modNpcsMsg()); send(ws, modLadderMsg(profile)); } // Stage 22: the moderators stand in the plaza
@@ -4447,7 +4878,7 @@ wss.on('connection', (ws, req) => {
       send(ws, pilesMsg(to));
       send(ws, alliesMsg(to)); // Stage 6: guardians already standing there
       send(ws, objectsMsg(to)); // Stage 7D: placed objects in the new area
-      if (to === 'barrows' || to === 'barrows_tunnels') send(ws, barrowsStateMsg(me));
+      if (to === 'barrows' || to === 'barrows_tunnels' || to === 'barrows_crypt') send(ws, barrowsStateMsg(me));
       // Stage 3: an unfinished smithing piece (session-only) is still
       // on the anvil when you come back to the mine — remind the client.
       if (to === 'mine' && me.smithing) {
@@ -4507,7 +4938,7 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // ----- Barrows (Stage 5): crypts, tunnels, puzzle door, chest -----
+    // ----- Barrows (Stage 5, rebuilt Stage 28): mounds, crypts, tunnels, puzzle door, chest -----
     if (m.type === 'barrows_enter') {
       const def = BARROWS_BROTHERS[String(m.brother || '')];
       if (!def) return send(ws, { type: 'error', message: 'No such barrow.' });
@@ -4519,82 +4950,172 @@ wss.on('connection', (ws, req) => {
       if (me.barrowsFightId) return send(ws, { type: 'error', message: 'You are already fighting a Barrows brother.' });
       if (Math.hypot(me.x - def.mound.x, me.y - def.mound.y) > NPC_RANGE) return send(ws, { type: 'error', message: `Too far away — walk closer to ${def.name}'s mound.` });
       ensureBarrowsRun(key); // first crypt entry of a round picks the tunnel crypt
-      if (def.id === profile.barrows.tunnel) {
-        // The tunnel entrance: descending replaces the crypt fight.
-        me.area = 'barrows_tunnels';
-        me.x = AREAS.barrows_tunnels.spawn.x; me.y = AREAS.barrows_tunnels.spawn.y;
-        me.barrowsPuzzle = null; me.barrowsPuzzleSolved = false; // a fresh puzzle door below
-        send(ws, { type: 'area', area: 'barrows_tunnels' });
-        send(ws, nodesMsg('barrows_tunnels'));
-        send(ws, firesMsg('barrows_tunnels'));
-        send(ws, pilesMsg('barrows_tunnels'));
-        send(ws, alliesMsg('barrows_tunnels'));
-        send(ws, objectsMsg('barrows_tunnels'));
-        send(ws, barrowsStateMsg(me));
-        broadcastState();
-        return send(ws, { type: 'chat', from: 'Game', text: 'You climb down into the Barrows tunnels. The reward chest waits at the centre, behind a puzzle door.' });
+      // Stage 28: entering a mound puts you IN the crypt (the app's
+      // layout) — the fight starts when you search the sarcophagus.
+      // A slain brother's mound offers no crypt action until the
+      // run completes — EXCEPT the tunnel mound, which always lets
+      // you in (its way down stays open even after he is slain).
+      if (profile.barrows.kills.includes(def.id) && def.id !== profile.barrows.tunnel) {
+        return send(ws, { type: 'error', message: `You have already defeated ${def.name} this round — his crypt is empty.` });
       }
+      me.area = 'barrows_crypt';
+      me.x = CRYPT_SPAWN.x; me.y = CRYPT_SPAWN.y;
+      me.barrowsCrypt = def.id;
+      send(ws, { type: 'area', area: 'barrows_crypt' });
+      send(ws, nodesMsg('barrows_crypt'));
+      send(ws, firesMsg('barrows_crypt'));
+      send(ws, pilesMsg('barrows_crypt'));
+      send(ws, alliesMsg('barrows_crypt'));
+      send(ws, objectsMsg('barrows_crypt'));
+      send(ws, barrowsStateMsg(me));
+      broadcastState();
+      const isTunnel = def.id === profile.barrows.tunnel;
+      return send(ws, {
+        type: 'chat', from: 'Game',
+        text: isTunnel
+          ? `You climb down into ${def.name}'s crypt. A dark opening in the north wall leads down to the tunnels — the sarcophagus here is the way down, not a fight.`
+          : `You climb down into ${def.name}'s crypt. His sarcophagus waits in the middle — search it to wake him.`,
+      });
+    }
+    if (m.type === 'barrows_search') {
+      if (me.area !== 'barrows_crypt' || !me.barrowsCrypt) return send(ws, { type: 'error', message: 'There is no sarcophagus here.' });
+      const def = BARROWS_BROTHERS[me.barrowsCrypt];
+      if (!def) return send(ws, { type: 'error', message: 'No such barrow.' });
+      if (me.duelId || me.modDuelId || me.npcFightId || me.fcRunId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
+      if (me.barrowsFightId) return send(ws, { type: 'error', message: 'You are already fighting a Barrows brother.' });
+      ensureBarrowsRun(key);
+      if (def.id === profile.barrows.tunnel) return send(ws, { type: 'error', message: `This sarcophagus is the way DOWN — ${def.name} waits in the tunnels, not here. Use Descend.` });
       if (profile.barrows.kills.includes(def.id)) return send(ws, { type: 'error', message: `You have already defeated ${def.name} this round.` });
-      startBarrowsFight(key, def, 'barrows', def.mound.x, def.mound.y);
-      send(ws, barrowsStateMsg(me)); // the tunnel assignment may be new
+      if (Math.hypot(me.x - CRYPT_SARCO.x, me.y - CRYPT_SARCO.y) > NPC_RANGE) return send(ws, { type: 'error', message: 'Too far away — walk up to the sarcophagus.' });
+      // The fight starts in the crypt: he rises right beside you.
+      startBarrowsFight(key, def, 'barrows_crypt', CRYPT_SARCO.x, CRYPT_SARCO.y);
+      return;
+    }
+    if (m.type === 'barrows_descend') {
+      if (me.area !== 'barrows_crypt' || !me.barrowsCrypt) return send(ws, { type: 'error', message: 'You are not in a crypt.' });
+      if (me.barrowsFightId) return send(ws, { type: 'error', message: 'Finish the fight first!' });
+      ensureBarrowsRun(key);
+      if (me.barrowsCrypt !== profile.barrows.tunnel) return send(ws, { type: 'error', message: 'This crypt has no way down — the tunnel entrance is in another mound this run.' });
+      me.area = 'barrows_tunnels';
+      me.x = AREAS.barrows_tunnels.spawn.x; me.y = AREAS.barrows_tunnels.spawn.y;
+      me.barrowsCrypt = null;
+      // The tunnel HP pool is dealt fresh on each descent (the app
+      // resets the run's health when you go down) and is spent by
+      // the puzzle door's bite and the ambush fight.
+      me.barrowsHp = Math.max(1, levelForXp(profile.xp.hitpoints));
+      me.barrowsDoorRolled = false;
+      me.barrowsPuzzle = null;
+      send(ws, { type: 'area', area: 'barrows_tunnels' });
+      send(ws, nodesMsg('barrows_tunnels'));
+      send(ws, firesMsg('barrows_tunnels'));
+      send(ws, pilesMsg('barrows_tunnels'));
+      send(ws, alliesMsg('barrows_tunnels'));
+      send(ws, objectsMsg('barrows_tunnels'));
+      send(ws, barrowsStateMsg(me));
+      broadcastState();
+      return send(ws, { type: 'chat', from: 'Game', text: 'You climb down into the Barrows tunnels. The reward chest waits in the room at the far end, behind a puzzle door — and prayer drains twice as fast down here.' });
+    }
+    if (m.type === 'barrows_leave_crypt') {
+      if (me.area !== 'barrows_crypt') return send(ws, { type: 'error', message: 'You are not in a crypt.' });
+      if (me.barrowsFightId) { const f = barrowsFights.get(me.barrowsFightId); if (f) finishBarrowsFight(f, 'fled'); }
+      const def = me.barrowsCrypt ? BARROWS_BROTHERS[me.barrowsCrypt] : null;
+      me.barrowsCrypt = null;
+      me.area = 'barrows';
+      me.x = def ? def.mound.x : AREAS.barrows.spawn.x;
+      me.y = def ? def.mound.y : AREAS.barrows.spawn.y;
+      send(ws, { type: 'area', area: 'barrows' });
+      send(ws, nodesMsg('barrows'));
+      send(ws, firesMsg('barrows'));
+      send(ws, pilesMsg('barrows'));
+      send(ws, alliesMsg('barrows'));
+      send(ws, objectsMsg('barrows'));
+      send(ws, barrowsStateMsg(me));
+      broadcastState();
       return;
     }
     if (m.type === 'barrows_puzzle') {
       if (me.area !== 'barrows_tunnels') return send(ws, { type: 'error', message: 'The puzzle door is in the Barrows tunnels.' });
-      if (me.barrowsPuzzleSolved) return send(ws, { type: 'barrows_puzzle_result', ok: true, alreadySolved: true });
+      ensureV2(profile);
+      // Stage 28: solved is saved on the RUN now — once solved, the
+      // door stays open for the rest of the round.
+      if (profile.barrows.puzzleSolved) return send(ws, { type: 'barrows_puzzle_result', ok: true, alreadySolved: true });
+      if (me.barrowsPuzzle) { // the same puzzle stays open until it is answered right (the app's rule)
+        return send(ws, { type: 'barrows_puzzle', shown: [...me.barrowsPuzzle.shown, '❓'], options: me.barrowsPuzzle.options });
+      }
       return send(ws, newBarrowsPuzzle(me));
     }
     if (m.type === 'barrows_puzzle_answer') {
       if (me.area !== 'barrows_tunnels') return send(ws, { type: 'error', message: 'The puzzle door is in the Barrows tunnels.' });
       if (!me.barrowsPuzzle) return send(ws, { type: 'error', message: 'Ask the door for a puzzle first (barrows_puzzle).' });
-      const answer = Array.isArray(m.answer) ? m.answer.map((s) => String(s)) : [];
-      if (JSON.stringify(answer) === JSON.stringify(me.barrowsPuzzle)) {
+      ensureV2(profile);
+      const idx = Math.floor(+m.index);
+      const chosen = Number.isInteger(idx) ? me.barrowsPuzzle.options[idx] : undefined;
+      if (chosen !== undefined && chosen === me.barrowsPuzzle.answer) {
         me.barrowsPuzzle = null;
-        me.barrowsPuzzleSolved = true;
+        profile.barrows.puzzleSolved = true;
+        save(key);
+        send(ws, barrowsStateMsg(me));
         return send(ws, { type: 'barrows_puzzle_result', ok: true });
       }
-      send(ws, { type: 'error', message: 'Wrong combination — the door resets with a new puzzle.' });
-      return send(ws, newBarrowsPuzzle(me));
+      // Stage 28 (the app's rule): a wrong answer bites for exactly
+      // 5 HP off the tunnel HP pool — and the same puzzle stays open.
+      if (me.barrowsHp == null) me.barrowsHp = Math.max(1, levelForXp(profile.xp.hitpoints));
+      me.barrowsHp -= 5;
+      const maxHpYou = Math.max(1, levelForXp(profile.xp.hitpoints));
+      send(ws, { type: 'barrows_puzzle_result', ok: false, hpYou: Math.max(0, me.barrowsHp), maxHpYou });
+      if (me.barrowsHp <= 0) {
+        me.barrowsPuzzle = null;
+        respawnPlayer(key, 'The puzzle door\'s bite finishes you — you wake up in the plaza. Your Barrows kills, tunnel and solved puzzle are kept.');
+      }
+      return;
     }
     if (m.type === 'barrows_loot') {
       if (me.area !== 'barrows_tunnels') return send(ws, { type: 'error', message: 'The reward chest is in the Barrows tunnels.' });
       if (me.duelId || me.npcFightId || me.fcRunId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
       if (me.barrowsFightId) return send(ws, { type: 'error', message: 'Finish the fight first!' });
-      if (Math.hypot(me.x - BARROWS_CHEST.x, me.y - BARROWS_CHEST.y) > NPC_RANGE) return send(ws, { type: 'error', message: 'Too far away — walk to the chest at the centre of the tunnels.' });
-      if (!me.barrowsPuzzleSolved) return send(ws, { type: 'error', message: 'The chest is locked behind the puzzle door — solve the puzzle first.' });
+      if (Math.hypot(me.x - BARROWS_CHEST.x, me.y - BARROWS_CHEST.y) > NPC_RANGE) return send(ws, { type: 'error', message: 'Too far away — walk to the chest in the room at the far end of the tunnels.' });
       ensureV2(profile);
+      if (!profile.barrows.puzzleSolved) return send(ws, { type: 'error', message: 'The chest is locked behind the puzzle door — solve the puzzle first.' });
       const b = profile.barrows;
-      // The tunnel brother guards his own chest: if he has not been
-      // killed yet, approaching the loot wakes him — kill him first.
+      // Stage 28: the old chest GUARD fight is gone — reaching for
+      // the chest with the tunnel brother still alive springs the
+      // AMBUSH instead (he normally springs earlier, when you enter
+      // the chest room; this is the backstop). Kill him first.
       if (b.tunnel && !b.kills.includes(b.tunnel)) {
-        const def = BARROWS_BROTHERS[b.tunnel];
-        startBarrowsFight(key, def, 'barrows_tunnels', BARROWS_CHEST.x, BARROWS_CHEST.y);
-        return send(ws, { type: 'chat', from: 'Game', text: `${def.name} bursts from the shadows by the chest — he guards the loot himself!` });
+        startBarrowsAmbush(key);
+        return;
       }
-      if (b.kills.length < 5) return send(ws, { type: 'error', message: `The chest stays shut — defeat more brothers first (${b.kills.length}/6).` });
+      // Stage 28 (the app's rule): there is NO minimum-kill lock on
+      // the chest any more — the loot table itself scales with the
+      // kill count (rolls = kills + 1, piece chance 1/(450-58k)).
       const killCount = b.kills.length;
       const loot = rollBarrowsLoot(profile, killCount);
+      // Stage 28b: looting the chest completes the run — the
+      // counter goes up (the app's "chests" / "Barrows runs
+      // completed") and rides the loot message.
+      profile.barrowsRuns = (profile.barrowsRuns || 0) + 1;
       // The round is finished: the run state resets (the next round
       // re-randomises its tunnel crypt) and the player climbs back
       // out onto the field.
-      profile.barrows = { kills: [], tunnel: null, looted: false };
+      profile.barrows = { kills: [], tunnel: null, looted: false, puzzleSolved: false };
       save(key);
-      me.barrowsPuzzle = null; me.barrowsPuzzleSolved = false;
+      me.barrowsPuzzle = null; me.barrowsHp = null;
       me.area = 'barrows';
       me.x = AREAS.barrows.spawn.x; me.y = AREAS.barrows.spawn.y;
-      // Stage 20: the rare weapon lands as a drop pile at the
-      // winner's feet here on the field — the loot flow climbs out
-      // of the tunnels in this same instant, so the chest itself
-      // can't hold the moment. The pile is flagged rare (the client
-      // renders the golden loot beam over it), the find goes into
-      // the collection log, and the whole game hears about it.
-      if (loot.rare) {
+      // Stage 20/28: every Barrows piece rolled lands as its own
+      // drop pile at the winner's feet here on the field — the loot
+      // flow climbs out of the tunnels in this same instant, so the
+      // chest itself can't hold the moment. Each pile is flagged
+      // rare (the client renders the golden loot beam over it), the
+      // find goes into the collection log, and the whole game hears
+      // about it.
+      loot.rares.forEach((piece, i) => {
         const pileId = crypto.randomBytes(6).toString('hex');
-        piles.set(pileId, { id: pileId, item: loot.rare, qty: 1, x: me.x, y: me.y, area: 'barrows', owner: profile.username, bornAt: Date.now(), rare: true });
-        recordClog(key, loot.rare);
-        announce(`⚰️ ${profile.username} just looted ${itemDef(loot.rare).name} from Barrows!`);
-      }
-      send(ws, { type: 'barrows_loot', gold: loot.gold, items: loot.items, rare: loot.rare || null, kills: killCount, profile: publicProfile(profile) });
+        piles.set(pileId, { id: pileId, item: piece, qty: 1, x: me.x + i * 15, y: me.y, area: 'barrows', owner: profile.username, bornAt: Date.now(), rare: true });
+        recordClog(key, piece);
+        announce(`⚰️ ${profile.username} just looted ${itemDef(piece).name} from Barrows!`);
+      });
+      send(ws, { type: 'barrows_loot', gold: loot.gold, items: loot.items, rares: loot.rares, lines: loot.lines, rolls: loot.rolls, kills: killCount, runs: profile.barrowsRuns, profile: publicProfile(profile) });
       send(ws, { type: 'area', area: 'barrows' });
       send(ws, nodesMsg('barrows'));
       send(ws, firesMsg('barrows'));
@@ -4615,7 +5136,11 @@ wss.on('connection', (ws, req) => {
       me.area = 'barrows';
       me.x = def ? def.mound.x : AREAS.barrows.spawn.x;
       me.y = def ? def.mound.y : AREAS.barrows.spawn.y;
-      me.barrowsPuzzle = null; me.barrowsPuzzleSolved = false; // the door resets behind you
+      // Stage 28: the run — kills, tunnel AND the solved puzzle —
+      // is saved on the profile now, so climbing out keeps all of
+      // it (Derek's rule). Only the session scratch goes: the dealt
+      // puzzle and the tunnel HP pool (re-dealt on the next descent).
+      me.barrowsPuzzle = null; me.barrowsHp = null; me.barrowsCrypt = null;
       send(ws, { type: 'area', area: 'barrows' });
       send(ws, nodesMsg('barrows'));
       send(ws, firesMsg('barrows'));
@@ -5459,7 +5984,7 @@ wss.on('connection', (ws, req) => {
       if (kind === 'barrows') {
         const fight = me.barrowsFightId ? barrowsFights.get(me.barrowsFightId) : null;
         if (!fight || fight.done) return castFail('You are not fighting a Barrows brother.');
-        if (Math.hypot(me.x - fight.anchorX, me.y - fight.anchorY) > NPC_RANGE) return castFail('Too far away — walk closer.');
+        if (Math.hypot(me.x - fight.bx, me.y - fight.by) > NPC_RANGE) return castFail('Too far away — walk closer.'); // Stage 28: the brother's live position (he moves)
         if (spell.id === 'freeze' && alreadyFrozen(fight.brotherFrozenUntil, fight.name)) return;
         const res = rollMagicCast(profile, NPC_DEFENDER, spell, false, null);
         if (res.refused) return castFail(res.refused);
