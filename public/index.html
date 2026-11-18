@@ -38,12 +38,19 @@
  .orb.sp.ready{box-shadow:0 0 12px 3px #c9a227}
 .orb.run{background:#2b2118}.orb.run.on{background:#40340a;box-shadow:0 0 12px 3px #c9a227}
  /* right rail */
- #rail{position:fixed;right:6px;top:190px;z-index:30;display:flex;flex-direction:column;gap:6px}
+ #rail{position:fixed;right:6px;top:190px;z-index:30;display:flex;flex-direction:column;gap:6px;max-height:calc(100dvh - 198px)}
+ #rail>.railchip{flex:none}
  .rbtn{width:46px;height:46px;border-radius:10px;background:rgba(23,19,16,var(--uia));border:2px solid #7a6748;color:#e8d9b0;font-size:20px;cursor:pointer}
  .rbtn.on{border-color:#c9a227;background:#3a2c1c}
  #gearbtn{width:46px;height:46px;border-radius:10px;background:linear-gradient(135deg,#c9a227,#7a6748);border:2px solid #e3c766;color:#fff;font-size:22px;cursor:pointer;box-shadow:0 0 10px #c9a22755;flex:none}
- #railset{display:none;flex-direction:column;gap:6px}
+ /* Stage 25: the button set scrolls — and loops (three copies of the
+    set, silently recentred; see buildRailLoop). Scrollbar hidden.
+    While Grab is on the set is .locked: no scrolling, arranging only. */
+ #railset{display:none;flex-direction:column;gap:6px;overflow-y:auto;scrollbar-width:none;min-height:0;flex:1 1 auto;touch-action:pan-y}
+ #railset::-webkit-scrollbar{display:none}
  #railset.open{display:flex}
+ #railset.locked{overflow-y:hidden;touch-action:none}
+ #railset .rbtn{flex:none}
  /* drawer */
  #drawer{position:fixed;top:40px;right:58px;z-index:40;width:min(330px,80vw);max-height:calc(100dvh - 210px);overflow-y:auto;background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:12px;padding:10px;display:none}
  #drawer.open{display:block}
@@ -568,7 +575,12 @@ function isAdminOrOwner(){ const r=myRole(); return r==='admin'||r==='owner'; }
 
 /* ================= settings (localStorage) ================= */
 const SETTINGS_KEY='nallystake_settings_v1';
-let settings={camSpeed:1.5,groundTap:'walk',tapMode:'normal',camPov:'third',uiAlpha:0.78,run:true,hidden:{}};
+/* Stage 25: camera elevation (pitch) clamp in radians — 0.25 ≈ 14°
+   above ground level at the low end, 1.35 ≈ 77° (near top-down) at
+   the high end. One clamp shared by the camera stick, drag-tilt and
+   the saved setting. */
+const CAM_PITCH_MIN=0.25, CAM_PITCH_MAX=1.35;
+let settings={camSpeed:1.5,camPitch:0.92,groundTap:'walk',tapMode:'normal',camPov:'third',uiAlpha:0.78,run:true,hidden:{}};
 try{ const s=JSON.parse(localStorage.getItem(SETTINGS_KEY)||'null'); if(s&&typeof s==='object') settings=Object.assign(settings,s); }catch(e){}
 if(typeof settings.camSpeed!=='number') settings.camSpeed=1.5;
 /* Stage 18 migration: tapMode used to hold the GROUND tap mode
@@ -579,6 +591,8 @@ if(settings.tapMode==='walk'||settings.tapMode==='face'){ settings.groundTap=set
 if(settings.tapMode!=='menu') settings.tapMode='normal';
 if(settings.groundTap!=='face') settings.groundTap='walk';
 if(settings.camPov!=='first') settings.camPov='third'; // Stage 18: camera POV ('third' default / 'first')
+if(typeof settings.camPitch!=='number') settings.camPitch=0.92; // Stage 25: drag-tilt pitch persists in the settings store
+settings.camPitch=clamp(settings.camPitch,CAM_PITCH_MIN,CAM_PITCH_MAX);
 if(typeof settings.uiAlpha!=='number') settings.uiAlpha=0.78;
 if(typeof settings.run!=='boolean') settings.run=true; // run toggle defaults ON; a saved off stays off
 if(!settings.hidden||typeof settings.hidden!=='object') settings.hidden={};
@@ -594,6 +608,8 @@ function applyRailVisibility(){
  for(const id of ['railgrab','railmenutap','railcam']){ const c=$(id); if(c) c.style.display=railOpen?'':'none'; } // Stage 18: the chips follow the rail
  document.querySelectorAll('#railset .rbtn').forEach(b=>{ b.style.display=settings.hidden[b.dataset.panel]?'none':''; });
  refreshToolsBtn();
+ syncRailCopies(); // Stage 25: loop copies of placed / admin-gated buttons stay out of the scroll flow
+ if(railOpen) requestAnimationFrame(()=>railLoopCentre(true)); // Stage 25: (re)centre the loop whenever the rail opens
 }
 /* Stage 7D: the 🛠️ Tools button exists only for admins/owners (and
    still obeys the Settings visibility toggle). Re-checked whenever the
@@ -1067,6 +1083,7 @@ const SHOP_SPOTS=[ // server coords (Stage 13: old spots x2 — must match the s
 ];
 const BOARD_POS={x:984,y:450};
 const STAKE_SIGN_POS={x:180,y:780}; // Stage 17: Stake Board sign, south-west plaza (server 180,780 — clear of the SW gate trigger at x<=20,y>=860)
+const TELEPORT_SIGN_POS={x:880,y:470}; // Stage 25: teleport sign beside the bank (server 880,470 = world (8,2)) — clear of the bank chest, the spawn point and the Duel Board (984,450); tapping it opens the Teleport panel
 let stakeSparkles=[]; // sign sparkle meshes, pulsed in animate()
 let stakeBoard={offers:[]}; // latest stake_board payload
 let stakeMatch=null; // {matchId,opponent,stake,pot,readyMine,readyOpponent} while matched
@@ -1146,6 +1163,71 @@ function noiseTexture(base,flecks,rx,ry){
  g.fillStyle=base; g.fillRect(0,0,128,128);
  for(let i=0;i<1000;i++){ g.fillStyle=flecks[i%flecks.length]; g.fillRect(Math.random()*128,Math.random()*128,2,2); }
  const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(rx||8,ry||5); return t;
+}
+/* Dirt path texture (Stage 25): warm brown, speckled, soft worn
+   patches and a few pebbles. repeat (rx,ry) like the other grounds. */
+function dirtTexture(rx,ry){
+ const c=document.createElement('canvas'); c.width=c.height=256; const g=c.getContext('2d');
+ g.fillStyle='#8a6f45'; g.fillRect(0,0,256,256);
+ for(let i=0;i<1600;i++){ g.fillStyle=['#77603a','#9c7f52','#6b5433','#a8905f'][i%4]; g.fillRect(Math.random()*256,Math.random()*256,3,3); }
+ for(let i=0;i<14;i++){ g.fillStyle='rgba(90,70,40,0.13)'; g.beginPath(); g.ellipse(Math.random()*256,Math.random()*256,14+Math.random()*22,8+Math.random()*12,Math.random()*3,0,Math.PI*2); g.fill(); }
+ for(let i=0;i<26;i++){ g.fillStyle='rgba(205,195,175,0.20)'; g.beginPath(); g.ellipse(Math.random()*256,Math.random()*256,2.5,1.8,0,0,Math.PI*2); g.fill(); } // pebbles
+ const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(rx||1,ry||1); return t;
+}
+/* Warm plaster texture (Stage 25 houses): cream with a soft mottle
+   and faint weathering streaks. */
+function plasterTexture(){
+ const c=document.createElement('canvas'); c.width=c.height=128; const g=c.getContext('2d');
+ g.fillStyle='#d9c69c'; g.fillRect(0,0,128,128);
+ for(let i=0;i<500;i++){ g.fillStyle=['rgba(120,95,55,0.10)','rgba(255,250,230,0.10)','rgba(160,135,90,0.08)'][i%3]; const s=2+(i%3)*2; g.fillRect(Math.random()*128,Math.random()*128,s,s); }
+ g.fillStyle='rgba(110,88,50,0.16)';
+ for(let i=0;i<7;i++){ g.fillRect(0,Math.random()*128,128,1); } // faint streaks
+ const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; return t;
+}
+/* Roof shingle texture (Stage 25 houses): rows of clay-brown shingles. */
+function roofTexture(){
+ const c=document.createElement('canvas'); c.width=c.height=128; const g=c.getContext('2d');
+ g.fillStyle='#4a2c20'; g.fillRect(0,0,128,128);
+ const shades=['#7a4433','#83503a','#6e3a2c','#8a5540'];
+ for(let j=0;j<8;j++) for(let i=0;i<4;i++){
+   g.fillStyle=shades[(i+j*4)%4];
+   g.beginPath(); g.roundRect(i*32+(j%2?16:0)-8,j*16,30,15,4); g.fill();
+ }
+ const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(2,2); return t;
+}
+/* Stage 25: a flat dirt path strip between two world points (a thin
+   box, so it takes shadows like the other ground dressing). Each
+   strip sits a hair higher than the last so crossings never
+   z-fight; the dirt texture repeats along the length. */
+let pathLift=0;
+function pathStrip(parent,x1,z1,x2,z2,w){
+ const len=Math.hypot(x2-x1,z2-z1); if(len<0.5) return null;
+ const mat=new THREE.MeshLambertMaterial({map:dirtTexture(1,Math.max(1,Math.round(len/7)))});
+ const m=new THREE.Mesh(new THREE.BoxGeometry(w||3,0.06,len),mat);
+ m.position.set((x1+x2)/2,0.05+(pathLift++)*0.0016,(z1+z2)/2);
+ m.rotation.y=Math.atan2(x2-x1,z2-z1);
+ m.receiveShadow=true; (parent||scene).add(m); return m;
+}
+/* Stage 25: a simple textured house — plaster (stone=0) or stone
+   (stone=1) walls, corner timbers, a pitched shingle roof, a door
+   on the +z face and warm glowing windows. Pure scenery. */
+function buildHouse(parent,x,z,rotY,stone){
+ const g=new THREE.Group(); g.position.set(x,0,z); g.rotation.y=rotY||0; (parent||scene).add(g);
+ const wallMat=new THREE.MeshLambertMaterial({map:stone? stoneTexture(2,1) : plasterTexture()});
+ const wall=new THREE.Mesh(new THREE.BoxGeometry(6.4,3.2,5.2),wallMat); wall.position.y=1.6; g.add(wall);
+ const woodM=new THREE.MeshLambertMaterial({map:woodTexture('#5d4020')});
+ boxM(0.28,3.2,0.28,woodM,-3.2,1.6,-2.6,g); boxM(0.28,3.2,0.28,woodM,3.2,1.6,-2.6,g);
+ boxM(0.28,3.2,0.28,woodM,-3.2,1.6,2.6,g); boxM(0.28,3.2,0.28,woodM,3.2,1.6,2.6,g); // corner timbers
+ boxM(6.6,0.3,5.4,woodM,0,3.25,0,g); // eaves beam
+ const roof=new THREE.Mesh(new THREE.ConeGeometry(4.6,2.3,4),new THREE.MeshLambertMaterial({map:roofTexture()}));
+ roof.position.y=4.35; roof.rotation.y=Math.PI/4; roof.scale.set(1.08,1,0.88); g.add(roof);
+ box(1.1,2.1,0.14,0x3a2410,0,1.05,2.62,g); // door (front, +z)
+ box(0.12,0.12,0.1,0xd4af37,0.35,1.05,2.72,g); // knob
+ const winM=new THREE.MeshBasicMaterial({color:0xffd75e});
+ boxM(0.95,0.95,0.1,winM,-1.9,1.9,2.62,g); boxM(0.95,0.95,0.1,winM,1.9,1.9,2.62,g); // front windows
+ boxM(0.1,0.95,0.95,winM,3.22,1.9,0,g); // side window
+ shadowify(g);
+ return g;
 }
 /* Striped awning texture in a shop's colour. */
 function stripeTexture(color){
@@ -1233,6 +1315,21 @@ function buildPlaza(root){
  sblabel.innerHTML=`<div class="nname">⚔️ Stake Board — offer a fight</div>`;
  $('labels').appendChild(sblabel);
  worldLabels.push({el:sblabel,x:sx2w(STAKE_SIGN_POS.x),y:3.9,z:sy2w(STAKE_SIGN_POS.y),area:'plaza',kind:'static'});
+ // 🗺️ TELEPORT SIGN (Stage 25) — beside the bank at server (880,470)
+ // = world (8,2): east of the bank chest, clear of its tap target,
+ // the spawn point and the Duel Board (984,450). One post + board,
+ // Stake Board pattern; tapping it opens the Teleport panel (the
+ // act is routed in handleTap, like the bank and the shops).
+ const tpg=new THREE.Group(); tpg.position.set(sx2w(TELEPORT_SIGN_POS.x),0,sy2w(TELEPORT_SIGN_POS.y)); scene.add(tpg);
+ const tpAct={type:'teleportsign'};
+ box(0.18,2.6,0.18,0x5a4020,0,1.3,0,tpg,tpAct); // post
+ boxM(2.6,1.5,0.12,new THREE.MeshLambertMaterial({map:woodTexture('#74552a')}),0,2.0,0,tpg,tpAct); // board
+ box(2.8,0.14,0.14,0x7ec8ff,0,2.82,0,tpg,tpAct); box(2.8,0.14,0.14,0x7ec8ff,0,1.18,0,tpg,tpAct); // sky-blue trim
+ const tpl=textSprite('🗺️ TELEPORTS','#7ec8ff','rgba(23,19,12,0.9)'); tpl.position.set(0,3.4,0); tpg.add(tpl);
+ const tplabel=document.createElement('div'); tplabel.className='plabel';
+ tplabel.innerHTML=`<div class="nname">🗺️ Teleports — tap to travel</div>`;
+ $('labels').appendChild(tplabel);
+ worldLabels.push({el:tplabel,x:sx2w(TELEPORT_SIGN_POS.x),y:3.9,z:sy2w(TELEPORT_SIGN_POS.y),area:'plaza',kind:'static'});
  // Duel Master — static figure standing by the board (Fisher Wren pattern)
  const dm=new THREE.Group(); dm.position.set(23,0,5.6); scene.add(dm); // Stage 13: x2, still beside the duel board
  box(0.24,0.7,0.24,0x241a12,-0.16,0.35,0,dm); box(0.24,0.7,0.24,0x241a12,0.16,0.35,0,dm); // legs
@@ -1284,13 +1381,18 @@ function buildPlaza(root){
  worldLabels.push({el:stglabel,x:sx2w(800),y:6.9,z:sy2w(140),area:'plaza',kind:'static'});
  // perimeter fences with gaps at the four gates (Stage 13: the
  // perimeter is at +-80 x +-45 world units; gate gaps are +-7)
- const fenceMat=0x6b4e26;
+ // Stage 25: the plaza fences are TEXTURED wood now — posts share
+ // one plank material; each run's rails clone it with a lengthwise
+ // repeat so the grain never stretches.
+ const fencePostMat=new THREE.MeshLambertMaterial({map:woodTexture('#6b4e26')});
+ function fenceRailMat(len){ const t=woodTexture('#6b4e26'); t.repeat.set(Math.max(1,Math.round(len/5)),1); return new THREE.MeshLambertMaterial({map:t}); }
  function fenceRun(x1,z1,x2,z2){
    const len=Math.hypot(x2-x1,z2-z1), n=Math.max(2,Math.round(len/4));
-   for(let i=0;i<=n;i++){ const t=i/n; box(0.16,1.1,0.16,fenceMat,x1+(x2-x1)*t,0.55,z1+(z2-z1)*t,scene); }
+   for(let i=0;i<=n;i++){ const t=i/n; boxM(0.16,1.1,0.16,fencePostMat,x1+(x2-x1)*t,0.55,z1+(z2-z1)*t,scene); }
    const midx=(x1+x2)/2, midz=(z1+z2)/2, ang=Math.atan2(x2-x1,z2-z1);
-   const rail=box(0.08,0.12,len,fenceMat,midx,0.85,midz,scene); rail.rotation.y=ang;
-   const rail2=box(0.08,0.12,len,fenceMat,midx,0.45,midz,scene); rail2.rotation.y=ang;
+   const rm=fenceRailMat(len);
+   const rail=boxM(0.08,0.12,len,rm,midx,0.85,midz,scene); rail.rotation.y=ang;
+   const rail2=boxM(0.08,0.12,len,rm,midx,0.45,midz,scene); rail2.rotation.y=ang;
  }
  // Stage 19: the north wall gains a second gap (world x -60..-36)
  // for the Ranger Camp gate, and the north-west corner opens for
@@ -1314,6 +1416,37 @@ function buildPlaza(root){
    box(0.5,3.4,0.5,0x7c7565,gx-dx,1.7,gz-dz,scene); box(0.5,3.4,0.5,0x7c7565,gx+dx,1.7,gz+dz,scene);
    box(horiz?11.4:0.6,0.4,horiz?0.6:11.4,0xd4af37,gx,3.3,gz,scene);
  }
+ // Stage 25: a fence ring around the tournament dais — back and
+ // sides, with an entrance gap at the front centre where the north
+ // path arrives. Scenery only, like every fence here.
+ fenceRun(-10,-36.5,10,-36.5); // back
+ fenceRun(-10,-36.5,-10,-25.5); fenceRun(10,-36.5,10,-25.5); // sides
+ fenceRun(-10,-25.5,-2.5,-25.5); fenceRun(2.5,-25.5,10,-25.5); // front, centre gap
+ // Stage 25: dirt paths — the plaza's spokes. The bank / spawn is
+ // the hub (world 0,0); every gate, shop and sign gets a path.
+ pathStrip(scene,0,2,0,-27,3.4); // north: bank -> dais steps, through the fence gap
+ pathStrip(scene,9,-27,9,-43,3); // dais east side -> north gate (Fight Caves)
+ pathStrip(scene,0,2,0,44,3.4); // south: bank -> Barrows gate
+ pathStrip(scene,-2,0,-79,0,3.4); // west: bank -> Fishing Cove gate
+ pathStrip(scene,2,0,79,0,3.4); // east: bank -> Goblin Camp gate
+ pathStrip(scene,0,0,-44,-21,3); pathStrip(scene,0,0,44,-21,3); // -> Potion / Weapon shops
+ pathStrip(scene,0,0,44,21,3); pathStrip(scene,0,0,-44,21,3); // -> Armour / Food & Supplies shops
+ pathStrip(scene,-14,-16,14,-16,2.6); // the mod NPC row (Stage 22)
+ pathStrip(scene,-6,6,-60,31,3); // -> the Stake Board sign
+ pathStrip(scene,-60,31,-77,42,2.6); // Stake Board -> Gathering Cave corner
+ pathStrip(scene,-44,-21,-48,-43,3); // Potion shop -> Ranger Camp gate stretch
+ pathStrip(scene,-48,-43,-77,-43,2.6); // along the north wall -> Wizard Grounds corner
+ pathStrip(scene,44,-21,77,-41,3); // Weapon shop -> Emberfall Mine corner
+ pathStrip(scene,44,21,77,41,3); // Armour shop -> Training Cave corner
+ pathStrip(scene,0,0,7.5,1.9,2.2); // -> the teleport sign beside the bank
+ // Stage 25: houses around the plaza edges — textured walls,
+ // pitched roofs, doors facing the plaza, warm windows. Set back
+ // at the edges, clear of gates, paths, stalls and trees.
+ buildHouse(scene,-64,-18,Math.PI/2,0); // west edge, plaster
+ buildHouse(scene,64,-18,-Math.PI/2,1); // east edge, stone
+ buildHouse(scene,38,40,Math.PI,0); // south-east, plaster
+ buildHouse(scene,-30,41,Math.PI,1); // south-west, stone
+ buildHouse(scene,24,-41,0,0); // north edge (east of the dais), plaster
  // trees scattered away from the centre (Stage 13: the original spots
  // x2, plus a second ring filling the new outer ground)
  const treeSpots=[[-68,-34],[-52,32],[-28,-38],[28,38],[52,-34],[68,32],[72,-12],[-72,10],[40,-40],[-40,40],[60,8],[-60,-10],[16,40],[-16,-40],
@@ -1533,6 +1666,10 @@ function buildGatheringCave(root){
  }
  box(0.18,2.2,0.18,0x5a4020,11,1.1,-39,S);
  const sp=textSprite('⛏️ Gathering Cave','#e3c766','rgba(23,19,12,0.85)'); sp.position.set(11,3.0,-39); S.add(sp);
+ // Stage 25: a dirt path from the north gate into the cave, and a
+ // little stone hut in the west corner for flavour.
+ pathStrip(S,0,-40,0,12,3);
+ buildHouse(S,-52,-32,Math.PI/2,1);
 }
 function buildFishingCove(root){
  const S=root;
@@ -1628,6 +1765,9 @@ function buildMine(root){
    const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.6),new THREE.MeshLambertMaterial({color:0x5d574c}));
    rock.position.set(rx,0.35,rz); S.add(rock);
  }
+ // Stage 25: a dirt path from the south entrance up to the smithy
+ // corner (furnace + anvil), so the way reads at a glance.
+ pathStrip(S,0,38,54,30,3);
 }
 /* ---- Stage 4: Fight Caves scene ---- */
 // Lava pool spots in SERVER coords — shared by the scene and the minimap.
@@ -3074,7 +3214,12 @@ function updateLabels(now){
 
 /* ================= controls & movement ================= */
 let camYaw=0.7, camDist=21;
-let camPitch=0.92; // camera elevation angle (right stick / settings adjust it)
+let camPitch=clamp(settings.camPitch,CAM_PITCH_MIN,CAM_PITCH_MAX); // camera elevation angle (right stick / drag-tilt adjust it; Stage 25: restored from settings)
+/* Stage 25: pitch changes persist in the settings store, debounced —
+   drags and the stick move it continuously, so the save lands once
+   the changes settle instead of on every frame. */
+let pitchSaveT=null;
+function saveCamPitch(){ settings.camPitch=camPitch; if(pitchSaveT) return; pitchSaveT=setTimeout(()=>{ pitchSaveT=null; saveSettings(); },350); }
 let localRot=0; // local knight facing (world radians, atan2(x,z) convention)
 let tapTarget=null; // server coords
 let joyVec={x:0,y:0};
@@ -3132,7 +3277,19 @@ addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
      if(pinchD>0) camDist=clamp(camDist*pinchD/d,10,42); pinchD=d; dragged=true; clearHold(); return; }
    const dx=e.clientX-prev.x, dy=e.clientY-prev.y;
    if(Math.hypot(e.clientX-downX,e.clientY-downY)>9){ dragged=true; clearHold(); } // camera drag cancels a pending hold
-   if(dragged && (e.pointerType==='mouse' ? e.buttons===1 : true)) camYaw-=dx*0.006*settings.camSpeed;
+   if(dragged && (e.pointerType==='mouse' ? e.buttons===1 : true)){
+     camYaw-=dx*0.006*settings.camSpeed;
+     // Stage 25: vertical drag TILTS the camera too — the view can
+     // now move up and down, not just around. Same convention as the
+     // camera stick: drag down = the camera climbs toward top-down,
+     // drag up = it sinks toward ground level. Third person only:
+     // first person is unchanged (Stage 18 v1 — drag has no effect
+     // on the first-person view, and the pitch stays put there).
+     if(dy&&settings.camPov!=='first'){
+       const np=clamp(camPitch+dy*0.005*settings.camSpeed,CAM_PITCH_MIN,CAM_PITCH_MAX);
+       if(np!==camPitch){ camPitch=np; saveCamPitch(); }
+     }
+   }
  });
  function up(e){
    pts.delete(e.pointerId);
@@ -3168,6 +3325,7 @@ function handleTap(cx,cy){
      if(act.type==='shop'){ shopTab=act.shop; openPanel('shop'); return; }
      if(act.type==='players'){ openPanel('players'); return; }
      if(act.type==='stakeboard'){ openStakeBoard(); return; }
+     if(act.type==='teleportsign'){ openPanel('teleport'); return; } // Stage 25: the sign by the bank opens the Teleport panel
    }
  }
  // Stage 18: Menu tap mode — a quick tap on a player, NPC/monster,
@@ -3434,6 +3592,7 @@ function drawMinimap(){
    for(const s of SHOP_SPOTS){ g.fillStyle='#'+s.color.toString(16).padStart(6,'0'); g.fillRect(s.x-12,s.y-12,24,24); }
    g.fillStyle='#fff'; g.fillRect(BOARD_POS.x-8,BOARD_POS.y-8,16,16);
    g.fillStyle='#ffd75e'; g.beginPath(); g.arc(STAKE_SIGN_POS.x,STAKE_SIGN_POS.y,13,0,7); g.fill(); // Stake Board sign (SW)
+   g.fillStyle='#7ec8ff'; g.beginPath(); g.arc(TELEPORT_SIGN_POS.x,TELEPORT_SIGN_POS.y,11,0,7); g.fill(); // Stage 25: teleport sign (by the bank)
    for(const n of modNpcList){ g.fillStyle='#ffd75e'; g.beginPath(); g.arc(n.x,n.y,11,0,7); g.fill(); g.fillStyle='#3a2c1c'; g.beginPath(); g.arc(n.x,n.y,5,0,7); g.fill(); } // Stage 22: the three moderators
  } else if(curArea==='waiting'){
    g.fillStyle='#ffd75e'; g.beginPath(); g.arc(700,450,16,0,7); g.fill(); // spawn pads
@@ -3535,7 +3694,8 @@ function animate(){
  // right stick drives the camera continuously (scaled by the speed setting)
  if(camVec.x||camVec.y){
    camYaw-=camVec.x*2.4*dt*settings.camSpeed;
-   camPitch=clamp(camPitch+camVec.y*1.6*dt*settings.camSpeed,0.25,1.35);
+   camPitch=clamp(camPitch+camVec.y*1.6*dt*settings.camSpeed,CAM_PITCH_MIN,CAM_PITCH_MAX); // Stage 25: shared pitch clamp
+   saveCamPitch(); // Stage 25: stick-set pitch persists too (debounced)
  }
  if(now-lastMapDraw>150){ lastMapDraw=now; drawMinimap(); }
  stepMovement(dt);
@@ -4464,7 +4624,7 @@ function pTeleport(){
 const PANEL_LIST=[['backpack','🎒 Backpack'],['worn','🗡️ Worn items'],['shop','🏪 Shops'],['bank','🏦 Bank'],['exchange','💱 Gold Exchange'],['prayers','🙏 Prayers'],['spellbook','📖 Spellbook'],['players','👥 Players'],['admin','👑 Admin'],['tools','🛠️ Admin Tools'],['skills','📊 Skills'],['smithy','🔥 Smithy'],['teleport','🌀 Teleport'],['settings','🎛️ Settings']];
 function pSettings(){
  let h=`<div class="setrow"><span class="grow">🎨 Appearance<br><span class="note">Change how your knight looks</span></span><button class="act" onclick="closeDrawer();openAppearance()">🎨 Appearance</button></div>`;
- h+=`<div class="setrow"><span class="grow">📷 Camera drag speed<br><span class="note">Screen-drag rotation &amp; camera stick</span></span><input type="range" min="0.25" max="3" step="0.25" value="${settings.camSpeed}" oninput="setCamSpeed(this.value)"><b id="camspeedval" style="color:#e3c766;min-width:34px;text-align:right">${settings.camSpeed}×</b></div>`;
+ h+=`<div class="setrow"><span class="grow">📷 Camera drag speed<br><span class="note">Screen-drag rotation &amp; tilt, camera stick</span></span><input type="range" min="0.25" max="3" step="0.25" value="${settings.camSpeed}" oninput="setCamSpeed(this.value)"><b id="camspeedval" style="color:#e3c766;min-width:34px;text-align:right">${settings.camSpeed}×</b></div>`;
  h+=`<div class="setrow"><span class="grow">👆 Ground tap mode</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.groundTap==='walk'?'on':''}" onclick="setGroundTap('walk')">🚶 Walk</button><button class="${settings.groundTap==='face'?'on':''}" onclick="setGroundTap('face')">🧭 Face</button></div>`;
  h+=`<p class="note" style="margin:2px 0 8px">Walk: tapping the ground walks there. Face: tapping just turns your knight to face that spot.</p>`;
  h+=`<div class="setrow"><span class="grow">🖱️ Menu tap mode</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.tapMode==='normal'?'on':''}" onclick="setTapMode('normal')">👆 Normal</button><button class="${settings.tapMode==='menu'?'on':''}" onclick="setTapMode('menu')">🖱️ Menu</button></div>`;
@@ -6279,6 +6439,7 @@ function applyBtnPositions(){
    const p=pos[b.dataset.panel];
    if(p){ b.style.position='fixed'; b.style.left=p.l+'px'; b.style.top=p.t+'px'; b.style.zIndex='60'; }
  });
+ syncRailCopies(); // Stage 25: a placed button's loop copies leave the scroll flow
 }
 let grabMode=false;
 function setGrabMode(on){
@@ -6293,6 +6454,7 @@ function setGrabMode(on){
  const gb=$('railgrab');
  if(gb){ gb.classList.toggle('on',grabMode); gb.textContent=grabMode?'✋ Grab: On':'✋ Grab'; }
  document.body.classList.toggle('grabbing',grabMode);
+ const rsEl=$('railset'); if(rsEl) rsEl.classList.toggle('locked',grabMode); // Stage 25: rail scrolling locks while arranging
  toast(grabMode?'✋ Grab on — drag the buttons where you want them. Everything else is paused until you tap Grab again to lock.':'🔒 Buttons locked in place.');
 }
 $('railgrab').onclick=()=>setGrabMode(!grabMode);
@@ -6310,6 +6472,52 @@ document.addEventListener('click',e=>{
  if(t&&t.closest&&t.closest('#gearbtn,#railgrab')) return; // arranging controls stay live
  e.preventDefault(); e.stopPropagation();
 },true);
+/* ---- Stage 25: the rail LOOPS — scroll through the buttons and
+   they wrap round: past the last button the first ones come round
+   again, and past the first (scrolling up) the last ones do. The
+   railset holds THREE copies of the button set and scrolling is
+   silently recentred into the middle copy, so it never ends.
+   The 🎛️ gear and the Grab / Menu tap / Camera chips live in #rail
+   ABOVE #railset, not inside it — they do not scroll (the Grab chip
+   must stay reachable while arranging, and the gear is the toggle
+   that reveals the rail at all). Loop copies are full working
+   buttons — same panel, same tap behaviour, and the Grab wiring
+   below covers them because they exist before it runs. A button
+   that has been dragged OUT of the rail (saved position) keeps
+   only its placed original: its copies leave the scroll flow. */
+function syncRailCopies(){
+ const pos=loadBtnPos();
+ document.querySelectorAll('#railset .rbtn.loopclone').forEach(b=>{
+   const p=b.dataset.panel;
+   let show=!pos[p]&&!settings.hidden[p];
+   if(p==='tools'&&!isAdminOrOwner()) show=false; // the Tools copy obeys the same admin rule as the original
+   b.style.display=show?'':'none';
+ });
+}
+var railSetH=0; // height of ONE copy set (the railset's scrollHeight / 3)
+function railLoopCentre(force){
+ const rs=$('railset');
+ if(!rs||!rs.classList.contains('open')||!rs.querySelector('.loopclone')) return; // loop not built yet / rail closed
+ const h=rs.scrollHeight/3; if(h>0) railSetH=h;
+ if(!railSetH) return;
+ if(force){ rs.scrollTop=railSetH; return; }
+ const st=rs.scrollTop;
+ if(st<railSetH*0.5) rs.scrollTop=st+railSetH;
+ else if(st>=railSetH*1.5) rs.scrollTop=st-railSetH;
+}
+(function buildRailLoop(){
+ const rs=$('railset'); if(!rs) return;
+ const orig=[...rs.children];
+ const mk=()=>orig.map(b=>{ const c=b.cloneNode(true); c.classList.add('loopclone'); c.removeAttribute('id'); return c; });
+ for(const c of mk()) rs.appendChild(c); // copy 3 (below)
+ const pre=mk(); for(let i=pre.length-1;i>=0;i--) rs.insertBefore(pre[i],rs.firstChild); // copy 1 (above)
+ // The clones missed the mid-script rbtn onclick wiring (it ran
+ // before they existed) — give them the identical tap behaviour.
+ rs.querySelectorAll('.rbtn.loopclone').forEach(c=>{ c.onclick=()=>{ if(c._suppressClickUntil&&Date.now()<c._suppressClickUntil) return; togglePanel(c.dataset.panel); }; });
+ rs.addEventListener('scroll',()=>railLoopCentre(false));
+ addEventListener('resize',()=>railLoopCentre(false));
+ syncRailCopies();
+})();
 document.querySelectorAll('#railset .rbtn').forEach(b=>{
  let pid=null,sx=0,sy=0,startL=0,startT=0,dragging=false;
  b.addEventListener('pointerdown',e=>{
@@ -6337,6 +6545,7 @@ document.querySelectorAll('#railset .rbtn').forEach(b=>{
      const r=b.getBoundingClientRect();
      const pos=loadBtnPos(); pos[b.dataset.panel]={l:Math.round(r.left),t:Math.round(r.top)};
      try{ localStorage.setItem(BTN_POS_KEY,JSON.stringify(pos)); }catch(err){}
+     applyBtnPositions(); // Stage 25: the placed original takes the spot; its loop copies leave the flow
    }
    b._suppressClickUntil=Date.now()+350; // swallow the click this press produces
  };
