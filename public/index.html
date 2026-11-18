@@ -123,11 +123,19 @@
  #chatrow{display:flex;gap:5px;padding:5px}
  #chatrow input{flex:1;min-width:0}
  /* duel banner */
- /* duel strip: no overlay box — HP lives over the fighters' heads; only the
-    action buttons remain, as a slim strip pinned above the minimized chat bar */
- #duelbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(38px + env(safe-area-inset-bottom,0px));z-index:45;max-width:97vw;background:rgba(23,19,16,.88);border:2px solid #8e2f32;border-radius:12px;padding:5px 8px;display:none}
- #duelbar.open{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap}
+ /* Stage 23: ONE slim fight row for every combat — pinned full-width just
+    above the chat bar, a single row of chips that scrolls sideways if it
+    overflows. No panel box, no stacked rows: while you're being hit, the
+    screen stays clear. HP lives over the fighters' heads. */
+ #duelbar{position:fixed;left:0;right:0;bottom:calc(38px + env(safe-area-inset-bottom,0px));z-index:45;display:none;align-items:center;gap:6px;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;padding:6px 8px;background:rgba(23,19,16,.85);border-top:2px solid #8e2f32;scrollbar-width:none}
+ #duelbar.open{display:flex}
+ #duelbar::-webkit-scrollbar{display:none}
+ #duelbar>*{flex:none}
  .fightinfo{display:none!important}
+ .fchip{flex:none;display:inline-flex;align-items:center;gap:4px;background:#2b2118;color:#e8d9b0;border:1px solid #7a6748;border-radius:999px;padding:7px 10px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap;line-height:1;font-family:inherit}
+ .fchip.ctx{cursor:default;color:#ffd75e;border-color:#c9a227;background:#3a2c1c}
+ .fchip.spec{background:linear-gradient(135deg,#c9a227,#8e2f32);color:#fff;border-color:#c9a227}
+ .fchip.pray.on{border-color:#c9a227;background:#3a2c1c;box-shadow:0 0 10px #c9a22766}
  #duelhint{font-weight:800;color:#ffd75e;font-size:12px;background:#3a2c1c;border:1px solid #c9a227;border-radius:999px;padding:4px 9px;white-space:nowrap}
  #duelnomove{font-weight:800;color:#ffb3b3;font-size:12px;background:#3a1c1c;border:1px solid #8e2f32;border-radius:999px;padding:4px 9px;white-space:nowrap}
  #duelbar .t{font-weight:900;color:#e3c766;text-align:center;font-size:14px;margin-bottom:5px}
@@ -135,7 +143,8 @@
  .hprow .nm{width:86px;text-align:right;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .hpbar{flex:1;height:13px;background:#400;border:1px solid #200;border-radius:6px;overflow:hidden}
  .hpbar>div{height:100%;background:#4caf50;transition:width .25s}
- #duelquick{display:flex;gap:5px;flex-wrap:wrap;align-items:center;justify-content:center}
+ #duelquick{display:contents}
+ #duelprayers{display:contents}
  #specbtn.ready{box-shadow:0 0 12px 3px #c9a227;background:#8e2f32}
  /* modals */
  .modal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:14px}
@@ -196,15 +205,18 @@
  #toast{position:fixed;top:44px;left:50%;transform:translateX(-50%);z-index:55;background:rgba(43,33,24,var(--uia));border:2px solid #c9a227;color:#e8d9b0;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:700;display:none;max-width:92vw;text-align:center}
  /* Fight Caves (Stage 4) */
  .plabel .fcname{color:#ffc9a8}
- /* Fight Caves strip: same treatment as the duel strip — wave chip + actions only */
- #fcbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(38px + env(safe-area-inset-bottom,0px));z-index:45;max-width:97vw;background:rgba(23,19,16,.88);border:2px solid #ff7b24;border-radius:12px;padding:5px 8px;display:none}
- #fcbar.open{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap}
+ /* Fight Caves row: the same Stage 23 slim fight row as the duel bar —
+    wave chip, prayer chips, special + supply chips, Leave chip */
+ #fcbar{position:fixed;left:0;right:0;bottom:calc(38px + env(safe-area-inset-bottom,0px));z-index:45;display:none;align-items:center;gap:6px;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;padding:6px 8px;background:rgba(23,19,16,.85);border-top:2px solid #ff7b24;scrollbar-width:none}
+ #fcbar.open{display:flex}
+ #fcbar::-webkit-scrollbar{display:none}
+ #fcbar>*{flex:none}
  #fcbar .t{font-weight:900;color:#ffb03a;text-align:center;font-size:14px;margin-bottom:5px}
  #fctitle{font-weight:900;color:#ffb03a;font-size:12px;background:#3a2410;border:1px solid #ff7b24;border-radius:999px;padding:4px 9px;white-space:nowrap;margin:0}
- #fcquick{display:flex;gap:5px;flex-wrap:wrap;align-items:center;justify-content:center}
+ #fcquick{display:contents}
  #fcspecbtn.ready{box-shadow:0 0 12px 3px #c9a227;background:#8e2f32}
- #fcprayers{display:flex;gap:5px}
- .fcpray{background:#221a13;border:2px solid #4a3a28;border-radius:9px;color:#e8d9b0;padding:6px 9px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap}
+ #fcprayers{display:contents}
+ .fcpray{background:#221a13;border:2px solid #4a3a28;border-radius:999px;color:#e8d9b0;padding:7px 10px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;line-height:1;font-family:inherit}
  .fcpray.on{border-color:#c9a227;background:#3a2c1c;box-shadow:0 0 10px #c9a22766}
  .fcpray.flash{animation:fcflash .28s ease-in-out infinite alternate}
  @keyframes fcflash{from{border-color:#ff3b30;background:#5a1408;box-shadow:0 0 6px #ff3b30}to{border-color:#e3c766;background:#7a2a08;box-shadow:0 0 18px #ff7b24}}
@@ -258,6 +270,9 @@
  .railchip{width:46px;min-height:30px;border-radius:10px;border:2px solid #7a6748;background:linear-gradient(180deg,#3a2f22,#241c13);color:#e8d9b0;font-size:10px;font-weight:700;cursor:pointer;padding:2px 0;line-height:1.25}
  .railchip.on{background:#2e7d32;color:#eaffea;border-color:#66bb6a}
  body.grabbing #railset .rbtn{cursor:grab;outline:2px dashed rgba(102,187,106,.65);outline-offset:-2px}
+ /* Stage 23: Grab mode is modal — a standing hint while it's on */
+ #grabhint{position:fixed;top:calc(92px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:58;display:none;max-width:94vw;background:rgba(43,33,24,.95);border:2px solid #66bb6a;color:#eaffea;border-radius:999px;padding:8px 14px;font-size:12.5px;font-weight:800;text-align:center;pointer-events:none;box-shadow:0 4px 18px rgba(0,0,0,.5)}
+ body.grabbing #grabhint{display:block}
  .dragghost{position:fixed;z-index:190;pointer-events:none;font-size:30px;width:52px;height:52px;line-height:52px;text-align:center;background:rgba(36,26,13,.9);border:2px solid #e8c96a;border-radius:12px;transform:translate(-50%,-50%)}
  .dragghost img{width:40px;height:40px;border-radius:8px;vertical-align:middle}
  .dragging{opacity:.45}
@@ -353,10 +368,16 @@
  <div class="hprow fightinfo"><span class="nm">You</span><div class="hpbar"><div id="hpyou" style="width:100%"></div></div><span id="hpyouv">99</span></div>
  <div class="hprow fightinfo"><span class="nm" id="dueloppname">Opponent</span><div class="hpbar"><div id="hpopp" style="width:100%"></div></div><span id="hpoppv">99</span></div>
  <div id="duellast" class="note fightinfo" style="text-align:center"></div>
+ <span class="fchip ctx" id="duelctx">⚔️ Duel</span>
  <div id="duelhint" style="display:none">⚔️ Tap your opponent to attack!</div>
  <div id="duelnomove" style="display:none">🚫 No Movement</div>
+ <div id="duelprayers">
+  <button class="fchip pray" id="duelpray-melee">🛡️ Melee</button>
+  <button class="fchip pray" id="duelpray-missiles">🏹 Missiles</button>
+  <button class="fchip pray" id="duelpray-magic">🔮 Magic</button>
+ </div>
  <div id="duelquick"></div>
- <div id="duelflee" style="display:none"><button class="ghost" id="fleebtn">🏃 Flee</button></div>
+ <div id="duelflee" style="display:none"><button class="fchip" id="fleebtn">🏃 Flee</button></div>
 </div>
 
 <div id="fcbar">
@@ -370,7 +391,7 @@
   <button class="fcpray" id="fcpray-magic">🔮 Magic</button>
  </div>
  <div id="fcquick"></div>
- <div><button class="ghost" id="fcleavebtn">🏃 Leave the caves</button></div>
+ <div><button class="fchip" id="fcleavebtn" title="Leave the caves">🏃 Leave</button></div>
 </div>
 
 <div id="barrowsbar">
@@ -425,6 +446,7 @@
 <div class="modal" id="activitymodal"><div class="sheet parchment" id="activitysheet"></div></div>
 
 <div id="toast"></div>
+<div id="grabhint">✋ Grab mode — drag the buttons where you want them. Everything else is paused — tap ✋ Grab again to lock.</div>
 
 <div id="banner"><div id="bannertext"></div><div id="bannerhint"></div></div>
 
@@ -1812,7 +1834,9 @@ function onBarrowsState(m){
 }
 function renderBarrowsBar(){
  const inB=(curArea==='barrows'||curArea==='barrows_tunnels');
- if(!inB||barrowsBarHidden){ $('barrowsbar').classList.remove('open'); return; }
+ // Stage 23: hidden mid-fight — in combat the screen stays clear;
+ // it comes back on its own when the fight ends.
+ if(!inB||barrowsBarHidden||npcFight){ $('barrowsbar').classList.remove('open'); return; }
  $('barrowsbar').classList.add('open');
  const n=barrowsState.kills.length;
  $('barrowstitle').textContent=`💀 Barrows — kills ${n}/6`;
@@ -3041,7 +3065,8 @@ addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
 (function(){
  const joy=$('joy'), knob=$('knob'); let pid=null;
  function setKnob(dx,dy){ knob.style.transform=`translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`; }
- joy.addEventListener('pointerdown',e=>{ pid=e.pointerId; joy.setPointerCapture(pid); move(e); });
+ joy.addEventListener('pointerdown',e=>{ if(grabMode) return; // Stage 23: Grab is modal — sticks are dead while arranging
+   pid=e.pointerId; joy.setPointerCapture(pid); move(e); });
  joy.addEventListener('pointermove',e=>{ if(e.pointerId===pid) move(e); });
  function end(e){ if(e.pointerId===pid){ pid=null; joyVec={x:0,y:0}; setKnob(0,0); } }
  joy.addEventListener('pointerup',end); joy.addEventListener('pointercancel',end);
@@ -3056,7 +3081,8 @@ addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
 (function(){
  const stick=$('camstick'), knob=$('camknob'); let pid=null;
  function setKnob(dx,dy){ knob.style.transform=`translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`; }
- stick.addEventListener('pointerdown',e=>{ pid=e.pointerId; stick.setPointerCapture(pid); move(e); });
+ stick.addEventListener('pointerdown',e=>{ if(grabMode) return; // Stage 23: Grab is modal — sticks are dead while arranging
+   pid=e.pointerId; stick.setPointerCapture(pid); move(e); });
  stick.addEventListener('pointermove',e=>{ if(e.pointerId===pid) move(e); });
  function end(e){ if(e.pointerId===pid){ pid=null; camVec={x:0,y:0}; setKnob(0,0); } }
  stick.addEventListener('pointerup',end); stick.addEventListener('pointercancel',end);
@@ -3073,7 +3099,8 @@ addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
  let downAt=0, downX=0, downY=0, dragged=false, pinchD=0;
  let holdTimer=null, holdFired=false; // Stage 9+10 §8: tap-and-hold = context menu
  function clearHold(){ if(holdTimer){ clearTimeout(holdTimer); holdTimer=null; } }
- el.addEventListener('pointerdown',e=>{ pts.set(e.pointerId,{x:e.clientX,y:e.clientY}); downAt=Date.now(); downX=e.clientX; downY=e.clientY; dragged=false; holdFired=false;
+ el.addEventListener('pointerdown',e=>{ if(grabMode) return; // Stage 23: Grab is modal — no world taps, holds, camera drags or pinches while arranging
+   pts.set(e.pointerId,{x:e.clientX,y:e.clientY}); downAt=Date.now(); downX=e.clientX; downY=e.clientY; dragged=false; holdFired=false;
    if(pts.size===2){ const [a,b]=[...pts.values()]; pinchD=Math.hypot(a.x-b.x,a.y-b.y); clearHold(); }
    else { clearHold(); const hx=e.clientX, hy=e.clientY;
      holdTimer=setTimeout(()=>{ holdTimer=null; if(!dragged&&pts.size===1){ holdFired=true; handleLongPress(hx,hy); } },450); } });
@@ -3093,9 +3120,10 @@ addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
    if(!dragged && Date.now()-downAt<400) handleTap(e.clientX,e.clientY);
  }
  el.addEventListener('pointerup',up); el.addEventListener('pointercancel',up);
- el.addEventListener('wheel',e=>{ e.preventDefault(); camDist=clamp(camDist+e.deltaY*0.02,10,42); },{passive:false});
+ el.addEventListener('wheel',e=>{ if(grabMode) return; e.preventDefault(); camDist=clamp(camDist+e.deltaY*0.02,10,42); },{passive:false});
 })();
 function handleTap(cx,cy){
+ if(grabMode) return; // Stage 23: Grab is modal — world taps do nothing while arranging
  lastManualTapAt=Date.now(); // Stage 8: a fresh manual tap beats fight closing auto-walk for ~600ms
  stopGather(); // tapping anywhere interrupts auto-gather (a node tap below may restart it)
  const mouse=new THREE.Vector2((cx/innerWidth)*2-1,-(cy/innerHeight)*2+1);
@@ -3291,7 +3319,9 @@ function stepMovement(dt){
  // Stage 18: a No Movement duel locks the local knight the same way
  // for the whole duel, so the client never drifts from the server's
  // frozen positions.
- if(duelCountdownLeft>0||(duel&&duel.rules&&duel.rules.noMovement)){ tapTarget=null; myVel={x:0,z:0}; finishStep(false); return; }
+ // Stage 23: Grab mode freezes the knight too — arranging the
+ // interface is the only thing happening while it's on.
+ if(grabMode||duelCountdownLeft>0||(duel&&duel.rules&&duel.rules.noMovement)){ tapTarget=null; myVel={x:0,z:0}; finishStep(false); return; }
  let vx=0, vz=0; // world units / s
  const sYaw=Math.sin(camYaw), cYaw=Math.cos(camYaw);
  // camera forward on the ground (world): (-sinYaw, -cosYaw); right: (cosYaw, -sinYaw)
@@ -3443,6 +3473,7 @@ function drawMinimap(){
 /* Tapping the minimap walks to that spot (inverse of the draw transform). */
 $('minimap').addEventListener('pointerdown',e=>{
  if(!me||!myPos) return;
+ if(grabMode) return; // Stage 23: Grab is modal — no tap-to-walk while arranging
  lastManualTapAt=Date.now();
  const r=e.target.getBoundingClientRect();
  const dx=(e.clientX-r.left)*(e.target.width/r.width)-e.target.width/2;
@@ -4137,7 +4168,7 @@ function initToolCanvas(){
    g.beginPath(); g.moveTo(last.x,last.y); g.lineTo(p.x,p.y); g.stroke();
    g.globalCompositeOperation='source-over'; last=p;
  };
- cv.addEventListener('pointerdown',e=>{ e.preventDefault(); drawing=true; last=pos(e); try{ cv.setPointerCapture(e.pointerId); }catch(err){} strokeTo(pos(e)); });
+ cv.addEventListener('pointerdown',e=>{ if(grabMode) return; e.preventDefault(); drawing=true; last=pos(e); try{ cv.setPointerCapture(e.pointerId); }catch(err){} strokeTo(pos(e)); });
  cv.addEventListener('pointermove',e=>{ if(drawing) strokeTo(pos(e)); });
  const end=()=>{ if(!drawing) return; drawing=false; toolArtData=cv.toDataURL('image/png'); toolArtDirty=true; };
  cv.addEventListener('pointerup',end); cv.addEventListener('pointercancel',end);
@@ -4997,20 +5028,30 @@ function startDuelUI(m){
  $('duellast').textContent='Fight! Land hits to charge your Dragon Slash (50%).';
  renderDuelBar(); renderAll();
 }
+/* Stage 23: the duel row's prayer chips mirror the Prayers drawer —
+   active one lit gold, all greyed in a No Prayer duel (visual only;
+   the server is the real gate). */
+function syncBarPrayers(noPray){
+ for(const pr of ['melee','missiles','magic']){ const b=$('duelpray-'+pr); if(!b) continue;
+   b.classList.toggle('on',!!me&&me.activePrayer===pr);
+   b.classList.toggle('ruledis',!!noPray); }
+}
 function renderDuelBar(){
  if(!duel) return;
  $('hpyou').style.width=clamp(duel.hpYou/99*100,0,100)+'%'; $('hpyouv').textContent=duel.hpYou;
  $('hpopp').style.width=clamp(duel.hpOpponent/99*100,0,100)+'%'; $('hpoppv').textContent=duel.hpOpponent;
+ $('duelctx').textContent=`⚔️ ${duel.opponent}`;
  const consum=(me?me.backpack:[]).filter(s=>catalog[s.item]&&(catalog[s.item].kind==='food'||catalog[s.item].kind==='potion'));
  // Stage 14: controls the agreed rules ban are greyed out (visual
  // only — the server is the real gate and answers with the 🚫 line).
  const R=duel.rules||{};
+ syncBarPrayers(!!R.noPrayer);
  // Stage 18: a No Movement duel says so in the strip and greys the
  // joystick out (the server ignores duelists' moves anyway).
  const nmEl=$('duelnomove'); if(nmEl) nmEl.style.display=R.noMovement?'block':'none';
  const joyEl=$('joy'); if(joyEl) joyEl.style.opacity=R.noMovement?'0.35':'';
- let h=`<button class="act${R.noSpecial?' ruledis':''}" id="specbtn">⚡ Dragon Slash (${duel.energyYou}%)</button>`;
- for(const s of consum){ const dis=(R.noFood&&catalog[s.item].kind==='food')||(R.noPotions&&catalog[s.item].kind==='potion'); h+=`<button class="ghost${dis?' ruledis':''}" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}</button>`; }
+ let h=`<button class="fchip spec${R.noSpecial?' ruledis':''}" id="specbtn" title="Dragon Slash">⚡ ${duel.energyYou}%</button>`;
+ for(const s of consum){ const dis=(R.noFood&&catalog[s.item].kind==='food')||(R.noPotions&&catalog[s.item].kind==='potion'); h+=`<button class="fchip${dis?' ruledis':''}" title="${esc(nameOf(s.item))}" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ×${s.qty}</button>`; }
  $('duelquick').innerHTML=h;
  const sb=$('specbtn');
  sb.classList.toggle('ready',duel.energyYou>=50);
@@ -5083,9 +5124,12 @@ function renderNpcBar(){
  const joyNpc=$('joy'); if(joyNpc) joyNpc.style.opacity='';
  $('hpyou').style.width=clamp(npcFight.hpYou/Math.max(1,npcFight.maxHpYou)*100,0,100)+'%'; $('hpyouv').textContent=npcFight.hpYou;
  $('hpopp').style.width=clamp(npcFight.hpNpc/Math.max(1,npcFight.maxHpNpc)*100,0,100)+'%'; $('hpoppv').textContent=npcFight.hpNpc;
+ const kindIcon=npcFight.kind==='barrows'?'💀':npcFight.kind==='wizard'?'🧙':npcFight.kind==='ranger'?'🏹':'🥊';
+ $('duelctx').textContent=`${kindIcon} ${npcFight.name}`;
+ syncBarPrayers(false);
  const consum=(me?me.backpack:[]).filter(s=>catalog[s.item]&&(catalog[s.item].kind==='food'||catalog[s.item].kind==='potion'));
- let h=`<button class="act" id="specbtn">⚡ Dragon Slash (${npcFight.energyYou}%)</button>`;
- for(const s of consum) h+=`<button class="ghost" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}</button>`;
+ let h=`<button class="fchip spec" id="specbtn" title="Dragon Slash">⚡ ${npcFight.energyYou}%</button>`;
+ for(const s of consum) h+=`<button class="fchip" title="${esc(nameOf(s.item))}" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ×${s.qty}</button>`;
  $('duelquick').innerHTML=h;
  const sb=$('specbtn');
  sb.classList.toggle('ready',npcFight.energyYou>=50);
@@ -5098,6 +5142,7 @@ function npcFightUI(m){
    stopFollow();
    cancelUse(true);
    npcFight={npcId:m.npcId,kind:m.kind||'goblin',name:m.name||'Goblin',combatLevel:m.combatLevel||5,hpYou:m.hpYou,maxHpYou:m.maxHpYou,hpNpc:m.hpNpc,maxHpNpc:m.maxHpNpc,energyYou:Math.floor(m.energyYou||0)};
+   renderBarrowsBar(); // Stage 23: a brother fight hides the Barrows tracker — clear screen in combat
    $('duelbar').classList.add('open');
    $('duelflee').style.display='block';
    if(m.kind==='barrows'){
@@ -5159,6 +5204,7 @@ function npcFightUI(m){
    npcFight=null;
    const endBa=npcAvatars[m.npcId]; if(endBa&&!endBa.isBrother) hideHpBar(endBa); // goblin: fight over — the bar hands back to the snapshot rule (brothers' avatars are removed below)
    $('duelbar').classList.remove('open');
+   renderBarrowsBar(); // Stage 23: fight over — the Barrows tracker may come back
    $('duelflee').style.display='none';
    if(m.profile){ me=m.profile; }
    if(wasBarrows){
@@ -5195,9 +5241,11 @@ function renderModDuelBar(){
  const joyEl=$('joy'); if(joyEl) joyEl.style.opacity='';
  $('hpyou').style.width=clamp(modDuel.hpYou/99*100,0,100)+'%'; $('hpyouv').textContent=modDuel.hpYou;
  $('hpopp').style.width=clamp(modDuel.hpNpc/99*100,0,100)+'%'; $('hpoppv').textContent=modDuel.hpNpc;
+ $('duelctx').textContent=`⭐ ${modDuel.name} · Tier ${modDuel.tier}`;
+ syncBarPrayers(false);
  const consum=(me?me.backpack:[]).filter(s=>catalog[s.item]&&(catalog[s.item].kind==='food'||catalog[s.item].kind==='potion'));
- let h=`<button class="act" id="specbtn">⚡ Dragon Slash (${modDuel.energyYou}%)</button>`;
- for(const s of consum) h+=`<button class="ghost" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}</button>`;
+ let h=`<button class="fchip spec" id="specbtn" title="Dragon Slash">⚡ ${modDuel.energyYou}%</button>`;
+ for(const s of consum) h+=`<button class="fchip" title="${esc(nameOf(s.item))}" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ×${s.qty}</button>`;
  $('duelquick').innerHTML=h;
  const sb=$('specbtn');
  sb.classList.toggle('ready',modDuel.energyYou>=50);
@@ -5310,8 +5358,8 @@ function renderFcBar(){
  }
  for(const pr of ['melee','missiles','magic']){ const b=$('fcpray-'+pr); if(b) b.classList.toggle('on',!!me&&me.activePrayer===pr); }
  const consum=(me?me.backpack:[]).filter(s=>catalog[s.item]&&(catalog[s.item].kind==='food'||catalog[s.item].kind==='potion'));
- let h=`<button class="act" id="fcspecbtn">⚡ Dragon Slash (${Math.floor(fcRun.energyYou||0)}%)</button>`;
- for(const s of consum) h+=`<button class="ghost" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}</button>`;
+ let h=`<button class="fchip spec" id="fcspecbtn" title="Dragon Slash">⚡ ${Math.floor(fcRun.energyYou||0)}%</button>`;
+ for(const s of consum) h+=`<button class="fchip" title="${esc(nameOf(s.item))}" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ×${s.qty}</button>`;
  $('fcquick').innerHTML=h;
  const sb=$('fcspecbtn');
  sb.classList.toggle('ready',(fcRun.energyYou||0)>=50);
@@ -5450,6 +5498,7 @@ function openFcStart(){
 }
 window.startFcRun=function(){ closeModal('fcstartmodal'); send({type:'fc_start'}); };
 for(const pr of ['melee','missiles','magic']){ const b=$('fcpray-'+pr); if(b) b.onclick=()=>send({type:'prayer',prayer:pr}); }
+for(const pr of ['melee','missiles','magic']){ const b=$('duelpray-'+pr); if(b) b.onclick=()=>send({type:'prayer',prayer:pr}); }
 $('fcleavebtn').onclick=()=>send({type:'fc_leave'});
 $('jadwarn').onclick=()=>{ if(jadWarnStyle){ send({type:'prayer',prayer:jadWarnStyle}); } $('jadwarn').style.display='none'; };
 
@@ -5716,6 +5765,7 @@ function wireBpCells(){
    let sx=0,sy=0,lx=0,ly=0,downAt=0,pid=null,holdT=null,holdFired=false,dragging=false,dead=false,ghost=null;
    const clearHold=()=>{ if(holdT){ clearTimeout(holdT); holdT=null; } };
    cell.addEventListener('pointerdown',e=>{
+     if(grabMode) return; // Stage 23: Grab is modal — backpack taps and drags do nothing while arranging
      pid=e.pointerId; sx=lx=e.clientX; sy=ly=e.clientY; downAt=Date.now(); holdFired=false; dragging=false; dead=false;
      if(useMode){ dead=true; toast('Nothing happens.'); cancelUse(true); return; } // a backpack tap resolves use-mode
      holdT=setTimeout(()=>{ holdT=null; if(!dragging&&!dead){ holdFired=true; selStack=item; examineStack=null; renderDrawer(); } },450);
@@ -5770,7 +5820,8 @@ function wireBankDrag(){
  bpGrid.querySelectorAll('.cell[data-item]').forEach(cell=>{
    const item=cell.dataset.item, qty=+cell.dataset.qty||1;
    let sx=0,sy=0,downAt=0,pid=null,dragging=false,dead=false,ghost=null;
-   cell.addEventListener('pointerdown',e=>{ pid=e.pointerId; sx=e.clientX; sy=e.clientY; downAt=Date.now(); dragging=false; dead=false; });
+   cell.addEventListener('pointerdown',e=>{ if(grabMode) return; // Stage 23: Grab is modal — bank drags do nothing while arranging
+     pid=e.pointerId; sx=e.clientX; sy=e.clientY; downAt=Date.now(); dragging=false; dead=false; });
    cell.addEventListener('pointermove',e=>{
      if(pid===null||e.pointerId!==pid||dead) return;
      const dist=Math.hypot(e.clientX-sx,e.clientY-sy);
@@ -5815,6 +5866,7 @@ function ctxExamine(title,body){
 }
 function handleLongPress(cx,cy){
  if(!me) return;
+ if(grabMode) return; // Stage 23: Grab is modal — no context menus while arranging
  lastManualTapAt=Date.now();
  if(useMode){ toast('Nothing happens.'); cancelUse(true); return; }
  const hit=detectWorldTap(cx,cy);
@@ -5979,12 +6031,33 @@ function applyBtnPositions(){
 let grabMode=false;
 function setGrabMode(on){
  grabMode=!!on;
+ if(grabMode){
+   // Stage 23: Grab is modal — freeze every pending input NOW so the
+   // knight stops dead the moment arranging starts (stepMovement also
+   // refuses to move while grabMode is on).
+   tapTarget=null; pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false;
+   joyVec={x:0,y:0}; camVec={x:0,y:0};
+ }
  const gb=$('railgrab');
  if(gb){ gb.classList.toggle('on',grabMode); gb.textContent=grabMode?'✋ Grab: On':'✋ Grab'; }
  document.body.classList.toggle('grabbing',grabMode);
- toast(grabMode?'✋ Grab on — drag the buttons where you want them, then toggle Grab off to lock them.':'🔒 Buttons locked in place.');
+ toast(grabMode?'✋ Grab on — drag the buttons where you want them. Everything else is paused until you tap Grab again to lock.':'🔒 Buttons locked in place.');
 }
 $('railgrab').onclick=()=>setGrabMode(!grabMode);
+/* Stage 23: the central Grab gate for click-driven UI. While Grab is
+   on, the ONLY clicks that land are the master 🎛️ toggle (#gearbtn —
+   it reveals the rail the Grab chip lives on) and the Grab chip
+   itself. Every other click — panels, fight row, quickbar, orbs,
+   modals, chat — is swallowed here before it reaches its handler.
+   Pointer-driven paths (world taps, long-press, joystick, minimap,
+   backpack drags) check grabMode in their own handlers; movement
+   itself is frozen in stepMovement. */
+document.addEventListener('click',e=>{
+ if(!grabMode) return;
+ const t=e.target;
+ if(t&&t.closest&&t.closest('#gearbtn,#railgrab')) return; // arranging controls stay live
+ e.preventDefault(); e.stopPropagation();
+},true);
 document.querySelectorAll('#railset .rbtn').forEach(b=>{
  let pid=null,sx=0,sy=0,startL=0,startT=0,dragging=false;
  b.addEventListener('pointerdown',e=>{
