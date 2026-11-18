@@ -427,6 +427,14 @@
    <button class="ghost" id="barrowsleavebtn" style="flex:1">🪜 Climb out</button>
   </div>
  </div>
+ <div id="barrowscrypt" style="display:none">
+  <div class="note" id="barrowscryptname" style="text-align:center"></div>
+  <div style="display:flex;gap:5px;margin-top:6px">
+   <button class="act" id="barrowssearchbtn" style="flex:1">🔍 Search sarcophagus</button>
+   <button class="act" id="barrowsdescendbtn" style="flex:1;display:none">🕳️ Descend to the tunnels</button>
+   <button class="ghost" id="barrowsclimboutbtn" style="flex:1">🪜 Climb out</button>
+  </div>
+ </div>
  <div class="note" id="barrowshint" style="text-align:center"></div>
 </div>
 
@@ -817,6 +825,7 @@ function onMsg(m){
  if(m.type==='barrows_puzzle'){ onBarrowsPuzzle(m); }
  if(m.type==='barrows_puzzle_result'){ onBarrowsPuzzleResult(m); }
  if(m.type==='barrows_loot'){ onBarrowsLoot(m); }
+ if(m.type==='run_drained'){ runDrainedUntil=m.until||0; if(runDrainedUntil>Date.now()) toast('💨 Your run is drained — you can only walk for a few seconds!'); } // Stage 28: Torag's run drain
  if(m.type==='gather_result'){ onGatherResult(m); }
  if(m.type==='fire_lit'){ toast('🔥 Fire lit (60s)'); }
  if(m.type==='cook_result'){ if(m.ok) toast(`🍳 Cooked! +1 ${nameOf(m.item)}`); else toast('🔥 Burnt it…'); }
@@ -838,7 +847,6 @@ function onMsg(m){
  if(m.type==='chat'){ logLine(`${m.from}: ${m.text}`); showBubble(m.from,m.text); }
  if(m.type==='error'){ toast('⚠️ '+m.message); logLine('⚠️ '+m.message);
    if(pendingGiveAfterSign){ pendingGiveAfterSign=null; } // the sign failed — the error above says why
-   if(/Wrong combination/.test(m.message||'')){ puzzleAnswer=[]; renderPuzzle(); /* the server auto-sends a fresh puzzle */ }
    if(/chest is locked behind the puzzle door/.test(m.message||'')){ puzzleSolved=false; renderBarrowsBar(); openPuzzle(); }
    if(activeNode && /level|used up|not here|No such spot/.test(m.message||'')) stopGather();
    if(/^Too far/.test(m.message||'')&&lastAttackTry&&Date.now()-lastAttackTry.at<1500){
@@ -1020,7 +1028,8 @@ function onPlayerLevelUp(m){
 const CLOG_SECTIONS=[
  {title:'⚰️ Barrows Brothers',entries:[['dharok','Dharok the Wretched'],['guthan','Guthan the Infested'],['torag','Torag the Corrupted'],['verac','Verac the Defiled'],['ahrim','Ahrim the Blighted'],['karil','Karil the Tainted']]},
  {title:'🌋 Minigames',entries:[['fire_cape','Fire cape — clear the Fight Caves']]},
- {title:'💎 Rare Barrows Loot',entries:[['dharoks_greataxe',"Dharok's greataxe"],['guthans_warspear',"Guthan's warspear"],['torags_hammers',"Torag's hammers"],['veracs_flail',"Verac's flail"],['ahrims_staff',"Ahrim's staff"],['karils_crossbow',"Karil's crossbow"]]},
+ {title:'💎 Rare Barrows Loot',entries:[['dharoks_greataxe',"Dharok's greataxe"],['guthans_warspear',"Guthan's warspear"],['torags_hammers',"Torag's hammers"],['veracs_flail',"Verac's flail"],['ahrims_staff',"Ahrim's staff"],['karils_crossbow',"Karil's crossbow"],['dharoks_helm',"Dharok's helm"],['ahrims_hood',"Ahrim's hood"],['karils_coif',"Karil's coif"],['karils_top',"Karil's top"],['guthans_chainskirt',"Guthan's chainskirt"],['karils_leatherskirt',"Karil's leatherskirt"],['karils_boots',"Karil's boots"]]},
+ {title:'👻 Barrows Tier Armour',entries:['Bronze','Iron','Steel','Mithril','Adamant','Rune','Dragon','Torva','Necro'].flatMap(tn=>['Helm','Platebody','Platelegs','Boots'].map(sfx=>[`barrows_${tn.toLowerCase()}_${sfx.toLowerCase()}`,`Barrows ${tn} ${sfx}`]))},
 ];
 function pGoals(){
  let h=`<h4 style="margin:2px 0 5px;color:#e3c766">📋 Starter Goals</h4>`;
@@ -1823,15 +1832,34 @@ const BARROWS_CLIENT={ // mound spots in server coords — MUST match the server
 };
 const BARROWS_ORDER=['dharok','guthan','torag','verac','ahrim','karil'];
 const PRAYER_FOR_TYPE={melee:['🛡️','Deflect from Melee'],magic:['🔮','Deflect from Magic'],missiles:['🏹','Deflect from Missiles']};
-let barrowsState={kills:[],tunnel:null,inTunnels:false};
+let barrowsState={kills:[],tunnel:null,inTunnels:false,crypt:null,inCrypt:false,runs:0};
 let barrowsBarHidden=false;
 let pendingMound=null; // brother id — walk to his mound, enter on arrival
 let pendingPile=null; // pile id — walk to it, pick up on arrival
 let pendingChest=false; // walk to the tunnels chest, loot on arrival
 let moundProps={}; // brother id -> {x,z,labelY,labelEl} (world coords, tap tests)
 let moundGroups={}; // brother id -> {group,ring,dimmed}
-let puzzleSolved=false, puzzleSeq=[], puzzleAnswer=[];
-const PUZZLE_EMOJI={circle:'⚪',square:'🟦',triangle:'🔺',diamond:'🔷'};
+let puzzleSolved=false, puzzleShown=[], puzzleOptions=[]; // Stage 28: the app's pattern puzzle (shown shapes + 3 options)
+let runDrainedUntil=0; // Stage 28: Torag's run drain — walk-only while this is in the future
+let cryptMouthGroup=null, cryptLabelEl=null, tunnelDoorGroup=null; // Stage 28: state-driven crypt/tunnel props
+/* Stage 28 Barrows geometry (server units — mirrors the server's
+   CRYPT_ROOM / TUNNEL_ROOMS / solids exactly, for walls + collision) */
+const CRYPT_ROOM_C={x0:560,x1:1040,y0:140,y1:660};
+const CRYPT_SARCO_C={x:800,y:400,hx:36,hy:56};
+const TUNNEL_ROOMS_C=[{x0:680,x1:920,y0:690,y1:860},{x0:764,x1:836,y0:470,y1:690},{x0:250,x1:1360,y0:385,y1:475},{x0:764,x1:836,y0:215,y1:385},{x0:580,x1:1020,y0:60,y1:215}];
+const TUNNEL_DOOR_C={x0:764,x1:836,y0:378,y1:392};
+const TUNNEL_CHEST_C={x:800,y:120,hx:46,hy:30};
+function stoneWallBox(S,cx,cz,w,d){
+ const m=new THREE.Mesh(new THREE.BoxGeometry(w,3,d),new THREE.MeshLambertMaterial({map:stoneTexture(Math.max(2,Math.round(Math.max(w,d)/2)),2),color:0x6a655c}));
+ m.position.set(cx,1.5,cz); S.add(m); return m;
+}
+function buildLitTorch(root,x,z,withLight){ // world coords, like buildTorch — plus an iron bowl, and (budgeted) a real flickering point light
+ box(0.16,2.0,0.16,0x5a4020,x,1.0,z,root);
+ box(0.52,0.22,0.52,0x2e2a26,x,2.05,z,root);
+ const fl=new THREE.Mesh(new THREE.ConeGeometry(0.28,0.7,6),new THREE.MeshBasicMaterial({color:0xff7b24})); fl.position.set(x,2.45,z); root.add(fl);
+ const fl2=new THREE.Mesh(new THREE.ConeGeometry(0.15,0.45,6),new THREE.MeshBasicMaterial({color:0xffd75e})); fl2.position.set(x,2.43,z); root.add(fl2);
+ if(withLight){ const pl=new THREE.PointLight(0xff9a3c,0.9,16); pl.position.set(x,2.7,z); root.add(pl); flickerLights.push({light:pl,flame:fl,flame2:fl2,phase:Math.random()*10}); }
+}
 
 function buildBarrows(root){
  const S=root;
@@ -1893,30 +1921,105 @@ function refreshBarrowsMounds(){
    }
  }
 }
-function buildBarrowsTunnels(root){
+/* Stage 28: the crypt — ONE torch-lit stone room reused for all six
+   brothers (the app's structure): sarcophagus at the centre, the
+   ladder you climbed down at the south end, and (in the tunnel
+   crypt only) the dark mouth in the north wall that leads down. */
+function buildBarrowsCrypt(root){
  const S=root;
- const floor=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x14101c}));
- floor.rotation.x=-Math.PI/2; S.add(floor);
- rockWallRun(S,-80,-45,80,-45); rockWallRun(S,-80,45,80,45);
- rockWallRun(S,-80,-45,-80,45); rockWallRun(S,80,-45,80,45);
- buildTorch(S,-28,-28); buildTorch(S,28,-28); buildTorch(S,-28,28); buildTorch(S,28,28); buildTorch(S,0,-40);
- // reward chest at the centre (server 800,450 -> world 0,0)
- const chest=new THREE.Group(); chest.position.set(0,0,0); S.add(chest);
- box(1.8,0.9,1.1,0x6b4a1f,0,0.45,0,chest);
- box(1.9,0.35,1.2,0x8a6d1f,0,1.05,0,chest);
- box(0.35,0.4,0.12,0xffd75e,0,0.75,0.58,chest); // gold clasp
- const clabel=document.createElement('div'); clabel.className='plabel';
- clabel.innerHTML=`<div class="nname">💰 Reward chest</div>`;
- $('labels').appendChild(clabel);
- worldLabels.push({el:clabel,x:0,y:2.2,z:0,area:'barrows_tunnels',kind:'static'});
- // ladder near the spawn corner (server 870,520 — Stage 13: x2)
- const lad=new THREE.Group(); lad.position.set(sx2w(870),0,sy2w(520)); S.add(lad);
+ const base=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x0d0a12}));
+ base.rotation.x=-Math.PI/2; S.add(base);
+ const fx0=sx2w(CRYPT_ROOM_C.x0),fx1=sx2w(CRYPT_ROOM_C.x1),fz0=sy2w(CRYPT_ROOM_C.y0),fz1=sy2w(CRYPT_ROOM_C.y1);
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(fx1-fx0,fz1-fz0),new THREE.MeshLambertMaterial({map:stoneTexture(10,10),color:0x8a8578}));
+ floor.rotation.x=-Math.PI/2; floor.position.set((fx0+fx1)/2,0.02,(fz0+fz1)/2); S.add(floor);
+ stoneWallBox(S,(fx0+fx1)/2,fz0,fx1-fx0+0.6,0.6); stoneWallBox(S,(fx0+fx1)/2,fz1,fx1-fx0+0.6,0.6);
+ stoneWallBox(S,fx0,(fz0+fz1)/2,0.6,fz1-fz0+0.6); stoneWallBox(S,fx1,(fz0+fz1)/2,0.6,fz1-fz0+0.6);
+ // the sarcophagus — a stone coffin at the room's centre (server 800,400)
+ const sg=new THREE.Group(); sg.position.set(sx2w(800),0,sy2w(400)); S.add(sg);
+ box(7.2,1.1,11.2,0x6e6a60,0,0.55,0,sg);
+ box(7.6,0.35,11.6,0x7c7665,0,1.25,0,sg); // lid rim
+ box(2.2,0.5,3.2,0x4a4436,0,1.55,0,sg); // raised centre stone
+ cryptLabelEl=document.createElement('div'); cryptLabelEl.className='plabel';
+ cryptLabelEl.innerHTML=`<div class="nname">⚰️ Sarcophagus</div>`;
+ $('labels').appendChild(cryptLabelEl);
+ worldLabels.push({el:cryptLabelEl,x:sx2w(800),y:3.0,z:sy2w(400),area:'barrows_crypt',kind:'static'});
+ // the ladder back up (south end, server 800,615)
+ const lad=new THREE.Group(); lad.position.set(sx2w(800),0,sy2w(615)); S.add(lad);
  box(0.14,2.6,0.14,0x8a6d4a,-0.35,1.3,0,lad); box(0.14,2.6,0.14,0x8a6d4a,0.35,1.3,0,lad);
  for(let i=0;i<4;i++) box(0.85,0.1,0.1,0xa8845a,0,0.5+i*0.55,0,lad);
  const llabel=document.createElement('div'); llabel.className='plabel';
  llabel.innerHTML=`<div class="nname">🪜 Climb out</div>`;
  $('labels').appendChild(llabel);
- worldLabels.push({el:llabel,x:sx2w(870),y:3.2,z:sy2w(520),area:'barrows_tunnels',kind:'static'});
+ worldLabels.push({el:llabel,x:sx2w(800),y:3.2,z:sy2w(615),area:'barrows_crypt',kind:'static'});
+ // the tunnel mouth (north wall) — only in the tunnel crypt; its
+ // visibility follows the run state (see renderBarrowsBar)
+ cryptMouthGroup=new THREE.Group(); cryptMouthGroup.position.set(sx2w(800),0,sy2w(150)); S.add(cryptMouthGroup);
+ const mouth=new THREE.Mesh(new THREE.PlaneGeometry(6,3),new THREE.MeshBasicMaterial({color:0x050308}));
+ mouth.position.set(0,1.5,0.35); cryptMouthGroup.add(mouth);
+ box(0.5,3.2,0.5,0x7c7565,-3.2,1.6,0.3,cryptMouthGroup); box(0.5,3.2,0.5,0x7c7565,3.2,1.6,0.3,cryptMouthGroup);
+ const mlabel=document.createElement('div'); mlabel.className='plabel';
+ mlabel.innerHTML=`<div class="nname">🕳️ Down to the tunnels</div>`;
+ $('labels').appendChild(mlabel);
+ worldLabels.push({el:mlabel,x:sx2w(800),y:3.6,z:sy2w(150),area:'barrows_crypt',kind:'static'});
+ // torches: four around the room, two carrying real point lights
+ buildLitTorch(S,sx2w(600),sy2w(200),true); buildLitTorch(S,sx2w(1000),sy2w(200),false);
+ buildLitTorch(S,sx2w(600),sy2w(620),false); buildLitTorch(S,sx2w(1000),sy2w(620),true);
+}
+/* Stage 28: the tunnels as a MAZE (the app's structure): entry room
+   with the ladder, a corridor north, a wide middle band, the
+   puzzle-door corridor, and the chest room at the far end. Walls
+   follow the room union's outline exactly (server coords). */
+const TUNNEL_WALLS_C=[[680,860,920,860],[920,860,920,690],[920,690,836,690],[836,690,836,475],[836,475,1360,475],[1360,475,1360,385],[1360,385,836,385],[836,385,836,215],[836,215,1020,215],[1020,215,1020,60],[1020,60,580,60],[580,60,580,215],[580,215,764,215],[764,215,764,385],[764,385,250,385],[250,385,250,475],[250,475,764,475],[764,475,764,690],[764,690,680,690],[680,690,680,860]];
+function buildBarrowsTunnels(root){
+ const S=root;
+ const base=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x0d0a12}));
+ base.rotation.x=-Math.PI/2; S.add(base);
+ for(const r of TUNNEL_ROOMS_C){
+   const fx0=sx2w(r.x0),fx1=sx2w(r.x1),fz0=sy2w(r.y0),fz1=sy2w(r.y1);
+   const fl=new THREE.Mesh(new THREE.PlaneGeometry(fx1-fx0,fz1-fz0),new THREE.MeshLambertMaterial({map:stoneTexture(8,8),color:0x7d786c}));
+   fl.rotation.x=-Math.PI/2; fl.position.set((fx0+fx1)/2,0.02,(fz0+fz1)/2); S.add(fl);
+ }
+ for(const [x0,y0,x1,y1] of TUNNEL_WALLS_C){
+   const wx0=sx2w(x0),wz0=sy2w(y0),wx1=sx2w(x1),wz1=sy2w(y1);
+   stoneWallBox(S,(wx0+wx1)/2,(wz0+wz1)/2,Math.abs(wx1-wx0)+0.6,Math.abs(wz1-wz0)+0.6);
+ }
+ // flavour: old coffins along the west band
+ for(const cx of [350,470,590]){
+   const cg=new THREE.Group(); cg.position.set(sx2w(cx),0,sy2w(430)); S.add(cg);
+   box(3.4,0.9,6.4,0x5d594f,0,0.45,0,cg); box(3.7,0.3,6.7,0x6e6a60,0,1.05,0,cg);
+ }
+ // the puzzle door: posts + iron bars across corridor B (server y 385)
+ tunnelDoorGroup=new THREE.Group(); S.add(tunnelDoorGroup);
+ box(0.6,3.4,0.6,0x7c7565,sx2w(764),1.7,sy2w(385),tunnelDoorGroup); box(0.6,3.4,0.6,0x7c7565,sx2w(836),1.7,sy2w(385),tunnelDoorGroup);
+ for(let i=0;i<5;i++) box(0.18,3.0,0.18,0x3a3f4a,sx2w(776+i*12),1.5,sy2w(385),tunnelDoorGroup);
+ box(7.8,0.3,0.3,0x3a3f4a,sx2w(800),3.0,sy2w(385),tunnelDoorGroup);
+ const dlabel=document.createElement('div'); dlabel.className='plabel';
+ dlabel.innerHTML=`<div class="nname">🧩 Puzzle door</div>`;
+ $('labels').appendChild(dlabel);
+ worldLabels.push({el:dlabel,x:sx2w(800),y:3.8,z:sy2w(385),area:'barrows_tunnels',kind:'static'});
+ // reward chest in the chest room (server 800,120) — big and golden: the goal
+ const chest=new THREE.Group(); chest.position.set(sx2w(800),0,sy2w(120)); S.add(chest);
+ box(9.2,2.2,6.0,0x6b4a1f,0,1.1,0,chest);
+ box(9.6,0.8,6.4,0x8a6d1f,0,2.6,0,chest);
+ box(0.9,1.0,0.3,0xffd75e,0,1.8,3.05,chest); // gold clasp
+ const glow=new THREE.PointLight(0xffd75e,0.5,12); glow.position.set(0,3.4,0); chest.add(glow);
+ const clabel=document.createElement('div'); clabel.className='plabel';
+ clabel.innerHTML=`<div class="nname">💰 Reward chest</div>`;
+ $('labels').appendChild(clabel);
+ worldLabels.push({el:clabel,x:sx2w(800),y:3.6,z:sy2w(120),area:'barrows_tunnels',kind:'static'});
+ // ladder in the entry room (server 860,800)
+ const lad=new THREE.Group(); lad.position.set(sx2w(860),0,sy2w(800)); S.add(lad);
+ box(0.14,2.6,0.14,0x8a6d4a,-0.35,1.3,0,lad); box(0.14,2.6,0.14,0x8a6d4a,0.35,1.3,0,lad);
+ for(let i=0;i<4;i++) box(0.85,0.1,0.1,0xa8845a,0,0.5+i*0.55,0,lad);
+ const llabel=document.createElement('div'); llabel.className='plabel';
+ llabel.innerHTML=`<div class="nname">🪜 Climb out</div>`;
+ $('labels').appendChild(llabel);
+ worldLabels.push({el:llabel,x:sx2w(860),y:3.2,z:sy2w(800),area:'barrows_tunnels',kind:'static'});
+ // torches along the maze — three carry real point lights
+ buildLitTorch(S,sx2w(710),sy2w(720),true); buildLitTorch(S,sx2w(800),sy2w(560),false);
+ buildLitTorch(S,sx2w(400),sy2w(430),true); buildLitTorch(S,sx2w(1200),sy2w(430),false);
+ buildLitTorch(S,sx2w(800),sy2w(300),false);
+ buildLitTorch(S,sx2w(640),sy2w(110),true); buildLitTorch(S,sx2w(960),sy2w(110),false);
 }
 /* ---- Duel arena (Stage 5): one pit, recoloured per duel variant ---- */
 const ARENA_VARIANTS={
@@ -1984,33 +2087,58 @@ function buildWaiting(root){
 }
 /* ---- Barrows state + HUD ---- */
 function onBarrowsState(m){
- barrowsState={kills:m.kills||[],tunnel:m.tunnel||null,inTunnels:!!m.inTunnels};
+ barrowsState={kills:m.kills||[],tunnel:m.tunnel||null,inTunnels:!!m.inTunnels,crypt:m.crypt||null,inCrypt:!!m.inCrypt,runs:m.runs||0};
+ puzzleSolved=!!m.puzzleSolved; // Stage 28: solved is saved on the run now (it survives climbing out, logging out, dying)
  refreshBarrowsMounds();
  renderBarrowsBar();
  drawMinimap();
 }
 function renderBarrowsBar(){
- const inB=(curArea==='barrows'||curArea==='barrows_tunnels');
+ const inB=(curArea==='barrows'||curArea==='barrows_tunnels'||curArea==='barrows_crypt');
  // Stage 23: hidden mid-fight — in combat the screen stays clear;
  // it comes back on its own when the fight ends.
  if(!inB||barrowsBarHidden||npcFight){ $('barrowsbar').classList.remove('open'); return; }
  $('barrowsbar').classList.add('open');
  const n=barrowsState.kills.length;
- $('barrowstitle').textContent=`💀 Barrows — kills ${n}/6`;
+ $('barrowstitle').textContent=`💀 Barrows — kills ${n}/6 · 🏁 ${barrowsState.runs||0} runs`;
  $('barrowslist').innerHTML=BARROWS_ORDER.map(id=>{
    const b=BARROWS_CLIENT[id], slain=barrowsState.kills.includes(id), tun=barrowsState.tunnel===id;
    return `<span class="bchip${slain?' slain':''}${tun?' tun':''}">${slain?'✓':'✗'} ${b.short}${tun?' 🕳️':''}</span>`;
  }).join('');
  const inT=curArea==='barrows_tunnels';
  $('barrowstun').style.display=inT?'block':'none';
- if(inT) $('barrowspuz').textContent=puzzleSolved? '🧩 Puzzle door: solved ✓ — the chest is open.' : '🧩 Puzzle door: locked — tap the chest to face it.';
- $('barrowshint').textContent=inT? 'Loot the chest (needs 5+ kills) or climb out — your kills are kept either way.'
+ if(inT) $('barrowspuz').textContent=puzzleSolved? '🧩 Puzzle door: solved ✓ — the chest is open.' : '🧩 Puzzle door: locked — solve it at the barred door in the north corridor.';
+ const inC=curArea==='barrows_crypt';
+ $('barrowscrypt').style.display=inC?'block':'none';
+ if(inC){
+   const b=BARROWS_CLIENT[barrowsState.crypt]||{};
+   const isTun=!!barrowsState.crypt&&barrowsState.crypt===barrowsState.tunnel;
+   const slain=!!barrowsState.crypt&&barrowsState.kills.includes(barrowsState.crypt);
+   $('barrowscryptname').textContent=isTun? `🕳️ ${b.name||''}'s crypt — the tunnel entrance` : slain? `⚰️ ${b.name||''}'s crypt — already slain` : `⚰️ ${b.name||''}'s crypt`;
+   $('barrowssearchbtn').style.display=isTun?'none':'';
+   $('barrowsdescendbtn').style.display=isTun?'':'none';
+ }
+ $('barrowshint').textContent=inT? 'Loot the chest or climb out — your kills, tunnel and solved puzzle are kept either way.'
+   : inC? 'Search the sarcophagus to wake the brother — he rises right beside you.'
    : 'Tap a mound to enter its crypt. The 🕳️ mound leads down to the tunnels.';
+ // Stage 28: state-driven props — the puzzle door's bars lift once
+ // solved; the crypt's tunnel mouth shows only in the tunnel crypt;
+ // the sarcophagus label names the brother whose crypt this is.
+ if(tunnelDoorGroup) tunnelDoorGroup.visible=!puzzleSolved;
+ if(cryptMouthGroup) cryptMouthGroup.visible=!!(barrowsState.crypt&&barrowsState.crypt===barrowsState.tunnel);
+ if(cryptLabelEl){
+   const b=BARROWS_CLIENT[barrowsState.crypt];
+   const isTun=!!barrowsState.crypt&&barrowsState.crypt===barrowsState.tunnel;
+   cryptLabelEl.innerHTML=b? `<div class="nname">${isTun?'🕳️ Tunnel entrance':`⚰️ ${esc(b.name)}'s sarcophagus`}</div>` : `<div class="nname">⚰️ Sarcophagus</div>`;
+ }
 }
 $('barrowsx').onclick=()=>{ barrowsBarHidden=true; $('barrowsbar').classList.remove('open'); };
 $('barrowspuzbtn').onclick=()=>{ openPuzzle(); };
 $('barrowschestbtn').onclick=()=>{ tapChest(); };
 $('barrowsleavebtn').onclick=()=>{ send({type:'barrows_leave_tunnel'}); };
+$('barrowssearchbtn').onclick=()=>{ send({type:'barrows_search'}); };
+$('barrowsdescendbtn').onclick=()=>{ send({type:'barrows_descend'}); };
+$('barrowsclimboutbtn').onclick=()=>{ send({type:'barrows_leave_crypt'}); };
 function tapMound(id){
  if(!myPos) return;
  const b=BARROWS_CLIENT[id]; if(!b) return;
@@ -2030,60 +2158,65 @@ function checkPendingMound(){
 /* ---- Tunnels: puzzle door, chest, loot ---- */
 function openPuzzle(){
  if(curArea!=='barrows_tunnels') return;
- puzzleAnswer=[];
  send({type:'barrows_puzzle'});
  $('puzzlemodal').classList.add('open');
  renderPuzzle();
 }
 function onBarrowsPuzzle(m){
- puzzleSeq=m.sequence||[];
- puzzleAnswer=[];
+ puzzleShown=m.shown||[];
+ puzzleOptions=m.options||[];
  if(!$('puzzlemodal').classList.contains('open')) $('puzzlemodal').classList.add('open');
  renderPuzzle();
 }
 function renderPuzzle(){
  const sh=$('puzzlesheet'); if(!sh) return;
- if(!puzzleSeq.length){ sh.innerHTML=`<h3>🧩 Puzzle door</h3><div class="note">Asking the door for its combination…</div><div class="btns"><button class="ghost" onclick="document.getElementById('puzzlemodal').classList.remove('open')">Close</button></div>`; return; }
+ if(!puzzleShown.length){ sh.innerHTML=`<h3>🧩 Puzzle door</h3><div class="note">Asking the door for its pattern…</div><div class="btns"><button class="ghost" onclick="document.getElementById('puzzlemodal').classList.remove('open')">Close</button></div>`; return; }
  sh.innerHTML=`<h3>🧩 Puzzle door</h3>
- <div class="note">The door shows a combination. Repeat it with the buttons below.</div>
- <div class="puzseq">${puzzleSeq.map(s=>PUZZLE_EMOJI[s]||'❓').join(' ')}</div>
- <div class="puzans">${puzzleAnswer.map(s=>PUZZLE_EMOJI[s]).join(' ')||'· · ·'}</div>
- <div class="puzbtns">${['circle','square','triangle','diamond'].map(s=>`<button class="puzbtn" onclick="window.puzPick('${s}')">${PUZZLE_EMOJI[s]}</button>`).join('')}</div>
- <div class="btns"><button class="ghost" onclick="window.puzClear()">Clear</button><button class="act" onclick="window.puzSubmit()">Submit</button><button class="ghost" onclick="document.getElementById('puzzlemodal').classList.remove('open')">Close</button></div>`;
+ <div class="note">The pattern is missing its last shape. Pick the shape that completes it — a wrong pick bites for 5 HP!</div>
+ <div class="puzseq">${puzzleShown.join(' ')}</div>
+ <div class="puzbtns">${puzzleOptions.map((s,i)=>`<button class="puzbtn" onclick="window.puzAnswer(${i})">${s}</button>`).join('')}</div>
+ <div class="note" id="puzmsg" style="min-height:14px"></div>
+ <div class="btns"><button class="ghost" onclick="document.getElementById('puzzlemodal').classList.remove('open')">Close</button></div>`;
 }
-window.puzPick=s=>{ if(puzzleAnswer.length<3){ puzzleAnswer.push(s); renderPuzzle(); } };
-window.puzClear=()=>{ puzzleAnswer=[]; renderPuzzle(); };
-window.puzSubmit=()=>{
- if(puzzleAnswer.length!==3){ toast('Pick 3 symbols first.'); return; }
- send({type:'barrows_puzzle_answer',answer:puzzleAnswer.slice()});
-};
+window.puzAnswer=i=>{ send({type:'barrows_puzzle_answer',index:i}); };
 function onBarrowsPuzzleResult(m){
- if(m.ok){ puzzleSolved=true; $('puzzlemodal').classList.remove('open'); toast('🧩 Puzzle solved! The chest is unlocked.'); renderBarrowsBar(); }
+ if(m.ok){ puzzleSolved=true; $('puzzlemodal').classList.remove('open'); toast(m.alreadySolved?'🧩 The puzzle door is already open.':'🧩 Puzzle solved! The door swings open.'); renderBarrowsBar(); return; }
+ // Stage 28: a wrong answer bites for 5 HP and the SAME puzzle stays open.
+ const el=$('puzmsg'); if(el) el.textContent=`🦷 The door bites you for 5! (${m.hpYou}/${m.maxHpYou} HP left down here)`;
+ toast('🦷 Wrong shape — the door bites you for 5 HP!');
 }
 function tapChest(){
  if(curArea!=='barrows_tunnels'||!myPos) return;
  if(npcFight){ toast('Finish this fight first!'); return; }
  if(!puzzleSolved){ openPuzzle(); return; }
- const d=Math.hypot(myPos.x-800,myPos.y-450);
+ const d=Math.hypot(myPos.x-800,myPos.y-120);
  if(d<=140){ send({type:'barrows_loot'}); }
- else { pendingChest=true; tapTarget={x:800,y:450}; toast('🚶 Walking to the reward chest…'); }
+ else { pendingChest=true; tapTarget={x:800,y:195}; toast('🚶 Walking to the reward chest…'); }
 }
 function checkPendingChest(){
  if(!pendingChest||!myPos) return;
- if(Math.hypot(myPos.x-800,myPos.y-450)<=140){ pendingChest=false; tapTarget=null; tapChest(); }
+ if(Math.hypot(myPos.x-800,myPos.y-120)<=140){ pendingChest=false; tapTarget=null; tapChest(); }
 }
 function onBarrowsLoot(m){
  if(m.profile) me=m.profile;
  puzzleSolved=false;
- const items=(m.items||[]).map(it=>`${iconOf(it.item)} ${esc(nameOf(it.item))}${it.qty>1?' ×'+it.qty:''}`).join('<br>')||'—';
+ const lineHTML=(m.lines||[]).map(l=>{
+   if(l.kind==='tierpiece') return `<div style="color:#9fe8b0;font-weight:800">👻 ${iconOf(l.item)} ${esc(nameOf(l.item))} — a decayed Barrows tier piece, the chest's 1-in-20 prize! Wear the full set of a tier and the chest can offer the next tier up.</div>`;
+   if(l.kind==='tiercoins') return `<div>🪙 ${l.gold} gold — a decayed Barrows prize, but you already own every piece of the tier you're eligible for.</div>`;
+   if(l.kind==='piece') return `<div style="color:#ffd75e;font-weight:800">✨ ${iconOf(l.item)} ${esc(nameOf(l.item))} — a Barrows piece!</div>`;
+   if(l.kind==='coins') return `<div>🪙 ${l.gold} gold</div>`;
+   return `<div>${iconOf(l.item)} ${esc(nameOf(l.item))}${l.qty>1?' ×'+l.qty:''}</div>`;
+ }).join('');
  $('lootsheet').innerHTML=`<h3>💰 Barrows chest!</h3>
- <div style="font-size:15px">🪙 <b>${m.gold} gold</b>${items!=='—'?'<br>'+items:''}</div>
- ${m.rare?`<div style="font-size:15px;margin-top:6px;color:#ffd75e;font-weight:800">✨ RARE! ${iconOf(m.rare)} ${esc(nameOf(m.rare))} ✨<br><span class="note" style="color:#e8d9b0">It landed in a glowing pile at your feet — tap it to pick it up!</span></div>`:''}
+ <div class="note" style="margin-bottom:4px">${m.rolls} loot roll${m.rolls===1?'':'s'} — ${m.kills} brother${m.kills===1?'':'s'} slain + 1:</div>
+ <div style="font-size:15px">${lineHTML||'—'}</div>
+ ${(m.rares&&m.rares.length)?`<div class="note" style="margin-top:6px;color:#e8d9b0">✨ ${m.rares.length} rare piece${m.rares.length>1?'s':''} landed in glowing piles at your feet on the field — tap to pick up!</div>`:''}
  <div class="note" style="margin-top:6px">Brothers slain: ${m.kills}/6. The run resets — the brothers are back for another round.</div>
+ <div class="note" style="margin-top:4px">🏁 <b>Barrows runs completed: ${m.runs||0}</b>${m.runs===1?' — your first full run is in the books!':' — every chest you loot finishes a run.'}</div>
  <div class="btns"><button class="act" onclick="document.getElementById('lootmodal').classList.remove('open')">Nice!</button></div>`;
  $('lootmodal').classList.add('open');
- logLine(`💰 Barrows chest: ${m.gold} gold${(m.items||[]).length? ' + '+(m.items||[]).map(it=>nameOf(it.item)).join(', ') : ''}${m.rare? ' + RARE: '+nameOf(m.rare)+' (in the glowing pile!)':''}.`);
- if(m.rare) toast(`✨ RARE DROP: ${nameOf(m.rare)} — grab the glowing pile!`);
+ logLine(`💰 Barrows chest (${m.kills} kills, ${m.rolls} rolls): ${m.gold} gold${(m.items||[]).length? ' + '+(m.items||[]).map(it=>nameOf(it.item)).join(', ') : ''}${(m.rares&&m.rares.length)? ' + RARE: '+m.rares.map(r=>nameOf(r)).join(', ')+' (glowing piles!)':''}.`);
+ if(m.rares&&m.rares.length) toast(`✨ RARE DROP: ${m.rares.map(r=>nameOf(r)).join(', ')} — grab the glowing piles!`);
  renderAll();
 }
 /* ---- Brother avatars (fight visuals; positions are client-side) ---- */
@@ -2106,9 +2239,11 @@ function makeBrother(m){
  const label=document.createElement('div'); label.className='plabel';
  label.innerHTML=`<div class="gname">${esc(b.name||m.name)} · lvl ${b.lvl||m.combatLevel||''}</div><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
  $('labels').appendChild(label);
- const anchor=(curArea==='barrows_tunnels')? {x:800,y:450} : {x:b.x,y:b.y}; // tunnels anchor = the chest (server BARROWS_CHEST)
+ // Stage 28: the server sends the brother's spawn point (bx/by) —
+ // he rises right beside the player, in the crypt or at the ambush.
+ const anchor=(typeof m.bx==='number')? {x:m.bx,y:m.by} : (curArea==='barrows_tunnels')? {x:800,y:120} : {x:b.x,y:b.y};
  return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
-   x:sx2w(anchor.x),z:sy2w(anchor.y),hp:100,maxHp:100,isBrother:true,swingStart:0,splatY:2.9};
+   x:sx2w(anchor.x),z:sy2w(anchor.y),tx:sx2w(anchor.x),tz:sy2w(anchor.y),hp:100,maxHp:100,isBrother:true,swingStart:0,splatY:2.9};
 }
 function buildAreas(){
  areaGroups.plaza=new THREE.Group(); scene.add(areaGroups.plaza); buildPlaza(areaGroups.plaza);
@@ -2119,6 +2254,7 @@ function buildAreas(){
  areaGroups.mine=new THREE.Group(); scene.add(areaGroups.mine); buildMine(areaGroups.mine);
  areaGroups.fightcaves=new THREE.Group(); scene.add(areaGroups.fightcaves); buildFightCaves(areaGroups.fightcaves);
  areaGroups.barrows=new THREE.Group(); scene.add(areaGroups.barrows); buildBarrows(areaGroups.barrows);
+ areaGroups.barrows_crypt=new THREE.Group(); scene.add(areaGroups.barrows_crypt); buildBarrowsCrypt(areaGroups.barrows_crypt);
  areaGroups.barrows_tunnels=new THREE.Group(); scene.add(areaGroups.barrows_tunnels); buildBarrowsTunnels(areaGroups.barrows_tunnels);
  areaGroups.arena=new THREE.Group(); scene.add(areaGroups.arena); buildArena(areaGroups.arena);
  areaGroups.waiting=new THREE.Group(); scene.add(areaGroups.waiting); buildWaiting(areaGroups.waiting);
@@ -2151,10 +2287,10 @@ function setArea(a){
    }
    pendingMound=null; pendingPile=null; pendingChest=null;
    challengeMarks={}; // ❗ marks belong to the area they were seen in
-   puzzleSolved=false; puzzleAnswer=[]; $('puzzlemodal').classList.remove('open');
+   puzzleSolved=false; puzzleShown=[]; puzzleOptions=[]; $('puzzlemodal').classList.remove('open'); // Stage 28: the next barrows_state re-syncs puzzleSolved from the saved run
    clearAllies(); // guardians re-sync from the new area's 'allies' message
    for(const id of Object.keys(npcAvatars)) if(npcAvatars[id].isBrother){ scene.remove(npcAvatars[id].group); npcAvatars[id].label.remove(); delete npcAvatars[id]; }
-   if(a==='barrows'||a==='barrows_tunnels'){ barrowsBarHidden=false; renderBarrowsBar(); } else $('barrowsbar').classList.remove('open');
+   if(a==='barrows'||a==='barrows_tunnels'||a==='barrows_crypt'){ barrowsBarHidden=false; renderBarrowsBar(); } else $('barrowsbar').classList.remove('open');
    rebuildNodes();
    rebuildFires();
    rebuildPiles();
@@ -2164,7 +2300,7 @@ function setArea(a){
  }
  drawMinimap();
 }
-const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_tunnels:1,arena:1,waiting:1,magic:1,range:1};
+const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_crypt:1,barrows_tunnels:1,arena:1,waiting:1,magic:1,range:1};
 // Stage 19: the areas with a live shared-NPC roster (npc_state).
 const NPC_AREAS_CLIENT=['goblins','magic','range'];
 /* Knight armour (Stage 8 medieval theme): rounded bodies — sphere
@@ -3495,11 +3631,26 @@ function handleTap(cx,cy){
    }
    if(mb){ tapMound(mb); return; }
  }
- // Tunnels: the reward chest + the climb-out ladder
+ // Crypt: the sarcophagus (search — or descend, in the tunnel
+ // crypt), the tunnel mouth, and the climb-out ladder
+ if(curArea==='barrows_crypt'){
+   const isTun=barrowsState.crypt&&barrowsState.crypt===barrowsState.tunnel;
+   const ss=projectTo(sx2w(800),1.4,sy2w(400));
+   if(ss && Math.hypot(ss.x-cx,ss.y-cy)<56){ send({type:isTun?'barrows_descend':'barrows_search'}); return; }
+   if(isTun){
+     const ms=projectTo(sx2w(800),1.8,sy2w(150));
+     if(ms && Math.hypot(ms.x-cx,ms.y-cy)<48){ send({type:'barrows_descend'}); return; }
+   }
+   const ls=projectTo(sx2w(800),1.6,sy2w(615));
+   if(ls && Math.hypot(ls.x-cx,ls.y-cy)<48){ send({type:'barrows_leave_crypt'}); return; }
+ }
+ // Tunnels: the reward chest, the puzzle door, the climb-out ladder
  if(curArea==='barrows_tunnels'){
-   const cs=projectTo(0,1.2,0);
+   const cs=projectTo(sx2w(800),1.2,sy2w(120));
    if(cs && Math.hypot(cs.x-cx,cs.y-cy)<56){ tapChest(); return; }
-   const ls=projectTo(sx2w(870),1.6,sy2w(520));
+   const ds=projectTo(sx2w(800),1.6,sy2w(385));
+   if(ds && Math.hypot(ds.x-cx,ds.y-cy)<48){ if(!puzzleSolved) openPuzzle(); else toast('🧩 The puzzle door is open.'); return; }
+   const ls=projectTo(sx2w(860),1.6,sy2w(800));
    if(ls && Math.hypot(ls.x-cx,ls.y-cy)<48){ send({type:'barrows_leave_tunnel'}); return; }
  }
  // drop piles (tap to pick up; walks over first if too far)
@@ -3623,9 +3774,11 @@ function checkPendingAttack(){
 let lastSend=0, lastSentPos=null;
 /* Run toggle (🏃 orb): ON = the usual full speed (15 world units/s),
    OFF = half that (walking). Defaults ON; the choice saves in settings. */
-function moveSpeed(){ return settings.run? 15 : 7.5; }
+function moveSpeed(){ return (runDrainedUntil>Date.now())? 7.5 : (settings.run? 15 : 7.5); } // Stage 28: Torag's drain forces walking
+let stepFrom=null; // Stage 28: where this step started (Barrows collision slides from here)
 function stepMovement(dt){
  if(!myPos||!me) return;
+ stepFrom={x:myPos.x,y:myPos.y};
  // Stage 12: duel countdown — my knight stands still until FIGHT!
  // (the server ignores duelists' moves during the count anyway; this
  // stops the local knight sliding). Camera drag is separate and free.
@@ -3661,8 +3814,41 @@ function stepMovement(dt){
    finishStep(true);
  } else { myVel={x:0,z:0}; finishStep(false); }
 }
+/* Stage 28: Barrows collision — the player collides with the crypt
+   walls + sarcophagus and with the tunnel maze (axis-slide along
+   walls), the barred puzzle door (while unsolved) and the chest.
+   Mirrors the server's brother geometry; brothers collide
+   server-side with the same shapes. */
+function inTunnelUnion(x,y){ return TUNNEL_ROOMS_C.some(r=>x>=r.x0&&x<=r.x1&&y>=r.y0&&y<=r.y1); }
+function pushOutBoxC(px,py,b){
+ const dx=px-b.x, dy=py-b.y, ox=b.hx-Math.abs(dx), oy=b.hy-Math.abs(dy);
+ if(ox<=0||oy<=0) return [px,py];
+ if(ox<oy) return [b.x+(dx<0?-b.hx:b.hx),py];
+ return [px,b.y+(dy<0?-b.hy:b.hy)];
+}
+function applyBarrowsCollision(from){
+ if(curArea==='barrows_crypt'){
+   myPos.x=Math.max(CRYPT_ROOM_C.x0+14,Math.min(CRYPT_ROOM_C.x1-14,myPos.x));
+   myPos.y=Math.max(CRYPT_ROOM_C.y0+14,Math.min(CRYPT_ROOM_C.y1-14,myPos.y));
+   const p=pushOutBoxC(myPos.x,myPos.y,CRYPT_SARCO_C); myPos.x=p[0]; myPos.y=p[1];
+ } else if(curArea==='barrows_tunnels'){
+   const doorBlocked=!puzzleSolved;
+   const ok=(x,y)=>{
+     if(!inTunnelUnion(x,y)) return false;
+     if(doorBlocked&&x>TUNNEL_DOOR_C.x0-6&&x<TUNNEL_DOOR_C.x1+6&&y>TUNNEL_DOOR_C.y0-8&&y<TUNNEL_DOOR_C.y1+8) return false;
+     return true;
+   };
+   if(!ok(myPos.x,myPos.y)){
+     if(ok(myPos.x,from.y)) myPos.y=from.y;
+     else if(ok(from.x,myPos.y)) myPos.x=from.x;
+     else { myPos.x=from.x; myPos.y=from.y; }
+   }
+   const p=pushOutBoxC(myPos.x,myPos.y,TUNNEL_CHEST_C); myPos.x=p[0]; myPos.y=p[1];
+ }
+}
 function finishStep(moved){
  const a=avatars[me.username]; if(!a) return;
+ if(moved&&stepFrom) applyBarrowsCollision(stepFrom); // Stage 28
  a.x=sx2w(myPos.x); a.z=sy2w(myPos.y);
  if(moved){ a.bob+=0.35; }
  const now=performance.now();
@@ -3695,7 +3881,7 @@ function drawMinimap(){
  // ground + area features (drawn in server coords, rotated by the transform)
  const caveBg=(curArea==='training'||curArea==='gathering'||curArea==='mine'||curArea==='fightcaves');
  g.fillStyle= curArea==='barrows'? '#333a2a'
-   : curArea==='barrows_tunnels'? '#0d0a12'
+   : (curArea==='barrows_tunnels'||curArea==='barrows_crypt')? '#0d0a12'
    : curArea==='waiting'? '#33302a'
    : curArea==='arena'? ARENA_VARIANTS[arenaVariant].css
    : caveBg? (curArea==='fightcaves'? '#241a12' : '#2b2b30') : (curArea==='goblins')? '#55702f' : '#241d15'; g.fillRect(0,0,1600,900);
@@ -3720,7 +3906,13 @@ function drawMinimap(){
      if(barrowsState.tunnel===id){ g.strokeStyle='#b26bff'; g.lineWidth=5; g.beginPath(); g.arc(b.x,b.y,19,0,7); g.stroke(); }
    }
  } else if(curArea==='barrows_tunnels'){
-   g.fillStyle='#e3c766'; g.fillRect(800-14,450-14,28,28); // reward chest
+   g.strokeStyle='#5d594f'; g.lineWidth=10;
+   for(const r of TUNNEL_ROOMS_C){ g.strokeRect(r.x0,r.y0,r.x1-r.x0,r.y1-r.y0); } // the maze rooms
+   g.fillStyle='#e3c766'; g.fillRect(800-14,120-14,28,28); // reward chest
+   g.fillStyle='#a8845a'; g.fillRect(860-10,800-10,20,20); // ladder
+ } else if(curArea==='barrows_crypt'){
+   g.strokeStyle='#5d594f'; g.lineWidth=10; g.strokeRect(CRYPT_ROOM_C.x0,CRYPT_ROOM_C.y0,CRYPT_ROOM_C.x1-CRYPT_ROOM_C.x0,CRYPT_ROOM_C.y1-CRYPT_ROOM_C.y0);
+   g.fillStyle='#8a8578'; g.fillRect(800-36,400-56,72,112); // sarcophagus
  } else if(curArea==='goblins'){
    g.fillStyle='#77683f'; g.fillRect(800-480,450-310,960,620); // dirt patch
    g.fillStyle='#ff7b24'; g.fillRect(840-10,510-10,20,20); // campfire
@@ -4088,6 +4280,7 @@ function examineHTML(item){
  else if(item==='nc') desc='Mods spend NC to run official fights.';
  else if(item==='gold') desc=KIND_DESC.currency;
  else if(item.endsWith('_partyhat')) desc=`Zero protection, all flex — a party hat in ${item.split('_')[0]} colours, bought to be seen wearing it.`; // Stage 21
+ else if(d&&d.desc) desc=d.desc; // Stage 28: items that carry their own examine text (the Barrows pieces carry the app's)
  else if(item==='logs'||item.endsWith('_logs')) desc='Use it to light a fire, then cook on the fire.';
  const stats=[];
  if(d){
@@ -4768,7 +4961,7 @@ function pTeleport(){
  h+=`<div class="rowline"><span class="ic">🎣</span><span class="grow"><b>Fishing Cove</b><br><span class="sub">West gate · chop, light a fire, fish &amp; cook trout</span></span>${here('cove')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('cove')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">⛏️🔥</span><span class="grow"><b>Emberfall Mine &amp; Smithy</b><br><span class="sub">North-east corner · mine 9 ores, smelt &amp; smith</span></span>${here('mine')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('mine')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">🌋</span><span class="grow"><b>Fight Caves</b><br><span class="sub">North gate · 63 waves, TzTok-Jad, fire cape</span></span>${here('fightcaves')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('fightcaves')">Teleport</button>`}</div>`;
- h+=`<div class="rowline"><span class="ic">💀</span><span class="grow"><b>Barrows</b><br><span class="sub">South gate · 6 brothers, tunnels, chest</span></span>${here('barrows')||here('barrows_tunnels')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('barrows')">Teleport</button>`}</div>`;
+ h+=`<div class="rowline"><span class="ic">💀</span><span class="grow"><b>Barrows</b><br><span class="sub">South gate · 6 brothers, tunnels, chest</span></span>${here('barrows')||here('barrows_tunnels')||here('barrows_crypt')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('barrows')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">🧙</span><span class="grow"><b>Wizard Grounds</b><br><span class="sub">North-west corner · wizards drop the runes for your spells</span></span>${here('magic')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('magic')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">🏹</span><span class="grow"><b>Ranger Camp</b><br><span class="sub">North gate (west stretch) · rangers drop arrows &amp; arrowheads</span></span>${here('range')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('range')">Teleport</button>`}</div>`;
  return h;
@@ -5102,7 +5295,7 @@ window.openTalk=function(name){
  setTimeout(()=>{ try{ inp.focus(); }catch(e){} },50);
 };
 /* ---- Examine sheet ---- */
-const AREA_LABELS={plaza:'🏰 Plaza',goblins:'👺 Goblin Camp',training:'🏋️ Training Cave',gathering:'⛏️ Gathering Cave',cove:'🎣 Fishing Cove',mine:'⛏️🔥 Emberfall Mine & Smithy',fightcaves:'🌋 Fight Caves',barrows:'💀 Barrows',barrows_tunnels:'💀 Barrows Tunnels',arena:'⚔️ Duel Arena',waiting:'⏳ Waiting Area'};
+const AREA_LABELS={plaza:'🏰 Plaza',goblins:'👺 Goblin Camp',training:'🏋️ Training Cave',gathering:'⛏️ Gathering Cave',cove:'🎣 Fishing Cove',mine:'⛏️🔥 Emberfall Mine & Smithy',fightcaves:'🌋 Fight Caves',barrows:'💀 Barrows',barrows_crypt:'💀 Barrows Crypt',barrows_tunnels:'💀 Barrows Tunnels',arena:'⚔️ Duel Arena',waiting:'⏳ Waiting Area'};
 function openExamine(m){
  const p=m.player; if(!p) return;
  const wornRows=SLOT_DEFS.filter(([slot])=>p.worn&&p.worn[slot]).map(([slot,label])=>`<div class="rowline"><span class="ic">${itemIconHTML(p.worn[slot],24)}</span><span class="grow"><b>${label}</b><br><span class="sub">${esc(nameOf(p.worn[slot]))}</span></span></div>`).join('');
@@ -5554,7 +5747,7 @@ function npcFightUI(m){
      const pf=PRAYER_FOR_TYPE[b.type||'melee'];
      $('dueloppname').textContent=m.name||'Barrows brother';
      $('dueltitle').textContent=`💀 ${m.name} · lvl ${npcFight.combatLevel}`;
-     $('duellast').textContent=`Fight! ${pf[0]} ${pf[1]} turns his hits back on him. Stay near the ${curArea==='barrows_tunnels'?'chest':'mound'} or the fight breaks off.`;
+     $('duellast').textContent=`Fight! ${pf[0]} ${pf[1]} turns his hits back on him. He fights right beside you — walk too far away and the fight breaks off.`;
    } else {
      // Stage 19: the shared-NPC fights (goblin / wizard / ranger)
      // all speak this UI — title and header carry the creature.
@@ -5573,6 +5766,8 @@ function npcFightUI(m){
    if(me) me.specialEnergy=m.energyYou;
    applyClosing(m); // Stage 8: on a closing tick, walk into reach (moveTo)
    const ba=npcAvatars[m.npcId];
+   if(ba&&ba.isBrother&&typeof m.bx==='number'){ ba.tx=sx2w(m.bx); ba.tz=sy2w(m.by); } // Stage 28: the brother walks — ease toward his live position
+   if(m.drains&&m.drains.runDrainedUntil) runDrainedUntil=m.drains.runDrainedUntil; // Stage 28: Torag's run drain rides the tick too
    // Swings + hitsplats only on real swings — a null hit field means
    // that side never swung (closing tick / gated melee brother).
    // Stage 12: a present outcome field picks the splat (hit / blocked
@@ -5621,7 +5816,7 @@ function npcFightUI(m){
      if(m.reason==='kill'){ toast(`💀 ${bName} slain! (${barrowsState.kills.length}/6)`); logLine(`💀 ${bName} slain! (${barrowsState.kills.length}/6)`); }
      else if(m.reason==='death'){ toast(`💀 ${bName} got you! You wake up in the plaza — your Barrows kills are kept.`); }
      else if(m.reason==='fled'){ toast('🏃 You fled the crypt.'); }
-     else if(m.reason==='range'){ toast('The fight broke off — you moved too far from the mound.'); }
+     else if(m.reason==='range'){ toast('The fight broke off — you moved too far away.'); }
      else if(m.reason==='travel'){ toast('You left the fight behind.'); }
      renderAll();
      return;
