@@ -403,6 +403,8 @@
 <div class="modal" id="stakeboardmodal"><div class="sheet" id="stakeboardsheet"></div></div>
 <div class="modal" id="incomingmodal"><div class="sheet" id="incomingsheet"></div></div>
 <div class="modal" id="duelendmodal"><div class="sheet" id="duelendsheet"></div></div>
+<div class="modal" id="modnpcmodal"><div class="sheet" id="modnpcsheet"></div></div>
+<div class="modal" id="modendmodal"><div class="sheet" id="modendsheet"></div></div>
 <div class="modal" id="fcstartmodal"><div class="sheet" id="fcstartsheet"></div></div>
 <div class="modal" id="fcendmodal"><div class="sheet" id="fcendsheet"></div></div>
 <div class="modal" id="puzzlemodal"><div class="sheet" id="puzzlesheet"></div></div>
@@ -744,6 +746,9 @@ function onMsg(m){
  if(m.type==='area'){ setArea(m.area); }
  if(m.type==='npc_state'){ npcList=m.npcs||[]; syncNpcs(); drawMinimap(); }
  if(m.type==='npc_fight'){ npcFightUI(m); }
+ if(m.type==='mod_npcs'){ modNpcList=m.npcs||[]; syncModNpcs(); drawMinimap(); if($('modnpcmodal').classList.contains('open')&&modSheetId) openModSheet(modSheetId); }
+ if(m.type==='mod_ladder'){ modLadderWins=m.wins||{t1:0,t2:0,t3:0}; if($('modnpcmodal').classList.contains('open')&&modSheetId) openModSheet(modSheetId); }
+ if(m.type==='mod_duel'){ modDuelUI(m); }
  if(m.type==='nodes'){ nodesByArea[m.area]=m.nodes||[];
    if(m.area===curArea){ rebuildNodes();
      if(activeNode){ const an=(m.nodes||[]).find(x=>x.id===activeNode.id);
@@ -1031,6 +1036,17 @@ let curArea='plaza';
 let areaGroups={}; // 'plaza' | 'goblins' -> THREE.Group (only the current one is visible)
 let npcList=[]; // latest npc_state npcs for the goblin camp
 let npcAvatars={}; // npc id -> {group,label,hpWrap,hpFill,x,z}
+/* Stage 22: the mod NPC stake ladder — the three plaza moderators
+   (mod_npcs), my wins per tier (mod_ladder), and my active mod duel
+   (the duel-bar state, mirroring npcFight). Mod avatars live in
+   their OWN map: syncNpcs reaps any avatar not in npcList, and the
+   moderators are not shared-NPC-roster creatures. */
+let modNpcList=[]; // [{id,name,tier,stake,x,y,busy}]
+let modAvatars={}; // npc id -> avatar
+let modLadderWins={t1:0,t2:0,t3:0};
+let modDuel=null; // {npcId,name,tier,stake,pot,hpYou,hpNpc,energyYou}
+let modDuelEngaged=false;
+let modSheetId=null; // the moderator whose stake sheet is open
 let pendingAttack=null; // {id} — walk to this goblin, attack on arrival
 let lastAttackTry=null; // {id,at} — last direct attack_npc send (for too-far recovery)
 let avatars={}; // username -> {group,label,bubbleEl,badgeEl,nameEl,x,z,tx,tz,prayer,bubbleUntil,bob}
@@ -1945,6 +1961,7 @@ function setArea(a){
    stopGather();
    for(const name of Object.keys(avatars)){ scene.remove(avatars[name].group); avatars[name].label.remove(); delete avatars[name]; }
    if(!NPC_AREAS_CLIENT.includes(a)){ npcList=[]; syncNpcs(); }
+   syncModNpcs(); // Stage 22: moderators exist only in the plaza — sync reaps them elsewhere
    if(a!=='fightcaves'){
      // Leaving the caves drops any local run state (the server ends the
      // run itself and its fc_end settles the records).
@@ -2361,6 +2378,77 @@ function attackNpc(id){
  if(d<=140){ lastAttackTry={id,at:Date.now()}; send({type:'attack_npc',id}); }
  else { pendingAttack={id}; tapTarget={x:n.x,y:n.y}; toast(`🚶 Walking to the ${(n.name||'goblin').toLowerCase()}…`); }
 }
+/* ---- Stage 22: plaza moderators (stake ladder NPCs) ----
+   Knight figures in white-and-gold moderator colours with a
+   tier-coloured plume (bronze / steel / dragon red). They never
+   move — they hold their post by the tournament dais. */
+const MOD_PLUME=[0xb0793f,0xb9bfc7,0xc22f2f]; // tier 1 / 2 / 3
+function makeModNpc(n){
+ const g=new THREE.Group();
+ const steel=new THREE.MeshLambertMaterial({color:0x9aa2ad});
+ const accent=MOD_PLUME[(n.tier||1)-1]||0xc9a227;
+ box(0.2,0.45,0.2,0x6b5636,-0.14,0.23,0,g); box(0.2,0.45,0.2,0x6b5636,0.14,0.23,0,g); // legs
+ const body=new THREE.Mesh(new THREE.CylinderGeometry(0.27,0.34,0.62,10),new THREE.MeshLambertMaterial({color:0xe8e2d0})); body.position.y=0.76; g.add(body); // white tabard
+ box(0.34,0.09,0.38,0xc9a227,0,1.04,0,g); // gold trim band
+ box(0.18,0.5,0.18,0x9aa2ad,-0.4,0.8,0,g); // left arm (steel)
+ const armR=new THREE.Group(); armR.position.set(0.4,1.02,0); g.add(armR);
+ const armMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.09,0.5,8),steel); armMesh.position.y=-0.25; armR.add(armMesh);
+ box(0.07,0.85,0.07,0xd9dee6,0,-0.88,0.05,armR); // sword blade
+ box(0.24,0.06,0.1,0xc9a227,0,-0.48,0.05,armR); // crossguard
+ const head=new THREE.Mesh(new THREE.SphereGeometry(0.27,12,10),new THREE.MeshLambertMaterial({color:0xe8c39a})); head.position.y=1.3; g.add(head);
+ const helm=new THREE.Mesh(new THREE.SphereGeometry(0.3,12,8,0,Math.PI*2,0,Math.PI/2),steel); helm.position.y=1.35; g.add(helm); // helmet cap
+ const plume=new THREE.Mesh(new THREE.ConeGeometry(0.09,0.5,6),new THREE.MeshLambertMaterial({color:accent})); plume.position.set(0,1.74,-0.06); plume.rotation.x=0.5; g.add(plume); // tier plume
+ shadowify(g);
+ const sh=new THREE.Mesh(new THREE.CircleGeometry(0.5,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
+ sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
+ const label=document.createElement('div'); label.className='plabel';
+ label.innerHTML=`<div class="gname">⭐ ${esc(n.name||'Mod')} · Tier ${n.tier||1} — ${n.stake||0}g</div><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
+ $('labels').appendChild(label);
+ return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
+   x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:1.95,hp:99,maxHp:99};
+}
+function syncModNpcs(){
+ if(!scene) return;
+ const seen=new Set();
+ if(curArea==='plaza'){
+   for(const n of modNpcList){
+     seen.add(n.id);
+     let a=modAvatars[n.id];
+     if(!a){ a=makeModNpc(n); a.group.position.set(a.x,0,a.z); modAvatars[n.id]=a; scene.add(a.group); }
+   }
+ }
+ for(const id of Object.keys(modAvatars)){
+   if(!seen.has(id)){ scene.remove(modAvatars[id].group); modAvatars[id].label.remove(); delete modAvatars[id]; }
+ }
+}
+function tapModNpc(id){
+ const n=modNpcList.find(x=>x.id===id); if(!n) return;
+ if(modDuel&&modDuel.npcId===id){
+   // Mid-duel tap on my opponent = tap-to-engage (the duel rule).
+   send({type:'mod_duel_attack'});
+   if(!modDuelEngaged) modDuelEngaged=true;
+   return;
+ }
+ if(modDuel) return; // busy fighting another mod — finish that first
+ openModSheet(id);
+}
+function openModSheet(id){
+ const n=modNpcList.find(x=>x.id===id); if(!n) return;
+ modSheetId=id;
+ const wins=modLadderWins['t'+n.tier]||0;
+ const unlocked=n.tier<=1||(modLadderWins['t'+(n.tier-1)]||0)>=3;
+ let action;
+ if(!unlocked) action=`<p>🔒 <b>Tier ${n.tier} is locked.</b> Win 3 Tier ${n.tier-1} fights to unlock ${esc(n.name)}.</p>`;
+ else if(n.busy) action=`<p>⏳ ${esc(n.name)} is in a fight right now — wait your turn.</p>`;
+ else action=`<div class="btns"><button class="act" onclick="modDuelStart('${n.id}')">⚔️ Stake duel — ${n.stake}g</button></div>`;
+ $('modnpcsheet').innerHTML=`<h3>⭐ ${esc(n.name)} · Tier ${n.tier} moderator</h3>
+ <p class="note" style="color:#4a3826">Stake duel: <b>${n.stake}g</b> each — winner takes <b>${n.stake*2}g</b>. Equal stats (40) like a player duel; your gear, style and Dragon Slash count. Tap ${esc(n.name)} to attack — there's no auto-retaliate. Walking away forfeits your stake, and mod fights never touch your duel record or rating.</p>
+ <p>Your Tier ${n.tier} wins: <b>${wins} / 3</b>${wins>=3?' — tier complete! 🎉':''}</p>
+ ${action}
+ <div class="btns"><button class="ghost" onclick="closeModal('modnpcmodal')">Close</button></div>`;
+ $('modnpcmodal').classList.add('open');
+}
+window.modDuelStart=function(id){ closeModal('modnpcmodal'); send({type:'mod_duel_start',id}); };
 /* ---- Stage 4: Fight Caves monsters (my run only — instanced) ---- */
 let fcMonsters={}; // monster id -> roster entry from fc_state / fc_wave (server coords)
 let fcAvatars={}; // monster id -> {group,label,hpWrap,hpFill,labelY,hp,maxHp,kind}
@@ -2903,6 +2991,12 @@ function updateLabels(now){
    a.label.style.display='block';
    a.label.style.left=s.x+'px'; a.label.style.top=s.y+'px';
  }
+ for(const a of Object.values(modAvatars)){
+   const s=projectTo(a.group.position.x,2.75,a.group.position.z);
+   if(!s){ a.label.style.display='none'; continue; }
+   a.label.style.display='block';
+   a.label.style.left=s.x+'px'; a.label.style.top=s.y+'px';
+ }
  for(const a of Object.values(fcAvatars)){
    const s=projectTo(a.group.position.x,a.labelY,a.group.position.z);
    if(!s){ a.label.style.display='none'; continue; }
@@ -3026,7 +3120,7 @@ function handleTap(cx,cy){
  // ground taps still walk in both modes.
  if(settings.tapMode==='menu'){
    const hit=detectWorldTap(cx,cy);
-   if(hit&&(hit.kind==='player'||hit.kind==='npc'||hit.kind==='fc'||hit.kind==='node'||hit.kind==='pile'||hit.kind==='mound')){
+   if(hit&&(hit.kind==='player'||hit.kind==='npc'||hit.kind==='fc'||hit.kind==='node'||hit.kind==='pile'||hit.kind==='mound'||hit.kind==='modnpc')){
      handleLongPress(cx,cy);
      return;
    }
@@ -3041,6 +3135,18 @@ function handleTap(cx,cy){
      if(d<48 && d<gbD){ gb=id; gbD=d; }
    }
    if(gb){ attackNpc(gb); return; }
+ }
+ // Stage 22: plaza moderators (tap opens the stake sheet — or, mid
+ // mod-duel, taps my opponent to engage: tap-to-attack like a duel)
+ if(curArea==='plaza'){
+   let mb=null,mbD=1e9;
+   for(const [id,a] of Object.entries(modAvatars)){
+     const s=projectTo(a.group.position.x,1.4,a.group.position.z);
+     if(!s) continue;
+     const d=Math.hypot(s.x-cx,s.y-cy);
+     if(d<48 && d<mbD){ mb=id; mbD=d; }
+   }
+   if(mb){ tapModNpc(mb); return; }
  }
  // Fight Caves monsters (tap to target; walks over first if too far)
  if(curArea==='fightcaves'&&fcRun){
@@ -3258,6 +3364,7 @@ function drawMinimap(){
    for(const s of SHOP_SPOTS){ g.fillStyle='#'+s.color.toString(16).padStart(6,'0'); g.fillRect(s.x-12,s.y-12,24,24); }
    g.fillStyle='#fff'; g.fillRect(BOARD_POS.x-8,BOARD_POS.y-8,16,16);
    g.fillStyle='#ffd75e'; g.beginPath(); g.arc(STAKE_SIGN_POS.x,STAKE_SIGN_POS.y,13,0,7); g.fill(); // Stake Board sign (SW)
+   for(const n of modNpcList){ g.fillStyle='#ffd75e'; g.beginPath(); g.arc(n.x,n.y,11,0,7); g.fill(); g.fillStyle='#3a2c1c'; g.beginPath(); g.arc(n.x,n.y,5,0,7); g.fill(); } // Stage 22: the three moderators
  } else if(curArea==='waiting'){
    g.fillStyle='#ffd75e'; g.beginPath(); g.arc(700,450,16,0,7); g.fill(); // spawn pads
    g.fillStyle='#d9dee6'; g.beginPath(); g.arc(900,450,16,0,7); g.fill();
@@ -3414,6 +3521,12 @@ function animate(){
      const dx=a.tx-a.group.position.x, dz=a.tz-a.group.position.z;
      if(Math.hypot(dx,dz)>0.05) easeRot(a,Math.atan2(dx,dz),dt);
    }
+   applySwing(a,now);
+   applyLunge(a,now);
+ }
+ // Stage 22: moderators hold their post — only swings/lunges animate.
+ for(const a of Object.values(modAvatars)){
+   clearLungeOff(a);
    applySwing(a,now);
    applyLunge(a,now);
  }
@@ -5075,6 +5188,107 @@ function npcFightUI(m){
    renderAll();
  }
 }
+/* ================= Mod duel UI (Stage 22, shares the duel bar) ================= */
+function renderModDuelBar(){
+ if(!modDuel) return;
+ const nmEl=$('duelnomove'); if(nmEl) nmEl.style.display='none'; // the No Movement chip is player-duel only
+ const joyEl=$('joy'); if(joyEl) joyEl.style.opacity='';
+ $('hpyou').style.width=clamp(modDuel.hpYou/99*100,0,100)+'%'; $('hpyouv').textContent=modDuel.hpYou;
+ $('hpopp').style.width=clamp(modDuel.hpNpc/99*100,0,100)+'%'; $('hpoppv').textContent=modDuel.hpNpc;
+ const consum=(me?me.backpack:[]).filter(s=>catalog[s.item]&&(catalog[s.item].kind==='food'||catalog[s.item].kind==='potion'));
+ let h=`<button class="act" id="specbtn">⚡ Dragon Slash (${modDuel.energyYou}%)</button>`;
+ for(const s of consum) h+=`<button class="ghost" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}</button>`;
+ $('duelquick').innerHTML=h;
+ const sb=$('specbtn');
+ sb.classList.toggle('ready',modDuel.energyYou>=50);
+ sb.onclick=()=>send({type:'special'});
+}
+function modDuelUI(m){
+ if(m.phase==='start'){
+   stopGather();
+   stopFollow();
+   cancelUse(true);
+   closeModal('modnpcmodal');
+   modDuel={npcId:m.npcId,name:m.name||'Mod',tier:m.tier||1,stake:m.stake||0,pot:m.pot||0,hpYou:m.hpYou||99,hpNpc:m.hpNpc||99,energyYou:Math.floor(m.energyYou||0)};
+   modDuelEngaged=false;
+   // The countdown overlay + movement lock are the duel ones (the
+   // server freezes the challenger during the count, like a duel).
+   if(typeof m.countdownTicks==='number') setDuelCountdown(m.countdownTicks); else clearDuelCountdown();
+   $('duelbar').classList.add('open');
+   $('duelflee').style.display='none'; // no flee button: walking away IS the forfeit
+   $('dueloppname').textContent=m.name||'Mod';
+   const offEl=$('duelofficial'); offEl.textContent=''; offEl.style.display='none';
+   $('dueltitle').textContent=`⭐ ${m.name} · Tier ${m.tier} — pot ${m.pot}g`;
+   $('duellast').textContent=`Tap ⭐ ${m.name} to attack!`;
+   const ma=modAvatars[m.npcId]; if(ma) setHpBar(ma,1,99,99); // overhead bars on both fighters, like a duel
+   const myAv0=me?avatars[me.username]:null; if(myAv0) setHpBar(myAv0,1,99,99);
+   if(m.profile) me=m.profile;
+   renderModDuelBar(); renderOrbs();
+   return;
+ }
+ if(m.phase==='tick'){
+   if(!modDuel) return;
+   modDuel.hpYou=m.hpYou; modDuel.hpNpc=m.hpNpc; modDuel.energyYou=m.energyYou;
+   if(me) me.specialEnergy=m.energyYou;
+   setDuelCountdown(m.countdownLeft);
+   const ma=modAvatars[m.npcId];
+   if(ma) setHpBar(ma,m.hpNpc/99,m.hpNpc,99);
+   const myAv=me?avatars[me.username]:null; if(myAv) setHpBar(myAv,m.hpYou/99,m.hpYou,99);
+   applyClosing(m); // on a closing tick, walk into reach (moveTo)
+   const closing=!!m.closing||typeof m.youHit!=='number';
+   if(!closing){
+     if(typeof m.youHit==='number'){ startSwingAt(me?avatars[me.username]:null,ma);
+       if(typeof m.youOutcome==='string') spawnOutcomeSplatOn(ma,m.youOutcome,m.youHit,m.youSpecial);
+       else spawnSplatOn(ma,m.youHit,m.youSpecial); }
+     if(typeof m.npcHit==='number'){ startSwingAt(ma,me?avatars[me.username]:null);
+       if(typeof m.npcOutcome==='string') spawnOutcomeSplat(me.username,m.npcOutcome,m.npcHit,false);
+       else spawnSplat(me.username,m.npcHit,false); }
+   }
+   if(typeof m.youHit==='number') modDuelEngaged=true; // one of my swings appeared — I'm engaged
+   let last;
+   if(m.note) last=m.note;
+   else if(m.countdownLeft>0) last='Get ready…';
+   else if(closing) last='⚔️ Too far apart — closing in to strike…';
+   else if(!modDuelEngaged) last=`⚔️ Tap ⭐ ${modDuel.name} to attack!`;
+   else {
+     const parts=[];
+     if(typeof m.youHit==='number') parts.push(`You hit ${m.youHit}${m.youSpecial?' (DRAGON SLASH!)':''}`);
+     if(typeof m.npcHit==='number') parts.push(`${modDuel.name} hit ${m.npcHit}`);
+     last=parts.join(' · ')||'Fight!';
+   }
+   $('duellast').textContent=last;
+   renderModDuelBar(); renderOrbs();
+   return;
+ }
+ if(m.phase==='end'){
+   modDuel=null; modDuelEngaged=false;
+   clearDuelCountdown();
+   const ma=modAvatars[m.npcId]; if(ma) hideHpBar(ma);
+   const myAv=me?avatars[me.username]:null; if(myAv) hideHpBar(myAv);
+   $('duelbar').classList.remove('open');
+   if(m.profile) me=m.profile;
+   let head, body;
+   if(m.result==='win'){
+     head='🏆 You win!';
+     body=`<p>You beat <b>${esc(m.name)}</b> (Tier ${m.tier}) and won the <b style="color:#e3c766">${m.payout}g</b> pot!</p>
+ <p class="note">Tier ${m.tier} wins: ${m.wins} / 3${m.unlockedNext?` — 🎉 <b>Tier ${m.tier+1} unlocked!</b>`:''}<br>Your gold: ${me?me.gold:0}g · Record ${me?me.wins:0}W/${me?me.losses:0}L and rating ${me?me.rating:0} unchanged — mod fights don't touch them.</p>`;
+   } else if(m.result==='loss'){
+     head='💀 You lost';
+     body=`<p><b>${esc(m.name)}</b> wins this one (Tier ${m.tier}) — your <b>${m.stake}g</b> stake is gone.</p>
+ <p class="note">Tier ${m.tier} wins: ${m.wins} / 3 · Your gold: ${me?me.gold:0}g</p>`;
+   } else {
+     head='🏃 Forfeited';
+     body=`<p>You left the fight against <b>${esc(m.name)}</b> (Tier ${m.tier}) — your <b>${m.stake}g</b> stake is lost.</p>
+ <p class="note">Walking away or logging out mid-fight forfeits the stake.</p>`;
+   }
+   $('modendsheet').innerHTML=`<h3>${head}</h3>
+ ${body}
+ <div class="btns"><button class="act" onclick="closeModal('modendmodal')">Back to the plaza</button></div>`;
+   $('modendmodal').classList.add('open');
+   renderAll();
+   return;
+ }
+}
 /* ================= Fight Caves UI (Stage 4) ================= */
 let fcRun=null; // {wave,hpYou,maxHpYou,targetId,targetHp,energyYou} — my active run
 let prevFcHp={}, prevFcMyHp=null; // Stage 8: last-seen HP per cave monster + me (hitsplats from drops)
@@ -5275,6 +5489,12 @@ function detectWorldTap(cx,cy){
    for(const [id,a] of Object.entries(npcAvatars)){
      const s=projectTo(a.group.position.x,1.1,a.group.position.z);
      if(s&&Math.hypot(s.x-cx,s.y-cy)<48) return {kind:'npc',id};
+   }
+ }
+ if(curArea==='plaza'){
+   for(const [id,a] of Object.entries(modAvatars)){
+     const s=projectTo(a.group.position.x,1.4,a.group.position.z);
+     if(s&&Math.hypot(s.x-cx,s.y-cy)<48) return {kind:'modnpc',id};
    }
  }
  if(curArea==='fightcaves'&&fcRun){
@@ -5609,6 +5829,15 @@ function handleLongPress(cx,cy){
    openCtxSheet(`🥊 ${esc(nm)}`,[
      {label:'⚔️ Attack',fn:()=>attackNpc(hit.id)},
      {label:'🔍 Examine',fn:()=>ctxExamine(`🥊 ${esc(nm)}`,`Combat level ${n? (n.combatLevel||5):5}. ${n&&n.kind==='wizard'?'It casts magic at you from range — Protect from Magic blocks it. It drops runes for your spells.':n&&n.kind==='ranger'?'It shoots arrows at you from range — Protect from Missiles blocks it. It drops arrows and arrowheads.':'It drops coins and goblin gear when beaten.'}`)}
+   ]);
+   return;
+ }
+ if(hit.kind==='modnpc'){
+   const n=modNpcList.find(x=>x.id===hit.id);
+   const nm=n? n.name:'Moderator';
+   openCtxSheet(`⭐ ${esc(nm)}`,[
+     {label:'⚔️ Stake duel…',fn:()=>openModSheet(hit.id)},
+     {label:'🔍 Examine',fn:()=>ctxExamine(`⭐ ${esc(nm)}`,`A plaza moderator running Tier ${n?n.tier:'?'} stake duels for ${n?n.stake:0}g a fight. Win 3 fights in a tier to unlock the next tier.`)}
    ]);
    return;
  }
