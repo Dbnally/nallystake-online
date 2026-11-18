@@ -426,6 +426,26 @@ for (const s of SPELLS) SPELL_BY_ID[s.id] = s;
 const SPELL_CAST_XP = { strike: 5, bolt: 10, blast: 15 }; // flat Magic XP per resolved cast, hit or miss
 function spellOf(p) { return SPELL_BY_ID[p.spell] || SPELLS[0]; }
 
+// ---------- Stage 20: the rewarding layer ----------
+// Starter goals (first steps): five one-time goals, each paying
+// STARTER_REWARD gold once via addGold (see completeStarterGoal,
+// beside addXp). The ids are the profile.starter.done keys.
+const STARTER_GOALS = [
+  { id: 'win_duel', label: 'Win a duel' },
+  { id: 'kill_monster', label: 'Kill a monster' },
+  { id: 'gather', label: 'Gather a resource' },
+  { id: 'use_bank', label: 'Use the bank' },
+  { id: 'visit_area', label: 'Visit another area' },
+];
+const STARTER_REWARD = 25;
+// Collection log entry ids (13): the six Barrows brothers (their
+// BARROWS_BROTHERS ids), the fire cape, and the six rare Barrows
+// weapons (the BARROWS_WEAPONS item ids). Built from the live
+// tables so it can never drift from them.
+function clogEntryIds() {
+  return [...Object.keys(BARROWS_BROTHERS), 'fire_cape', ...BARROWS_WEAPONS];
+}
+
 // ---------- Stage 7D: custom items + placed objects (registries) ----------
 // Base items are numbered 1..BASE_ITEM_COUNT in ITEMS definition
 // order; that count is the floor for custom item numbers.
@@ -712,6 +732,14 @@ function newProfile(username) {
     // item + entry together, giving a note away removes both, and a
     // declined note returns both.
     notes: [],
+    // Stage 20: the rewarding layer. Starter goals: which of the
+    // five first-steps goals are done ({ goalId: true }) — each
+    // pays STARTER_REWARD gold exactly once (see completeStarterGoal).
+    starter: { done: {} },
+    // Stage 20: the collection log — entry ids ever earned
+    // ({ entryId: true }): the six Barrows brothers, the fire cape
+    // and the six rare Barrows weapons (see clogEntryIds).
+    clog: {},
   };
 }
 // Migration: Phase 1 accounts gain the v2 fields with defaults. Existing
@@ -797,6 +825,22 @@ function ensureV2(p) {
   // Stage 19 migration: the selected spell. Anything that is not a
   // known spell id falls back to Air Strike (the level-1 default).
   if (typeof p.spell !== 'string' || !SPELL_BY_ID[p.spell]) { p.spell = 'air_strike'; changed = true; }
+  // Stage 20 migration: starter goals + collection log. Only the
+  // container shapes are enforced; recorded progress is cleaned
+  // down to known ids (truthy entries only) and never reset.
+  if (!p.starter || typeof p.starter !== 'object' || Array.isArray(p.starter)) { p.starter = { done: {} }; changed = true; }
+  if (!p.starter.done || typeof p.starter.done !== 'object' || Array.isArray(p.starter.done)) { p.starter.done = {}; changed = true; }
+  else {
+    const cleanDone = {};
+    for (const g of STARTER_GOALS) if (p.starter.done[g.id]) cleanDone[g.id] = true;
+    if (JSON.stringify(cleanDone) !== JSON.stringify(p.starter.done)) { p.starter.done = cleanDone; changed = true; }
+  }
+  if (!p.clog || typeof p.clog !== 'object' || Array.isArray(p.clog)) { p.clog = {}; changed = true; }
+  else {
+    const cleanClog = {};
+    for (const id of clogEntryIds()) if (p.clog[id]) cleanClog[id] = true;
+    if (JSON.stringify(cleanClog) !== JSON.stringify(p.clog)) { p.clog = cleanClog; changed = true; }
+  }
   // Stage 10 migration: character appearance. A missing one is
   // backfilled with the default; a present one is sanitised in
   // place (merged over the default — a set look is never wiped).
@@ -884,6 +928,11 @@ function publicProfile(p) {
     appearance: { ...p.appearance },
     // Stage 19: the selected spell id (the client spellbook marks it).
     spell: p.spell || 'air_strike',
+    // Stage 20: starter-goal progress (the done map) and the
+    // collection log's found entry ids — also pushed as dedicated
+    // 'starter' / 'clog' messages on welcome and on every change.
+    starter: { done: { ...(p.starter && p.starter.done ? p.starter.done : {}) } },
+    clog: clogEntryIds().filter((id) => p.clog && p.clog[id]),
   };
 }
 function leaderboardProfile(p) {
@@ -894,6 +943,8 @@ function leaderboardProfile(p) {
 // {type:'xp'} notice per skill (the client turns these into XP drops),
 // and saves once. `online`/`send` are defined in the real-time section —
 // this only runs while a player is connected and playing.
+// Stage 20: a grant that crosses into a new level also fires the
+// level-up fanfare (onLevelUp) — one event per level crossed.
 function addXp(key, gains) {
   const u = db.users[key];
   if (!u) return;
@@ -902,12 +953,115 @@ function addXp(key, gains) {
   let changed = false;
   for (const [skill, amt] of Object.entries(gains)) {
     if (!amt || !(skill in p.xp)) continue;
+    const before = levelForXp(p.xp[skill]);
     p.xp[skill] += amt;
     changed = true;
+    const after = levelForXp(p.xp[skill]);
     const sess = online.get(key);
-    if (sess) send(sess.ws, { type: 'xp', skill, xp: p.xp[skill], level: levelForXp(p.xp[skill]) });
+    if (sess) send(sess.ws, { type: 'xp', skill, xp: p.xp[skill], level: after });
+    for (let lvl = before + 1; lvl <= after; lvl++) onLevelUp(key, skill, lvl);
   }
   if (changed) save(key);
+}
+
+// ---------- Stage 20 helpers: announcements, level-ups, starter
+// goals, collection log. (Function declarations: the flows above
+// and below call them at runtime, after the whole module loads.) ----------
+// A game-wide announcement: every online player gets the gold
+// banner + chat line (client renders {type:'announce'}).
+function announce(text) {
+  broadcast({ type: 'announce', text });
+}
+// What reaching `level` in `skill` unlocks, derived ONLY from the
+// requirement tables that already gate the game — node level
+// requirements (mining / fishing / woodcutting), the smithing
+// tables (smelt recipes + smithable metals), the spellbook and the
+// fletching gates. Bows/staves/swords carry no wield level in this
+// game, and prayers none either, so those skills simply get null.
+function unlockTextFor(skill, level) {
+  const parts = [];
+  if (skill === 'magic') {
+    for (const s of SPELLS) if (s.level === level) parts.push(`You can now cast ${s.name}`);
+  }
+  if (skill === 'fletching') {
+    for (const [tier, gate] of Object.entries(FLETCH_GATE)) if (gate === level) parts.push(`You can now fletch ${cap(tier)} arrows`);
+  }
+  if (skill === 'smithing') {
+    for (const [bar, rec] of Object.entries(BAR_RECIPES)) if (rec.level === level) parts.push(`You can now smelt ${ITEMS[bar].name}`);
+    for (const [metal, md] of Object.entries(SMITH_METALS)) if (md.level === level) parts.push(`You can now smith ${cap(metal)} gear`);
+  }
+  if (skill === 'mining' || skill === 'fishing' || skill === 'woodcutting') {
+    const names = [];
+    for (const n of NODES.values()) {
+      if (n.skill === skill && n.levelReq === level && n.item && !names.includes(n.name)) names.push(n.name);
+    }
+    if (names.length) {
+      if (skill === 'mining') parts.push(`You can now mine ${names.join(' and ')}`);
+      else if (skill === 'fishing') parts.push(`You can now fish at the ${names.join(' and the ')}`);
+      else parts.push(`You can now chop the ${names.join(' and the ')}`);
+    }
+  }
+  return parts.length ? parts.join(' · ') : null;
+}
+// The level-up fanfare trigger: the player gets the full
+// {type:'level_up'} (banner + fireworks + unlock line on the
+// client), everyone else in the same area gets the small
+// {type:'player_level_up'} version, and a 99 is announced to the
+// whole game.
+function onLevelUp(key, skill, level) {
+  const u = db.users[key];
+  if (!u) return;
+  const sess = online.get(key);
+  if (sess) {
+    send(sess.ws, { type: 'level_up', skill, level, unlock: unlockTextFor(skill, level) });
+    for (const [k2, p2] of online) {
+      if (k2 !== key && p2.area === sess.area) send(p2.ws, { type: 'player_level_up', username: u.profile.username, skill, level });
+    }
+  }
+  if (level >= 99) announce(`🏆 ${u.profile.username} just reached level 99 ${cap(skill)}!`);
+}
+function starterMsg(p) {
+  ensureV2(p);
+  return { type: 'starter', goals: STARTER_GOALS.map((g) => ({ id: g.id, label: g.label, done: !!(p.starter && p.starter.done[g.id]) })) };
+}
+function clogMsg(p) {
+  ensureV2(p);
+  const ids = clogEntryIds();
+  return { type: 'clog', found: ids.filter((id) => p.clog && p.clog[id]), total: ids.length };
+}
+// Mark a starter goal done (once only): pays the reward through
+// addGold, saves, and pushes the toast + fresh goal state + fresh
+// profile to the player if they are online.
+function completeStarterGoal(key, goalId) {
+  const u = db.users[key];
+  if (!u) return;
+  const goal = STARTER_GOALS.find((g) => g.id === goalId);
+  if (!goal) return;
+  const p = u.profile;
+  ensureV2(p);
+  if (p.starter.done[goalId]) return;
+  p.starter.done[goalId] = true;
+  addGold(p, STARTER_REWARD);
+  save(key);
+  const sess = online.get(key);
+  if (sess) {
+    send(sess.ws, { type: 'starter_done', id: goalId, label: goal.label, reward: STARTER_REWARD });
+    send(sess.ws, starterMsg(p));
+    sendProfile(key);
+  }
+}
+// Record a collection-log entry (once only) and push the fresh log.
+function recordClog(key, entryId) {
+  const u = db.users[key];
+  if (!u) return;
+  if (!clogEntryIds().includes(entryId)) return;
+  const p = u.profile;
+  ensureV2(p);
+  if (p.clog[entryId]) return;
+  p.clog[entryId] = true;
+  save(key);
+  const sess = online.get(key);
+  if (sess) send(sess.ws, clogMsg(p));
 }
 
 // ---------- backpack / bank stack helpers ----------
@@ -1052,6 +1206,23 @@ const server = http.createServer(async (req, res) => {
     const rows = Object.values(db.users).map((u) => leaderboardProfile(u.profile))
       .sort((a, b) => b.rating - a.rating).slice(0, 20);
     return json(res, 200, { leaderboard: rows });
+  }
+  // Stage 20: skills hiscores — the top 20 accounts by total XP
+  // (ties broken by total level, then name for a stable order).
+  // Reads the same in-memory db.users the leaderboard reads.
+  if (req.method === 'GET' && url.pathname === '/api/hiscores') {
+    const rows = Object.values(db.users).map((u) => {
+      const p = u.profile;
+      ensureV2(p);
+      const levels = levelsOf(p);
+      return {
+        username: p.username,
+        totalLevel: SKILLS.reduce((t, s) => t + levels[s], 0),
+        totalXp: SKILLS.reduce((t, s) => t + (p.xp[s] || 0), 0),
+        combatLevel: Math.round(combatLevelOf(levels) * 100) / 100,
+      };
+    }).sort((a, b) => (b.totalXp - a.totalXp) || (b.totalLevel - a.totalLevel) || a.username.localeCompare(b.username)).slice(0, 20);
+    return json(res, 200, { hiscores: rows });
   }
   // static files
   const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
@@ -1941,6 +2112,9 @@ function endDuel(duel, winnerKey, reason) {
     winner.rating += 11; loser.rating = Math.max(0, loser.rating - 11);
   }
   save(winnerKey); save(loserKey);
+  // Stage 20: ANY duel win (staked, Free Play or mod-run) completes
+  // the winner's "Win a duel" starter goal.
+  completeStarterGoal(winnerKey, 'win_duel');
   for (const k of [duel.a, duel.b]) {
     const p = online.get(k);
     if (p) {
@@ -2453,6 +2627,7 @@ function npcTick(fight) {
     // player still wakes in the plaza.
     npc.alive = false; npc.hp = 0; npc.respawnAt = Date.now() + npc.respawnMs;
     const drops = rollNpcDrops(profile, npc);
+    completeStarterGoal(fight.playerKey, 'kill_monster'); // Stage 20: first NPC kill (goblin / wizard / ranger)
     save(fight.playerKey);
     const playerDead = fight.hpYou <= 0;
     finishNpcFight(fight, 'kill', drops);
@@ -2589,6 +2764,10 @@ function finishBarrowsFight(fight, reason) {
       if (!u.profile.barrows.kills.includes(fight.brother)) u.profile.barrows.kills.push(fight.brother);
       save(fight.playerKey);
     }
+    // Stage 20: a brother kill is a monster kill AND a collection
+    // log entry (the brother ids are the clog ids).
+    completeStarterGoal(fight.playerKey, 'kill_monster');
+    recordClog(fight.playerKey, fight.brother);
     if (sess) sendBarrowsState(fight.playerKey);
   }
   if (sess) {
@@ -2806,10 +2985,14 @@ function rollBarrowsLoot(profile, killCount) {
     const row = BARROWS_LOOT_ITEMS[Math.floor(Math.random() * BARROWS_LOOT_ITEMS.length)];
     give(row.item, row.min + Math.floor(Math.random() * (row.max - row.min + 1)));
   }
+  // Stage 20: a rare weapon is NOT given straight to the backpack —
+  // it is returned separately so the loot handler can land it as a
+  // glowing rare drop pile (the loot-beam moment) instead.
+  let rare = null;
   if (Math.random() < 0.08 * (killCount / 6)) {
-    give(BARROWS_WEAPONS[Math.floor(Math.random() * BARROWS_WEAPONS.length)], 1);
+    rare = BARROWS_WEAPONS[Math.floor(Math.random() * BARROWS_WEAPONS.length)];
   }
-  return { gold, items };
+  return { gold, items, rare };
 }
 
 // ---------- Fight Caves (Stage 4): Derek's 63-wave OSRS table ----------
@@ -2944,6 +3127,7 @@ function killFcMonster(run, mon) {
   mon.alive = false;
   mon.hp = 0;
   run.kills += 1;
+  completeStarterGoal(run.playerKey, 'kill_monster'); // Stage 20: Fight Caves kills count for the starter goal too
   run.rosterChanged = true;
   if (mon.kind === 'tzkek') {
     addFcMonster(run, 'tzkek_small', Math.max(0, mon.x - 25), mon.y);
@@ -3197,6 +3381,10 @@ function endFcRun(run, reason) {
     const leftover = addStacks(p.backpack, 'fire_cape', 1, BACKPACK_MAX_STACKS);
     if (leftover > 0) addStacks(p.bank, 'fire_cape', leftover); // full pack: bank it, never lose the cape
     reward = { gold: 500, item: 'fire_cape' };
+    // Stage 20: the cape is a collection-log entry, and earning one
+    // is announced to the whole game.
+    recordClog(run.playerKey, 'fire_cape');
+    announce(`🌋 ${p.username} just earned a Fire Cape!`);
   }
   save(run.playerKey);
   if (sess && reason !== 'disconnect') {
@@ -3319,7 +3507,7 @@ function pilesMsg(area) {
   return {
     type: 'piles', area,
     piles: [...piles.values()].filter((p) => p.area === area)
-      .map((p) => ({ id: p.id, item: p.item, qty: p.qty, x: Math.round(p.x), y: Math.round(p.y), owner: p.owner })),
+      .map((p) => ({ id: p.id, item: p.item, qty: p.qty, x: Math.round(p.x), y: Math.round(p.y), owner: p.owner, rare: !!p.rare })), // Stage 20: rare piles (Barrows weapons) carry the loot-beam flag
   };
 }
 function broadcastPiles(area) {
@@ -3529,6 +3717,8 @@ wss.on('connection', (ws, req) => {
   send(ws, alliesMsg('plaza')); // Stage 6: any Tree Guardians standing in the plaza
   send(ws, objectsMsg('plaza')); // Stage 7D: any placed objects in the plaza
   send(ws, { type: 'catalog', items: catalogList(), shops: SHOPS, spells: SPELLS });
+  send(ws, starterMsg(profile)); // Stage 20: starter-goal state
+  send(ws, clogMsg(profile)); // Stage 20: collection-log state
   send(ws, { type: 'exchange_prices', goods: goodsList() });
   send(ws, stakeBoardMsg()); // Stage 17: the current Stake Board offers
   broadcast({ type: 'chat', from: 'Game', text: `${profile.username} entered the plaza.` }, key);
@@ -3607,6 +3797,7 @@ wss.on('connection', (ws, req) => {
       if (me.fcRunId) { const r = fcRuns.get(me.fcRunId); if (r) endFcRun(r, 'left'); }
       me.area = to;
       me.x = AREAS[to].spawn.x; me.y = AREAS[to].spawn.y;
+      if (to !== 'plaza') completeStarterGoal(key, 'visit_area'); // Stage 20: first trip out of the plaza
       send(ws, { type: 'area', area: to });
       if (NPC_AREAS.includes(to)) send(ws, npcStateMsg(to));
       // Stage 2: every area entry also brings its node + fire state
@@ -3750,7 +3941,19 @@ wss.on('connection', (ws, req) => {
       me.barrowsPuzzle = null; me.barrowsPuzzleSolved = false;
       me.area = 'barrows';
       me.x = AREAS.barrows.spawn.x; me.y = AREAS.barrows.spawn.y;
-      send(ws, { type: 'barrows_loot', gold: loot.gold, items: loot.items, kills: killCount, profile: publicProfile(profile) });
+      // Stage 20: the rare weapon lands as a drop pile at the
+      // winner's feet here on the field — the loot flow climbs out
+      // of the tunnels in this same instant, so the chest itself
+      // can't hold the moment. The pile is flagged rare (the client
+      // renders the golden loot beam over it), the find goes into
+      // the collection log, and the whole game hears about it.
+      if (loot.rare) {
+        const pileId = crypto.randomBytes(6).toString('hex');
+        piles.set(pileId, { id: pileId, item: loot.rare, qty: 1, x: me.x, y: me.y, area: 'barrows', owner: profile.username, bornAt: Date.now(), rare: true });
+        recordClog(key, loot.rare);
+        announce(`⚰️ ${profile.username} just looted ${itemDef(loot.rare).name} from Barrows!`);
+      }
+      send(ws, { type: 'barrows_loot', gold: loot.gold, items: loot.items, rare: loot.rare || null, kills: killCount, profile: publicProfile(profile) });
       send(ws, { type: 'area', area: 'barrows' });
       send(ws, nodesMsg('barrows'));
       send(ws, firesMsg('barrows'));
@@ -3891,6 +4094,10 @@ wss.on('connection', (ws, req) => {
         if (leftover > 0) addStacks(profile.bank, node.item, leftover); // full pack: bank it, never lose a gather
       }
       addXp(key, { [node.skill]: node.xp });
+      // Stage 20: the first REAL resource gather (a node with an
+      // item — Training Cave stations grant XP only, item null, and
+      // don't count) completes the "Gather a resource" starter goal.
+      if (node.item) completeStarterGoal(key, 'gather');
       save(key);
       me.actSkill = node.skill; me.actAt = Date.now(); // Stage 7C: activity marker (training stations share this handler)
       send(ws, { type: 'gather_result', nodeId: node.id, ok: true, item: node.item, xp: node.xp });
@@ -4289,6 +4496,7 @@ wss.on('connection', (ws, req) => {
       if (m.type === 'bank_deposit') {
         if (!removeStacks(profile.backpack, item, qty)) return send(ws, { type: 'error', message: `You don't have ${qty} x ${def.name}.` });
         addStacks(profile.bank, item, qty);
+        completeStarterGoal(key, 'use_bank'); // Stage 20: first deposit completes the starter goal
       } else {
         if (stackQty(profile.bank, item) < qty) return send(ws, { type: 'error', message: `The bank doesn't hold ${qty} x ${def.name}.` });
         if (addStacks(profile.backpack, item, qty, BACKPACK_MAX_STACKS) > 0) return send(ws, { type: 'error', message: 'Backpack full (28 stacks).' });
