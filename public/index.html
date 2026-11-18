@@ -315,6 +315,7 @@
   <button class="rbtn" data-panel="bank" title="Bank of Gielinor">🏦</button>
   <button class="rbtn" data-panel="exchange" title="Gold Exchange">💱</button>
   <button class="rbtn" data-panel="prayers" title="Prayers">🙏</button>
+  <button class="rbtn" data-panel="spellbook" title="Spellbook">📖</button>
   <button class="rbtn" data-panel="players" title="Players">👥</button>
   <button class="rbtn" data-panel="admin" title="Admin">👑</button>
   <button class="rbtn" data-panel="tools" id="toolsbtn" title="Admin tools" style="display:none">🛠️</button>
@@ -447,6 +448,7 @@ const $=id=>document.getElementById(id);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 let ws=null, token=null, me=null, players=[];
 let catalog={}, catalogArr=[], shopNames=[];
+let spellList=[]; // Stage 19: the server's spell table (rides the catalog message) for the spellbook panel
 let goods={}; // id -> {id,name,price}
 const ICONS={restore_potion:'🍷',prayer_potion:'🌟',ration:'🍗',bronze_sword:'🗡️',iron_sword:'🗡️',steel_sword:'⚔️',mithril_sword:'⚔️',dragon_sword:'🐉',
  bronze_helm:'⛑️',steel_helm:'⛑️',dragon_helm:'⛑️',bronze_platebody:'🦺',steel_platebody:'🦺',dragon_platebody:'🦺',
@@ -728,7 +730,7 @@ window.pickActivity=function(act){
 };
 function onMsg(m){
  if(m.type==='welcome'){ welcomed=true; quickAttempt=false; me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); maybeShowActivityPicker(); }
- if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(drawerPanel==='shop') renderDrawer(); renderQuickButtons(); }
+ if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(Array.isArray(m.spells)) spellList=m.spells; if(drawerPanel==='shop') renderDrawer(); renderQuickButtons(); }
  if(m.type==='exchange_prices'){ goods={}; for(const g of (m.goods||[])) goods[g.id]=g; if(drawerPanel==='exchange') renderDrawer(); drawMinimap(); }
  if(m.type==='state'){ if(m.area&&m.area!==curArea) setArea(m.area); players=m.players||[]; initMyPos(); syncAvatars(); if(drawerPanel==='players') renderDrawer(); drawMinimap(); }
  if(m.type==='area'){ setArea(m.area); }
@@ -751,6 +753,7 @@ function onMsg(m){
  if(m.type==='gather_result'){ onGatherResult(m); }
  if(m.type==='fire_lit'){ toast('🔥 Fire lit (60s)'); }
  if(m.type==='cook_result'){ if(m.ok) toast(`🍳 Cooked! +1 ${nameOf(m.item)}`); else toast('🔥 Burnt it…'); }
+ if(m.type==='fletch_result'){ toast(`🪵 Fletched! +${m.qty} ${nameOf(m.item)}`); }
  if(m.type==='smelt_result'){ toast(`🔥 Smelted ${m.qty} × ${nameOf(m.bar)} (+${m.xp} Smithing XP)`); logLine(`🔥 Smelted ${m.qty} × ${nameOf(m.bar)} (+${m.xp} Smithing XP)`); if(drawerPanel==='smithy') renderDrawer(); }
  if(m.type==='smith_state'){ onSmithState(m); }
  if(m.type==='upgrade_result'){ if(m.ok){ toast(`⬆️ Upgraded to ${nameOf(m.item)}!`); logLine(`⬆️ Upgraded to ${nameOf(m.item)} (+${m.xp||0} Smithing XP)`); } else { toast('⬆️ The upgrade failed — the bar was lost, your item is unharmed.'); logLine('⬆️ Upgrade failed — bar lost, item unharmed.'); } }
@@ -841,7 +844,7 @@ $('orbhp').onclick=()=>{ if(duel||npcFight||fcRun) toast('Eat food or drink a re
 $('orbrun').onclick=()=>{ settings.run=!settings.run; saveSettings(); renderOrbs(); toast(settings.run?'🏃 Run on — full speed':'🚶 Run off — walking pace'); };
 
 /* ================= XP drops ================= */
-const SKILL_DEFS=[['attack','⚔️','Attack'],['strength','💪','Strength'],['defence','🛡️','Defence'],['hitpoints','❤️','Hitpoints'],['ranged','🏹','Ranged'],['magic','🔮','Magic'],['prayer','🙏','Prayer'],['mining','⛏️','Mining'],['smithing','🔨','Smithing'],['woodcutting','🪓','Woodcutting'],['firemaking','🔥','Firemaking'],['fishing','🎣','Fishing'],['cooking','🍳','Cooking']];
+const SKILL_DEFS=[['attack','⚔️','Attack'],['strength','💪','Strength'],['defence','🛡️','Defence'],['hitpoints','❤️','Hitpoints'],['ranged','🏹','Ranged'],['magic','🔮','Magic'],['prayer','🙏','Prayer'],['mining','⛏️','Mining'],['smithing','🔨','Smithing'],['woodcutting','🪓','Woodcutting'],['firemaking','🔥','Firemaking'],['fishing','🎣','Fishing'],['cooking','🍳','Cooking'],['fletching','🪶','Fletching']];
 const SKILL_ICON={}; const SKILL_NAME={};
 for(const [id,ic,nm] of SKILL_DEFS){ SKILL_ICON[id]=ic; SKILL_NAME[id]=nm; }
 let lastXp={};
@@ -1107,10 +1110,21 @@ function buildPlaza(root){
    const rail=box(0.08,0.12,len,fenceMat,midx,0.85,midz,scene); rail.rotation.y=ang;
    const rail2=box(0.08,0.12,len,fenceMat,midx,0.45,midz,scene); rail2.rotation.y=ang;
  }
- fenceRun(-80,-45,-7,-45); fenceRun(7,-45,80,-45); // north, gap at gate
+ // Stage 19: the north wall gains a second gap (world x -60..-36)
+ // for the Ranger Camp gate, and the north-west corner opens for
+ // the Wizard Grounds gate (the runs below start short of it).
+ fenceRun(-76,-45,-60,-45); fenceRun(-36,-45,-7,-45); fenceRun(7,-45,80,-45); // north, gaps at the Ranger Camp gate + the centre gate
  fenceRun(-80,45,-7,45); fenceRun(7,45,80,45); // south
- fenceRun(-80,-45,-80,-7); fenceRun(-80,7,-80,45); // west
+ fenceRun(-80,-41,-80,-7); fenceRun(-80,7,-80,45); // west (starts short of the NW corner gate)
  fenceRun(80,-45,80,-7); fenceRun(80,7,80,45); // east
+ // Stage 19 gate posts + signs: NW corner -> Wizard Grounds,
+ // north wall (west segment) -> Ranger Camp.
+ box(0.5,3.4,0.5,0x7c7565,-80,1.7,-40.2,scene); box(0.5,3.4,0.5,0x7c7565,-75.2,1.7,-45,scene);
+ box(0.18,2.2,0.18,0x5a4020,-70,1.1,-38,scene);
+ const wsp=textSprite('🧙 Wizard Grounds','#cdbcf2','rgba(23,19,12,0.85)'); wsp.position.set(-70,3.0,-38); scene.add(wsp);
+ box(0.5,3.4,0.5,0x7c7565,-60.8,1.7,-45,scene); box(0.5,3.4,0.5,0x7c7565,-35.2,1.7,-45,scene);
+ box(0.18,2.2,0.18,0x5a4020,-48,1.1,-38,scene);
+ const rsp=textSprite('🏹 Ranger Camp','#b7e3a8','rgba(23,19,12,0.85)'); rsp.position.set(-48,3.0,-38); scene.add(rsp);
  // gate posts N/E/S/W (visual only — Phase 3 areas later)
  for(const [gx,gz] of [[0,-45],[0,45],[-80,0],[80,0]]){
    const horiz=Math.abs(gz)>Math.abs(gx);
@@ -1180,6 +1194,97 @@ function buildGoblinCamp(root){
  for(const [rx,rz] of [[-32,10],[36,-10],[-54,-16],[22,30],[58,8],[-64,28]]){
    const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.7),new THREE.MeshLambertMaterial({color:0x8a8578}));
    rock.position.set(rx,0.4,rz); S.add(rock);
+ }
+}
+/* ---- Stage 19 scenes: Wizard Grounds + Ranger Camp ---- */
+function buildWizardGrounds(root){
+ const S=root;
+ // dusky violet ground with a paler mystic circle at the centre
+ const grass=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x4a4460}));
+ grass.rotation.x=-Math.PI/2; S.add(grass);
+ const circ=new THREE.Mesh(new THREE.CircleGeometry(16,28),new THREE.MeshLambertMaterial({color:0x5d5480}));
+ circ.rotation.x=-Math.PI/2; circ.position.y=0.02; S.add(circ);
+ // the wizard tower, north side: stone cylinder, cone roof, glowing door + windows
+ const tower=new THREE.Group(); tower.position.set(0,0,-30); S.add(tower);
+ const tBody=new THREE.Mesh(new THREE.CylinderGeometry(4.2,5.0,11,12),new THREE.MeshLambertMaterial({color:0x6e6a7e})); tBody.position.y=5.5; tower.add(tBody);
+ const tRoof=new THREE.Mesh(new THREE.ConeGeometry(5.6,4.6,12),new THREE.MeshLambertMaterial({color:0x3d2a63})); tRoof.position.y=13.3; tower.add(tRoof);
+ const tFin=new THREE.Mesh(new THREE.SphereGeometry(0.5,10,8),new THREE.MeshBasicMaterial({color:0xb79cff})); tFin.position.y=16.0; tower.add(tFin);
+ box(1.6,2.8,0.2,0x2c2140,0,1.4,4.85,tower); // door
+ box(0.7,0.9,0.15,0xffd75e,-2.2,7.5,4.35,tower); box(0.7,0.9,0.15,0xffd75e,2.4,9.0,4.1,tower); // lit windows
+ const tl=textSprite('🧙 Wizard Tower','#cdbcf2','rgba(23,19,12,0.85)'); tl.position.set(0,17.6,0); tower.add(tl);
+ // floating rune crystals scattered about
+ for(const [cx,cz,cc] of [[-30,-14,0x7ec8ff],[26,18,0xff9de2],[-44,20,0xb79cff],[40,-26,0x8affd1],[14,34,0xffd75e],[-18,36,0x7ec8ff]]){
+   const cry=new THREE.Mesh(new THREE.OctahedronGeometry(0.9),new THREE.MeshBasicMaterial({color:cc}));
+   cry.position.set(cx,1.6,cz); S.add(cry);
+   box(0.5,0.5,0.5,0x55505e,cx,0.25,cz,S);
+ }
+ // perimeter fences, gap at the SOUTH gate (walk out to return to the plaza)
+ const fenceMat=0x4e4468;
+ function fenceRun(x1,z1,x2,z2){
+   const len=Math.hypot(x2-x1,z2-z1), n=Math.max(2,Math.round(len/4));
+   for(let i=0;i<=n;i++){ const t=i/n; box(0.16,1.1,0.16,fenceMat,x1+(x2-x1)*t,0.55,z1+(z2-z1)*t,S); }
+   const midx=(x1+x2)/2, midz=(z1+z2)/2, ang=Math.atan2(x2-x1,z2-z1);
+   const rail=box(0.08,0.12,len,fenceMat,midx,0.85,midz,S); rail.rotation.y=ang;
+   const rail2=box(0.08,0.12,len,fenceMat,midx,0.45,midz,S); rail2.rotation.y=ang;
+ }
+ fenceRun(-80,-45,80,-45); // north
+ fenceRun(-80,45,-7,45); fenceRun(7,45,80,45); // south, gap at gate
+ fenceRun(-80,-45,-80,45); // west
+ fenceRun(80,-45,80,45); // east
+ box(0.5,3.4,0.5,0x7c7565,-5.2,1.7,45,S); box(0.5,3.4,0.5,0x7c7565,5.2,1.7,45,S);
+ box(11.4,0.4,0.6,0xc9a227,0,3.3,45,S);
+ box(0.18,2.2,0.18,0x5a4020,8.4,1.1,38,S);
+ const sp=textSprite('🧙 Wizard Grounds','#cdbcf2','rgba(23,19,12,0.85)'); sp.position.set(8.4,3.0,38); S.add(sp);
+ buildTorch(S,-14,20); buildTorch(S,16,-6);
+}
+function buildRangerCamp(root){
+ const S=root;
+ const grass=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x59743a}));
+ grass.rotation.x=-Math.PI/2; S.add(grass);
+ const dirt=new THREE.Mesh(new THREE.PlaneGeometry(110,60),new THREE.MeshLambertMaterial({color:0x77683f}));
+ dirt.rotation.x=-Math.PI/2; dirt.position.y=0.02; S.add(dirt);
+ // archery target butts in a row along the north side: straw
+ // cylinder + painted rings facing south (the shooting line)
+ for(const [tx,tz] of [[-36,-26],[-12,-28],[12,-28],[36,-26],[0,-12]]){
+   const butt=new THREE.Group(); butt.position.set(tx,0,tz); S.add(butt);
+   const straw=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.5,0.7,16),new THREE.MeshLambertMaterial({color:0xc9a959}));
+   straw.rotation.x=Math.PI/2; straw.position.y=1.6; butt.add(straw);
+   const ring1=new THREE.Mesh(new THREE.CircleGeometry(1.05,20),new THREE.MeshBasicMaterial({color:0xe8e2d2})); ring1.position.set(0,1.6,0.37); butt.add(ring1);
+   const ring2=new THREE.Mesh(new THREE.CircleGeometry(0.62,20),new THREE.MeshBasicMaterial({color:0x39518c})); ring2.position.set(0,1.6,0.38); butt.add(ring2);
+   const bull=new THREE.Mesh(new THREE.CircleGeometry(0.28,16),new THREE.MeshBasicMaterial({color:0xb03030})); bull.position.set(0,1.6,0.39); butt.add(bull);
+   box(0.22,1.3,0.22,0x5a4020,-0.8,0.65,0,butt); box(0.22,1.3,0.22,0x5a4020,0.8,0.65,0,butt); // legs
+ }
+ // hay bales + a supply tent
+ for(const [hx,hz] of [[-52,14],[54,10],[-24,32],[30,34]]){
+   const hay=new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.1,1.6,12),new THREE.MeshLambertMaterial({color:0xc9a959}));
+   hay.rotation.z=Math.PI/2; hay.position.set(hx,1.1,hz); S.add(hay);
+ }
+ const tent=new THREE.Mesh(new THREE.ConeGeometry(3.0,3.4,4),new THREE.MeshLambertMaterial({color:0x5d7040}));
+ tent.position.set(58,1.7,-30); tent.rotation.y=0.78; S.add(tent);
+ box(1.0,1.4,0.15,0x2c2410,58,0.7,-27.8,S); // doorway
+ const tl=textSprite('🏹 Target Range','#b7e3a8','rgba(23,19,12,0.85)'); tl.position.set(0,4.6,-27); S.add(tl);
+ // perimeter fences, gap at the SOUTH gate
+ const fenceMat=0x6b4e26;
+ function fenceRun(x1,z1,x2,z2){
+   const len=Math.hypot(x2-x1,z2-z1), n=Math.max(2,Math.round(len/4));
+   for(let i=0;i<=n;i++){ const t=i/n; box(0.16,1.1,0.16,fenceMat,x1+(x2-x1)*t,0.55,z1+(z2-z1)*t,S); }
+   const midx=(x1+x2)/2, midz=(z1+z2)/2, ang=Math.atan2(x2-x1,z2-z1);
+   const rail=box(0.08,0.12,len,fenceMat,midx,0.85,midz,S); rail.rotation.y=ang;
+   const rail2=box(0.08,0.12,len,fenceMat,midx,0.45,midz,S); rail2.rotation.y=ang;
+ }
+ fenceRun(-80,-45,80,-45); // north
+ fenceRun(-80,45,-7,45); fenceRun(7,45,80,45); // south, gap at gate
+ fenceRun(-80,-45,-80,45); // west
+ fenceRun(80,-45,80,45); // east
+ box(0.5,3.4,0.5,0x7c7565,-5.2,1.7,45,S); box(0.5,3.4,0.5,0x7c7565,5.2,1.7,45,S);
+ box(11.4,0.4,0.6,0xc9a227,0,3.3,45,S);
+ box(0.18,2.2,0.18,0x5a4020,8.4,1.1,38,S);
+ const sp=textSprite('🏹 Ranger Camp','#b7e3a8','rgba(23,19,12,0.85)'); sp.position.set(8.4,3.0,38); S.add(sp);
+ // trees around the edges
+ for(const [tx,tz] of [[-66,-34],[66,30],[-70,22],[48,-38],[-40,40],[70,-14]]){
+   box(0.35,1.4,0.35,0x5a4020,tx,0.7,tz,S);
+   const cone=new THREE.Mesh(new THREE.ConeGeometry(1.7,3.4,7),new THREE.MeshLambertMaterial({color:0x3d5e22}));
+   cone.position.set(tx,3.1,tz); S.add(cone);
  }
 }
 /* ---- Stage 2 scene helpers ---- */
@@ -1691,6 +1796,8 @@ function buildAreas(){
  areaGroups.barrows_tunnels=new THREE.Group(); scene.add(areaGroups.barrows_tunnels); buildBarrowsTunnels(areaGroups.barrows_tunnels);
  areaGroups.arena=new THREE.Group(); scene.add(areaGroups.arena); buildArena(areaGroups.arena);
  areaGroups.waiting=new THREE.Group(); scene.add(areaGroups.waiting); buildWaiting(areaGroups.waiting);
+ areaGroups.magic=new THREE.Group(); scene.add(areaGroups.magic); buildWizardGrounds(areaGroups.magic);
+ areaGroups.range=new THREE.Group(); scene.add(areaGroups.range); buildRangerCamp(areaGroups.range);
  applyAreaVisibility();
 }
 function applyAreaVisibility(){
@@ -1708,7 +1815,7 @@ function setArea(a){
    myInit=false; myPos=null; tapTarget=null; pendingAttack=null; pendingFcAttack=null;
    stopGather();
    for(const name of Object.keys(avatars)){ scene.remove(avatars[name].group); avatars[name].label.remove(); delete avatars[name]; }
-   if(a!=='goblins'){ npcList=[]; syncNpcs(); }
+   if(!NPC_AREAS_CLIENT.includes(a)){ npcList=[]; syncNpcs(); }
    if(a!=='fightcaves'){
      // Leaving the caves drops any local run state (the server ends the
      // run itself and its fc_end settles the records).
@@ -1730,7 +1837,9 @@ function setArea(a){
  }
  drawMinimap();
 }
-const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_tunnels:1,arena:1,waiting:1};
+const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_tunnels:1,arena:1,waiting:1,magic:1,range:1};
+// Stage 19: the areas with a live shared-NPC roster (npc_state).
+const NPC_AREAS_CLIENT=['goblins','magic','range'];
 /* Knight armour (Stage 8 medieval theme): rounded bodies — sphere
    head under a steel helmet cap, tapered-cylinder torso, cylinder
    limbs on shoulder/hip pivots (the right shoulder pivot is the weapon
@@ -2016,19 +2125,73 @@ function makeGoblin(n){
  const sh=new THREE.Mesh(new THREE.CircleGeometry(0.5,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
  sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
  const label=document.createElement('div'); label.className='plabel';
- label.innerHTML=`<div class="gname">Goblin · lvl 5</div><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
+ label.innerHTML=`<div class="gname">${esc(n.name||'Goblin')} · lvl ${n.combatLevel||5}</div><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
  $('labels').appendChild(label);
  return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
    x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:1.95,hp:n.hp,maxHp:n.maxHp};
 }
+/* Stage 19 NPC avatars: the wizard (purple robe + pointed hat +
+   staff) and the ranger (green hood + bow). Same avatar shape as
+   makeGoblin — the right-arm pivot is the swing arm. */
+function makeWizard(n){
+ const g=new THREE.Group();
+ const robe=0x4b3482, trim=0x8f7bd8;
+ const robeMat=new THREE.MeshLambertMaterial({color:robe});
+ const skirt=new THREE.Mesh(new THREE.CylinderGeometry(0.30,0.52,0.95,10),robeMat); skirt.position.y=0.48; g.add(skirt); // robe skirt
+ const body=new THREE.Mesh(new THREE.CylinderGeometry(0.27,0.32,0.55,10),robeMat); body.position.y=1.2; g.add(body);
+ box(0.16,0.45,0.16,robe,-0.4,1.15,0,g); // left arm
+ const armR=new THREE.Group(); armR.position.set(0.4,1.42,0); g.add(armR);
+ const armMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.075,0.085,0.45,8),robeMat); armMesh.position.y=-0.22; armR.add(armMesh);
+ box(0.07,1.15,0.07,0x6e4a1f,0,-0.75,0.05,armR); // staff
+ const orb=new THREE.Mesh(new THREE.SphereGeometry(0.11,8,8),new THREE.MeshBasicMaterial({color:0xb79cff})); orb.position.set(0,-1.32,0.05); armR.add(orb); // glowing staff orb
+ const head=new THREE.Mesh(new THREE.SphereGeometry(0.26,12,10),new THREE.MeshLambertMaterial({color:0xe8c39a})); head.position.y=1.72; g.add(head);
+ const beard=new THREE.Mesh(new THREE.ConeGeometry(0.17,0.5,8),new THREE.MeshLambertMaterial({color:0xd8d8e2})); beard.position.set(0,1.42,0.1); g.add(beard); // long white beard
+ const brim=new THREE.Mesh(new THREE.CylinderGeometry(0.44,0.44,0.06,12),new THREE.MeshLambertMaterial({color:trim})); brim.position.y=1.9; g.add(brim);
+ const hat=new THREE.Mesh(new THREE.ConeGeometry(0.3,0.85,10),new THREE.MeshLambertMaterial({color:robe})); hat.position.y=2.32; g.add(hat); // pointed hat
+ shadowify(g);
+ const sh=new THREE.Mesh(new THREE.CircleGeometry(0.5,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
+ sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
+ const label=document.createElement('div'); label.className='plabel';
+ label.innerHTML=`<div class="gname">${esc(n.name||'Wizard')} · lvl ${n.combatLevel||13}</div><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
+ $('labels').appendChild(label);
+ return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
+   x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:2.6,hp:n.hp,maxHp:n.maxHp};
+}
+function makeRanger(n){
+ const g=new THREE.Group();
+ const cloth=0x4a6b2f, dark=0x3a2c1c;
+ const clothMat=new THREE.MeshLambertMaterial({color:cloth});
+ box(0.2,0.45,0.2,dark,-0.14,0.23,0,g); box(0.2,0.45,0.2,dark,0.14,0.23,0,g); // legs
+ const body=new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.33,0.62,10),clothMat); body.position.y=0.76; g.add(body);
+ box(0.18,0.5,0.18,cloth,-0.4,0.8,0,g); // left arm
+ const armR=new THREE.Group(); armR.position.set(0.4,1.02,0); g.add(armR);
+ const armMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.09,0.5,8),clothMat); armMesh.position.y=-0.25; armR.add(armMesh);
+ const bow=new THREE.Mesh(new THREE.TorusGeometry(0.42,0.045,6,14,Math.PI),new THREE.MeshLambertMaterial({color:0x6e4a1f})); bow.position.set(0,-0.55,0.1); bow.rotation.z=-Math.PI/2; armR.add(bow); // bow arc
+ const head=new THREE.Mesh(new THREE.SphereGeometry(0.27,12,10),new THREE.MeshLambertMaterial({color:0xd9a066})); head.position.y=1.3; g.add(head);
+ const hood=new THREE.Mesh(new THREE.ConeGeometry(0.33,0.55,10),clothMat); hood.position.y=1.52; g.add(hood); // hood point
+ const quiver=box(0.16,0.55,0.16,0x6e4a1f,-0.1,1.05,-0.3,g); quiver.rotation.z=0.25; // quiver on the back
+ shadowify(g);
+ const sh=new THREE.Mesh(new THREE.CircleGeometry(0.5,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
+ sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
+ const label=document.createElement('div'); label.className='plabel';
+ label.innerHTML=`<div class="gname">${esc(n.name||'Ranger')} · lvl ${n.combatLevel||11}</div><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
+ $('labels').appendChild(label);
+ return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
+   x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:1.95,hp:n.hp,maxHp:n.maxHp};
+}
+function makeNpcAvatar(n){
+ if(n.kind==='wizard') return makeWizard(n);
+ if(n.kind==='ranger') return makeRanger(n);
+ return makeGoblin(n);
+}
 function syncNpcs(){
  if(!scene) return;
  const seen=new Set();
- if(curArea==='goblins'){
+ if(NPC_AREAS_CLIENT.includes(curArea)){
    for(const n of npcList){
      seen.add(n.id);
      let a=npcAvatars[n.id];
-     if(!a){ a=makeGoblin(n); a.group.position.set(a.x,0,a.z); npcAvatars[n.id]=a; scene.add(a.group); }
+     if(!a){ a=makeNpcAvatar(n); a.group.position.set(a.x,0,a.z); npcAvatars[n.id]=a; scene.add(a.group); }
      a.tx=sx2w(n.x); a.tz=sy2w(n.y); // Stage 8: goblins walk now — ease toward this
      a.hp=n.hp; a.maxHp=n.maxHp;
      a.hpFill.style.width=clamp(n.hp/Math.max(1,n.maxHp)*100,0,100)+'%';
@@ -2045,7 +2208,7 @@ function attackNpc(id){
  const n=npcList.find(x=>x.id===id); if(!n||!myPos) return;
  const d=Math.hypot(myPos.x-n.x,myPos.y-n.y);
  if(d<=140){ lastAttackTry={id,at:Date.now()}; send({type:'attack_npc',id}); }
- else { pendingAttack={id}; tapTarget={x:n.x,y:n.y}; toast('🚶 Walking to the goblin…'); }
+ else { pendingAttack={id}; tapTarget={x:n.x,y:n.y}; toast(`🚶 Walking to the ${(n.name||'goblin').toLowerCase()}…`); }
 }
 /* ---- Stage 4: Fight Caves monsters (my run only — instanced) ---- */
 let fcMonsters={}; // monster id -> roster entry from fc_state / fc_wave (server coords)
@@ -2708,8 +2871,8 @@ function handleTap(cx,cy){
      return;
    }
  }
- // goblins (tap to attack; walks over first if too far)
- if(curArea==='goblins'){
+ // shared NPCs — goblins / wizards / rangers (tap to attack; walks over first if too far)
+ if(NPC_AREAS_CLIENT.includes(curArea)){
    let gb=null,gbD=1e9;
    for(const [id,a] of Object.entries(npcAvatars)){
      const s=projectTo(a.group.position.x,1.1,a.group.position.z);
@@ -2820,6 +2983,11 @@ function checkGates(){
    if(myPos.x>=1580&&myPos.y>=860){ go('training','🚪 South-east gate → Training Cave…'); return; }
    if(myPos.x<=20&&myPos.y>=860){ go('gathering','🚪 South-west gate → Gathering Cave…'); return; }
    if(myPos.x>=1580&&myPos.y<=40){ go('mine','🚪 North-east gate → Emberfall Mine & Smithy…'); return; }
+   // Stage 19 gates: NW corner -> Wizard Grounds; north wall west
+   // segment -> Ranger Camp. Both sit clear of the existing corner
+   // triggers, the north centre strip and the Stake Board sign.
+   if(myPos.x<=20&&myPos.y<=40){ go('magic','🚪 North-west gate → Wizard Grounds…'); return; }
+   if(myPos.y<=10&&myPos.x>=200&&myPos.x<=440){ go('range','🚪 North gate → Ranger Camp…'); return; }
    if(myPos.x>=1590){ go('goblins','🚪 East gate → Goblin Camp…'); return; }
    if(myPos.x<=10){ go('cove','🚪 West gate → Fishing Cove…'); return; }
    if(myPos.y<=10&&myPos.x>=600&&myPos.x<=1000){ go('fightcaves','🚪 North gate → Fight Caves…'); return; }
@@ -2832,6 +3000,8 @@ function checkGates(){
  else if(curArea==='gathering'&&myPos.y<=10){ go('plaza','🚪 North gate → Plaza…'); }
  else if(curArea==='mine'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
  else if(curArea==='fightcaves'&&myPos.y>=890){ go('plaza','🚪 South entrance → Plaza…'); }
+ else if(curArea==='magic'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
+ else if(curArea==='range'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
 }
 function checkPendingAttack(){
  if(!pendingAttack||!myPos) return;
@@ -3187,7 +3357,7 @@ initThree();
 
 /* ================= drawer panels ================= */
 let drawerPanel=null, shopTab='Potion', shopMode='buy', bankQty='1', selStack=null, packSorted=false;
-const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',players:'👥 Players online',admin:'👑 Admin',tools:'🛠️ Admin Tools',skills:'📊 Skills',smithy:'🔥 Emberfall Smithy',teleport:'🌀 Teleport',settings:'🎛️ Settings'};
+const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',spellbook:'📖 Spellbook',players:'👥 Players online',admin:'👑 Admin',tools:'🛠️ Admin Tools',skills:'📊 Skills',smithy:'🔥 Emberfall Smithy',teleport:'🌀 Teleport',settings:'🎛️ Settings'};
 function togglePanel(name){ drawerPanel===(name)? closeDrawer() : openPanel(name); }
 function openPanel(name){ drawerPanel=name; selStack=null; if(name==='backpack') packSorted=false; $('drawer').classList.add('open'); renderDrawer();
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.toggle('on',b.dataset.panel===name));
@@ -3211,6 +3381,7 @@ function renderDrawer(){
  if(drawerPanel==='bank') b.innerHTML=pBank();
  if(drawerPanel==='exchange') b.innerHTML=pExchange();
  if(drawerPanel==='prayers') b.innerHTML=pPrayers();
+ if(drawerPanel==='spellbook') b.innerHTML=pSpellbook();
  if(drawerPanel==='players') b.innerHTML=pPlayers();
  if(drawerPanel==='admin') b.innerHTML=pAdmin();
  if(drawerPanel==='tools') b.innerHTML=pTools();
@@ -3232,8 +3403,8 @@ window.cookItem=function(item){
 };
 window.packBackpack=function(){ packSorted=true; renderDrawer(); toast('🎒 Packed — everything pulled to the top, in order.'); };
 /* ---- Stage 7C: Examine block (built from catalog data, no server call) ---- */
-const KIND_LABEL={food:'Food',potion:'Potion',weapon:'Weapon',armour:'Armour',tool:'Tool',resource:'Resource',good:'Trade good',token:'Token',trophy:'Trophy',currency:'Money'};
-const KIND_DESC={food:'Eat it to heal.',potion:'Drink it to restore yourself.',weapon:'Wield it to fight with it.',armour:'Wear it to protect yourself in a fight.',tool:'A tool — it speeds up the work it is made for.',resource:'A raw material — cook it, smelt it, smith with it, or sell it.',good:'A trade good — its price drifts on the Gold Exchange.',trophy:'A hard-won trophy. Wear it to show what you beat.',currency:'Your money, as a stack of coins. It lives in your backpack (or the bank) — shops, stakes and trades draw from both stacks together.'};
+const KIND_LABEL={food:'Food',potion:'Potion',weapon:'Weapon',armour:'Armour',tool:'Tool',resource:'Resource',good:'Trade good',token:'Token',trophy:'Trophy',currency:'Money',rune:'Rune',ammo:'Arrows',arrowhead:'Arrowheads'};
+const KIND_DESC={food:'Eat it to heal.',potion:'Drink it to restore yourself.',weapon:'Wield it to fight with it.',armour:'Wear it to protect yourself in a fight.',tool:'A tool — it speeds up the work it is made for.',resource:'A raw material — cook it, smelt it, smith with it, or sell it.',good:'A trade good — its price drifts on the Gold Exchange.',trophy:'A hard-won trophy. Wear it to show what you beat.',currency:'Your money, as a stack of coins. It lives in your backpack (or the bank) — shops, stakes and trades draw from both stacks together.',rune:'Spent to cast spells — each spell burns only its own element. Wizards drop runes.',ammo:'Ammunition for bows. Each shot spends 1 arrow from the FIRST arrow stack in your backpack — reorder your stacks (drag them in the backpack) to choose which arrows are spent first.',arrowhead:'Fletch it with a log to make 10 arrows of its tier — use the 🪵 Fletch button. Rangers drop arrowheads.'};
 const ITEM_NAME_FALLBACK={nc:'NC',certificate:'Certificate'};
 /* Stage 7D: the identity line for admin-made custom items — every copy
    of the item carries the maker's name and the base it was cloned from. */
@@ -3254,6 +3425,8 @@ function examineHTML(item){
  if(d){
    if(d.accBonus) stats.push(`+${Math.round(d.accBonus*100)}% accuracy`);
    if(d.maxBonus) stats.push(`+${d.maxBonus} max hit`);
+   if(d.strBonus) stats.push(`+${d.strBonus} ranged strength`);
+   if(d.kind==='weapon'&&d.style) stats.push(`fights with ${d.style}`);
    if(d.reduction) stats.push(`−${Math.round(d.reduction*100)}% damage taken`);
    if(d.heal) stats.push(`heals ${d.heal} HP`);
    if(d.prayerRestore) stats.push(`restores ${d.prayerRestore} prayer`);
@@ -3322,6 +3495,7 @@ function pBackpack(){
      if(s.item==='raw_trout'||s.item==='raw_shrimps') h+=`<button class="act" onclick="cookItem('${s.item}')">🍳 Cook on fire</button>`;
      const smithM=s.item.startsWith('smith_')? s.item.match(/^smith_([a-z]+)_(?:sword|platebody)(?:_u(\d))?$/) : null;
      if(smithM&&(+ (smithM[2]||0))<4) h+=`<button class="act" onclick="send({type:'smith_upgrade',item:'${s.item}'})">⬆️ Upgrade (+1)</button>`;
+     if(d&&d.kind==='arrowhead') h+=`<button class="act" onclick="send({type:'fletch',item:'${s.item}'})">🪵 Fletch (1 log + 1 head → 10 arrows)</button>`;
      if(s.item==='certificate') h+=`<button class="act" onclick="openSignScreen(null)">✍️ Sign note</button>`;
      h+=`<button class="act" onclick="armUse('${s.item}')">✋ Use</button>`;
      h+=`<button class="ghost" onclick="toggleHighlight('${s.item}')">⭐ Highlights: ${highlights.has(s.item)?'On':'Off'}</button>`;
@@ -3341,6 +3515,27 @@ function pBackpack(){
        h+=`<div class="note" style="margin-top:6px">${u>=4?'Already +4 — fully upgraded.':`⬆️ Upgrade uses 1 ${esc(nameOf(smithM[1]+'_bar'))} · only at the Emberfall anvil`}</div>`;
      }
      h+=`</div>`;
+   }
+ }
+ return h;
+}
+/* ---- Spellbook (Stage 19) ---- */
+function spellNameOf(id){ const s=spellList.find(x=>x.id===id); return s? s.name : 'Air Strike'; }
+function pSpellbook(){
+ const mLvl=(me&&me.levels&&me.levels.magic)||1;
+ const elIcon={air:'💨',water:'💧',earth:'🪨',fire:'🔥'};
+ const capEl=(e)=>e.charAt(0).toUpperCase()+e.slice(1);
+ let h=`<p class="note" style="margin-bottom:6px">Your Magic level: <b style="color:#e3c766">${mLvl}</b> · Selected: <b style="color:#e3c766">${esc(spellNameOf(me?me.spell:null))}</b></p>`;
+ h+=`<p class="note" style="margin-bottom:8px">Wield a staff and your attacks cast the selected spell — runes are spent on every cast, hit or miss. Restock runes by killing wizards at the 🧙 Wizard Grounds (plaza north-west gate).</p>`;
+ if(!spellList.length) h+=`<p class="note">The spell list has not arrived yet — reconnect and it will be here.</p>`;
+ for(const el of ['air','water','earth','fire']){
+   const spells=spellList.filter(s=>s.element===el);
+   if(!spells.length) continue;
+   h+=`<h4 style="margin:10px 0 4px;color:#e3c766">${elIcon[el]} ${capEl(el)}</h4>`;
+   for(const s of spells){
+     const have=me? stackQtyOf(me.backpack,`${el}_rune`):0;
+     const ok=mLvl>=s.level, sel=me&&me.spell===s.id;
+     h+=`<div class="rowline"><span class="grow"><b>${esc(s.name)}</b>${sel?' <span class="cf">✅ selected</span>':''}<br><span class="sub">Magic lvl ${s.level} · costs ${s.runes} × ${capEl(el)} rune (you have ${have}) · max hit ${s.max}</span></span>${sel?'<span class="sub">Casting</span>':`<button class="act" ${ok?`onclick="send({type:'set_spell',spell:'${s.id}'})"`:'disabled style="opacity:.45"'}>${ok?'Select':`Lvl ${s.level}`}</button>`}</div>`;
    }
  }
  return h;
@@ -3371,7 +3566,7 @@ function pShop(){
    const items=catalogArr.filter(i=>i.shop===shopTab);
    if(!items.length) h+=`<p class="note">Nothing here yet.</p>`;
    for(const d of items){
-     h+=`<div class="rowline"><span class="ic">${iconOf(d.id)}</span><span class="grow"><b>${esc(d.name)}</b>${myQty(d.id)?` <span class="sub">(have ${myQty(d.id)})</span>`:''}<br><span class="sub">${d.heal?`heals ${d.heal} HP · `:''}${d.prayerRestore?`restores ${d.prayerRestore} prayer · `:''}${d.maxBonus?`+${d.maxBonus} max hit · `:''}${d.reduction?`−${Math.round(d.reduction*100)}% dmg · `:''}${d.buy}g</span></span>
+     h+=`<div class="rowline"><span class="ic">${iconOf(d.id)}</span><span class="grow"><b>${esc(d.name)}</b>${myQty(d.id)?` <span class="sub">(have ${myQty(d.id)})</span>`:''}<br><span class="sub">${d.heal?`heals ${d.heal} HP · `:''}${d.prayerRestore?`restores ${d.prayerRestore} prayer · `:''}${d.accBonus?`+${Math.round(d.accBonus*100)}% accuracy · `:''}${d.maxBonus?`+${d.maxBonus} max hit · `:''}${d.strBonus?`+${d.strBonus} ranged strength · `:''}${d.reduction?`−${Math.round(d.reduction*100)}% dmg · `:''}${d.buy}g</span></span>
      <button class="act" onclick="send({type:'shop_buy',item:'${d.id}',qty:1})">Buy 1</button><button class="ghost" onclick="send({type:'shop_buy',item:'${d.id}',qty:5})">Buy 5</button></div>`;
    }
  } else {
@@ -3889,7 +4084,7 @@ window.doTravel=function(to){
 };
 function pTeleport(){
  const here=(a)=>a===curArea;
- let h=`<p class="note" style="margin-bottom:8px">Teleporting is the shortcut — every place stays walkable too: Goblin Camp (plaza east gate), Fishing Cove (west gate), Training Cave (south-east corner), Gathering Cave (south-west corner), Emberfall Mine &amp; Smithy (north-east corner), Fight Caves (north gate), Barrows (south gate).</p>`;
+ let h=`<p class="note" style="margin-bottom:8px">Teleporting is the shortcut — every place stays walkable too: Goblin Camp (plaza east gate), Fishing Cove (west gate), Training Cave (south-east corner), Gathering Cave (south-west corner), Emberfall Mine &amp; Smithy (north-east corner), Fight Caves (north gate), Barrows (south gate), Wizard Grounds (north-west corner), Ranger Camp (north gate, west stretch).</p>`;
  h+=`<div class="rowline"><span class="ic">🏰</span><span class="grow"><b>Plaza</b><br><span class="sub">Shops, bank, duels</span></span>${here('plaza')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('plaza')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">👺</span><span class="grow"><b>Goblin Camp</b><br><span class="sub">East gate · fight goblins for drops &amp; XP</span></span>${here('goblins')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('goblins')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">🏋️</span><span class="grow"><b>Training Cave</b><br><span class="sub">South-east corner · safe skill training</span></span>${here('training')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('training')">Teleport</button>`}</div>`;
@@ -3898,10 +4093,12 @@ function pTeleport(){
  h+=`<div class="rowline"><span class="ic">⛏️🔥</span><span class="grow"><b>Emberfall Mine &amp; Smithy</b><br><span class="sub">North-east corner · mine 9 ores, smelt &amp; smith</span></span>${here('mine')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('mine')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">🌋</span><span class="grow"><b>Fight Caves</b><br><span class="sub">North gate · 63 waves, TzTok-Jad, fire cape</span></span>${here('fightcaves')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('fightcaves')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">💀</span><span class="grow"><b>Barrows</b><br><span class="sub">South gate · 6 brothers, tunnels, chest</span></span>${here('barrows')||here('barrows_tunnels')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('barrows')">Teleport</button>`}</div>`;
+ h+=`<div class="rowline"><span class="ic">🧙</span><span class="grow"><b>Wizard Grounds</b><br><span class="sub">North-west corner · wizards drop the runes for your spells</span></span>${here('magic')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('magic')">Teleport</button>`}</div>`;
+ h+=`<div class="rowline"><span class="ic">🏹</span><span class="grow"><b>Ranger Camp</b><br><span class="sub">North gate (west stretch) · rangers drop arrows &amp; arrowheads</span></span>${here('range')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('range')">Teleport</button>`}</div>`;
  return h;
 }
 /* ---- Settings ---- */
-const PANEL_LIST=[['backpack','🎒 Backpack'],['worn','🗡️ Worn items'],['shop','🏪 Shops'],['bank','🏦 Bank'],['exchange','💱 Gold Exchange'],['prayers','🙏 Prayers'],['players','👥 Players'],['admin','👑 Admin'],['tools','🛠️ Admin Tools'],['skills','📊 Skills'],['smithy','🔥 Smithy'],['teleport','🌀 Teleport'],['settings','🎛️ Settings']];
+const PANEL_LIST=[['backpack','🎒 Backpack'],['worn','🗡️ Worn items'],['shop','🏪 Shops'],['bank','🏦 Bank'],['exchange','💱 Gold Exchange'],['prayers','🙏 Prayers'],['spellbook','📖 Spellbook'],['players','👥 Players'],['admin','👑 Admin'],['tools','🛠️ Admin Tools'],['skills','📊 Skills'],['smithy','🔥 Smithy'],['teleport','🌀 Teleport'],['settings','🎛️ Settings']];
 function pSettings(){
  let h=`<div class="setrow"><span class="grow">🎨 Appearance<br><span class="note">Change how your knight looks</span></span><button class="act" onclick="closeDrawer();openAppearance()">🎨 Appearance</button></div>`;
  h+=`<div class="setrow"><span class="grow">📷 Camera drag speed<br><span class="note">Screen-drag rotation &amp; camera stick</span></span><input type="range" min="0.25" max="3" step="0.25" value="${settings.camSpeed}" oninput="setCamSpeed(this.value)"><b id="camspeedval" style="color:#e3c766;min-width:34px;text-align:right">${settings.camSpeed}×</b></div>`;
@@ -3937,9 +4134,8 @@ function readPicker(prefix){
 const STYLES_LIST=['accurate','aggressive','defensive','controlled'];
 /* ================= Stage 14: duel challenge configuration =================
    ONE configuration screen per challenge (Derek's reference photo):
-   both names as columns, rule rows with On/Off pills (Melee Only /
-   No Ranged / No Magic are locked On — duels in this game are
-   melee-only), ITEMS TO STAKE boxes for both sides, the matched
+   both names as columns, rule rows with On/Off pills, ITEMS TO
+   STAKE boxes for both sides, the matched
    GOLD TO STAKE, CONFIRM RULES & STAKES / CANCEL CHALLENGE. The
    challenger composes on this screen and sends; the challenged
    player gets the same screen (from the '!' tap or the popup).
@@ -3955,12 +4151,18 @@ const STYLES_LIST=['accurate','aggressive','defensive','controlled'];
    columns, Accept / Decline along the bottom — same confirm /
    cancel mechanics underneath. It also adds the No Movement rule:
    both fighters stand at their duel-start spots for the whole
-   duel (the server ignores their move messages). */
-const CHAL_LOCKED_L=[['meleeOnly','Melee Only']];
-const CHAL_LOCKED_R=[['noRanged','No Ranged'],['noMagic','No Magic']];
-const CHAL_RULES_L=[['noPrayer','No Prayer'],['noFood','No Food'],['noMovement','No Movement']];
-const CHAL_RULES_R=[['noPotions','No Drinks'],['noSpecial','No Special Attacks']];
-const CHAL_NO_RULES={noPrayer:false,noPotions:false,noFood:false,noSpecial:false,noMovement:false};
+   duel (the server ignores their move messages).
+   Stage 19 unlocks the style rows: duels are no longer melee-only
+   (bows and staves fight from range), so the old locked "Melee
+   Only / No Ranged / No Magic" rows become REAL toggles — No
+   Melee joins the left column, No Ranged / No Magic the right.
+   A fighter wielding a banned style cannot swing (the server
+   refuses with "🚫 No <style> in this duel."). */
+const CHAL_LOCKED_L=[];
+const CHAL_LOCKED_R=[];
+const CHAL_RULES_L=[['noPrayer','No Prayer'],['noFood','No Food'],['noMovement','No Movement'],['noMelee','No Melee']];
+const CHAL_RULES_R=[['noPotions','No Drinks'],['noSpecial','No Special Attacks'],['noRanged','No Ranged'],['noMagic','No Magic']];
+const CHAL_NO_RULES={noPrayer:false,noPotions:false,noFood:false,noSpecial:false,noMovement:false,noMelee:false,noRanged:false,noMagic:false};
 let chalTerms=null;   // pre-send draft (challengeId null) or the server's challenge_terms payload
 let chalRole=null;    // 'from' (challenger) | 'to' (challenged)
 let chalNotice=false; // "Terms changed — confirm again."
@@ -4626,8 +4828,11 @@ function npcFightUI(m){
      $('dueltitle').textContent=`💀 ${m.name} · lvl ${npcFight.combatLevel}`;
      $('duellast').textContent=`Fight! ${pf[0]} ${pf[1]} fully blocks him. Stay near the ${curArea==='barrows_tunnels'?'chest':'mound'} or the fight breaks off.`;
    } else {
-     $('dueloppname').textContent='Goblin';
-     $('dueltitle').textContent=`🥊 Goblin · lvl ${npcFight.combatLevel}`;
+     // Stage 19: the shared-NPC fights (goblin / wizard / ranger)
+     // all speak this UI — title and header carry the creature.
+     const kindIcon=m.kind==='wizard'?'🧙':m.kind==='ranger'?'🏹':'🥊';
+     $('dueloppname').textContent=m.name||'Goblin';
+     $('dueltitle').textContent=`${kindIcon} ${m.name||'Goblin'} · lvl ${npcFight.combatLevel}`;
      $('duellast').textContent='Fight! Land hits to charge your Dragon Slash (50%). Run with 🏃 Flee if it goes bad.';
    }
    const sba=npcAvatars[m.npcId]; if(sba) setHpBar(sba,npcFight.hpNpc/Math.max(1,npcFight.maxHpNpc),npcFight.hpNpc,npcFight.maxHpNpc); // overhead bar + number on my target (my own HP stays on the orb)
@@ -4652,7 +4857,7 @@ function npcFightUI(m){
      else spawnSplat(me.username,m.npcHit,false); }
    if(ba&&ba.isBrother){ ba.hp=m.hpNpc; ba.maxHp=m.maxHpNpc; }
    if(ba) setHpBar(ba,m.hpNpc/Math.max(1,m.maxHpNpc),m.hpNpc,m.maxHpNpc); // overhead bar + number tracks the fight, green → yellow → red
-   const oppName=npcFight.kind==='barrows'? (npcFight.name.split(' ')[0]) : 'goblin';
+   const oppName=(npcFight.name||'goblin').split(' ')[0].toLowerCase();
    const parts=[];
    if(typeof m.youHit==='number') parts.push(`You hit ${m.youHit}${m.youSpecial?' (DRAGON SLASH!)':''}`);
    else parts.push('⚔️ Too far — walk up to strike!');
@@ -4666,6 +4871,7 @@ function npcFightUI(m){
  if(m.phase==='end'){
    const wasBarrows=(m.kind==='barrows');
    const bName=m.name||(npcFight&&npcFight.name)||'Barrows brother';
+   const endName=(npcFight&&npcFight.name)||'Goblin'; // Stage 19: captured before npcFight clears
    npcFight=null;
    const endBa=npcAvatars[m.npcId]; if(endBa&&!endBa.isBrother) hideHpBar(endBa); // goblin: fight over — the bar hands back to the snapshot rule (brothers' avatars are removed below)
    $('duelbar').classList.remove('open');
@@ -4687,13 +4893,13 @@ function npcFightUI(m){
        const parts=[];
        if(m.drops.gold) parts.push(`+${m.drops.gold}g`);
        for(const s of (m.drops.items||[])) parts.push(`${iconOf(s.item)} ${nameOf(s.item)}${s.qty>1?' x'+s.qty:''}`);
-       toast(`💀 Goblin down! Drops: ${parts.join(', ')}`);
-       logLine(`💀 Goblin down! Drops: ${parts.join(', ')}`);
-     } else toast('💀 Goblin down!');
+       toast(`💀 ${endName} down! Drops: ${parts.join(', ')}`);
+       logLine(`💀 ${endName} down! Drops: ${parts.join(', ')}`);
+     } else toast(`💀 ${endName} down!`);
    }
-   else if(m.reason==='death'){ toast('💀 The goblin got you! You wake up in the plaza at full health — nothing lost.'); }
+   else if(m.reason==='death'){ toast(`💀 The ${endName.toLowerCase()} got you! You wake up in the plaza at full health — nothing lost.`); }
    else if(m.reason==='fled'){ toast('🏃 You fled the fight.'); }
-   else if(m.reason==='range'){ toast('The fight broke off — you moved too far from the goblin.'); }
+   else if(m.reason==='range'){ toast(`The fight broke off — you moved too far from the ${endName.toLowerCase()}.`); }
    else if(m.reason==='travel'){ toast('You left the fight behind.'); }
    renderAll();
  }
@@ -4894,7 +5100,7 @@ function detectWorldTap(cx,cy){
    const s=projectTo(sx2w(f.x),1.0,sy2w(f.y));
    if(s&&Math.hypot(s.x-cx,s.y-cy)<52) return {kind:'fire',fire:f};
  }
- if(curArea==='goblins'){
+ if(NPC_AREAS_CLIENT.includes(curArea)){
    for(const [id,a] of Object.entries(npcAvatars)){
      const s=projectTo(a.group.position.x,1.1,a.group.position.z);
      if(s&&Math.hypot(s.x-cx,s.y-cy)<48) return {kind:'npc',id};
@@ -4957,6 +5163,10 @@ function cancelUse(silent){
 }
 window.armUse=function(item){
  if(!me||myQty(item)<1){ toast("You don't have that any more."); return; }
+ // Stage 19: an arrowhead's only "use" is fletching it with a log —
+ // do it straight away instead of arming use-mode.
+ const d0=catalog[item];
+ if(d0&&d0.kind==='arrowhead'){ send({type:'fletch',item}); return; }
  useMode={item};
  renderUseChip();
  if(drawerPanel==='backpack') renderDrawer(); // paints the pulsing gold outline
@@ -5227,7 +5437,7 @@ function handleLongPress(cx,cy){
    const nm=n? (n.name||'Goblin'):'Goblin';
    openCtxSheet(`🥊 ${esc(nm)}`,[
      {label:'⚔️ Attack',fn:()=>attackNpc(hit.id)},
-     {label:'🔍 Examine',fn:()=>ctxExamine(`🥊 ${esc(nm)}`,`Combat level ${n? (n.combatLevel||5):5}. It drops coins and goblin gear when beaten.`)}
+     {label:'🔍 Examine',fn:()=>ctxExamine(`🥊 ${esc(nm)}`,`Combat level ${n? (n.combatLevel||5):5}. ${n&&n.kind==='wizard'?'It casts magic at you from range — Protect from Magic blocks it. It drops runes for your spells.':n&&n.kind==='ranger'?'It shoots arrows at you from range — Protect from Missiles blocks it. It drops arrows and arrowheads.':'It drops coins and goblin gear when beaten.'}`)}
    ]);
    return;
  }
