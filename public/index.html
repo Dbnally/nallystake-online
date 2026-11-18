@@ -124,6 +124,9 @@
  /* chat */
  #chatbox{position:fixed;right:6px;bottom:6px;z-index:30;width:min(370px,64vw);background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:10px;overflow:hidden}
  #chathead{padding:5px 9px;font-size:12px;font-weight:800;color:#e3c766;cursor:pointer;display:flex;justify-content:space-between}
+ #connbar{display:none;position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:90;background:#5a1f1f;color:#ffd9d9;border:2px solid #c94545;border-radius:10px;padding:6px 14px;font-size:13px;font-weight:bold;box-shadow:0 2px 10px rgba(0,0,0,.5)}
+ #connbar.open{display:block}
+ #chatunread{display:none;background:#c94545;color:#fff;border-radius:9px;font-size:11px;font-weight:bold;padding:1px 7px;margin-left:6px;vertical-align:middle}
  #chatbody{display:block}
  #chatbox.closed #chatbody{display:none}
  #log{height:104px;overflow-y:auto;font-size:12px;white-space:pre-wrap;padding:4px 8px}
@@ -290,6 +293,11 @@
  .spellbtn .snm{font-size:9.5px;font-weight:800;line-height:1.1;text-align:center}
  .spellbtn.armed{border-color:#ffd75e;background:#3a2c1c;box-shadow:0 0 14px #ffd75e99}
  body.grabbing .spellbtn{cursor:grab;outline:2px dashed rgba(102,187,106,.65);outline-offset:-2px}
+ /* Stage 29: while a placed spell button is being dragged, the two
+    put-away targets (the 🎛️ gear and the 📖 spellbook button) glow
+    gold — drop the button on either and it goes away. */
+ .spelldroptarget{outline:3px solid #ffd75e!important;outline-offset:2px;box-shadow:0 0 18px #ffd75e!important}
+ .spellbtn.dragging{opacity:.85;z-index:60}
  .spellghost{position:fixed;z-index:90;width:60px;padding:6px 2px 5px;border-radius:12px;background:rgba(58,44,28,.92);border:2px solid #ffd75e;color:#e8d9b0;display:flex;flex-direction:column;align-items:center;gap:1px;pointer-events:none}
  .spellghost .sic{font-size:21px;line-height:1}
  .spellghost .snm{font-size:9.5px;font-weight:800}
@@ -444,8 +452,10 @@
  <div class="btns"><button class="ghost" id="stakewaitcancel">Cancel match</button></div>
 </div>
 
+<div id="connbar">🔄 Connection lost — reconnecting…</div>
+
 <div id="chatbox" class="closed">
- <div id="chathead"><span>💬 Chat / game log</span><span id="chatchev">▸</span></div>
+ <div id="chathead"><span>💬 Chat / game log</span><span id="chatunread"></span><span id="chatchev">▸</span></div>
  <div id="chatbody"><div id="log"></div><div id="chatrow"><input id="chat" placeholder="Say something…" maxlength="140"><button class="act" id="sendchat">Send</button></div></div>
 </div>
 
@@ -564,12 +574,26 @@ function itemIconHTML(item,size,qty){
  return iconOf(item);
 }
 function nameOf(id){ if(catalog[id])return catalog[id].name; if(goods[id])return goods[id].name; if(id==='nc')return 'NC'; if(id==='certificate')return 'Certificate'; if(id==='gold')return 'Gold coins'; return id; }
-function stackQtyOf(stacks,id){ const s=(stacks||[]).find(x=>x.item===id); return s?s.qty:0; }
+function stackQtyOf(stacks,id){ // Stage 29: no-stack items (seaweed) count as the SUM of their qty-1 stacks
+ if(typeof catalog!=='undefined'&&catalog[id]&&catalog[id].noStack){ let n=0; for(const s of (stacks||[])) if(s.item===id) n+=s.qty; return n; }
+ const s=(stacks||[]).find(x=>x.item===id); return s?s.qty:0; }
 function myQty(id){ return me? stackQtyOf(me.backpack,id):0; }
-function send(o){ if(ws&&ws.readyState===1) ws.send(JSON.stringify(o)); }
+// Returns false when the socket is not open, so callers (chat above
+// all) can tell the player instead of silently swallowing the action.
+function send(o){ if(ws&&ws.readyState===1){ ws.send(JSON.stringify(o)); return true; } return false; }
 let toastTimer=null;
 function toast(t){ const el=$('toast'); el.textContent=t; el.style.display='block'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.style.display='none',2600); }
-function logLine(t){ const el=$('log'); el.textContent+=t+'\n'; while(el.textContent.split('\n').length>60) el.textContent=el.textContent.split('\n').slice(1).join('\n'); el.scrollTop=1e6; }
+/* Stage 29: the chat keeps its last ~100 lines and only follows
+   new messages when you're already near the bottom — scroll up to
+   read back and incoming chat no longer yanks you down. Sending a
+   message always jumps to the bottom (see the send handler). */
+function logLine(t){ const el=$('log'); if(!el) return; const nearBottom=el.scrollHeight-el.scrollTop-el.clientHeight<48; el.textContent+=t+'\n'; const lines=el.textContent.split('\n'); if(lines.length>101) el.textContent=lines.slice(lines.length-101).join('\n'); if(nearBottom) el.scrollTop=1e6; }
+// Chat starts closed, so a message that arrives while it is shut was
+// effectively invisible (a bubble over a knight is easy to miss).
+// Count arrivals on the header badge until the player opens it.
+let chatUnread=0;
+function bumpUnread(){ const b=$('chatbox'); if(!b||!b.classList.contains('closed')) return; chatUnread++; const u=$('chatunread'); if(u){ u.style.display='inline-block'; u.textContent=chatUnread>9?'9+':String(chatUnread); } }
+function clearUnread(){ chatUnread=0; const u=$('chatunread'); if(u){ u.style.display='none'; u.textContent=''; } }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function fmtMs(ms){ if(!ms||ms<=0) return '—'; const s=Math.floor(ms/1000); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
 
@@ -674,7 +698,7 @@ window.useQuick=function(n){
  }
  if(!d){ toast('That item is gone from the game.'); return; }
  if(d.kind==='food'||d.kind==='potion') send({type:'use',item:id});
- else if(d.slot) send({type:'equip',item:id});
+ else if(d.slot) send({type:'equip',item:id,slot:me.backpack.findIndex(s=>s.item===id)});
  else toast(`${nameOf(id)} can't be quick-used — open the panel for it instead.`);
 };
 $('quick1').onclick=()=>useQuick(1);
@@ -743,11 +767,43 @@ $('quicklogin').onclick=()=>{
 };
 refreshQuickLogin();
 
+/* Auto-reconnect: a phone socket dies silently all the time (screen
+   lock, network hop, browser tab throttling). The old client just
+   logged "reload the page" into the closed-by-default chat box, so
+   the player kept typing into a dead connection and every message
+   vanished without a sign anything was wrong. Now a dropped socket
+   shows a reconnecting bar and retries with backoff until the
+   server answers; the server takes the new sign-in over from the
+   zombie session, so no reload is ever needed. */
+let reconnectTimer=null, reconnectMs=2000, wasInGame=false, reconnecting=false;
+function showConnbar(v){ const b=$('connbar'); if(b) b.classList.toggle('open',!!v); }
+function scheduleReconnect(){
+ if(reconnectTimer) return;
+ reconnecting=true;
+ showConnbar(true);
+ logLine('⚠️ Connection lost — reconnecting…');
+ reconnectTimer=setTimeout(()=>{ reconnectTimer=null; connect(); },reconnectMs);
+ reconnectMs=Math.min(Math.round(reconnectMs*1.6),15000);
+}
+function stopReconnect(){
+ if(reconnectTimer){ clearTimeout(reconnectTimer); reconnectTimer=null; }
+ reconnecting=false; showConnbar(false);
+}
 function connect(){
  welcomed=false;
  ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws?token=${token}`);
  ws.onmessage=e=>{ let m; try{ m=JSON.parse(e.data); }catch{ return; } onMsg(m); };
- ws.onclose=()=>{
+ ws.onclose=e=>{
+   if(e&&e.code===4001){ // bad token: the server restarted and its session tokens are memory-only
+     stopReconnect();
+     quickAttempt=false;
+     try{ localStorage.removeItem('nallystake_session'); }catch(err){}
+     token=null; refreshQuickLogin();
+     $('auth').style.display='flex';
+     toast('The server restarted — log in again.');
+     logLine('⚠️ Server restarted — please log in again.');
+     return;
+   }
    if(quickAttempt&&!welcomed){ // stored session is dead (server restarted)
      quickAttempt=false;
      try{ localStorage.removeItem('nallystake_session'); }catch(e){}
@@ -758,6 +814,7 @@ function connect(){
      return;
    }
    quickAttempt=false;
+   if(wasInGame){ scheduleReconnect(); return; }
    logLine('⚠️ Connection closed. Reload the page to reconnect.');
  };
  ws.onerror=()=>{ logLine('⚠️ Connection problem.'); };
@@ -801,7 +858,7 @@ window.pickActivity=function(act){
  else toast('🏰 Explore the plaza — every gate leads somewhere.');
 };
 function onMsg(m){
- if(m.type==='welcome'){ welcomed=true; quickAttempt=false; me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); maybeShowActivityPicker(); }
+ if(m.type==='welcome'){ welcomed=true; quickAttempt=false; wasInGame=true; const wasReconnect=reconnecting; stopReconnect(); reconnectMs=2000; if(wasReconnect){ toast('✅ Reconnected.'); logLine('✅ Reconnected.'); } me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); maybeShowActivityPicker(); }
  if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(Array.isArray(m.spells)) spellList=m.spells; if(drawerPanel==='shop') renderDrawer(); renderQuickButtons(); renderSpellBtns(); }
  if(m.type==='exchange_prices'){ goods={}; for(const g of (m.goods||[])) goods[g.id]=g; if(drawerPanel==='exchange') renderDrawer(); drawMinimap(); }
  if(m.type==='state'){ if(m.area&&m.area!==curArea) setArea(m.area); players=m.players||[]; initMyPos(); syncAvatars(); if(drawerPanel==='players') renderDrawer(); drawMinimap(); }
@@ -818,6 +875,7 @@ function onMsg(m){
    drawMinimap(); }
  if(m.type==='fires'){ firesByArea[m.area]=m.fires||[]; if(m.area===curArea) rebuildFires(); drawMinimap(); }
  if(m.type==='piles'){ pilesByArea[m.area]=m.piles||[]; if(m.area===curArea) rebuildPiles(); drawMinimap(); }
+ if(m.type==='seaweed'){ seaweedByArea[m.area]=m.patches||[]; if(m.area===curArea) rebuildSeaweed(); drawMinimap(); }
  if(m.type==='allies'){ alliesByArea[m.area]=m.allies||[]; if(m.area===curArea) syncAllies(); drawMinimap(); }
  if(m.type==='ally_died'){ toast(`🌳 Your ${m.name||'Tree Guardian'} has fallen…`); }
  if(m.type==='player_jump'){ const a=avatars[m.username]; if(a&&(!me||m.username!==me.username)) startJump(a,false); }
@@ -844,7 +902,7 @@ function onMsg(m){
  if(m.type==='note_text'){ openNoteReader(m); }
  if(m.type==='note_request'){ queueNoteRequest(m); }
  if(m.type==='admin_notes'){ lastAdminNotes=m.notes||[]; if(drawerPanel==='admin') renderDrawer(); }
- if(m.type==='chat'){ logLine(`${m.from}: ${m.text}`); showBubble(m.from,m.text); }
+ if(m.type==='chat'){ logLine(`${m.from}: ${m.text}`); showBubble(m.from,m.text); if(!me||m.from!==me.username) bumpUnread(); }
  if(m.type==='error'){ toast('⚠️ '+m.message); logLine('⚠️ '+m.message);
    if(pendingGiveAfterSign){ pendingGiveAfterSign=null; } // the sign failed — the error above says why
    if(/chest is locked behind the puzzle door/.test(m.message||'')){ puzzleSolved=false; renderBarrowsBar(); openPuzzle(); }
@@ -874,7 +932,7 @@ function onMsg(m){
  if(m.type==='custom_edited'){ toolArtDirty=false; if(drawerPanel==='tools') renderDrawer(); }
  if(m.type==='fight_offer'){ openFightOffer(m); }
  if(m.type==='cert_request'){ openCertRequest(m); }
- if(m.type==='whisper'){ if(m.to) logLine(`💬 you → ${m.to}: ${m.text}`); else logLine(`💬 ${m.from} → you: ${m.text}`); }
+ if(m.type==='whisper'){ if(m.to) logLine(`💬 you → ${m.to}: ${m.text}`); else { logLine(`💬 ${m.from} → you: ${m.text}`); bumpUnread(); } }
  if(m.type==='examine'){ openExamine(m); }
  if(m.type==='party_invite'){ openPartyInvite(m); }
  if(m.type==='party'){ myParty=m.members||[]; if(drawerPanel==='players') renderDrawer(); }
@@ -2285,7 +2343,7 @@ function setArea(a){
      fcRun=null; $('fcbar').classList.remove('open'); $('jadwarn').style.display='none';
      clearFcMonsters();
    }
-   pendingMound=null; pendingPile=null; pendingChest=null;
+   pendingMound=null; pendingPile=null; pendingSeaweed=null; pendingChest=null;
    challengeMarks={}; // ❗ marks belong to the area they were seen in
    puzzleSolved=false; puzzleShown=[]; puzzleOptions=[]; $('puzzlemodal').classList.remove('open'); // Stage 28: the next barrows_state re-syncs puzzleSolved from the saved run
    clearAllies(); // guardians re-sync from the new area's 'allies' message
@@ -2294,6 +2352,7 @@ function setArea(a){
    rebuildNodes();
    rebuildFires();
    rebuildPiles();
+   rebuildSeaweed();
    rebuildObjects();
    syncAllies();
    if(a==='fightcaves'&&me&&!fcRun) openFcStart();
@@ -3044,6 +3103,52 @@ function checkPendingPile(){
  if(!p){ pendingPile=null; return; }
  if(Math.hypot(myPos.x-p.x,myPos.y-p.y)<=140){ pendingPile=null; tapTarget=null; send({type:'pickup',pileId:p.id}); }
 }
+/* ---- Stage 29: seaweed clumps at the Fishing Cove ----
+   Server-owned scenery on the piles pattern: the 'seaweed'
+   message carries the cove's clumps (present or picked), each
+   present one renders as a green clump with a floating tag. Tap
+   one and you walk over and pick the piece up — it takes its OWN
+   backpack slot (seaweed never stacks). */
+let seaweedByArea={}; // area -> [patch] from 'seaweed' messages
+let seaweedProps={}; // CURRENT area: patch id -> {x,z,patch} (world coords, for tap tests)
+let seaweedGroups={}; // area -> THREE.Group holding that area's clumps
+let pendingSeaweed=null; // patch id I'm walking to pick up
+function rebuildSeaweed(){
+ const area=curArea, root=areaGroups[area];
+ seaweedProps={};
+ worldLabels=worldLabels.filter(wl=>{ if(wl.kind==='seaweed'&&wl.area===area){ wl.el.remove(); return false; } return true; });
+ if(!root||!scene) return;
+ if(seaweedGroups[area]) root.remove(seaweedGroups[area]);
+ const grp=new THREE.Group(); root.add(grp); seaweedGroups[area]=grp;
+ for(const p of (seaweedByArea[area]||[])){
+   if(!p.present) continue;
+   const g=new THREE.Group(); g.position.set(sx2w(p.x),0,sy2w(p.y)); grp.add(g);
+   const mat=new THREE.Mesh(new THREE.CircleGeometry(0.55,10),new THREE.MeshLambertMaterial({color:0x3f7a2e}));
+   mat.rotation.x=-Math.PI/2; mat.position.y=0.05; g.add(mat);
+   const bladeM=new THREE.MeshLambertMaterial({color:0x5da244});
+   for(let i=0;i<5;i++){
+     const blade=new THREE.Mesh(new THREE.ConeGeometry(0.09,0.5+((i*37)%40)/100,5),bladeM);
+     blade.position.set(((i*53)%60-30)/100,0.28,((i*29)%60-30)/100); blade.rotation.z=((i*41)%70-35)/100; g.add(blade);
+   }
+   const label=document.createElement('div'); label.className='plabel';
+   label.innerHTML=`<div class="nname">🥬 Seaweed</div><div class="nsub">tap to pick up · takes its own 🎒 slot</div>`;
+   $('labels').appendChild(label);
+   worldLabels.push({el:label,x:sx2w(p.x),y:1.5,z:sy2w(p.y),area,kind:'seaweed',pileId:p.id});
+   seaweedProps[p.id]={x:sx2w(p.x),z:sy2w(p.y),patch:p};
+ }
+}
+function tapSeaweed(p){
+ if(!myPos) return;
+ const d=Math.hypot(myPos.x-p.x,myPos.y-p.y);
+ if(d<=140){ send({type:'seaweed_pickup',id:p.id}); }
+ else { pendingSeaweed=p.id; tapTarget={x:p.x,y:p.y}; toast('🚶 Walking to the seaweed…'); }
+}
+function checkPendingSeaweed(){
+ if(!pendingSeaweed||!myPos) return;
+ const p=(seaweedByArea[curArea]||[]).find(x=>x.id===pendingSeaweed);
+ if(!p||!p.present){ pendingSeaweed=null; return; }
+ if(Math.hypot(myPos.x-p.x,myPos.y-p.y)<=140){ pendingSeaweed=null; tapTarget=null; send({type:'seaweed_pickup',id:p.id}); }
+}
 /* ---- Stage 7D: admin-placed objects (decorative props) ---- */
 let objectsByArea={}; // area -> [obj] from 'objects' messages
 let objectGroups={}; // area -> THREE.Group holding that area's placed props
@@ -3458,7 +3563,15 @@ let tapTarget=null; // server coords
 let joyVec={x:0,y:0};
 let camVec={x:0,y:0}; // right (camera) stick deflection
 const keys={};
-addEventListener('keydown',e=>{ keys[e.key.toLowerCase()]=1; });
+// Keystrokes typed into a text field (chat, Talk, sign-in, editors)
+// are typing, not movement: without this guard every W/A/S/D in a
+// chat message also walked the knight, which made writing back feel
+// broken. Keyup always clears so a key can never stick down.
+addEventListener('keydown',e=>{
+ const t=e.target;
+ if(t&&/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)){ for(const k in keys) keys[k]=0; return; }
+ keys[e.key.toLowerCase()]=1;
+});
 addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
 /* joystick */
 (function(){
@@ -3653,6 +3766,17 @@ function handleTap(cx,cy){
    const ls=projectTo(sx2w(860),1.6,sy2w(800));
    if(ls && Math.hypot(ls.x-cx,ls.y-cy)<48){ send({type:'barrows_leave_tunnel'}); return; }
  }
+ // Stage 29: seaweed clumps (tap to pick up; walks over first if too far)
+ if(Object.keys(seaweedProps).length){
+   let wb=null,wbD=1e9;
+   for(const p of Object.values(seaweedProps)){
+     const s=projectTo(p.x,1.0,p.z);
+     if(!s) continue;
+     const d=Math.hypot(s.x-cx,s.y-cy);
+     if(d<52 && d<wbD){ wb=p.patch; wbD=d; }
+   }
+   if(wb){ tapSeaweed(wb); return; }
+ }
  // drop piles (tap to pick up; walks over first if too far)
  if(Object.keys(pileProps).length){
    let pb=null,pbD=1e9;
@@ -3720,7 +3844,7 @@ function handleTap(cx,cy){
  const gh=groundRoot? raycaster.intersectObjects(groundRoot.children.filter(o=>o.geometry&&o.geometry.type==='PlaneGeometry'),false)[0] : null;
  if(gh){
    const pt={x:clamp(wx2s(gh.point.x),0,WORLD_W), y:clamp(wz2s(gh.point.z),0,WORLD_H)};
-   pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false;
+   pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingSeaweed=null; pendingChest=false;
    pendingUseCook=null; pendingUseLogs=null;
    stopFollow();
    if(settings.groundTap==='face') faceToward(pt); else tapTarget=pt;
@@ -3860,7 +3984,7 @@ function finishStep(moved){
    lastSend=now;
  }
  checkGates();
- if(moved){ checkPendingAttack(); checkPendingNode(); checkPendingFcAttack(); checkPendingMound(); checkPendingPile(); checkPendingChest(); checkPendingUse(); }
+ if(moved){ checkPendingAttack(); checkPendingNode(); checkPendingFcAttack(); checkPendingMound(); checkPendingPile(); checkPendingSeaweed(); checkPendingChest(); checkPendingUse(); }
 }
 /* ================= minimap (rotating, player-centred) ================= */
 const MM_S=128/520; // minimap px per server unit (~520 units across — Stage 13 kept the same view window: the map is player-centred, so a bigger world just means more of it lies off-map; every feature below is drawn in the new 0..1600 x 0..900 server coords)
@@ -3944,6 +4068,8 @@ function drawMinimap(){
  for(const f of (firesByArea[curArea]||[])){ g.beginPath(); g.arc(f.x,f.y,8,0,7); g.fill(); }
  g.fillStyle='#f0dfae';
  for(const p of (pilesByArea[curArea]||[])){ g.beginPath(); g.arc(p.x,p.y,7,0,7); g.fill(); } // drop piles
+ g.fillStyle='#5da244';
+ for(const p of (seaweedByArea[curArea]||[])){ if(p.present){ g.beginPath(); g.arc(p.x,p.y,7,0,7); g.fill(); } } // Stage 29: seaweed clumps
  g.fillStyle='#51ff6e';
  for(const al of (alliesByArea[curArea]||[])){ g.beginPath(); g.arc(al.x,al.y,8,0,7); g.fill(); } // Tree Guardians
  for(const p of players){
@@ -4212,10 +4338,10 @@ function initThree(){
 initThree();
 
 /* ================= drawer panels ================= */
-let drawerPanel=null, shopTab='Potion', shopMode='buy', bankQty='1', selStack=null, packSorted=false;
+let drawerPanel=null, shopTab='Potion', shopMode='buy', bankQty='1', selStack=null, selIdx=-1, packSorted=false; // Stage 29: selIdx = the backpack slot selStack was tapped in (exact-spot equip swaps)
 const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',spellbook:'📖 Spellbook',players:'👥 Players online',admin:'👑 Admin',tools:'🛠️ Admin Tools',skills:'📊 Skills',goals:'📋 Goals & Log',smithy:'🔥 Emberfall Smithy',teleport:'🌀 Teleport',settings:'🎛️ Settings'};
 function togglePanel(name){ drawerPanel===(name)? closeDrawer() : openPanel(name); }
-function openPanel(name){ drawerPanel=name; selStack=null; if(name==='backpack') packSorted=false; $('drawer').classList.add('open'); renderDrawer();
+function openPanel(name){ drawerPanel=name; selStack=null; selIdx=-1; if(name==='backpack') packSorted=false; $('drawer').classList.add('open'); renderDrawer();
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.toggle('on',b.dataset.panel===name));
  if(name==='admin') refreshAdminLists();
  if(name==='players'&&boardRows===null) fetchBoards(); // Stage 20: boards load on open
@@ -4327,7 +4453,11 @@ function pBackpack(){
  h+=`<div class="grid" id="bpgrid">${cells}</div>`;
  h+=`<div class="note" style="margin-top:6px">${me.backpack.length} / 28 stacks</div>`;
  if(selStack){
-   const s=me.backpack.find(x=>x.item===selStack), d=catalog[selStack];
+   // Stage 29: the sheet works on the exact stack that was tapped
+   // (selIdx) when it still matches — equipping from here swaps
+   // the old worn piece into THAT slot on the server.
+   const sIdx=(selIdx>=0&&me.backpack[selIdx]&&me.backpack[selIdx].item===selStack)? selIdx : me.backpack.findIndex(x=>x.item===selStack);
+   const s=sIdx>=0? me.backpack[sIdx] : null, d=catalog[selStack];
    if(s){
      h+=`<div class="detail"><b>${itemIconHTML(s.item,22,s.qty)} ${esc(nameOf(s.item))}</b> x${s.qty}`;
      if(d) h+=`<div class="note">${d.kind}${d.slot?` · worn: ${d.slot}`:''}${d.heal?` · heals ${d.heal} HP`:''}${d.prayerRestore?` · restores ${d.prayerRestore} prayer`:''}${d.accBonus?` · +${Math.round(d.accBonus*100)}% accuracy`:''}${d.maxBonus?` · +${d.maxBonus} max hit`:''}${d.reduction?` · −${Math.round(d.reduction*100)}% damage taken`:''}${d.speed?` · ⛏️ pickaxe speed ×${d.speed}`:''}</div>`;
@@ -4351,7 +4481,7 @@ function pBackpack(){
      h+=`<div class="btns">`;
      if(d&&d.kind==='food') h+=`<button class="act" onclick="send({type:'use',item:'${s.item}'})">🍗 Eat</button>`;
      if(d&&d.kind==='potion') h+=`<button class="act" onclick="send({type:'use',item:'${s.item}'})">🧪 Drink</button>`;
-     if(d&&d.slot) h+=`<button class="act" onclick="send({type:'equip',item:'${s.item}'})">${d.kind==='weapon'?'⚔️ Wield':d.kind==='armour'?'🛡️ Wear':'Equip'}</button>`;
+     if(d&&d.slot) h+=`<button class="act" onclick="send({type:'equip',item:'${s.item}',slot:${sIdx}})">${d.kind==='weapon'?'⚔️ Wield':d.kind==='armour'?'🛡️ Wear':'Equip'}</button>`;
      if(isLogs) h+=`<button class="act" onclick="lightFire()">🔥 Use — light fire</button>`;
      if(s.item==='raw_trout'||s.item==='raw_shrimps') h+=`<button class="act" onclick="cookItem('${s.item}')">🍳 Cook on fire</button>`;
      const smithM=s.item.startsWith('smith_')? s.item.match(/^smith_([a-z]+)_(?:sword|platebody)(?:_u(\d))?$/) : null;
@@ -4388,7 +4518,7 @@ function pSpellbook(){
  const capEl=(e)=>e.charAt(0).toUpperCase()+e.slice(1);
  let h=`<p class="note" style="margin-bottom:6px">Your Magic level: <b style="color:#e3c766">${mLvl}</b> · Selected: <b style="color:#e3c766">${esc(spellNameOf(me?me.spell:null))}</b></p>`;
  h+=`<p class="note" style="margin-bottom:8px">Wield a staff and your attacks cast the selected spell — runes are spent on every cast, hit or miss. Restock runes by killing wizards at the 🧙 Wizard Grounds (plaza north-west gate).</p>`;
- h+=`<p class="note" style="margin-bottom:8px">🪄 <b style="color:#e3c766">Cast buttons:</b> drag a spell's 📌 out of this book onto the screen to place a button for it. Tap the button to arm the spell (it glows gold), then tap your opponent to cast it at them — no staff needed. Long-press a placed button to remove it; ✋ Grab mode moves them like any other button.</p>`;
+ h+=`<p class="note" style="margin-bottom:8px">🪄 <b style="color:#e3c766">Cast buttons:</b> drag a spell's 📌 out of this book onto the screen to place a button for it. Tap the button to arm the spell (it glows gold), then tap your opponent to cast it at them — no staff needed. Long-press a placed button to remove it, or drag it back onto the 🎛️ or 📖 button to put it away; ✋ Grab mode moves them like any other button.</p>`;
  if(!spellList.length) h+=`<p class="note">The spell list has not arrived yet — reconnect and it will be here.</p>`;
  for(const el of ['air','water','earth','fire']){
    const spells=spellList.filter(s=>s.element===el);
@@ -4418,9 +4548,13 @@ function pWorn(){
  let h='';
  for(const [slot,label,emptyIcon] of SLOT_DEFS){
    const it=me.worn[slot];
-   h+=`<div class="rowline"><span class="ic">${it?itemIconHTML(it,24):emptyIcon}</span><span class="grow"><b>${label}</b><br><span class="sub">${it?esc(nameOf(it)):'Empty'}</span></span>${it?`<button class="act" onclick="send({type:'unequip',slot:'${slot}'})">Unequip</button>`:''}</div>`;
+   // Stage 29: tapping the worn item itself takes it off in one tap
+   // (the app version's rule) — the Unequip button stays as the
+   // labelled alternative. The server refuses when the pack is full.
+   const tapOff=it? ` onclick="send({type:'unequip',slot:'${slot}'})" style="cursor:pointer" title="Tap to take off"` : '';
+   h+=`<div class="rowline"><span class="ic"${tapOff}>${it?itemIconHTML(it,24):emptyIcon}</span><span class="grow"${tapOff}><b>${label}</b><br><span class="sub">${it?esc(nameOf(it)):'Empty'}</span></span>${it?`<button class="act" onclick="send({type:'unequip',slot:'${slot}'})">Unequip</button>`:''}</div>`;
  }
- h+=`<p class="note">Worn gear boosts your duels: weapons raise accuracy / max hit, armour cuts damage taken (full set +5% extra, capped at 45%). The cape slot holds your Fight Caves fire cape 🔥.</p>`;
+ h+=`<p class="note">Tap a worn item to take it off — it moves to an empty backpack slot. Worn gear boosts your duels: weapons raise accuracy / max hit, armour cuts damage taken (full set +5% extra, capped at 45%). The cape slot holds your Fight Caves fire cape 🔥.</p>`;
  return h;
 }
 /* ---- Shops ---- */
@@ -5289,7 +5423,7 @@ window.openTalk=function(name){
  <p class="note">Only ${esc(name)} will see this — it appears in the chat log as a 💬 line.</p>`;
  $('talkmodal').classList.add('open');
  const inp=$('talktext');
- const doSend=()=>{ const v=inp.value.trim(); if(v) send({type:'whisper',to:name,text:v}); closeModal('talkmodal'); };
+ const doSend=()=>{ const v=inp.value.trim(); if(!v){ closeModal('talkmodal'); return; } if(send({type:'whisper',to:name,text:v})) closeModal('talkmodal'); else toast('⚠️ Not connected — that message was NOT sent.'); };
  $('talksend').onclick=doSend;
  inp.addEventListener('keydown',e=>{ if(e.key==='Enter') doSend(); });
  setTimeout(()=>{ try{ inp.focus(); }catch(e){} },50);
@@ -5347,39 +5481,94 @@ function openTradeIncoming(m){
  $('traaccept').onclick=()=>{ send({type:'trade_response',tradeId:m.tradeId,accept:true}); stopTradeReqTimer(); closeModal('tradeincomingmodal'); };
  $('tradec').onclick=()=>{ send({type:'trade_response',tradeId:m.tradeId,accept:false}); stopTradeReqTimer(); closeModal('tradeincomingmodal'); };
 }
-/* ---- Trade: the window ---- */
+/* ---- Trade: the window ----
+   Stage 29: the RuneScape tap-to-move pattern (ported from the app
+   version) over the UNCHANGED Stage 7B protocol — the offer is
+   still one {gold, items} trade_offer message, still reset on any
+   change, still executed atomically server-side once both sides
+   confirm. Only the interaction changed: tap an item in your
+   backpack and it moves into your offer; tap it in your offer and
+   it moves back. There is NO catalogue restriction: everything in
+   the pack can be offered (custom items included) except the gold
+   stack itself (the amount field moves money) and notes (personal
+   — the server refuses them, so they're shown locked). */
 let trade=null; // {id, with, you:{gold,items}, them:{gold,items}, youConfirmed, themConfirmed}
 let tradeCancelMine=false; // I hit Cancel — the echoing trade_done stays quiet
+let tradeQtyStep=1; // how much one tap moves: 1, 5, or 'all'
 function openTrade(m){
  trade={id:m.tradeId,with:m.with,you:{gold:0,items:[]},them:{gold:0,items:[]},youConfirmed:false,themConfirmed:false};
  tradeCancelMine=false;
  $('tradesheet').innerHTML=`<h3>🤝 Trading with ${esc(m.with)}</h3>
- <div id="tradeinputs">
-  <div class="rowline"><span class="grow">Gold (you have ${me?me.gold:0}g)</span><input type="number" id="tradegold" value="0" min="0"></div>
-  ${pickerHTML('trp')}
-  <div class="btns"><button class="act" id="tradeupdate">Update offer</button></div>
- </div>
+ <div class="rowline"><span class="grow">Gold to offer (you have ${me?me.gold:0}g)</span><input type="number" id="tradegold" value="0" min="0"></div>
+ <div class="seg"><button class="tqbtn on" data-tq="1">Tap moves 1</button><button class="tqbtn" data-tq="5">5</button><button class="tqbtn" data-tq="all">All</button></div>
+ <div style="font-weight:800;color:#e3c766;margin:6px 0 4px">Your backpack — tap an item to offer it</div>
+ <div id="tradebp"></div>
  <div id="tradestate"></div>
- <p class="note" style="margin-top:8px">Changing your offer un-confirms BOTH sides — always re-check before confirming.</p>
+ <p class="note" style="margin-top:8px">Tap an item in your offer to take it back. Changing your offer un-confirms BOTH sides — always re-check before confirming.</p>
  <div class="btns"><button class="act" id="tradeconfirm">Confirm trade</button><button class="ghost" id="tradecancel">Cancel</button></div>`;
  $('trademodal').classList.add('open');
  renderTradeState();
  applyPreOffer(); // Stage 9+10 §2: an item "used" on this player is pre-offered
- $('tradeupdate').onclick=()=>{ if(!trade) return; const g=clamp(Math.floor(+$('tradegold').value||0),0,me?me.gold:0); send({type:'trade_offer',tradeId:trade.id,gold:g,items:readPicker('trp')}); };
+ $('tradegold').addEventListener('change',()=>sendTradeOffer());
+ document.querySelectorAll('.tqbtn').forEach(b=>{ b.onclick=()=>{ tradeQtyStep=b.dataset.tq==='all'?'all':+b.dataset.tq; document.querySelectorAll('.tqbtn').forEach(x=>x.classList.toggle('on',x===b)); }; });
  $('tradeconfirm').onclick=()=>{ if(trade) send({type:'trade_confirm',tradeId:trade.id}); };
  $('tradecancel').onclick=()=>{ if(trade){ tradeCancelMine=true; send({type:'trade_cancel',tradeId:trade.id}); } trade=null; closeModal('trademodal'); };
 }
-function offerList(o){
+function tradeOfferQty(item){ if(!trade) return 0; const s=(trade.you.items||[]).find(x=>x.item===item); return s? s.qty:0; }
+function sendTradeOffer(items){
+ if(!trade) return;
+ const gEl=$('tradegold');
+ const g=clamp(Math.floor(+(gEl? gEl.value:0)||0),0,me?me.gold:0);
+ const list=(items||trade.you.items||[]).map(s=>({item:s.item,qty:s.qty}));
+ send({type:'trade_offer',tradeId:trade.id,gold:g,items:list});
+}
+window.tradeTapAdd=function(idx){
+ if(!trade||!me) return;
+ const s=me.backpack[idx]; if(!s||s.item==='gold') return;
+ const offered=tradeOfferQty(s.item);
+ const step=tradeQtyStep==='all'? s.qty : tradeQtyStep;
+ const nq=Math.min(s.qty,offered+step);
+ if(nq===offered){ toast(`All your ${nameOf(s.item)} is already in the offer.`); return; }
+ const items=(trade.you.items||[]).filter(x=>x.item!==s.item);
+ items.push({item:s.item,qty:nq});
+ sendTradeOffer(items);
+};
+window.tradeTapBack=function(item){
+ if(!trade) return;
+ const offered=tradeOfferQty(item);
+ if(offered<1) return;
+ const step=tradeQtyStep==='all'? offered : tradeQtyStep;
+ const nq=Math.max(0,offered-step);
+ const items=(trade.you.items||[]).filter(x=>x.item!==item);
+ if(nq>0) items.push({item,qty:nq});
+ sendTradeOffer(items);
+};
+function renderTradeBp(){
+ const el=$('tradebp'); if(!el||!trade||!me) return;
+ if(!me.backpack.length){ el.innerHTML=`<p class="note">Your backpack is empty — gold-only trade.</p>`; return; }
+ const cells=me.backpack.map((s,i)=>{
+   if(s.item==='gold') return ''; // money moves via the gold field, never as an item
+   const d=catalog[s.item];
+   if(d&&d.kind==='note') return `<div class="cell empty" title="Notes are personal — they can't be traded"><span class="ic">${itemIconHTML(s.item,24,s.qty)}</span><span class="nm">🔒 personal</span></div>`;
+   const offered=tradeOfferQty(s.item), left=s.qty-offered;
+   return `<div class="cell${left>0?'':' empty'}" ${left>0?`onclick="tradeTapAdd(${i})"`:''} title="Tap to offer"><span class="q">${left>1?left:''}</span><span class="ic">${itemIconHTML(s.item,24,Math.max(1,left))}</span><span class="nm">${esc(nameOf(s.item))}</span>${offered?`<span class="hlb">✔${offered}</span>`:''}</div>`;
+ }).join('');
+ el.innerHTML=`<div class="grid">${cells}</div>`;
+}
+function offerChips(o,mine){
  const parts=[];
- if(o&&o.gold>0) parts.push(`🪙 ${o.gold}g`);
- for(const s of ((o&&o.items)||[])) parts.push(`${itemIconHTML(s.item,18,s.qty)} ${esc(nameOf(s.item))} x${s.qty}`);
- return parts.length? parts.join('<br>') : '<span class="sub">Nothing</span>';
+ if(o&&o.gold>0) parts.push(`<span class="fchip ctx">🪙 ${o.gold}g</span>`);
+ for(const s of ((o&&o.items)||[])) parts.push(mine
+   ? `<button class="fchip" onclick="tradeTapBack('${s.item}')" title="Tap to take back">${itemIconHTML(s.item,16,s.qty)} ${esc(nameOf(s.item))} ×${s.qty} ↩</button>`
+   : `<span class="fchip">${itemIconHTML(s.item,16,s.qty)} ${esc(nameOf(s.item))} ×${s.qty}</span>`);
+ return parts.length? parts.join(' ') : '<span class="sub">Nothing</span>';
 }
 function renderTradeState(){
  if(!trade) return;
+ renderTradeBp();
  const el=$('tradestate'); if(!el) return;
- el.innerHTML=`<div class="detail"><b>Your offer</b> <span class="note">— as the server sees it</span><br>${offerList(trade.you)}<br><span class="note">${trade.youConfirmed?'You confirmed ✓':'You have not confirmed yet.'}</span></div>
- <div class="detail"><b>${esc(trade.with)}'s offer</b><br>${offerList(trade.them)}<br><span class="note">${trade.themConfirmed?'They confirmed ✓':'They have not confirmed yet.'}</span></div>
+ el.innerHTML=`<div class="detail"><b>Your offer</b> <span class="note">— tap an item to take it back</span><br>${offerChips(trade.you,true)}<br><span class="note">${trade.youConfirmed?'You confirmed ✓':'You have not confirmed yet.'}</span></div>
+ <div class="detail"><b>${esc(trade.with)}'s offer</b><br>${offerChips(trade.them,false)}<br><span class="note">${trade.themConfirmed?'They confirmed ✓':'They have not confirmed yet.'}</span></div>
  ${trade.youConfirmed&&!trade.themConfirmed?'<p class="note" style="margin-top:6px">Waiting for them to confirm…</p>':''}`;
  const cb=$('tradeconfirm');
  if(cb){ cb.disabled=!!trade.youConfirmed; cb.textContent=trade.youConfirmed?'✓ Confirmed — waiting…':'Confirm trade'; }
@@ -6128,9 +6317,9 @@ $('fcleavebtn').onclick=()=>send({type:'fc_leave'});
 $('jadwarn').onclick=()=>{ if(jadWarnStyle){ send({type:'prayer',prayer:jadWarnStyle}); } $('jadwarn').style.display='none'; };
 
 /* ================= chat ================= */
-$('sendchat').onclick=()=>{ const v=$('chat').value.trim(); if(v){ send({type:'chat',text:v}); $('chat').value=''; } };
+$('sendchat').onclick=()=>{ const v=$('chat').value.trim(); if(!v) return; if(send({type:'chat',text:v})){ $('chat').value=''; const el=$('log'); if(el) el.scrollTop=1e6; } else { toast('⚠️ Not connected — that message was NOT sent. It is still in the box; tap Send again once you are reconnected.'); } };
 $('chat').addEventListener('keydown',e=>{ if(e.key==='Enter') $('sendchat').click(); });
-$('chathead').onclick=()=>{ const b=$('chatbox'); b.classList.toggle('closed'); $('chatchev').textContent=b.classList.contains('closed')?'▸':'▾'; };
+$('chathead').onclick=()=>{ const b=$('chatbox'); b.classList.toggle('closed'); $('chatchev').textContent=b.classList.contains('closed')?'▸':'▾'; if(!b.classList.contains('closed')) clearUnread(); };
 logLine('Welcome to nallystake online. Create an account or sign in to enter the plaza.');
 applySettings();
 renderQuickButtons();
@@ -6297,12 +6486,13 @@ function applyPreOffer(){
  if(!pendingPreOffer||!trade||trade.with!==pendingPreOffer.with) return;
  const item=pendingPreOffer.item; pendingPreOffer=null;
  if(!me) return;
- const idx=me.backpack.findIndex(s=>s.item===item);
- if(idx<0) return;
- const inp=$('trp'+idx); if(!inp) return;
- inp.value=1;
- const upd=$('tradeupdate'); if(upd) upd.click();
- toast(`✋ ${nameOf(item)} pre-offered — adjust the amounts, then confirm.`);
+ const s=me.backpack.find(x=>x.item===item);
+ if(!s) return;
+ // Stage 29: pre-offer 1 of the item through the tap-to-move offer.
+ const items=(trade.you.items||[]).filter(x=>x.item!==item);
+ items.push({item,qty:Math.min(s.qty,tradeOfferQty(item)+1)});
+ sendTradeOffer(items);
+ toast(`✋ ${nameOf(item)} pre-offered — tap to adjust, then confirm.`);
 }
 
 /* ---- §3: sign a note, read a note, admin note requests ---- */
@@ -6380,10 +6570,10 @@ function bpCell(s,idx){
  const armed=useMode&&useMode.item===s.item;
  return `<div class="cell bp-cell ${selStack===s.item?'sel':''}${armed?' usearm':''}" data-item="${s.item}" data-idx="${idx}">${hl?'<span class="hlb">⭐</span>':''}<span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${itemIconHTML(s.item,24,s.qty)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
 }
-function bpPrimaryTap(item){
+function bpPrimaryTap(item,idx){
  const d=catalog[item];
  if(d&&(d.kind==='food'||d.kind==='potion')){ send({type:'use',item}); return; }
- if(d&&d.slot){ send({type:'equip',item}); return; }
+ if(d&&d.slot){ send({type:'equip',item,slot:(typeof idx==='number'? idx : (me? me.backpack.findIndex(s=>s.item===item) : -1))}); return; }
  if(item==='note'){ send({type:'read_note'}); return; }
  selStack=selStack===item?null:item; examineStack=null; renderDrawer(); // everything else just opens the sheet
 }
@@ -6400,7 +6590,7 @@ function wireBpCells(){
      if(grabMode) return; // Stage 23: Grab is modal — backpack taps and drags do nothing while arranging
      pid=e.pointerId; sx=lx=e.clientX; sy=ly=e.clientY; downAt=Date.now(); holdFired=false; dragging=false; dead=false;
      if(useMode){ dead=true; toast('Nothing happens.'); cancelUse(true); return; } // a backpack tap resolves use-mode
-     holdT=setTimeout(()=>{ holdT=null; if(!dragging&&!dead){ holdFired=true; selStack=item; examineStack=null; renderDrawer(); } },450);
+     holdT=setTimeout(()=>{ holdT=null; if(!dragging&&!dead){ holdFired=true; selStack=item; selIdx=idx; examineStack=null; renderDrawer(); } },450);
    });
    cell.addEventListener('pointermove',e=>{
      if(pid===null||e.pointerId!==pid||dead) return;
@@ -6438,8 +6628,8 @@ function wireBpCells(){
      if(Math.hypot(lx-sx,ly-sy)>10) return; // it was a scroll
      // Stage 18: Menu tap mode — a tap opens the item's detail sheet
      // instead of quick-using / equipping it.
-     if(settings.tapMode==='menu'){ selStack=item; examineStack=null; renderDrawer(); return; }
-     bpPrimaryTap(item);
+     if(settings.tapMode==='menu'){ selStack=item; selIdx=idx; examineStack=null; renderDrawer(); return; }
+     bpPrimaryTap(item,idx);
    };
    cell.addEventListener('pointerup',finish);
    cell.addEventListener('pointercancel',finish);
@@ -6686,6 +6876,26 @@ function renderSpellBtns(){
    wrap.appendChild(el);
  }
 }
+/* Stage 29: drag a placed spell button back onto the 🎛️ master
+   toggle or the 📖 spellbook button to put it away (the app
+   version's gesture). While a button is being dragged those two
+   targets glow gold; dropping on one removes the button and
+   persists the set. The long-press ✖ Remove popup stays as the
+   alternative, and Grab mode still just moves buttons. */
+function spellDropTargets(){
+ const t=[]; const gb=$('gearbtn'); if(gb) t.push(gb);
+ document.querySelectorAll('[data-panel="spellbook"]').forEach(x=>t.push(x));
+ return t;
+}
+function setSpellDropHighlight(on){ for(const t of spellDropTargets()) t.classList.toggle('spelldroptarget',on); }
+function overSpellDropTarget(x,y,selfEl){
+ if(!document.elementsFromPoint) return false;
+ for(const e of document.elementsFromPoint(x,y)){
+   if(e===selfEl) continue;
+   if(e.closest&&(e.closest('#gearbtn')||e.closest('[data-panel="spellbook"]'))) return true;
+ }
+ return false;
+}
 function wireSpellBtn(el,b){
  // Tap = arm / disarm. The Stage 23 central click gate swallows
  // every click while Grab is on, so arming can't happen while
@@ -6708,23 +6918,40 @@ function wireSpellBtn(el,b){
      try{ el.setPointerCapture(pid); }catch(err){}
      return;
    }
-   // Long-press (outside Grab) opens the remove popup.
+   // Long-press (outside Grab) opens the remove popup. A press
+   // that MOVES becomes a drag instead (Stage 29): drag the button
+   // where you want it — or onto the 🎛️ / 📖 to put it away.
    pressX=e.clientX; pressY=e.clientY;
+   if(pid!==null) return;
+   pid=e.pointerId; sx=e.clientX; sy=e.clientY; dragging=false;
+   try{ el.setPointerCapture(pid); }catch(err){}
    pressTimer=setTimeout(()=>{ pressTimer=null; el._suppressClickUntil=Date.now()+600; openSpellPop(b,el); },600);
  });
  el.addEventListener('pointermove',e=>{
    if(pressTimer&&Math.hypot(e.clientX-pressX,e.clientY-pressY)>10){ clearTimeout(pressTimer); pressTimer=null; }
    if(pid===null||e.pointerId!==pid) return;
    const dx=e.clientX-sx, dy=e.clientY-sy;
-   if(!dragging&&Math.hypot(dx,dy)>4){ dragging=true; const r=el.getBoundingClientRect(); startL=r.left; startT=r.top; }
+   if(!dragging&&Math.hypot(dx,dy)>4){ dragging=true; if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; } const r=el.getBoundingClientRect(); startL=r.left; startT=r.top; if(!grabMode){ el.classList.add('dragging'); setSpellDropHighlight(true); } }
    if(dragging){ el.style.left=(startL+dx)+'px'; el.style.top=(startT+dy)+'px'; }
  });
  const finish=e=>{
    if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; }
    if(pid===null||(e.pointerId!==undefined&&e.pointerId!==pid)) return;
    pid=null;
-   if(dragging){ dragging=false; const r=el.getBoundingClientRect(); b.l=Math.round(r.left); b.t=Math.round(r.top); saveSpellBtns(); }
-   el._suppressClickUntil=Date.now()+350;
+   if(dragging){
+     dragging=false; el.classList.remove('dragging'); setSpellDropHighlight(false);
+     // Stage 29: dropped on the gear or the spellbook button
+     // (outside Grab) = put away; anywhere else just moves it.
+     if(!grabMode&&e.type==='pointerup'&&typeof e.clientX==='number'&&overSpellDropTarget(e.clientX,e.clientY,el)){
+       spellBtns=spellBtns.filter(x=>x.spell!==b.spell);
+       if(armedSpell===b.spell) armedSpell=null;
+       saveSpellBtns(); renderSpellBtns();
+       toast('🪄 Spell button put away.');
+     } else {
+       const r=el.getBoundingClientRect(); b.l=Math.round(r.left); b.t=Math.round(r.top); saveSpellBtns();
+     }
+     el._suppressClickUntil=Date.now()+350; // a drag's release must not also arm/disarm via the click
+   }
  };
  el.addEventListener('pointerup',finish);
  el.addEventListener('pointercancel',finish);
