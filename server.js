@@ -441,10 +441,26 @@ const SPELLS = [
   { id: 'water_blast', name: 'Water Blast', element: 'water', tier: 'blast', level: 47, runes: 3, max: 15 },
   { id: 'earth_blast', name: 'Earth Blast', element: 'earth', tier: 'blast', level: 53, runes: 3, max: 16 },
   { id: 'fire_blast', name: 'Fire Blast', element: 'fire', tier: 'blast', level: 59, runes: 3, max: 17 },
+  // Stage 24: Freeze — Derek's control spell ("a spell that when you
+  // use it your opponent is stopping in the spot they are standing
+  // for 5 seconds"). Not a damage spell: max hit 0, and a CONNECTED
+  // cast (the Stage 19 accuracy roll lands and is not style-blocked)
+  // roots the target where it stands for exactly FREEZE_MS. It costs
+  // WATER runes — ice is frozen water. Button-cast only (Stage 24
+  // Part 2): the spellbook offers no Select for it and set_spell
+  // refuses it, because a staff autocasting a 0-damage root every
+  // 5 ticks would be a rune-burning loop that never deals damage.
+  { id: 'freeze', name: 'Freeze', element: 'water', tier: 'freeze', level: 25, runes: 3, max: 0, icon: '❄️', desc: 'Stops your opponent in the spot they are standing for 5 seconds.' },
 ];
 const SPELL_BY_ID = {};
 for (const s of SPELLS) SPELL_BY_ID[s.id] = s;
-const SPELL_CAST_XP = { strike: 5, bolt: 10, blast: 15 }; // flat Magic XP per resolved cast, hit or miss
+const SPELL_CAST_XP = { strike: 5, bolt: 10, blast: 15, freeze: 12 }; // flat Magic XP per resolved cast, hit or miss
+// Stage 24: how long a connected Freeze roots its target, and the
+// personal cooldown between placed-button casts (5 ticks — the same
+// cadence as a staff cast; in Fight Caves this applies to button
+// casts too, even though FC autocast swings every tick).
+const FREEZE_MS = 5000;
+const BUTTON_CAST_COOLDOWN_MS = 5 * TICK_MS;
 function spellOf(p) { return SPELL_BY_ID[p.spell] || SPELLS[0]; }
 
 // ---------- Stage 20: the rewarding layer ----------
@@ -1649,9 +1665,10 @@ const npcFights = new Map(); // id -> { id, playerKey, npcId, hpYou, maxHpYou, s
 const NPC_DEFENDER = { style: 'accurate', worn: { weapon: null, shield: null, head: null, body: null, legs: null } };
 
 function npcStateMsg(area) {
+  const now = Date.now();
   return {
     type: 'npc_state', area,
-    npcs: [...npcs.values()].filter((n) => n.alive && n.area === area).map((n) => ({ id: n.id, kind: n.kind, name: n.name, combatLevel: n.combatLevel, x: n.x, y: n.y, hp: n.hp, maxHp: n.maxHp })),
+    npcs: [...npcs.values()].filter((n) => n.alive && n.area === area).map((n) => ({ id: n.id, kind: n.kind, name: n.name, combatLevel: n.combatLevel, x: n.x, y: n.y, hp: n.hp, maxHp: n.maxHp, frozenUntil: (n.frozenUntil && n.frozenUntil > now) ? n.frozenUntil : 0 })), // Stage 24: Freeze root rides the state broadcast like the players'
   };
 }
 function broadcastNpcState(area) {
@@ -1669,6 +1686,7 @@ function playersSnapshot(area) {
     username: p.profile.username, x: Math.round(p.x), y: Math.round(p.y), area: p.area,
     inDuel: !!p.duelId, activePrayer: p.profile.activePrayer || null,
     wornHead: (p.profile.worn && p.profile.worn.head) || null, // Stage 21: so clients can put a worn party hat on the knight's head
+    frozenUntil: (p.frozenUntil && p.frozenUntil > now) ? p.frozenUntil : 0, // Stage 24: Freeze root — clients render the ❄️ state while this is in the future
     role: effectiveRole(p.profile), // Stage 7A
     appearance: p.profile.appearance ? { ...p.profile.appearance } : defaultAppearance(), // Stage 10: how this knight looks
     party: partyListForKey(k), // Stage 7B: member usernames ([] when not in a party)
@@ -2072,8 +2090,25 @@ function rollStyleAttack(attackerProfile, defenderProfile, useSpecial = false, l
     const dmg = Math.floor(raw * (1 - armourReduction(defenderProfile)));
     return { dmg, connected: true, outcome: dmg > 0 ? 'hit' : 'blocked', notes: [], style, ammoUsed: arrowId };
   }
-  // magic
-  const spell = spellOf(attackerProfile);
+  // magic — the attacker's selected spell, cast through the shared
+  // resolver below (Stage 24 extracted it so placed-button casts
+  // resolve with exactly the same machinery).
+  return rollMagicCast(attackerProfile, defenderProfile, spellOf(attackerProfile), useSpecial, levelOverride);
+}
+
+// Stage 24: resolve ONE magic cast of a CHOSEN spell. This is the
+// Stage 19 staff-cast logic verbatim, parameterised on the spell:
+// level gate first (nothing consumed), then the atomic rune take
+// (consumed on the cast, hit or miss), then the accuracy roll, the
+// defender's style block, and the level-scaled max hit. Freeze is
+// the one special case: max hit 0 by design, and a cast that
+// CONNECTS (lands and is not blocked) reports froze:true so the
+// caller roots the target for FREEZE_MS — a miss or a block
+// consumes the runes and does nothing, like Derek's brief says.
+function rollMagicCast(attackerProfile, defenderProfile, spell, useSpecial = false, levelOverride = null) {
+  const style = 'magic';
+  const dst = STYLES[defenderProfile.style] || STYLES.accurate;
+  const s = STYLES[attackerProfile.style] || STYLES.accurate;
   const mLvl = levelForXp((attackerProfile.xp && attackerProfile.xp.magic) || 0);
   if (mLvl < spell.level) return { refused: `You need Magic level ${spell.level} to cast ${spell.name}.`, style, spell: spell.id };
   const runeId = `${spell.element}_rune`;
@@ -2084,6 +2119,7 @@ function rollStyleAttack(attackerProfile, defenderProfile, useSpecial = false, l
   const connected = Math.random() <= styleHitChance(attackerProfile, defenderProfile, 'magic', useSpecial, levelOverride);
   if (!connected) return { dmg: 0, connected: false, outcome: 'miss', notes: [], style, spell: spell.id };
   if (dst.block && Math.random() < dst.block) return { dmg: 0, connected: true, outcome: 'blocked', notes: [], style, spell: spell.id };
+  if (spell.id === 'freeze') return { dmg: 0, connected: true, outcome: 'hit', froze: true, notes: [], style, spell: spell.id };
   const lvl = levelOverride == null ? mLvl : levelOverride;
   let max = spell.max + Math.floor((lvl + (s.strBoost || 0) - 1) / 3);
   if (useSpecial) max = Math.floor(max * 1.5);
@@ -2548,6 +2584,7 @@ function modDuelTick(fight) {
       youHit: null, npcHit: null, youOutcome: null, npcOutcome: null, youSpecial: false,
       energyYou: profile.specialEnergy, countdownLeft,
       closing: true, moveTo: approachPoint(sess.x, sess.y, def.x, def.y),
+      npcFrozenUntil: (fight.modFrozenUntil && fight.modFrozenUntil > Date.now()) ? fight.modFrozenUntil : 0, // Stage 24 (mods never move; Freeze is visual here)
     });
     return;
   }
@@ -2586,6 +2623,7 @@ function modDuelTick(fight) {
     energyYou: profile.specialEnergy, countdownLeft,
     ...(playerOut ? { closing: true, moveTo: approachPoint(sess.x, sess.y, def.x, def.y) } : {}),
     note: notes.length ? notes.join(' ') : undefined,
+    npcFrozenUntil: (fight.modFrozenUntil && fight.modFrozenUntil > Date.now()) ? fight.modFrozenUntil : 0, // Stage 24
   });
   // The kill counts even on a double-drop tick (the NPC-fight
   // precedent: "the kill still counts"), so the mod's death is
@@ -2773,13 +2811,16 @@ function npcTick(fight) {
   const distNow = Math.hypot(sess.x - npc.x, sess.y - npc.y);
   const playerOut = distNow > pReach, npcOut = distNow > npcReach;
   if (playerOut && npcOut && npc.attackType === 'melee') {
-    stepToward(npc, sess.x, sess.y, APPROACH_STEP);
+    // Stage 24: a Freeze-rooted creature holds its spot instead of
+    // stepping in — it may still swing once it's in reach (below).
+    if (!((npc.frozenUntil || 0) > Date.now())) stepToward(npc, sess.x, sess.y, APPROACH_STEP);
     send(sess.ws, {
       type: 'npc_fight', phase: 'tick', npcId: npc.id,
       hpYou: Math.max(0, fight.hpYou), maxHpYou: fight.maxHpYou,
       hpNpc: Math.max(0, npc.hp), maxHpNpc: npc.maxHp,
       youHit: null, npcHit: null, youOutcome: null, npcOutcome: null, youSpecial: false, energyYou: profile.specialEnergy,
       closing: true, moveTo: approachPoint(sess.x, sess.y, npc.x, npc.y),
+      npcFrozenUntil: (npc.frozenUntil && npc.frozenUntil > Date.now()) ? npc.frozenUntil : 0, // Stage 24
     });
     broadcastNpcState(npc.area);
     return;
@@ -2804,7 +2845,8 @@ function npcTick(fight) {
   // Stage 19: a melee creature still out of its own reach keeps
   // closing during fighting ticks (a ranging/maging player keeps
   // shooting it as it comes). Ranged creatures hold their ground.
-  if (npcOut && npc.attackType === 'melee') stepToward(npc, sess.x, sess.y, APPROACH_STEP);
+  // Stage 24: a Freeze-rooted creature holds its spot here too.
+  if (npcOut && npc.attackType === 'melee' && !((npc.frozenUntil || 0) > Date.now())) stepToward(npc, sess.x, sess.y, APPROACH_STEP);
   if (!playerOut && tick >= (fight.nextSwingYou || MELEE_SPEED)) {
     // Player swing: Stage 19's style dispatcher — melee is the
     // shared Stage 10 roll; ranged consumes an arrow; magic
@@ -2898,6 +2940,7 @@ function npcTick(fight) {
     hpNpc: Math.max(0, npc.hp), maxHpNpc: npc.maxHp,
     youHit, npcHit, youOutcome, npcOutcome, youSpecial: useSpec, energyYou: profile.specialEnergy,
     note: tickNotes.length ? tickNotes.join(' ') : undefined,
+    npcFrozenUntil: (npc.frozenUntil && npc.frozenUntil > Date.now()) ? npc.frozenUntil : 0, // Stage 24
   });
   broadcastNpcState(npc.area);
   if (npc.hp <= 0) {
@@ -3208,6 +3251,7 @@ function barrowsTick(fight) {
     hpNpc: Math.max(0, fight.hpNpc), maxHpNpc: fight.maxHpNpc,
     youHit, npcHit, youOutcome, npcOutcome, youSpecial: useSpec, energyYou: profile.specialEnergy,
     note: notes.length ? notes.join(' ') : undefined,
+    npcFrozenUntil: (fight.brotherFrozenUntil && fight.brotherFrozenUntil > Date.now()) ? fight.brotherFrozenUntil : 0, // Stage 24: brothers never move, so Freeze is visual here — but tracked and broadcast like everywhere else
     // Stage 8: on a closing tick, where to walk to reach the brother.
     // Stage 19: "closing" is measured against the PLAYER's style
     // reach — a ranged/magic player inside 150 is fighting, not
@@ -3338,9 +3382,11 @@ const FC_WAVE_PAUSE_MS = 2000; // breather between waves
 const fcRuns = new Map(); // run id -> run
 
 function fcRoster(run) {
+  const now = Date.now();
   return [...run.monsters.values()].filter((m) => m.alive).map((m) => ({
     id: m.id, kind: m.kind, name: m.name, combatLevel: m.combatLevel,
     hp: Math.max(0, m.hp), maxHp: m.maxHp, x: m.x, y: m.y, attackType: m.attackType,
+    frozenUntil: (m.frozenUntil && m.frozenUntil > now) ? m.frozenUntil : 0, // Stage 24: Freeze root rides the roster
   }));
 }
 function fcStateMsg(run) {
@@ -3540,6 +3586,7 @@ function fcTick(run) {
   // tick (movement marks the roster changed).
   for (const mon of run.monsters.values()) {
     if (!mon.alive || mon.attackType !== 'melee') continue;
+    if ((mon.frozenUntil || 0) > Date.now()) continue; // Stage 24: a Freeze-rooted monster holds its spot (it may still swing in reach, below)
     if (Math.hypot(sess.x - mon.x, sess.y - mon.y) > MELEE_REACH) {
       if (stepToward(mon, sess.x, sess.y, APPROACH_STEP)) run.rosterChanged = true;
     }
@@ -3991,7 +4038,7 @@ wss.on('connection', (ws, req) => {
   ensureV2(profile);
   // Everyone logs into the plaza (area is session-only, never saved).
   // Stage 13: the login scatter is the old 100..600 x 100..350 box x2.
-  online.set(key, { ws, profile, x: 200 + Math.random() * 1000, y: 200 + Math.random() * 500, area: 'plaza', duelId: null, modDuelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsPuzzleSolved: false, actSkill: null, actAt: 0 });
+  online.set(key, { ws, profile, x: 200 + Math.random() * 1000, y: 200 + Math.random() * 500, area: 'plaza', duelId: null, modDuelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsPuzzleSolved: false, actSkill: null, actAt: 0, castReadyAt: 0, frozenUntil: 0 }); // Stage 24: castReadyAt = placed-button cast cooldown; frozenUntil = Freeze root expiry
   send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot('plaza'), area: 'plaza' });
   send(ws, modNpcsMsg()); // Stage 22: the three plaza moderators + their busy flags
   send(ws, modLadderMsg(profile)); // Stage 22: stake-ladder progress
@@ -4027,7 +4074,12 @@ wss.on('connection', (ws, req) => {
       // standing fight works — swings, specials and eating all carry
       // on; only running away is off the table.
       const noMove = !!(duelNow && duelNow.rules && duelNow.rules.noMovement);
-      if (!frozen && !noMove && !mdFrozen) {
+      // Stage 24: a Freeze-rooted player's moves are ignored the
+      // same way — they stay on the spot they're standing on until
+      // the root expires. Attacking, eating, drinking and praying
+      // are untouched; only movement stops.
+      const selfFrozen = (me.frozenUntil || 0) > Date.now();
+      if (!frozen && !noMove && !mdFrozen && !selfFrozen) {
         me.x = Math.max(0, Math.min(WORLD_W, +m.x || 0));
         me.y = Math.max(0, Math.min(WORLD_H, +m.y || 0));
       }
@@ -4441,6 +4493,9 @@ wss.on('connection', (ws, req) => {
     if (m.type === 'set_spell') {
       const sp = SPELL_BY_ID[String(m.spell || '')];
       if (!sp) return send(ws, { type: 'error', message: 'Unknown spell.' });
+      // Stage 24: Freeze is cast from a placed spell button only —
+      // a staff autocasting a 0-damage root would just burn runes.
+      if (sp.id === 'freeze') return send(ws, { type: 'error', message: '❄️ Freeze is cast from a placed spell button — drag it out of the spellbook onto your screen.' });
       const mLvl = levelForXp((profile.xp && profile.xp.magic) || 0);
       if (mLvl < sp.level) return send(ws, { type: 'error', message: `You need Magic level ${sp.level} for ${sp.name} (you are level ${mLvl}).` });
       profile.spell = sp.id;
@@ -4930,6 +4985,186 @@ wss.on('connection', (ws, req) => {
         fight.nextSwingYou = Math.max(COUNTDOWN_TICKS, fight.tickCount) + 1;
       }
       return;
+    }
+
+    // ----- Stage 24: placed-button tap-to-cast -----
+    // The client arms a spell from a placed spell button and taps a
+    // target; this message is that tap. Casting from a button needs
+    // NO staff (the button is the casting method — Derek's design);
+    // the Stage 19 staff autocast is untouched. Everything is
+    // validated server-side: the spell exists, the Magic level, the
+    // runes (consumed on the cast, hit or miss — rollMagicCast),
+    // the target being a real current opponent in the player's
+    // current combat context within magic range (NPC_RANGE), and a
+    // personal 5-tick cooldown between button casts (in Fight Caves
+    // too, even though FC autocast swings every tick). A cast does
+    // NOT engage weapon swings — duelists still tap to swing.
+    // Refusals consume nothing and never start the cooldown.
+    if (m.type === 'cast_at') {
+      const spell = SPELL_BY_ID[String(m.spell || '')];
+      if (!spell) return send(ws, { type: 'error', message: 'Unknown spell.' });
+      const kind = String(m.targetKind || '');
+      const targetId = String(m.targetId || '');
+      const now = Date.now();
+      if (now < (me.castReadyAt || 0)) return send(ws, { type: 'error', message: 'You are still recovering from your last cast.' });
+      const castFail = (message) => send(ws, { type: 'error', message });
+      // Shared tail for a RESOLVED cast (rollMagicCast already took
+      // the runes): cooldown, XP (flat cast XP is owed hit or miss),
+      // special-energy charge like the engines, save + profile push
+      // so the caster's backpack and XP refresh at once.
+      const finishCast = (res) => {
+        me.castReadyAt = Date.now() + BUTTON_CAST_COOLDOWN_MS;
+        addXp(key, swingXpGains(profile.style, 'magic', res.dmg, spell.id));
+        if (res.dmg > 0) profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
+        save(key);
+        sendProfile(key);
+      };
+      // Freeze housekeeping shared by every context: the cast is
+      // refused BEFORE rolling when the target is already rooted —
+      // no runes, no cooldown (Freeze never stacks or extends).
+      const alreadyFrozen = (until, name) => (until || 0) > Date.now()
+        ? (castFail(`❄️ ${name} is already frozen.`), true) : false;
+
+      if (kind === 'duel') {
+        // Player duel first, then a mod duel (the client sends the
+        // same kind for both; the opponent is implicit either way).
+        const duel = me.duelId ? duels.get(me.duelId) : null;
+        if (duel) {
+          if (duel.rules && duel.rules.noMagic) return castFail(styleBanMsg('magic'));
+          if (duel.tickCount <= COUNTDOWN_TICKS) return castFail('The duel has not started yet — wait for the countdown.');
+          const oppKey = duel.a === key ? duel.b : duel.a;
+          const oppSess = online.get(oppKey);
+          const oppProfile = db.users[oppKey] && db.users[oppKey].profile;
+          if (!oppSess || !oppProfile) return castFail('Your opponent is gone.');
+          if (Math.hypot(me.x - oppSess.x, me.y - oppSess.y) > NPC_RANGE) return castFail('Too far away — walk closer.');
+          if (spell.id === 'freeze' && alreadyFrozen(oppSess.frozenUntil, oppProfile.username)) return;
+          const res = rollMagicCast(profile, oppProfile, spell, false, DUEL_LEVEL);
+          if (res.refused) return castFail(res.refused);
+          finishCast(res);
+          duel.hp[oppKey] = Math.max(0, duel.hp[oppKey] - res.dmg);
+          let frozenUntil = 0;
+          if (res.froze) {
+            frozenUntil = Date.now() + FREEZE_MS;
+            oppSess.frozenUntil = frozenUntil;
+            broadcastState(); // the root rides the player snapshot to the arena
+          }
+          const result = { type: 'cast_result', context: 'duel', spell: spell.id, targetId: oppProfile.username, targetName: oppProfile.username, outcome: res.outcome, dmg: res.dmg, froze: !!res.froze, frozenUntil, hpTarget: duel.hp[oppKey], maxHpTarget: 99 };
+          send(ws, result);
+          send(oppSess.ws, { ...result, incoming: true, by: profile.username }); // the victim splats + toasts on their own screen
+          if (duel.hp[oppKey] <= 0) endDuel(duel, key, 'KO');
+          return;
+        }
+        const fight = me.modDuelId ? modDuels.get(me.modDuelId) : null;
+        if (fight) {
+          const def = MOD_NPC_BY_ID[fight.npcId];
+          if (!def) return castFail('Your opponent is gone.');
+          if (fight.tickCount <= COUNTDOWN_TICKS) return castFail('The fight has not started yet — wait for the countdown.');
+          if (Math.hypot(me.x - def.x, me.y - def.y) > NPC_RANGE) return castFail('Too far away — walk closer.');
+          if (spell.id === 'freeze' && alreadyFrozen(fight.modFrozenUntil, def.name)) return;
+          const res = rollMagicCast(profile, fight.modProfile, spell, false, DUEL_LEVEL);
+          if (res.refused) return castFail(res.refused);
+          finishCast(res);
+          fight.hpNpc = Math.max(0, fight.hpNpc - res.dmg);
+          let frozenUntil = 0;
+          if (res.froze) { frozenUntil = Date.now() + FREEZE_MS; fight.modFrozenUntil = frozenUntil; }
+          send(ws, { type: 'cast_result', context: 'modduel', spell: spell.id, targetId: def.id, targetName: def.name, outcome: res.outcome, dmg: res.dmg, froze: !!res.froze, frozenUntil, hpTarget: fight.hpNpc, maxHpTarget: 99 });
+          if (fight.hpNpc <= 0) endModDuel(fight, 'win');
+          return;
+        }
+        return castFail('You are not in a duel.');
+      }
+
+      if (kind === 'npc') {
+        // Mirror attack_npc's guards: the creature must be real,
+        // alive, in my area and not busy with someone else.
+        if (me.duelId) return castFail('You are in a duel.');
+        if (me.modDuelId) return castFail('You are in a mod duel.');
+        if (me.barrowsFightId) return castFail('You are fighting a Barrows brother.');
+        if (me.fcRunId) return castFail('You are in a Fight Caves run.');
+        const npc = npcs.get(targetId);
+        if (!npc || !npc.alive) return castFail('That creature is not here.');
+        if (npc.area !== me.area) return castFail('That creature is not here.');
+        if (npc.fightId && npc.fightId !== me.npcFightId) return castFail('Someone else is fighting that one — pick another.');
+        if (me.npcFightId && me.npcFightId !== npc.fightId) return castFail('You are already fighting something.');
+        if (Math.hypot(me.x - npc.x, me.y - npc.y) > NPC_RANGE) return castFail('Too far away — walk closer.');
+        if (spell.id === 'freeze' && alreadyFrozen(npc.frozenUntil, npc.name)) return;
+        // A cast at a creature I'm not fighting OPENS the fight —
+        // but only once the cast itself is known-good, so peek at
+        // the level and runes first (rollMagicCast re-checks them
+        // atomically when it resolves; a refused cast never starts
+        // a fight and consumes nothing).
+        const mLvl = levelForXp((profile.xp && profile.xp.magic) || 0);
+        if (mLvl < spell.level) return castFail(`You need Magic level ${spell.level} to cast ${spell.name}.`);
+        if (stackQty(profile.backpack, `${spell.element}_rune`) < spell.runes) return castFail(`You don't have the runes for ${spell.name}.`);
+        let fight = me.npcFightId ? npcFights.get(me.npcFightId) : null;
+        if (!fight) { startNpcFight(key, npc); fight = npcFights.get(me.npcFightId); }
+        if (!fight) return castFail('That fight could not start.');
+        const res = rollMagicCast(profile, NPC_DEFENDER, spell, false, null);
+        if (res.refused) return castFail(res.refused); // unreachable after the peek — belt and braces
+        finishCast(res);
+        npc.hp -= res.dmg;
+        // A connected cast unlocks the creature's retaliation,
+        // exactly like a connected swing does in npcTick.
+        if (res.connected && !fight.npcUnlocked) { fight.npcUnlocked = true; fight.nextSwingNpc = fight.tickCount + (npc.attackType === 'melee' ? MELEE_SPEED : 3); }
+        let frozenUntil = 0;
+        if (res.froze) { frozenUntil = Date.now() + FREEZE_MS; npc.frozenUntil = frozenUntil; }
+        send(ws, { type: 'cast_result', context: 'npc', spell: spell.id, targetId: npc.id, targetName: npc.name, outcome: res.outcome, dmg: res.dmg, froze: !!res.froze, frozenUntil, hpTarget: Math.max(0, npc.hp), maxHpTarget: npc.maxHp });
+        broadcastNpcState(npc.area);
+        if (npc.hp <= 0) {
+          // The npcTick kill path, verbatim (a cast can't drop the
+          // caster, so the both-die branch doesn't apply).
+          npc.alive = false; npc.hp = 0; npc.respawnAt = Date.now() + npc.respawnMs;
+          const drops = rollNpcDrops(profile, npc);
+          completeStarterGoal(key, 'kill_monster');
+          save(key);
+          finishNpcFight(fight, 'kill', drops);
+          broadcastNpcState(npc.area);
+        }
+        return;
+      }
+
+      if (kind === 'fc') {
+        const run = me.fcRunId ? fcRuns.get(me.fcRunId) : null;
+        if (!run || run.done) return castFail('You are not in a Fight Caves run.');
+        const mon = run.monsters.get(targetId);
+        if (!mon || !mon.alive) return castFail('That monster is not here.');
+        if (Math.hypot(me.x - mon.x, me.y - mon.y) > NPC_RANGE) return castFail('Too far away — walk closer.');
+        if (spell.id === 'freeze' && alreadyFrozen(mon.frozenUntil, mon.name)) return;
+        const res = rollMagicCast(profile, NPC_DEFENDER, spell, false, null);
+        if (res.refused) return castFail(res.refused);
+        finishCast(res);
+        run.targetId = mon.id; // tapping a monster targets it, like fc_attack
+        mon.hp -= res.dmg;
+        let frozenUntil = 0;
+        if (res.froze) { frozenUntil = Date.now() + FREEZE_MS; mon.frozenUntil = frozenUntil; }
+        send(ws, { type: 'cast_result', context: 'fc', spell: spell.id, targetId: mon.id, targetName: mon.name, outcome: res.outcome, dmg: res.dmg, froze: !!res.froze, frozenUntil, hpTarget: Math.max(0, mon.hp), maxHpTarget: mon.maxHp });
+        if (mon.hp <= 0) killFcMonster(run, mon);
+        else if (mon.kind === 'jad') maybeSpawnFcHealers(run);
+        if (run.jadDead) { endFcRun(run, 'complete'); return; }
+        send(ws, fcStateMsg(run));
+        run.rosterChanged = false;
+        return;
+      }
+
+      if (kind === 'barrows') {
+        const fight = me.barrowsFightId ? barrowsFights.get(me.barrowsFightId) : null;
+        if (!fight || fight.done) return castFail('You are not fighting a Barrows brother.');
+        if (Math.hypot(me.x - fight.anchorX, me.y - fight.anchorY) > NPC_RANGE) return castFail('Too far away — walk closer.');
+        if (spell.id === 'freeze' && alreadyFrozen(fight.brotherFrozenUntil, fight.name)) return;
+        const res = rollMagicCast(profile, NPC_DEFENDER, spell, false, null);
+        if (res.refused) return castFail(res.refused);
+        finishCast(res);
+        fight.hpNpc = Math.max(0, fight.hpNpc - res.dmg);
+        // A connected cast wakes the brother, like a connected swing.
+        if (res.connected && !fight.npcUnlocked) { fight.npcUnlocked = true; fight.nextSwingNpc = fight.tickCount + MELEE_SPEED; }
+        let frozenUntil = 0;
+        if (res.froze) { frozenUntil = Date.now() + FREEZE_MS; fight.brotherFrozenUntil = frozenUntil; }
+        send(ws, { type: 'cast_result', context: 'barrows', spell: spell.id, targetId: fight.brother, targetName: fight.name, outcome: res.outcome, dmg: res.dmg, froze: !!res.froze, frozenUntil, hpTarget: fight.hpNpc, maxHpTarget: fight.maxHpNpc });
+        if (fight.hpNpc <= 0) finishBarrowsFight(fight, 'kill');
+        return;
+      }
+
+      return castFail('There is nothing to cast at here.');
     }
 
     if (m.type === 'special') {
