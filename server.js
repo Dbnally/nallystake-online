@@ -2295,8 +2295,14 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
   // to (800,450), but the 40-unit gap is a gameplay distance and
   // does not scale). From then on the closing rule in the tick
   // governs: run apart and the swings stop until someone walks back.
-  sessA.area = 'arena'; sessA.x = 780; sessA.y = 450;
-  sessB.area = 'arena'; sessB.x = 820; sessB.y = 450;
+  // Stage 26: a No Movement duel starts RIGHT next to each other —
+  // ~26 units apart (787 vs 813) on the same centre line, already
+  // inside MELEE_REACH, so the first engage connects with zero
+  // closing and the standing fight reads as toe-to-toe. Movement
+  // duels keep the classic 40-unit gap exactly.
+  const nmSpawn = duelRules.noMovement;
+  sessA.area = 'arena'; sessA.x = nmSpawn ? 787 : 780; sessA.y = 450;
+  sessB.area = 'arena'; sessB.x = nmSpawn ? 813 : 820; sessB.y = 450;
   for (const k of [aKey, bKey]) {
     const p = online.get(k);
     send(p.ws, { type: 'area', area: 'arena' });
@@ -4070,9 +4076,10 @@ wss.on('connection', (ws, req) => {
       const mdFrozen = !!(mdNow && mdNow.tickCount <= COUNTDOWN_TICKS);
       // Stage 18: a No Movement duel locks both fighters at their
       // duel-start spots for the WHOLE duel, not just the countdown.
-      // They spawn toe-to-toe inside melee reach (780 vs 820), so the
-      // standing fight works — swings, specials and eating all carry
-      // on; only running away is off the table.
+      // They spawn right next to each other inside melee reach
+      // (787 vs 813 since Stage 26), so the standing fight works —
+      // swings, specials and eating all carry on; only running away
+      // is off the table.
       const noMove = !!(duelNow && duelNow.rules && duelNow.rules.noMovement);
       // Stage 24: a Freeze-rooted player's moves are ignored the
       // same way — they stay on the spot they're standing on until
