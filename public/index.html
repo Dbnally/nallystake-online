@@ -460,6 +460,7 @@ let goods={}; // id -> {id,name,price}
 const ICONS={restore_potion:'🍷',prayer_potion:'🌟',ration:'🍗',bronze_sword:'🗡️',iron_sword:'🗡️',steel_sword:'⚔️',mithril_sword:'⚔️',dragon_sword:'🐉',
  bronze_helm:'⛑️',steel_helm:'⛑️',dragon_helm:'⛑️',bronze_platebody:'🦺',steel_platebody:'🦺',dragon_platebody:'🦺',
  bronze_platelegs:'👖',steel_platelegs:'👖',dragon_platelegs:'👖',bronze_shield:'🛡️',steel_shield:'🛡️',dragon_shield:'🛡️',
+ bronze_partyhat:'🥳',iron_partyhat:'🥳',steel_partyhat:'🥳',mithril_partyhat:'🥳',adamant_partyhat:'🥳',rune_partyhat:'🥳',dragon_partyhat:'🥳',
  bones:'🦴',herbs:'🌿',gems:'💎',bars:'🟨',runes:'🔮',charms:'🧿',
  copper_ore:'🟠',tin_ore:'⚪',iron_ore:'🔘',coal:'⚫',uncut_gem:'🔷',logs:'🪵',oak_logs:'🪵',
  raw_shrimps:'🦐',raw_trout:'🐠',cooked_trout:'🐟',cooked_shrimps:'🍤',burnt_fish:'🖤',
@@ -2100,6 +2101,7 @@ function syncAvatars(){
      avatars[p.username]=a; scene.add(a.group);
    }
    if(p.username!==me.username){ a.tx=sx2w(p.x); a.tz=sy2w(p.y); }
+   syncPartyHat(a,p); // Stage 21: worn party hat on the knight's head
    a.prayer=p.activePrayer||null;
    a.badgeEl.textContent=a.prayer?PRAYER_BADGE[a.prayer]:'';
    if(a.roleEl) a.roleEl.textContent=roleBadge(p.role)? roleBadge(p.role)+' ':'';
@@ -2114,6 +2116,27 @@ function syncAvatars(){
 function showBubble(name,text){
  const a=avatars[name]; if(!a) return;
  a.bubbleEl.textContent=text; a.bubbleEl.style.display='block'; a.bubbleUntil=Date.now()+3000;
+}
+/* Stage 21: a worn party hat shows on the knight's head — a jauntily
+   tilted cone + brim + pompom in the hat's tier colour, read from the
+   catalog def's `color` (the same tint that colours its item face).
+   Fed by the state snapshot's wornHead; rebuilt knights (appearance
+   changes) start with hatItem unset, so the cone re-applies next sync. */
+function syncPartyHat(a,p){
+ const want=(p.wornHead&&p.wornHead.endsWith('_partyhat'))? p.wornHead : null;
+ if(a.hatItem===want) return;
+ if(a.hatGroup){ a.pivot.remove(a.hatGroup); a.hatGroup=null; }
+ a.hatItem=want;
+ if(!want) return;
+ const d=catalog[want];
+ const col=(d&&d.color)? parseInt(d.color.slice(1),16) : 0xc22f2f;
+ const mat=new THREE.MeshLambertMaterial({color:col});
+ const hg=new THREE.Group(); hg.position.y=2.10; hg.rotation.z=0.13; hg.rotation.x=-0.05;
+ const brim=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,0.055,14),mat); hg.add(brim);
+ const cone=new THREE.Mesh(new THREE.ConeGeometry(0.30,0.62,12),mat); cone.position.y=0.33; hg.add(cone);
+ const pom=new THREE.Mesh(new THREE.SphereGeometry(0.095,8,8),new THREE.MeshLambertMaterial({color:0xf5f0e6})); pom.position.y=0.66; hg.add(pom);
+ shadowify(hg);
+ a.pivot.add(hg); a.hatGroup=hg;
 }
 /* ---- Stage 6: Tree Guardians (allies) ---- */
 let alliesByArea={}; // area -> [ally] from 'allies' messages
@@ -2591,7 +2614,7 @@ function rebuildPiles(){
    }
    const label=document.createElement('div'); label.className='plabel';
    // Stage 16: a dropped gold pile wears the coin-pile face, sized by its amount.
-   label.innerHTML=`<div class="nname">${p.rare?'✨ ':''}${p.item==='gold'? goldPileHTML(p.qty,18) : iconOf(p.item)} ${esc(nameOf(p.item))}${p.qty>1?' ×'+p.qty:''}</div>${p.rare?`<div class="nsub" style="color:#ffd75e;font-weight:800">✨ RARE DROP ✨</div>`:''}${p.owner?`<div class="nsub">${esc(p.owner)}'s drop</div>`:''}`;
+   label.innerHTML=`<div class="nname">${p.rare?'✨ ':''}${itemIconHTML(p.item,18,p.qty)} ${esc(nameOf(p.item))}${p.qty>1?' ×'+p.qty:''}</div>${p.rare?`<div class="nsub" style="color:#ffd75e;font-weight:800">✨ RARE DROP ✨</div>`:''}${p.owner?`<div class="nsub">${esc(p.owner)}'s drop</div>`:''}`;
    $('labels').appendChild(label);
    worldLabels.push({el:label,x:sx2w(p.x),y:1.5,z:sy2w(p.y),area,kind:'pile',pileId:p.id});
    pileProps[p.id]={x:sx2w(p.x),z:sy2w(p.y),labelY:1.5,pile:p};
@@ -3566,6 +3589,7 @@ function examineHTML(item){
  if(item==='certificate') desc='Exchange this with an admin for 250g — use the 👑 Admin panel.';
  else if(item==='nc') desc='Mods spend NC to run official fights.';
  else if(item==='gold') desc=KIND_DESC.currency;
+ else if(item.endsWith('_partyhat')) desc=`Zero protection, all flex — a party hat in ${item.split('_')[0]} colours, bought to be seen wearing it.`; // Stage 21
  else if(item==='logs'||item.endsWith('_logs')) desc='Use it to light a fire, then cook on the fire.';
  const stats=[];
  if(d){
@@ -3712,7 +3736,7 @@ function pShop(){
    const items=catalogArr.filter(i=>i.shop===shopTab);
    if(!items.length) h+=`<p class="note">Nothing here yet.</p>`;
    for(const d of items){
-     h+=`<div class="rowline"><span class="ic">${iconOf(d.id)}</span><span class="grow"><b>${esc(d.name)}</b>${myQty(d.id)?` <span class="sub">(have ${myQty(d.id)})</span>`:''}<br><span class="sub">${d.heal?`heals ${d.heal} HP · `:''}${d.prayerRestore?`restores ${d.prayerRestore} prayer · `:''}${d.accBonus?`+${Math.round(d.accBonus*100)}% accuracy · `:''}${d.maxBonus?`+${d.maxBonus} max hit · `:''}${d.strBonus?`+${d.strBonus} ranged strength · `:''}${d.reduction?`−${Math.round(d.reduction*100)}% dmg · `:''}${d.buy}g</span></span>
+     h+=`<div class="rowline"><span class="ic">${itemIconHTML(d.id,24)}</span><span class="grow"><b>${esc(d.name)}</b>${myQty(d.id)?` <span class="sub">(have ${myQty(d.id)})</span>`:''}<br><span class="sub">${d.heal?`heals ${d.heal} HP · `:''}${d.prayerRestore?`restores ${d.prayerRestore} prayer · `:''}${d.accBonus?`+${Math.round(d.accBonus*100)}% accuracy · `:''}${d.maxBonus?`+${d.maxBonus} max hit · `:''}${d.strBonus?`+${d.strBonus} ranged strength · `:''}${d.reduction?`−${Math.round(d.reduction*100)}% dmg · `:''}${d.buy}g</span></span>
      <button class="act" onclick="send({type:'shop_buy',item:'${d.id}',qty:1})">Buy 1</button><button class="ghost" onclick="send({type:'shop_buy',item:'${d.id}',qty:5})">Buy 5</button></div>`;
    }
  } else {
@@ -3720,7 +3744,7 @@ function pShop(){
    if(!sellable.length) h+=`<p class="note">Nothing in your backpack the shops will buy. (Exchange goods sell on the Gold Exchange.)</p>`;
    for(const s of sellable){
      const d=catalog[s.item];
-     h+=`<div class="rowline"><span class="ic">${iconOf(s.item)}</span><span class="grow"><b>${esc(d.name)}</b> x${s.qty}<br><span class="sub">shops pay ${d.sell}g each</span></span>
+     h+=`<div class="rowline"><span class="ic">${itemIconHTML(s.item,24,s.qty)}</span><span class="grow"><b>${esc(d.name)}</b> x${s.qty}<br><span class="sub">shops pay ${d.sell}g each</span></span>
      <button class="act" onclick="send({type:'shop_sell',item:'${s.item}',qty:1})">Sell 1</button><button class="ghost" onclick="send({type:'shop_sell',item:'${s.item}',qty:5})">Sell 5</button></div>`;
    }
  }
@@ -4567,7 +4591,7 @@ window.openTalk=function(name){
 const AREA_LABELS={plaza:'🏰 Plaza',goblins:'👺 Goblin Camp',training:'🏋️ Training Cave',gathering:'⛏️ Gathering Cave',cove:'🎣 Fishing Cove',mine:'⛏️🔥 Emberfall Mine & Smithy',fightcaves:'🌋 Fight Caves',barrows:'💀 Barrows',barrows_tunnels:'💀 Barrows Tunnels',arena:'⚔️ Duel Arena',waiting:'⏳ Waiting Area'};
 function openExamine(m){
  const p=m.player; if(!p) return;
- const wornRows=SLOT_DEFS.filter(([slot])=>p.worn&&p.worn[slot]).map(([slot,label])=>`<div class="rowline"><span class="ic">${iconOf(p.worn[slot])}</span><span class="grow"><b>${label}</b><br><span class="sub">${esc(nameOf(p.worn[slot]))}</span></span></div>`).join('');
+ const wornRows=SLOT_DEFS.filter(([slot])=>p.worn&&p.worn[slot]).map(([slot,label])=>`<div class="rowline"><span class="ic">${itemIconHTML(p.worn[slot],24)}</span><span class="grow"><b>${label}</b><br><span class="sub">${esc(nameOf(p.worn[slot]))}</span></span></div>`).join('');
  $('examinesheet').innerHTML=`<h3>${rolePrefix(p.role)}${esc(p.username)}</h3>
  <div class="setrow"><span class="grow">Role</span><b style="color:#e3c766">${ROLE_LABEL[p.role]||'Player'}</b></div>
  <div class="setrow"><span class="grow">⚔️ Combat level</span><b style="color:#e3c766">${p.combatLevel}</b></div>
