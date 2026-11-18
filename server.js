@@ -279,6 +279,15 @@ for (const [id, name, sellOnly, extra] of [
 ]) {
   ITEMS[id] = { name, kind: 'resource', sellOnly, ...extra };
 }
+// Stage 29: Seaweed — picked up from the clumps washed up along the
+// Fishing Cove shore (see the seaweed patches below). It NEVER
+// stacks: `noStack` makes every inventory path (addStacks /
+// removeStacks / stackQty) treat each piece as its own qty-1 stack,
+// so a pack full of seaweed is exactly 28 pieces in 28 slots — the
+// app version's rule. The app prices it at a 6g base on its market;
+// the fixed shop buy-back here is 2g, in line with the other
+// sell-only resources (raw shrimps 3g, logs 4g).
+ITEMS.seaweed = { name: 'Seaweed', icon: '🥬', kind: 'resource', sellOnly: 2, noStack: true };
 // Stage 3: Emberfall ores + smelted bars. Sell-only resources, like
 // Stage 2's. (The eighth bar, gold, is the `bars` Exchange good above.)
 for (const [id, name, sellOnly] of [
@@ -743,6 +752,7 @@ function catalogList() {
     color: d.color || null, // Stage 21: tier tint (party hats) — same field customCatalogEntry emits for Stage 8 customs; null for everything else
     style: d.style || null, // Stage 19: weapon attack style ('melee' / 'ranged' / 'magic')
     strBonus: d.strBonus || 0, // Stage 19: arrow ranged strength bonus
+    noStack: !!d.noStack, // Stage 29: never-stacking items (seaweed) — the client sums their stacks for counts
   }));
   // Stage 16: the gold item rides along explicitly (it has no buy
   // price and no sellOnly the filter above would keep): the client
@@ -1252,12 +1262,36 @@ function recordClog(key, entryId) {
 }
 
 // ---------- backpack / bank stack helpers ----------
+// Stage 29: a def flagged `noStack` (seaweed is the first) never
+// merges — every piece is its own qty-1 stack in EVERY stack array
+// (backpack, bank, escrow moves all route through these helpers).
+// stackQty therefore SUMS a no-stack item's stacks, addStacks pushes
+// one fresh stack per piece, and removeStacks takes whole pieces.
+// Every other item keeps the original single-stack behaviour.
+function isNoStack(item) {
+  const d = itemDef(item);
+  return !!(d && d.noStack);
+}
 function stackQty(stacks, item) {
+  if (isNoStack(item)) {
+    let n = 0;
+    for (const s of stacks) if (s.item === item) n += s.qty;
+    return n;
+  }
   const s = stacks.find((x) => x.item === item);
   return s ? s.qty : 0;
 }
 // Adds qty to a stack array. Returns the qty that did NOT fit (0 = all fit).
 function addStacks(stacks, item, qty, maxStacks = Infinity) {
+  if (isNoStack(item)) {
+    let left = qty;
+    while (left > 0) {
+      if (stacks.length >= maxStacks) return left;
+      stacks.push({ item, qty: 1 });
+      left -= 1;
+    }
+    return 0;
+  }
   const s = stacks.find((x) => x.item === item);
   if (s) { s.qty += qty; return 0; }
   if (stacks.length >= maxStacks) return qty;
@@ -1265,6 +1299,16 @@ function addStacks(stacks, item, qty, maxStacks = Infinity) {
   return 0;
 }
 function removeStacks(stacks, item, qty) {
+  if (isNoStack(item)) {
+    if (stackQty(stacks, item) < qty) return false;
+    let left = qty;
+    for (let i = stacks.length - 1; i >= 0 && left > 0; i--) {
+      if (stacks[i].item !== item) continue;
+      stacks.splice(i, 1); // each no-stack entry is exactly one piece
+      left -= 1;
+    }
+    return left === 0;
+  }
   const s = stacks.find((x) => x.item === item);
   if (!s || s.qty < qty) return false;
   s.qty -= qty;
@@ -1422,6 +1466,21 @@ const server = http.createServer(async (req, res) => {
 
 // ---------- Real-time play ----------
 const wss = new WebSocketServer({ server, path: '/ws' });
+
+// Heartbeat: browsers answer WebSocket pings automatically, so a
+// socket that misses two pings in a row is a zombie — its device
+// locked, slept or lost the network without a close frame ever
+// arriving. Terminating it runs the normal disconnect cleanup, so
+// the player vanishes from the world promptly and can sign straight
+// back in, instead of haunting the plaza while their real client
+// types into a dead connection and every chat line vanishes.
+setInterval(() => {
+  for (const p of online.values()) {
+    if (p.ws.isAlive === false) { try { p.ws.terminate(); } catch {} continue; }
+    p.ws.isAlive = false;
+    try { p.ws.ping(); } catch {}
+  }
+}, +(process.env.HEARTBEAT_MS || 25000));
 const online = new Map(); // usernameKey -> { ws, profile, x, y, area, duelId, npcFightId }
 const challenges = new Map(); // id -> { id, from, to, stake, items, itemsTo, rules, freePlay, confirm: {from,to}, expires } (Stage 14/15)
 const duels = new Map(); // id -> duel
@@ -4568,6 +4627,44 @@ setInterval(() => {
   for (const a of touched) broadcastPiles(a);
 }, 5000);
 
+// ---------- Seaweed patches (Stage 29) ----------
+// Clumps of seaweed washed up along the Fishing Cove shore — the
+// app version's cove dressing, ported: tap one (the client walks
+// you over) to pick the piece up; it lands in the backpack as a
+// no-stack item (one slot per piece, see ITEMS.seaweed) and the
+// clump regrows ~30s later (the app uses 26s). Session-only world
+// state like piles and fires; spots sit on the grass just west of
+// the waterline (the lake covers server x > ~1060) plus a pair by
+// the dock shore.
+const SEAWEED_RESPAWN_MS = 30000;
+const seaweedPatches = new Map(); // id -> { id, area, x, y, present, respawnAt }
+[
+  [1030, 140], [1055, 290], [1015, 430], [1055, 590], [1030, 740], [960, 340], [960, 660],
+].forEach(([x, y], i) => {
+  const id = 'weed' + (i + 1);
+  seaweedPatches.set(id, { id, area: 'cove', x, y, present: true, respawnAt: 0 });
+});
+function seaweedMsg(area) {
+  return {
+    type: 'seaweed', area,
+    patches: [...seaweedPatches.values()].filter((p) => p.area === area)
+      .map((p) => ({ id: p.id, x: p.x, y: p.y, present: p.present })),
+  };
+}
+function broadcastSeaweed(area) {
+  const msg = seaweedMsg(area);
+  for (const p of online.values()) if (p.area === area) send(p.ws, msg);
+}
+// Picked clumps wash back up on their respawn timer.
+setInterval(() => {
+  const now = Date.now();
+  let touched = false;
+  for (const p of seaweedPatches.values()) {
+    if (!p.present && p.respawnAt && now >= p.respawnAt) { p.present = true; p.respawnAt = 0; touched = true; }
+  }
+  if (touched) broadcastSeaweed('cove');
+}, 1000);
+
 // ---------- Tree Guardians (Stage 6) ----------
 // Derek's Stage 6 ask: a button that attacks the nearest tree and the
 // tree becomes an NPC ally — it teams with you, follows you and
@@ -4731,11 +4828,116 @@ setInterval(() => {
   if (anyOff) broadcastState();
 }, 1000);
 
+
+// Full disconnect cleanup for one account: settles any duel/fight
+// the session was in (forfeit rules), cancels its challenges,
+// stake offers/matches, fight offers, cert/note requests, party
+// and trade, removes its Tree Guardian, then drops the session and
+// tells the world. Shared by the socket close handler and by
+// session takeover (a fresh sign-in replacing a zombie session).
+function cleanupDisconnect(key) {
+  const user = db.users[key];
+  if (!user) return;
+  const profile = user.profile;
+  const me = online.get(key);
+  if (me && me.duelId) {
+    const duel = duels.get(me.duelId);
+    if (duel) endDuel(duel, duel.a === key ? duel.b : duel.a, 'forfeit — left mid-duel');
+  }
+  if (me && me.modDuelId) {
+    const f = modDuels.get(me.modDuelId);
+    if (f) endModDuel(f, 'forfeit'); // the escrowed stake is lost, exactly like a duel forfeit
+  }
+  if (me && me.npcFightId) {
+    const f = npcFights.get(me.npcFightId);
+    if (f) finishNpcFight(f, 'disconnect'); // goblin keeps its HP and is free again
+  }
+  if (me && me.barrowsFightId) {
+    const f = barrowsFights.get(me.barrowsFightId);
+    if (f) finishBarrowsFight(f, 'disconnect'); // the run's banked kills are saved state — they stay
+  }
+  if (me && me.fcRunId) {
+    const r = fcRuns.get(me.fcRunId);
+    if (r) endFcRun(r, 'disconnect'); // records settle silently; the run is gone
+  }
+  // Stage 7C: pending challenges involving the leaver die with
+  // them — clear the challenger's '!' marker either way.
+  for (const [cid, ch] of [...challenges]) {
+    if (ch.from === key || ch.to === key) { challenges.delete(cid); broadcastChallengeClear(ch.from); }
+  }
+  // Stage 17: the leaver's open stake offers come down, and a
+  // matched stake match is cancelled — the other party (if they
+  // were standing in the Waiting Area) is returned to the plaza
+  // and notified. No gold ever moves on a cancel.
+  {
+    let boardChanged = false;
+    for (const [oid, o] of [...stakeOffers]) {
+      if (o.status === 'open' && o.fromKey === key) { stakeOffers.delete(oid); boardChanged = true; }
+    }
+    if (boardChanged) broadcastStakeBoard();
+    const myMatch = stakeMatchForKey(key);
+    if (myMatch) cancelStakeMatch(myMatch, `${profile.username} left — the stake match is cancelled. No gold was taken.`);
+  }
+  // Stage 7A: pending official-fight offers and certificate
+  // requests involving the leaver are cancelled (nothing is spent).
+  for (const [oid, o] of [...fightOffers]) {
+    if (o.runnerKey === key || o.aKey === key || o.bKey === key) {
+      clearTimeout(o.timer); fightOffers.delete(oid);
+      for (const otherKey of [o.runnerKey, o.aKey, o.bKey]) {
+        if (otherKey === key) continue;
+        const s = online.get(otherKey);
+        if (s) send(s.ws, { type: 'chat', from: 'Game', text: 'The official fight offer was cancelled — a player left.' });
+      }
+    }
+  }
+  certRequests.delete(key);
+  // Stage 9: signed notes an admin was holding when they left go
+  // back to their signers (item + text) — a note is never lost
+  // because its admin logged off. Notes the leaver gave away stay
+  // pending: their signer is settled from the saved profile.
+  for (const [nid, r] of [...noteRequests]) {
+    if (r.toKey === key) {
+      noteRequests.delete(nid);
+      returnSignedNote(r, '📝 The admin left, so your signed Note was returned to you.');
+    }
+  }
+  // Stage 7B: leaving removes you from your party (remaining
+  // members are notified and refreshed; a party under 2 dissolves),
+  // clears pending party invites involving you, cancels any active
+  // trade (the other side is notified) and clears pending trade
+  // requests involving you.
+  clearPartyInvitesInvolving(key);
+  if (partyOf.has(key)) leaveParty(key);
+  const myTrade = activeTradeForKey(key);
+  if (myTrade) cancelTrade(myTrade, 'Trade cancelled — the other player left.');
+  clearTradeRequestsInvolving(key);
+  // Stage 6: a Tree Guardian is session-only — it goes when you do.
+  if (allies.has(key)) { const ally = allies.get(key); allies.delete(key); broadcastAllies(ally.area); }
+  online.delete(key);
+  broadcast({ type: 'chat', from: 'Game', text: `${profile.username} left the plaza.` });
+  broadcastState();
+}
+
 wss.on('connection', (ws, req) => {
   const token = new URL(req.url, 'http://x').searchParams.get('token');
   const key = tokens.get(token);
   if (!key) { ws.close(4001, 'bad token'); return; }
-  if (online.has(key)) { send(ws, { type: 'error', message: 'Already signed in somewhere else.' }); ws.close(); return; }
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
+  // Session takeover: if this account still has a session it is a
+  // leftover — a phone whose socket died without the server seeing
+  // a close frame (a locked screen, a dropped network). Before the
+  // heartbeat existed such zombies could linger for hours while the
+  // real player was told "Already signed in somewhere else" and
+  // locked out of the world and chat entirely. Run the old
+  // session's disconnect cleanup, then replace its socket; the old
+  // socket's own close event is ignored via the replaced flag.
+  const stale = online.get(key);
+  if (stale) {
+    stale.replaced = true;
+    cleanupDisconnect(key);
+    try { stale.ws.terminate(); } catch {}
+  }
   const profile = db.users[key].profile;
   ensureV2(profile);
   // Everyone logs into the plaza (area is session-only, never saved).
@@ -4876,6 +5078,7 @@ wss.on('connection', (ws, req) => {
       // Stage 5: every area entry also brings its drop piles, and the
       // Barrows areas bring the saved run state.
       send(ws, pilesMsg(to));
+      send(ws, seaweedMsg(to)); // Stage 29: cove seaweed clumps (empty elsewhere)
       send(ws, alliesMsg(to)); // Stage 6: guardians already standing there
       send(ws, objectsMsg(to)); // Stage 7D: placed objects in the new area
       if (to === 'barrows' || to === 'barrows_tunnels' || to === 'barrows_crypt') send(ws, barrowsStateMsg(me));
@@ -5190,6 +5393,25 @@ wss.on('connection', (ws, req) => {
       else piles.delete(pile.id);
       save(key);
       broadcastPiles(me.area);
+      return sendProfile(key);
+    }
+
+    // ----- Seaweed (Stage 29): pick up a cove clump -----
+    // One piece per tap. addStacks honours the no-stack rule, so
+    // the piece always takes a fresh slot of its own — a full pack
+    // (28 stacks) refuses and the clump stays on the shore.
+    if (m.type === 'seaweed_pickup') {
+      const patch = seaweedPatches.get(String(m.id || ''));
+      if (!patch || !patch.present) return send(ws, { type: 'error', message: 'That seaweed is gone.' });
+      if (me.area !== patch.area) return send(ws, { type: 'error', message: 'That seaweed is not here.' });
+      if (Math.hypot(me.x - patch.x, me.y - patch.y) > NPC_RANGE) return send(ws, { type: 'error', message: 'Too far away — walk closer to the seaweed.' });
+      if (addStacks(profile.backpack, 'seaweed', 1, BACKPACK_MAX_STACKS) > 0) {
+        return send(ws, { type: 'error', message: 'Backpack full (28 stacks) — seaweed takes a slot of its own.' });
+      }
+      patch.present = false;
+      patch.respawnAt = Date.now() + SEAWEED_RESPAWN_MS;
+      save(key);
+      broadcastSeaweed(patch.area);
       return sendProfile(key);
     }
 
@@ -5522,6 +5744,35 @@ wss.on('connection', (ws, req) => {
       if (!def || !def.slot) return send(ws, { type: 'error', message: 'That can\'t be worn.' });
       if (stackQty(profile.backpack, item) < 1) return send(ws, { type: 'error', message: `No ${def.name} in your backpack.` });
       const old = profile.worn[def.slot];
+      // Stage 29: EXACT-SPOT swap (the app version's rule) — when
+      // the client names the backpack slot the piece came from
+      // (m.slot, validated against the live pack), the piece it
+      // replaces lands in THAT slot, not the first free one. The
+      // slot only opens if the entry is fully consumed; a partial
+      // entry keeps its slot and the old piece merges onto its own
+      // stack or takes a free slot — and if neither exists the swap
+      // is refused up front, before anything moves.
+      const slotIdx = (Number.isInteger(m.slot) && m.slot >= 0 && m.slot < profile.backpack.length
+        && profile.backpack[m.slot].item === item) ? m.slot : -1;
+      if (slotIdx >= 0) {
+        const entry = profile.backpack[slotIdx];
+        const hole = entry.qty <= 1; // removing the piece empties this slot
+        if (old && old !== item && !hole && (isNoStack(old) || stackQty(profile.backpack, old) === 0)
+          && profile.backpack.length >= BACKPACK_MAX_STACKS) {
+          return send(ws, { type: 'error', message: 'Backpack full — no room to swap.' });
+        }
+        entry.qty -= 1;
+        if (entry.qty <= 0) profile.backpack.splice(slotIdx, 1);
+        profile.worn[def.slot] = item;
+        if (old) {
+          if (hole) profile.backpack.splice(slotIdx, 0, { item: old, qty: 1 }); // the exact spot it came from
+          else if (old === item) entry.qty += 1; // same piece type: straight back onto its stack
+          else if (!isNoStack(old) && stackQty(profile.backpack, old) > 0) profile.backpack.find((x) => x.item === old).qty += 1;
+          else profile.backpack.push({ item: old, qty: 1 });
+        }
+        save(key);
+        return sendProfile(key);
+      }
       // Swapping puts the old piece back in the backpack. That needs a new
       // stack only if the old piece isn't already stacked there; removing
       // the newly equipped item first may free its own stack slot.
@@ -6951,83 +7202,12 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
-    const me = online.get(key);
-    if (me && me.duelId) {
-      const duel = duels.get(me.duelId);
-      if (duel) endDuel(duel, duel.a === key ? duel.b : duel.a, 'forfeit — left mid-duel');
-    }
-    if (me && me.modDuelId) {
-      const f = modDuels.get(me.modDuelId);
-      if (f) endModDuel(f, 'forfeit'); // the escrowed stake is lost, exactly like a duel forfeit
-    }
-    if (me && me.npcFightId) {
-      const f = npcFights.get(me.npcFightId);
-      if (f) finishNpcFight(f, 'disconnect'); // goblin keeps its HP and is free again
-    }
-    if (me && me.barrowsFightId) {
-      const f = barrowsFights.get(me.barrowsFightId);
-      if (f) finishBarrowsFight(f, 'disconnect'); // the run's banked kills are saved state — they stay
-    }
-    if (me && me.fcRunId) {
-      const r = fcRuns.get(me.fcRunId);
-      if (r) endFcRun(r, 'disconnect'); // records settle silently; the run is gone
-    }
-    // Stage 7C: pending challenges involving the leaver die with
-    // them — clear the challenger's '!' marker either way.
-    for (const [cid, ch] of [...challenges]) {
-      if (ch.from === key || ch.to === key) { challenges.delete(cid); broadcastChallengeClear(ch.from); }
-    }
-    // Stage 17: the leaver's open stake offers come down, and a
-    // matched stake match is cancelled — the other party (if they
-    // were standing in the Waiting Area) is returned to the plaza
-    // and notified. No gold ever moves on a cancel.
-    {
-      let boardChanged = false;
-      for (const [oid, o] of [...stakeOffers]) {
-        if (o.status === 'open' && o.fromKey === key) { stakeOffers.delete(oid); boardChanged = true; }
-      }
-      if (boardChanged) broadcastStakeBoard();
-      const myMatch = stakeMatchForKey(key);
-      if (myMatch) cancelStakeMatch(myMatch, `${profile.username} left — the stake match is cancelled. No gold was taken.`);
-    }
-    // Stage 7A: pending official-fight offers and certificate
-    // requests involving the leaver are cancelled (nothing is spent).
-    for (const [oid, o] of [...fightOffers]) {
-      if (o.runnerKey === key || o.aKey === key || o.bKey === key) {
-        clearTimeout(o.timer); fightOffers.delete(oid);
-        for (const otherKey of [o.runnerKey, o.aKey, o.bKey]) {
-          if (otherKey === key) continue;
-          const s = online.get(otherKey);
-          if (s) send(s.ws, { type: 'chat', from: 'Game', text: 'The official fight offer was cancelled — a player left.' });
-        }
-      }
-    }
-    certRequests.delete(key);
-    // Stage 9: signed notes an admin was holding when they left go
-    // back to their signers (item + text) — a note is never lost
-    // because its admin logged off. Notes the leaver gave away stay
-    // pending: their signer is settled from the saved profile.
-    for (const [nid, r] of [...noteRequests]) {
-      if (r.toKey === key) {
-        noteRequests.delete(nid);
-        returnSignedNote(r, '📝 The admin left, so your signed Note was returned to you.');
-      }
-    }
-    // Stage 7B: leaving removes you from your party (remaining
-    // members are notified and refreshed; a party under 2 dissolves),
-    // clears pending party invites involving you, cancels any active
-    // trade (the other side is notified) and clears pending trade
-    // requests involving you.
-    clearPartyInvitesInvolving(key);
-    if (partyOf.has(key)) leaveParty(key);
-    const myTrade = activeTradeForKey(key);
-    if (myTrade) cancelTrade(myTrade, 'Trade cancelled — the other player left.');
-    clearTradeRequestsInvolving(key);
-    // Stage 6: a Tree Guardian is session-only — it goes when you do.
-    if (allies.has(key)) { const ally = allies.get(key); allies.delete(key); broadcastAllies(ally.area); }
-    online.delete(key);
-    broadcast({ type: 'chat', from: 'Game', text: `${profile.username} left the plaza.` });
-    broadcastState();
+    // A replaced session's socket closing must not clean up the
+    // session that took its place (see takeover in the connection
+    // handler above).
+    const cur = online.get(key);
+    if (cur && cur.ws !== ws) return;
+    cleanupDisconnect(key);
   });
 });
 
