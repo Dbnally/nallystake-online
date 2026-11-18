@@ -211,6 +211,10 @@
  #jadwarn{position:fixed;top:26%;left:50%;transform:translateX(-50%);z-index:56;width:min(430px,92vw);background:rgba(90,16,4,.94);border:3px solid #ff7b24;border-radius:14px;padding:14px 12px;text-align:center;display:none;cursor:pointer;box-shadow:0 0 30px #ff5a1f88;animation:fcflash .28s ease-in-out infinite alternate}
  #jadwarntxt{font-size:21px;font-weight:900;color:#f0dfae;text-shadow:0 2px 4px #000}
  #jadwarnhint{font-size:12px;color:#ffd9c2;margin-top:5px}
+ /* Stage 20: the gold celebration banner (level-ups + game-wide announcements) */
+ #banner{position:fixed;top:15%;left:50%;transform:translateX(-50%);z-index:56;width:min(430px,92vw);background:rgba(43,33,24,.95);border:3px solid #c9a227;border-radius:14px;padding:13px 12px;text-align:center;display:none;box-shadow:0 0 30px rgba(201,162,39,.55)}
+ #bannertext{font-size:19px;font-weight:900;color:#ffd75e;text-shadow:0 2px 4px #000}
+ #bannerhint{font-size:12.5px;color:#e8d9b0;margin-top:4px}
  /* Stage 12: duel countdown overlay (3 · 2 · 1 · FIGHT!) */
  #countdown{position:fixed;top:38%;left:50%;transform:translate(-50%,-50%);z-index:57;display:none;pointer-events:none;text-align:center}
  #countdowntxt{font-size:96px;font-weight:900;color:#e3c766;line-height:1;text-shadow:0 3px 0 #7a5b12,0 6px 18px #000,0 0 34px rgba(227,199,102,.45)}
@@ -320,6 +324,7 @@
   <button class="rbtn" data-panel="admin" title="Admin">👑</button>
   <button class="rbtn" data-panel="tools" id="toolsbtn" title="Admin tools" style="display:none">🛠️</button>
   <button class="rbtn" data-panel="skills" title="Skills">📊</button>
+  <button class="rbtn" data-panel="goals" title="Starter goals & collection log">📋</button>
   <button class="rbtn" data-panel="smithy" title="Smithy">🔥</button>
   <button class="rbtn" data-panel="teleport" title="Teleport">🌀</button>
   <button class="rbtn" data-panel="settings" title="Settings">🎛️</button>
@@ -418,6 +423,8 @@
 <div class="modal" id="activitymodal"><div class="sheet parchment" id="activitysheet"></div></div>
 
 <div id="toast"></div>
+
+<div id="banner"><div id="bannertext"></div><div id="bannerhint"></div></div>
 
 <div id="jadwarn"><div id="jadwarntxt"></div><div id="jadwarnhint"></div></div>
 
@@ -758,6 +765,12 @@ function onMsg(m){
  if(m.type==='smith_state'){ onSmithState(m); }
  if(m.type==='upgrade_result'){ if(m.ok){ toast(`⬆️ Upgraded to ${nameOf(m.item)}!`); logLine(`⬆️ Upgraded to ${nameOf(m.item)} (+${m.xp||0} Smithing XP)`); } else { toast('⬆️ The upgrade failed — the bar was lost, your item is unharmed.'); logLine('⬆️ Upgrade failed — bar lost, item unharmed.'); } }
  if(m.type==='xp'){ onXpDrop(m); }
+ if(m.type==='level_up'){ onLevelUp(m); }
+ if(m.type==='player_level_up'){ onPlayerLevelUp(m); }
+ if(m.type==='announce'){ showBanner(m.text); logLine(m.text); }
+ if(m.type==='starter'){ starterGoals=m.goals||[]; if(drawerPanel==='goals') renderDrawer(); }
+ if(m.type==='starter_done'){ toast(`✅ Starter goal: ${m.label} — +${m.reward}g`); logLine(`✅ Starter goal complete: ${m.label} — +${m.reward}g!`); }
+ if(m.type==='clog'){ clogFound=m.found||[]; clogTotal=m.total||13; if(drawerPanel==='goals') renderDrawer(); }
  if(m.type==='profile'){ me=m.profile; renderAll(); onProfileForNotes(); onProfileForAppearance(); maybeOpenAppearance(); }
  if(m.type==='note_text'){ openNoteReader(m); }
  if(m.type==='note_request'){ queueNoteRequest(m); }
@@ -878,6 +891,119 @@ function onXpDrop(m){
  if(m.level>prevLevel){ toast(`⚔️ Level up! ${SKILL_ICON[m.skill]||''} ${SKILL_NAME[m.skill]||m.skill} is now level ${m.level}`); logLine(`⚔️ Level up! ${SKILL_NAME[m.skill]||m.skill} is now level ${m.level}.`); }
  renderHUD();
  if(drawerPanel==='skills') renderDrawer();
+}
+
+/* ================= Stage 20: the rewarding layer ================= */
+let starterGoals=[]; // [{id,label,done}] from 'starter' messages
+let clogFound=[], clogTotal=13; // from 'clog' messages
+/* The gold celebration banner (level-ups + game-wide announcements). */
+let bannerTimer=null;
+function showBanner(text,hint){
+ const b=$('banner'); if(!b) return;
+ $('bannertext').textContent=text;
+ $('bannerhint').textContent=hint||'';
+ $('bannerhint').style.display=hint?'block':'none';
+ b.style.display='block';
+ clearTimeout(bannerTimer);
+ bannerTimer=setTimeout(()=>{ b.style.display='none'; },4200);
+}
+/* Fireworks: a burst of little gold sparks over a knight. Each burst
+   is a THREE.Group of small octahedra with velocities, stepped in
+   animate() by updateBursts() and removed when spent. */
+let bursts=[];
+const BURST_COLORS=[0xffd75e,0xfff3a0,0xc9a227,0xffffff,0xffb347];
+const burstGeo=new THREE.OctahedronGeometry(0.09);
+function spawnBurst(avatar,big){
+ if(!avatar||!avatar.group||!scene) return;
+ const n=big?30:12, speed=big?3.4:2.2;
+ const g=new THREE.Group();
+ g.position.copy(avatar.group.position); g.position.y+=2.7;
+ const parts=[];
+ for(let i=0;i<n;i++){
+   const mesh=new THREE.Mesh(burstGeo,new THREE.MeshBasicMaterial({color:BURST_COLORS[i%BURST_COLORS.length]}));
+   const a=Math.random()*Math.PI*2, r=Math.random()*0.35;
+   mesh.position.set(Math.cos(a)*r,Math.random()*0.3,Math.sin(a)*r);
+   g.add(mesh);
+   parts.push({mesh,vx:Math.cos(a)*(0.6+Math.random())*speed*0.45,vy:(1.4+Math.random()*1.3)*speed*0.55,vz:Math.sin(a)*(0.6+Math.random())*speed*0.45,spin:(Math.random()-0.5)*9});
+ }
+ scene.add(g);
+ bursts.push({group:g,parts,born:performance.now(),life:big?1500:1000});
+}
+function updateBursts(now,dt){
+ for(let i=bursts.length-1;i>=0;i--){
+   const b=bursts[i], age=now-b.born;
+   if(age>=b.life){ scene.remove(b.group); bursts.splice(i,1); continue; }
+   const fade=1-age/b.life;
+   for(const p of b.parts){
+     p.vy-=4.6*dt;
+     p.mesh.position.x+=p.vx*dt; p.mesh.position.y+=p.vy*dt; p.mesh.position.z+=p.vz*dt;
+     p.mesh.rotation.y+=p.spin*dt; p.mesh.rotation.x+=p.spin*0.7*dt;
+     const s=Math.max(0.15,fade); p.mesh.scale.set(s,s,s);
+   }
+ }
+}
+function onLevelUp(m){
+ const nm=SKILL_NAME[m.skill]||m.skill, ic=SKILL_ICON[m.skill]||'✨';
+ showBanner(`🎉 ${ic} ${nm} level ${m.level}!`,m.unlock||'');
+ logLine(`🎉 Level up! ${nm} is now level ${m.level}.${m.unlock?' '+m.unlock:''}`);
+ const a=me?avatars[me.username]:null;
+ spawnBurst(a,m.level>=99);
+ if(m.level>=99) setTimeout(()=>spawnBurst(me?avatars[me.username]:null,true),350);
+}
+function onPlayerLevelUp(m){
+ const nm=SKILL_NAME[m.skill]||m.skill;
+ logLine(`🎉 ${m.username} reached ${nm} level ${m.level}!`);
+ spawnBurst(avatars[m.username],false);
+}
+/* ---- Starter goals + collection log panel ---- */
+const CLOG_SECTIONS=[
+ {title:'⚰️ Barrows Brothers',entries:[['dharok','Dharok the Wretched'],['guthan','Guthan the Infested'],['torag','Torag the Corrupted'],['verac','Verac the Defiled'],['ahrim','Ahrim the Blighted'],['karil','Karil the Tainted']]},
+ {title:'🌋 Minigames',entries:[['fire_cape','Fire cape — clear the Fight Caves']]},
+ {title:'💎 Rare Barrows Loot',entries:[['dharoks_greataxe',"Dharok's greataxe"],['guthans_warspear',"Guthan's warspear"],['torags_hammers',"Torag's hammers"],['veracs_flail',"Verac's flail"],['ahrims_staff',"Ahrim's staff"],['karils_crossbow',"Karil's crossbow"]]},
+];
+function pGoals(){
+ let h=`<h4 style="margin:2px 0 5px;color:#e3c766">📋 Starter Goals</h4>`;
+ if(!starterGoals.length) h+=`<p class="note">Loading your goals…</p>`;
+ else{
+   h+=starterGoals.map(g=>`<div class="rowline"><span class="ic">${g.done?'✅':'⬜'}</span><span class="grow"><b>${esc(g.label)}</b></span>${g.done?'<b style="color:#e3c766">+25g</b>':'<span class="sub">25g</span>'}</div>`).join('');
+   const done=starterGoals.filter(g=>g.done).length;
+   h+=`<div class="setrow" style="margin-top:6px"><span class="grow"><b>Starter gold earned</b></span><b style="color:#e3c766">${done*25}g</b></div>`;
+ }
+ h+=`<h4 style="margin:14px 0 5px;color:#e3c766">📖 Collection Log — ${clogFound.length} / ${clogTotal}</h4>`;
+ for(const sec of CLOG_SECTIONS){
+   h+=`<div class="note" style="margin:7px 0 3px;font-weight:800;color:#b8a888">${sec.title}</div>`;
+   h+=sec.entries.map(([id,label])=>{
+     const found=clogFound.includes(id);
+     return `<div class="rowline"><span class="ic">${found?'✅':'🔒'}</span><span class="grow" ${found?'':'style="opacity:.55"'}><b>${esc(label)}</b></span></div>`;
+   }).join('');
+ }
+ h+=`<p class="note" style="margin-top:8px">Kill Barrows brothers, clear the Fight Caves and loot rare Barrows weapons to fill the log.</p>`;
+ return h;
+}
+/* ---- Boards: duel leaderboard + skills hiscores (Players panel) ---- */
+let boardTab='duels', boardRows=null, boardLoading=false;
+async function fetchBoards(){
+ if(boardLoading) return;
+ boardLoading=true;
+ try{
+   const r=await fetch(boardTab==='duels'?'/api/leaderboard':'/api/hiscores');
+   const d=await r.json();
+   boardRows=(boardTab==='duels'? d.leaderboard : d.hiscores)||[];
+ }catch{ boardRows=[]; }
+ boardLoading=false;
+ if(drawerPanel==='players') renderDrawer();
+}
+window.setBoardTab=function(t){ if(boardTab===t) return; boardTab=t; boardRows=null; fetchBoards(); if(drawerPanel==='players') renderDrawer(); };
+function pBoards(){
+ let h=`<h4 style="margin:14px 0 5px;color:#e3c766">🏆 Boards</h4>`;
+ h+=`<div style="display:flex;gap:6px;margin-bottom:6px"><button class="${boardTab==='duels'?'act':'ghost'}" style="flex:1" onclick="setBoardTab('duels')">⚔️ Duels</button><button class="${boardTab==='hiscores'?'act':'ghost'}" style="flex:1" onclick="setBoardTab('hiscores')">🏆 Hiscores</button></div>`;
+ if(boardRows===null){ h+=`<p class="note">${boardLoading?'Loading…':'Open this panel to load the boards.'}</p>`; return h; }
+ if(!boardRows.length){ h+=`<p class="note">No entries yet.</p>`; return h; }
+ h+=boardRows.map((r,i)=>{
+   if(boardTab==='duels') return `<div class="rowline"><span class="ic">${i+1}.</span><span class="grow"><b>${esc(r.username)}</b><br><span class="sub">${r.wins}W / ${r.losses}L · ${r.gold}g</span></span><b style="color:#e3c766">${r.rating}</b></div>`;
+   return `<div class="rowline"><span class="ic">${i+1}.</span><span class="grow"><b>${esc(r.username)}</b><br><span class="sub">Total level ${r.totalLevel} · ${(r.totalXp||0).toLocaleString()} XP</span></span><b style="color:#e3c766">⚔️ ${Math.floor(r.combatLevel||3)}</b></div>`;
+ }).join('');
+ return h;
 }
 
 /* ================= 3D world ================= */
@@ -1754,10 +1880,12 @@ function onBarrowsLoot(m){
  const items=(m.items||[]).map(it=>`${iconOf(it.item)} ${esc(nameOf(it.item))}${it.qty>1?' ×'+it.qty:''}`).join('<br>')||'—';
  $('lootsheet').innerHTML=`<h3>💰 Barrows chest!</h3>
  <div style="font-size:15px">🪙 <b>${m.gold} gold</b>${items!=='—'?'<br>'+items:''}</div>
+ ${m.rare?`<div style="font-size:15px;margin-top:6px;color:#ffd75e;font-weight:800">✨ RARE! ${iconOf(m.rare)} ${esc(nameOf(m.rare))} ✨<br><span class="note" style="color:#e8d9b0">It landed in a glowing pile at your feet — tap it to pick it up!</span></div>`:''}
  <div class="note" style="margin-top:6px">Brothers slain: ${m.kills}/6. The run resets — the brothers are back for another round.</div>
  <div class="btns"><button class="act" onclick="document.getElementById('lootmodal').classList.remove('open')">Nice!</button></div>`;
  $('lootmodal').classList.add('open');
- logLine(`💰 Barrows chest: ${m.gold} gold${(m.items||[]).length? ' + '+(m.items||[]).map(it=>nameOf(it.item)).join(', ') : ''}.`);
+ logLine(`💰 Barrows chest: ${m.gold} gold${(m.items||[]).length? ' + '+(m.items||[]).map(it=>nameOf(it.item)).join(', ') : ''}${m.rare? ' + RARE: '+nameOf(m.rare)+' (in the glowing pile!)':''}.`);
+ if(m.rare) toast(`✨ RARE DROP: ${nameOf(m.rare)} — grab the glowing pile!`);
  renderAll();
 }
 /* ---- Brother avatars (fight visuals; positions are client-side) ---- */
@@ -2441,9 +2569,11 @@ function checkPendingNode(){
  if(Math.hypot(myPos.x-n.x,myPos.y-n.y)<=140){ pendingNode=null; tapTarget=null; startGather(n); }
 }
 /* ---- Stage 5: drop piles (dropped items on the ground) ---- */
+let rareBeams=[]; // Stage 20: live loot-beam meshes of the current area ({mesh, inner, phase}), pulsed in animate()
 function rebuildPiles(){
  const area=curArea, root=areaGroups[area];
  pileProps={};
+ rareBeams=[];
  worldLabels=worldLabels.filter(wl=>{ if(wl.kind==='pile'&&wl.area===area){ wl.el.remove(); return false; } return true; });
  if(!root||!scene) return;
  if(pileGroups[area]) root.remove(pileGroups[area]);
@@ -2452,9 +2582,16 @@ function rebuildPiles(){
    const g=new THREE.Group(); g.position.set(sx2w(p.x),0,sy2w(p.y)); grp.add(g);
    box(0.62,0.42,0.62,0x8a6d3f,0,0.21,0,g); // sack
    box(0.3,0.22,0.3,0xa8845a,0,0.52,0,g); // sack neck
+   if(p.rare){ // Stage 20: the loot beam — a tall golden shaft of light over a rare Barrows weapon
+     const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.55,13,12,1,true),new THREE.MeshBasicMaterial({color:0xffd75e,transparent:true,opacity:0.3,depthWrite:false,side:THREE.DoubleSide}));
+     beam.position.y=6.5; g.add(beam);
+     const inner=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.24,13,10,1,true),new THREE.MeshBasicMaterial({color:0xfff3a0,transparent:true,opacity:0.5,depthWrite:false,side:THREE.DoubleSide}));
+     inner.position.y=6.5; g.add(inner);
+     rareBeams.push({mesh:beam,inner,phase:Math.random()*10});
+   }
    const label=document.createElement('div'); label.className='plabel';
    // Stage 16: a dropped gold pile wears the coin-pile face, sized by its amount.
-   label.innerHTML=`<div class="nname">${p.item==='gold'? goldPileHTML(p.qty,18) : iconOf(p.item)} ${esc(nameOf(p.item))}${p.qty>1?' ×'+p.qty:''}</div>${p.owner?`<div class="nsub">${esc(p.owner)}'s drop</div>`:''}`;
+   label.innerHTML=`<div class="nname">${p.rare?'✨ ':''}${p.item==='gold'? goldPileHTML(p.qty,18) : iconOf(p.item)} ${esc(nameOf(p.item))}${p.qty>1?' ×'+p.qty:''}</div>${p.rare?`<div class="nsub" style="color:#ffd75e;font-weight:800">✨ RARE DROP ✨</div>`:''}${p.owner?`<div class="nsub">${esc(p.owner)}'s drop</div>`:''}`;
    $('labels').appendChild(label);
    worldLabels.push({el:label,x:sx2w(p.x),y:1.5,z:sy2w(p.y),area,kind:'pile',pileId:p.id});
    pileProps[p.id]={x:sx2w(p.x),z:sy2w(p.y),labelY:1.5,pile:p};
@@ -3272,6 +3409,13 @@ function animate(){
    s.mesh.position.y=s.baseY+0.14*Math.sin(now*0.003+s.phase*3);
  }
  updateLiveSplats(now);
+ updateBursts(now,dt); // Stage 20: level-up fireworks
+ // Stage 20: rare loot beams pulse (tall gold shafts over rare piles)
+ for(const b of rareBeams){
+   b.mesh.rotation.y+=dt*0.7;
+   b.mesh.material.opacity=0.24+0.12*Math.sin(now*0.004+b.phase);
+   b.inner.material.opacity=0.42+0.18*Math.sin(now*0.004+b.phase);
+ }
  // Tree Guardians trail their owners with the same easing
  for(const a of Object.values(allyAvatars)){
    const k=1-Math.exp(-9*dt);
@@ -3357,11 +3501,12 @@ initThree();
 
 /* ================= drawer panels ================= */
 let drawerPanel=null, shopTab='Potion', shopMode='buy', bankQty='1', selStack=null, packSorted=false;
-const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',spellbook:'📖 Spellbook',players:'👥 Players online',admin:'👑 Admin',tools:'🛠️ Admin Tools',skills:'📊 Skills',smithy:'🔥 Emberfall Smithy',teleport:'🌀 Teleport',settings:'🎛️ Settings'};
+const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',spellbook:'📖 Spellbook',players:'👥 Players online',admin:'👑 Admin',tools:'🛠️ Admin Tools',skills:'📊 Skills',goals:'📋 Goals & Log',smithy:'🔥 Emberfall Smithy',teleport:'🌀 Teleport',settings:'🎛️ Settings'};
 function togglePanel(name){ drawerPanel===(name)? closeDrawer() : openPanel(name); }
 function openPanel(name){ drawerPanel=name; selStack=null; if(name==='backpack') packSorted=false; $('drawer').classList.add('open'); renderDrawer();
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.toggle('on',b.dataset.panel===name));
  if(name==='admin') refreshAdminLists();
+ if(name==='players'&&boardRows===null) fetchBoards(); // Stage 20: boards load on open
  if(name==='tools'&&isAdminOrOwner()) send({type:'ref_lists'}); }
 function closeDrawer(){ drawerPanel=null; $('drawer').classList.remove('open');
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.remove('on')); }
@@ -3386,6 +3531,7 @@ function renderDrawer(){
  if(drawerPanel==='admin') b.innerHTML=pAdmin();
  if(drawerPanel==='tools') b.innerHTML=pTools();
  if(drawerPanel==='skills') b.innerHTML=pSkills();
+ if(drawerPanel==='goals') b.innerHTML=pGoals();
  if(drawerPanel==='smithy') b.innerHTML=pSmithy();
  if(drawerPanel==='teleport') b.innerHTML=pTeleport();
  if(drawerPanel==='settings') b.innerHTML=pSettings();
@@ -3664,12 +3810,13 @@ function pPlayers(){
  const others=players.filter(p=>p.username!==me.username);
  if(!others.length){
    h+=`<p>Just you in this area so far.<br><span class="note">Share the link — when a friend signs in, they'll appear here and in the world. Tap their knight (or the Menu button here) to invite, challenge, trade, follow, talk or examine them.</span></p>`;
-   return h;
+ } else {
+   h+=others.map(p=>{
+     const sub=p.act? actLabel(p.act) : (p.inDuel?'in a duel':'in the plaza');
+     return `<div class="rowline"><span class="ic">🧍</span><span class="grow"><b>${myParty.includes(p.username)?'👥 ':''}${rolePrefix(p.role)}${esc(p.username)}</b>${chalMark(p.username)?' ❗':''} ${p.activePrayer?PRAYER_BADGE[p.activePrayer]:''}<br><span class="sub">${sub}</span></span>${p.inDuel?'':`<button class="act" onclick="openPlayerMenu('${esc(p.username)}')">Menu</button>`}</div>`;
+   }).join('');
  }
- h+=others.map(p=>{
-   const sub=p.act? actLabel(p.act) : (p.inDuel?'in a duel':'in the plaza');
-   return `<div class="rowline"><span class="ic">🧍</span><span class="grow"><b>${myParty.includes(p.username)?'👥 ':''}${rolePrefix(p.role)}${esc(p.username)}</b>${chalMark(p.username)?' ❗':''} ${p.activePrayer?PRAYER_BADGE[p.activePrayer]:''}<br><span class="sub">${sub}</span></span>${p.inDuel?'':`<button class="act" onclick="openPlayerMenu('${esc(p.username)}')">Menu</button>`}</div>`;
- }).join('');
+ h+=pBoards(); // Stage 20: duel leaderboard / skills hiscores tabs
  return h;
 }
 /* ---- Admin (Stage 7A) ---- */
