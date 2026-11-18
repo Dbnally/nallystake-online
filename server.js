@@ -203,6 +203,27 @@ for (const [tier, reduction, prices] of [
     ITEMS[`${tier}_${label[slot]}`] = { name: `${cap(tier)} ${label[slot]}`, kind: 'armour', slot, tier, buy: prices[slot], reduction, shop: 'Armour' };
   }
 }
+// Stage 21: party hats — Derek's design. One per metal tier, in that
+// tier's colour, prices doubling from Bronze 500,000g to Dragon
+// 32,000,000g. Pure flex: kind 'armour' in the head slot with
+// reduction 0 (no combat stats — and armourReduction only counts
+// reduction > 0 pieces toward the full-set bonus, so a hat never
+// completes a set). `color` is Derek's metal palette (the same tint
+// field Stage 8 put on the catalog for custom items): the client
+// renders the hat's face on a chip of this colour in the backpack,
+// the Armour shop, the Worn panel / gear figure and drop-pile
+// labels. Sold at the Armour shop; standard 60% sell-back applies.
+for (const [tier, buy, color] of [
+  ['bronze', 500000, '#8a5a2b'], // brown
+  ['iron', 1000000, '#7f7f7f'], // grey
+  ['steel', 2000000, '#b9bfc7'], // lighter grey
+  ['mithril', 4000000, '#6a5fd8'], // purple / blue-purple
+  ['adamant', 8000000, '#3a9e4f'], // green
+  ['rune', 16000000, '#4a90d9'], // blue
+  ['dragon', 32000000, '#c22f2f'], // red
+]) {
+  ITEMS[`${tier}_partyhat`] = { name: `${cap(tier)} party hat`, kind: 'armour', slot: 'head', tier, color, buy, reduction: 0, shop: 'Armour' };
+}
 // Gold Exchange goods: backpack items, traded only on the Exchange.
 const GOODS = [
   { id: 'bones', name: 'Dragon bones', base: 40, min: 20, max: 80 },
@@ -580,6 +601,7 @@ function catalogList() {
     accBonus: d.accBonus || 0, maxBonus: d.maxBonus || 0, reduction: d.reduction || 0,
     speed: d.speed || 0, // Stage 3: pickaxe speed multiplier (0 for non-tools)
     icon: d.icon || null, // Stage 7A: token icons (null for older items)
+    color: d.color || null, // Stage 21: tier tint (party hats) — same field customCatalogEntry emits for Stage 8 customs; null for everything else
     style: d.style || null, // Stage 19: weapon attack style ('melee' / 'ranged' / 'magic')
     strBonus: d.strBonus || 0, // Stage 19: arrow ranged strength bonus
   }));
@@ -1628,6 +1650,7 @@ function playersSnapshot(area) {
   return [...online.entries()].filter(([, p]) => !area || p.area === area).map(([k, p]) => ({
     username: p.profile.username, x: Math.round(p.x), y: Math.round(p.y), area: p.area,
     inDuel: !!p.duelId, activePrayer: p.profile.activePrayer || null,
+    wornHead: (p.profile.worn && p.profile.worn.head) || null, // Stage 21: so clients can put a worn party hat on the knight's head
     role: effectiveRole(p.profile), // Stage 7A
     appearance: p.profile.appearance ? { ...p.profile.appearance } : defaultAppearance(), // Stage 10: how this knight looks
     party: partyListForKey(k), // Stage 7B: member usernames ([] when not in a party)
@@ -1853,7 +1876,11 @@ function armourReduction(p) {
   let r = 0, filled = 0;
   for (const slot of ['head', 'body', 'legs', 'shield']) {
     const def = p.worn && p.worn[slot] ? itemDef(p.worn[slot]) : null;
-    if (def && def.kind === 'armour') { r += def.reduction; filled += 1; }
+    // Stage 21: only a piece that actually protects (reduction > 0)
+    // counts toward the full-set bonus — a cosmetic party hat in the
+    // head slot must never complete a set. Every real armour piece
+    // has reduction >= 0.03, so existing sets are unchanged.
+    if (def && def.kind === 'armour') { r += def.reduction || 0; if (def.reduction > 0) filled += 1; }
   }
   if (filled === 4) r += 0.05; // full-set bonus
   return Math.min(r, 0.45);
@@ -4322,6 +4349,8 @@ wss.on('connection', (ws, req) => {
       takeGold(profile, cost); // Stage 16: paid from the coin stacks
       save(key);
       send(ws, { type: 'shop', action: 'buy', shop: def.shop, item, qty, total: cost });
+      // Stage 21: the two top-tier party hats are server-wide news.
+      if (item === 'rune_partyhat' || item === 'dragon_partyhat') announce(`🎉 ${profile.username} just bought a ${def.name}!`);
       return sendProfile(key);
     }
     if (m.type === 'shop_sell') {
