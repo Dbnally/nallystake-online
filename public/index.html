@@ -393,9 +393,9 @@
  <div id="duelhint" style="display:none">⚔️ Tap your opponent to attack!</div>
  <div id="duelnomove" style="display:none">🚫 No Movement</div>
  <div id="duelprayers">
-  <button class="fchip pray" id="duelpray-melee">🛡️ Melee</button>
-  <button class="fchip pray" id="duelpray-missiles">🏹 Missiles</button>
-  <button class="fchip pray" id="duelpray-magic">🔮 Magic</button>
+  <button class="fchip pray" id="duelpray-melee">🛡️ Deflect Melee</button>
+  <button class="fchip pray" id="duelpray-missiles">🏹 Deflect Missiles</button>
+  <button class="fchip pray" id="duelpray-magic">🔮 Deflect Magic</button>
  </div>
  <div id="duelquick"></div>
  <div id="duelflee" style="display:none"><button class="fchip" id="fleebtn">🏃 Flee</button></div>
@@ -407,9 +407,9 @@
  <div class="hprow fightinfo"><span class="nm" id="fctargetname">Target</span><div class="hpbar"><div id="fchptarget" style="width:100%"></div></div><span id="fchptargetv"></span></div>
  <div id="fclast" class="note fightinfo" style="text-align:center"></div>
  <div id="fcprayers">
-  <button class="fcpray" id="fcpray-melee">🛡️ Melee</button>
-  <button class="fcpray" id="fcpray-missiles">🏹 Missiles</button>
-  <button class="fcpray" id="fcpray-magic">🔮 Magic</button>
+  <button class="fcpray" id="fcpray-melee">🛡️ Deflect Melee</button>
+  <button class="fcpray" id="fcpray-missiles">🏹 Deflect Missiles</button>
+  <button class="fcpray" id="fcpray-magic">🔮 Deflect Magic</button>
  </div>
  <div id="fcquick"></div>
  <div><button class="fchip" id="fcleavebtn" title="Leave the caves">🏃 Leave</button></div>
@@ -1822,7 +1822,7 @@ const BARROWS_CLIENT={ // mound spots in server coords — MUST match the server
  karil:{name:'Karil the Tainted',lvl:98,type:'missiles',x:1120,y:440,tint:0x5d4a38,short:'Karil'}
 };
 const BARROWS_ORDER=['dharok','guthan','torag','verac','ahrim','karil'];
-const PRAYER_FOR_TYPE={melee:['🛡️','Protect from Melee'],magic:['🔮','Protect from Magic'],missiles:['🏹','Protect from Missiles']};
+const PRAYER_FOR_TYPE={melee:['🛡️','Deflect from Melee'],magic:['🔮','Deflect from Magic'],missiles:['🏹','Deflect from Missiles']};
 let barrowsState={kills:[],tunnel:null,inTunnels:false};
 let barrowsBarHidden=false;
 let pendingMound=null; // brother id — walk to his mound, enter on arrival
@@ -3045,6 +3045,21 @@ function spawnSplatOn(a,dmg,special){
  pushSplat(a,splatTexture(kind,dmg),special?2.15:1.45);
 }
 function spawnSplat(name,dmg,special){ spawnSplatOn(avatars[name],dmg,special); }
+/* Stage 27: second-story splats — the Accurate proc's bonus hit and
+   a Deflect prayer's bounce-back land as their OWN visible hits,
+   stacked above the swing's main splat instead of covering it.
+   The bonus is a plain red damage burst; the bounce-back is a blue
+   burst carrying a ↩ and the reflected number, on the ATTACKER. */
+function pushSplatOffset(a,tex,sc,dy){
+ if(liveSplats.length>=MAX_SPLATS){ const old=liveSplats.shift(); scene.remove(old.sp); old.sp.material.dispose(); }
+ const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthWrite:false}));
+ sp.scale.set(sc,sc,1);
+ sp.position.copy(a.group.position); sp.position.y=(a.splatY||2.6)+dy;
+ scene.add(sp);
+ liveSplats.push({sp,av:a,born:performance.now(),baseY:sp.position.y});
+}
+function spawnBonusSplatOn(a,dmg){ if(!a||!a.group||!scene||!(dmg>0)) return; pushSplatOffset(a,splatTexture('hit',Math.round(dmg)),1.25,0.95); }
+function spawnDeflectSplatOn(a,dmg){ if(!a||!a.group||!scene||!(dmg>0)) return; pushSplatOffset(a,splatTextTexture('zero','↩'+Math.round(dmg)),1.3,0.95); }
 /* Stage 12 clarity: the server tags every swing with an outcome —
    'hit' | 'blocked' | 'miss'. 'hit' keeps the red damage splat,
    'blocked' is a blue shield burst with the 0 showing, 'miss' is a
@@ -4304,11 +4319,11 @@ function pPrayers(){
  let h=`<div class="note">Prayer points: <b style="color:#e3c766">${Math.floor(me.prayerPoints)} / ${me.prayerMax}</b> — an active prayer drains slowly and switches off at 0.</div>
  <div class="bar" style="margin:6px 0 10px"><div style="width:${pct}%;background:#2456c8"></div></div>
  <div style="display:flex;gap:6px">
-  <button class="praybtn ${me.activePrayer==='melee'?'on':''}${noPray?' ruledis':''}" onclick="send({type:'prayer',prayer:'melee'})">🛡️<br>Protect<br>Melee</button>
-  <button class="praybtn ${me.activePrayer==='missiles'?'on':''}${noPray?' ruledis':''}" onclick="send({type:'prayer',prayer:'missiles'})">🏹<br>Protect<br>Missiles</button>
-  <button class="praybtn ${me.activePrayer==='magic'?'on':''}${noPray?' ruledis':''}" onclick="send({type:'prayer',prayer:'magic'})">🔮<br>Protect<br>Magic</button>
+  <button class="praybtn ${me.activePrayer==='melee'?'on':''}${noPray?' ruledis':''}" onclick="send({type:'prayer',prayer:'melee'})">🛡️<br>Deflect<br>Melee</button>
+  <button class="praybtn ${me.activePrayer==='missiles'?'on':''}${noPray?' ruledis':''}" onclick="send({type:'prayer',prayer:'missiles'})">🏹<br>Deflect<br>Missiles</button>
+  <button class="praybtn ${me.activePrayer==='magic'?'on':''}${noPray?' ruledis':''}" onclick="send({type:'prayer',prayer:'magic'})">🔮<br>Deflect<br>Magic</button>
  </div>
- <p class="note" style="margin-top:8px">One at a time — tapping the lit one turns it off. Your active prayer shows as a badge over your knight.</p>`;
+ <p class="note" style="margin-top:8px">One at a time — tapping the lit one turns it off. Your active prayer shows as a badge over your knight.<br>↩️ <b>Deflect:</b> against monsters a matching prayer stops the hit completely and bounces a quarter of it back onto the attacker. In duels it prays off 40% of a hit and bounces a quarter of that back.</p>`;
  if(noPray) h+=`<p class="note" style="color:#e88">🚫 No Prayer in this duel.</p>`;
  if(myQty('prayer_potion')>0) h+=`<button class="act${noPot?' ruledis':''}" onclick="send({type:'use',item:'prayer_potion'})">🌟 Drink prayer potion (have ${myQty('prayer_potion')})</button>`;
  return h;
@@ -4793,6 +4808,15 @@ function readPicker(prefix){
  return out;
 }
 const STYLES_LIST=['accurate','aggressive','defensive','controlled'];
+/* Stage 27: the app version's style descriptions — base boost plus
+   proc — shown under the challenge sheet's style picker. */
+const STYLE_PROC_TEXT={
+ accurate:'Accurate: +3 Attack · 25% chance of a bonus extra hit (up to half your max hit) on a landed swing',
+ aggressive:'Aggressive: +3 Strength · 25% chance of a power hit — a randomly harder blow on a landed swing',
+ defensive:'Defensive: +3 Defence · 25% chance to block an incoming hit completely',
+ controlled:'Controlled: +1 Attack, +1 Strength, +1 Defence · all three style boosts at 12% · combat XP split three ways',
+};
+window.chalStylePicked=function(v){ const el=$('chstyleinfo'); if(el) el.textContent=STYLE_PROC_TEXT[v]||''; };
 /* ================= Stage 14: duel challenge configuration =================
    ONE configuration screen per challenge (Derek's reference photo):
    both names as columns, rule rows with On/Off pills, ITEMS TO
@@ -4956,7 +4980,7 @@ function renderChalSheet(){
  for(const [k,label] of CHAL_RULES_R) h+=ruleRow(k,label);
  h+=`</div></div>`;
  h+=`<div class="rulerow"><span class="grow">🆓 Free Play — no stakes</span><button class="pill ${t.freePlay?'on':'off'}" onclick="chalFlipFreePlay()">${t.freePlay?'On':'Off'}</button></div>`;
- h+=`<div class="rowline"><span class="grow">Your fighting style</span><select id="chstyle">${STYLES_LIST.map(s=>`<option ${me&&me.style===s?'selected':''}>${s}</option>`).join('')}</select></div>`;
+ h+=`<div class="rowline"><span class="grow">Your fighting style</span><select id="chstyle" onchange="chalStylePicked(this.value)">${STYLES_LIST.map(s=>`<option ${me&&me.style===s?'selected':''}>${s}</option>`).join('')}</select></div><p class="note" id="chstyleinfo" style="text-align:center">${STYLE_PROC_TEXT[me?me.style:'accurate']||''}</p>`;
  if(chalNotice) h+=`<p class="note" style="text-align:center;color:#8e2f32;font-weight:900">⚠️ Terms changed — confirm again.</p>`;
  if(mine==='to'&&t.challengeId) h+=`<p class="note" id="chalcount" style="text-align:center"></p>`;
  if(!t.challengeId){
@@ -5434,6 +5458,15 @@ function duelTickUI(m){
      else spawnSplat(me.username,m.oppHit,m.oppSpecial);
      flinchForOutcome(myAv,oppAv,typeof m.oppOutcome==='string'?m.oppOutcome:null,m.oppHit); } // Stage 26: their landed hit recoils me
  }
+ // Stage 27: proc + prayer splats ride the same tick — my Accurate
+ // bonus bursts on them, theirs on me; a Deflect bounce-back bursts
+ // blue (↩N) on whoever ATTACKED into the prayer and flinches them.
+ if(!closing){
+   if(m.youBonus>0) spawnBonusSplatOn(oppAv,m.youBonus);
+   if(m.oppBonus>0) spawnBonusSplatOn(myAv,m.oppBonus);
+   if(m.youDeflected>0){ spawnDeflectSplatOn(myAv,m.youDeflected); startFlinch(myAv,oppAv,false); }
+   if(m.oppDeflected>0){ spawnDeflectSplatOn(oppAv,m.oppDeflected); startFlinch(oppAv,myAv,false); }
+ }
  if(typeof m.youHit==='number'&&!duelEngaged){ duelEngaged=true; renderDuelHint(); } // a swing of mine appeared — I'm engaged (tap or auto-retaliate)
  // Stage 26 AUDIT FIX (companion): the strip text names only the
  // swings this tick actually carried — the old text printed
@@ -5445,8 +5478,10 @@ function duelTickUI(m){
  else if(closing) last='⚔️ Too far apart — closing in to strike…';
  else {
    const parts=[];
-   if(typeof m.youHit==='number') parts.push(`You hit ${m.youHit}${m.youSpecial?' (DRAGON SLASH!)':''}`);
-   if(typeof m.oppHit==='number') parts.push(`they hit ${m.oppHit}${m.oppSpecial?' (special!)':''}`);
+   if(typeof m.youHit==='number') parts.push(`You hit ${m.youHit}${m.youBonus>0?` +${m.youBonus} bonus`:''}${m.youSpecial?' (DRAGON SLASH!)':''}`);
+   if(typeof m.oppHit==='number') parts.push(`they hit ${m.oppHit}${m.oppBonus>0?` +${m.oppBonus} bonus`:''}${m.oppSpecial?' (special!)':''}`);
+   if(m.youDeflected>0) parts.push(`↩ deflected ${m.youDeflected} back on you`);
+   if(m.oppDeflected>0) parts.push(`↩ you deflected ${m.oppDeflected}`);
    last=parts.length? parts.join(' · ') : '⚔️ Fight!';
  }
  $('duellast').textContent=last;
@@ -5519,7 +5554,7 @@ function npcFightUI(m){
      const pf=PRAYER_FOR_TYPE[b.type||'melee'];
      $('dueloppname').textContent=m.name||'Barrows brother';
      $('dueltitle').textContent=`💀 ${m.name} · lvl ${npcFight.combatLevel}`;
-     $('duellast').textContent=`Fight! ${pf[0]} ${pf[1]} fully blocks him. Stay near the ${curArea==='barrows_tunnels'?'chest':'mound'} or the fight breaks off.`;
+     $('duellast').textContent=`Fight! ${pf[0]} ${pf[1]} turns his hits back on him. Stay near the ${curArea==='barrows_tunnels'?'chest':'mound'} or the fight breaks off.`;
    } else {
      // Stage 19: the shared-NPC fights (goblin / wizard / ranger)
      // all speak this UI — title and header carry the creature.
@@ -5550,14 +5585,20 @@ function npcFightUI(m){
      if(typeof m.npcOutcome==='string') spawnOutcomeSplat(me.username,m.npcOutcome,m.npcHit,false);
      else spawnSplat(me.username,m.npcHit,false);
      flinchForOutcome(me?avatars[me.username]:null,ba,typeof m.npcOutcome==='string'?m.npcOutcome:null,m.npcHit); } // Stage 26
+   // Stage 27: my Accurate bonus bursts on the creature; damage my
+   // Deflect prayer bounced back bursts blue (↩N) on it too and
+   // flinches it — the bounce is real damage, not a block.
+   if(m.youBonus>0) spawnBonusSplatOn(ba,m.youBonus);
+   if(m.npcDeflected>0){ spawnDeflectSplatOn(ba,m.npcDeflected); startFlinch(ba,me?avatars[me.username]:null,false); }
    if(ba&&ba.isBrother){ ba.hp=m.hpNpc; ba.maxHp=m.maxHpNpc; }
    if(ba&&typeof m.npcFrozenUntil==='number') ba.frozenUntil=m.npcFrozenUntil; // Stage 24: Freeze root on my target
    if(ba) setHpBar(ba,m.hpNpc/Math.max(1,m.maxHpNpc),m.hpNpc,m.maxHpNpc); // overhead bar + number tracks the fight, green → yellow → red
    const oppName=(npcFight.name||'goblin').split(' ')[0].toLowerCase();
    const parts=[];
-   if(typeof m.youHit==='number') parts.push(`You hit ${m.youHit}${m.youSpecial?' (DRAGON SLASH!)':''}`);
+   if(typeof m.youHit==='number') parts.push(`You hit ${m.youHit}${m.youBonus>0?` +${m.youBonus} bonus`:''}${m.youSpecial?' (DRAGON SLASH!)':''}`);
    else parts.push('⚔️ Too far — walk up to strike!');
    if(typeof m.npcHit==='number') parts.push(`${oppName} hit ${m.npcHit}`);
+   if(m.npcDeflected>0) parts.push(`↩ deflected ${m.npcDeflected}`);
    let last=parts.join(' · ');
    if(m.note) last=m.note;
    $('duellast').textContent=last;
@@ -5664,6 +5705,15 @@ function modDuelUI(m){
        if(typeof m.npcOutcome==='string') spawnOutcomeSplat(me.username,m.npcOutcome,m.npcHit,false);
        else spawnSplat(me.username,m.npcHit,false);
        flinchForOutcome(me?avatars[me.username]:null,ma,typeof m.npcOutcome==='string'?m.npcOutcome:null,m.npcHit); } // Stage 26
+     // Stage 27: my Accurate bonus bursts on the mod; damage my
+     // Deflect prayer bounced off the mod's swing bursts blue (↩N)
+     // on the mod and flinches it. (npcBonus / youDeflected are
+     // structurally 0 — the mod is Aggressive and never prays —
+     // but render symmetrically if they ever arrive.)
+     if(m.youBonus>0) spawnBonusSplatOn(ma,m.youBonus);
+     if(m.npcBonus>0) spawnBonusSplatOn(myAv,m.npcBonus);
+     if(m.npcDeflected>0){ spawnDeflectSplatOn(ma,m.npcDeflected); startFlinch(ma,myAv,false); }
+     if(m.youDeflected>0){ spawnDeflectSplatOn(myAv,m.youDeflected); startFlinch(myAv,ma,false); }
    }
    if(typeof m.youHit==='number') modDuelEngaged=true; // one of my swings appeared — I'm engaged
    let last;
@@ -5673,8 +5723,9 @@ function modDuelUI(m){
    else if(!modDuelEngaged) last=`⚔️ Tap ⭐ ${modDuel.name} to attack!`;
    else {
      const parts=[];
-     if(typeof m.youHit==='number') parts.push(`You hit ${m.youHit}${m.youSpecial?' (DRAGON SLASH!)':''}`);
+     if(typeof m.youHit==='number') parts.push(`You hit ${m.youHit}${m.youBonus>0?` +${m.youBonus} bonus`:''}${m.youSpecial?' (DRAGON SLASH!)':''}`);
      if(typeof m.npcHit==='number') parts.push(`${modDuel.name} hit ${m.npcHit}`);
+     if(m.npcDeflected>0) parts.push(`↩ deflected ${m.npcDeflected}`);
      last=parts.join(' · ')||'Fight!';
    }
    $('duellast').textContent=last;
@@ -5798,9 +5849,12 @@ function onFcTick(m){
  for(const id of Object.keys(fcMonsters)){ if(!aliveIds.has(id)) delete fcMonsters[id]; }
  syncFcMonsters();
  // Blocked hits arrive in hitsTaken as 0-damage — blue splat each.
- let taken=0, blockedN=0, jadDmg=0;
+ // Stage 27: a Deflect-blocked hit also carries `deflected` — the
+ // damage bounced back onto the monster (its HP drop already
+ // splats up top); the strip text names the total bounced.
+ let taken=0, blockedN=0, jadDmg=0, defl=0;
  for(const h of (m.hitsTaken||[])){
-   if(h.blocked){ blockedN++; spawnSplat(me.username,0,false); startFlinch(me?avatars[me.username]:null,m.targetId?fcAvatars[m.targetId]:null,true); } // Stage 26: blocked = guard flinch
+   if(h.blocked){ blockedN++; spawnSplat(me.username,0,false); startFlinch(me?avatars[me.username]:null,m.targetId?fcAvatars[m.targetId]:null,true); if(h.deflected>0) defl+=h.deflected; } // Stage 26: blocked = guard flinch
    else if(h.dmg>0){ taken+=h.dmg; if(h.kind==='jad') jadDmg+=h.dmg; }
  }
  let last;
@@ -5808,10 +5862,11 @@ function onFcTick(m){
  else if(m.closing) last='⚔️ Too far — walk up to strike!';
  else {
    const parts=[];
-   if(typeof m.youHit==='number') parts.push(`You hit ${m.youHit}`);
+   if(typeof m.youHit==='number') parts.push(`You hit ${m.youHit}${m.youBonus>0?` +${m.youBonus} bonus`:''}`);
    if(jadDmg>0) parts.push(`JAD hit you for ${jadDmg}!`);
    else if(taken>0) parts.push(`they hit you for ${taken}`);
    if(blockedN>0) parts.push(`${blockedN} blocked 🛡️`);
+   if(defl>0) parts.push(`↩ deflected ${defl}`);
    last=parts.join(' · ');
  }
  $('fclast').textContent=last;
@@ -5822,9 +5877,9 @@ function onFcTelegraph(m){
  jadWarnStyle=style;
  const prayerName=style==='magic'?'Magic':'Missiles';
  $('jadwarntxt').textContent=style==='magic' ? '🔮 JAD: MAGIC ATTACK!' : '🏹 JAD: RANGED ATTACK!';
- $('jadwarnhint').textContent=`Tap here — or the flashing 🏹/🔮 button — to pray Protect from ${prayerName} before it lands!`;
+ $('jadwarnhint').textContent=`Tap here — or the flashing 🏹/🔮 button — to pray Deflect from ${prayerName} before it lands!`;
  $('jadwarn').style.display='block';
- logLine(`⚠️ TzTok-Jad telegraphs a ${style==='magic'?'magic':'ranged'} attack — Protect from ${prayerName}!`);
+ logLine(`⚠️ TzTok-Jad telegraphs a ${style==='magic'?'magic':'ranged'} attack — Deflect from ${prayerName}!`);
  const btn=$('fcpray-'+style); if(btn) btn.classList.add('flash');
  clearTimeout(jadWarnTimer);
  jadWarnTimer=setTimeout(()=>{ $('jadwarn').style.display='none'; if(btn) btn.classList.remove('flash'); },1150);
@@ -5862,7 +5917,7 @@ function openFcStart(){
  const f=me.fc||{bestWave:0,attempts:0,kills:0,completions:0,bestTimeMs:0};
  $('fcstartsheet').innerHTML=`<h3>🌋 The Fight Caves</h3>
  <p>63 waves of monsters, one after another — Tz-Kih, Tz-Kek, Tok-Xil, Yt-MejKot and Ket-Zek — and on wave 63, <b>TzTok-Jad</b> himself. Beat him for the 🔥 <b>Fire cape</b> and <b>500g</b>.</p>
- <p class="note">Your fight HP is your Hitpoints level. Protect prayers fully block matching attacks. Jad telegraphs every attack — when the warning flashes, switch to the matching Protect prayer before it lands. Food, potions and Dragon Slash all work in there. Dying costs nothing.</p>
+ <p class="note">Your fight HP is your Hitpoints level. Deflect prayers stop matching attacks completely and bounce a quarter of the damage back onto the attacker — Jad included. Jad telegraphs every attack — when the warning flashes, switch to the matching Deflect prayer before it lands. Food, potions and Dragon Slash all work in there. Dying costs nothing.</p>
  <div class="setrow"><span class="grow">Attempts</span><b style="color:#e3c766">${f.attempts}</b></div>
  <div class="setrow"><span class="grow">Best wave</span><b style="color:#e3c766">${f.bestWave} / 63</b></div>
  <div class="setrow"><span class="grow">Total kills</span><b style="color:#e3c766">${f.kills}</b></div>
@@ -6269,7 +6324,7 @@ function handleLongPress(cx,cy){
    const nm=n? (n.name||'Goblin'):'Goblin';
    openCtxSheet(`🥊 ${esc(nm)}`,[
      {label:'⚔️ Attack',fn:()=>attackNpc(hit.id)},
-     {label:'🔍 Examine',fn:()=>ctxExamine(`🥊 ${esc(nm)}`,`Combat level ${n? (n.combatLevel||5):5}. ${n&&n.kind==='wizard'?'It casts magic at you from range — Protect from Magic blocks it. It drops runes for your spells.':n&&n.kind==='ranger'?'It shoots arrows at you from range — Protect from Missiles blocks it. It drops arrows and arrowheads.':'It drops coins and goblin gear when beaten.'}`)}
+     {label:'🔍 Examine',fn:()=>ctxExamine(`🥊 ${esc(nm)}`,`Combat level ${n? (n.combatLevel||5):5}. ${n&&n.kind==='wizard'?'It casts magic at you from range — Deflect from Magic turns its spells back on it. It drops runes for your spells.':n&&n.kind==='ranger'?'It shoots arrows at you from range — Deflect from Missiles turns its arrows back on it. It drops arrows and arrowheads.':'It drops coins and goblin gear when beaten.'}`)}
    ]);
    return;
  }
@@ -6567,11 +6622,19 @@ function onCastResult(m){
    if(!m.froze) flinchForOutcome(myAv,m.by?avatars[m.by]:null,m.outcome,m.dmg); // Stage 26: a landed cast recoils me (Freeze roots instead)
    if(m.froze){ meFrozenUntil=m.frozenUntil||0; toast(`❄️ You're frozen by ${m.by||'a spell'} — you can't move for 5 seconds!`); }
    if(duel&&typeof m.hpTarget==='number'){ duel.hpYou=m.hpTarget; renderDuelBar(); }
+   // Stage 27: if my Deflect prayer bounced part of their cast
+   // back, the CASTER's pool dropped too (hpYou on this copy is
+   // theirs) — sync their bar and burst the bounce on them.
+   if(duel&&typeof m.hpYou==='number'){ duel.hpOpponent=m.hpYou; renderDuelBar(); const cav=m.by?avatars[m.by]:null; if(cav) setHpBar(cav,m.hpYou/99,m.hpYou,99); }
+   if(m.deflected>0){ const cav=m.by?avatars[m.by]:null; if(cav){ spawnDeflectSplatOn(cav,m.deflected); startFlinch(cav,myAv,false); } logLine(`↩️ Your Deflect prayer bounced ${m.deflected} back onto ${m.by||'them'}!`); }
    logLine(`🪄 ${m.by||'Someone'} cast ${spName} on you${m.froze?' — ❄️ FROZEN!':''}`);
    return;
  }
  if(av){ startSwingAt(myAv,av,true); showSplat(av); if(!m.froze) flinchForOutcome(av,myAv,m.outcome,m.dmg); } // Stage 26
  if(m.context==='duel'&&duel&&typeof m.hpTarget==='number'){ duel.hpOpponent=m.hpTarget; renderDuelBar(); const oav=avatars[duel.opponent]; if(oav) setHpBar(oav,m.hpTarget/99,m.hpTarget,99); }
+ // Stage 27: my own cast bounced back off THEIR Deflect prayer —
+ // my pool dropped (hpYou), burst the bounce on me, flinch me.
+ if(m.context==='duel'&&duel&&m.deflected>0&&typeof m.hpYou==='number'){ duel.hpYou=m.hpYou; renderDuelBar(); if(myAv){ setHpBar(myAv,m.hpYou/99,m.hpYou,99); spawnDeflectSplatOn(myAv,m.deflected); startFlinch(myAv,av,false); } logLine(`↩️ ${m.targetName||'They'} deflected ${m.deflected} back onto you!`); }
  if(m.context==='modduel'&&modDuel&&typeof m.hpTarget==='number'){ modDuel.hpNpc=m.hpTarget; renderModDuelBar(); if(av) setHpBar(av,m.hpTarget/99,m.hpTarget,99); }
  if((m.context==='npc'||m.context==='barrows')&&npcFight&&typeof m.hpTarget==='number'){ npcFight.hpNpc=m.hpTarget; renderNpcBar(); if(av) setHpBar(av,m.hpTarget/Math.max(1,m.maxHpTarget||npcFight.maxHpNpc),m.hpTarget,m.maxHpTarget||npcFight.maxHpNpc); }
  if(m.context==='fc'&&fcRun){ if(fcMonsters[m.targetId]&&typeof m.hpTarget==='number'){ fcMonsters[m.targetId].hp=m.hpTarget; prevFcHp[m.targetId]=m.hpTarget; } syncFcMonsters(); renderFcBar(); }
