@@ -15,9 +15,12 @@
 // OSRS XP curve, total level + OSRS combat level, saved per player), the
 // areas framework (plaza + Goblin Camp, per-area player snapshots), and
 // server-run NPC combat vs goblins (drops: gold, ranarr herbs, prayer
-// potions). Prayer rule per Derek's spec: Protect prayers FULLY block
-// matching NPC hits; they still do NOT block in PvP duels — every duel
-// attack is melee-type, so a full block would stalemate every fight.
+// potions). Prayer rule (Stage 27, Derek's "Everything" decision):
+// Deflect prayers stop matching NPC hits entirely and bounce a
+// quarter of the rolled damage back onto the attacker; in PvP duels
+// they pray off 40% and deflect a quarter of that back (the Stage 1
+// rule — Protect fully blocks NPCs, duels ignore prayers — is
+// superseded; see the Stage 27 header note).
 //
 // Stage 2 (catch-up) adds: three more areas (Training Cave, Gathering
 // Cave, Fishing Cove), a gathering system (resource nodes with level
@@ -131,6 +134,30 @@
 // — sanitised by cleanAppearance, settable at register and via
 // set_appearance, and carried in state snapshots + public profiles
 // so every client can render each knight's look).
+//
+// Stage 27 SUPERSEDES the Stage 10 style table and the Stage 1
+// prayer rule, on Derek's explicit "Everything" decision (match the
+// app / Muse-artifact version's combat rules, trade-offs shown):
+//   - Prayers are now DEFLECT prayers (Deflect from Melee / Missiles
+//     / Magic — same 'melee'/'missiles'/'magic' values on the wire).
+//     Against MONSTERS a matching prayer still stops the whole hit,
+//     and a quarter of the rolled damage (max(1, ceil(dmg x 0.25)))
+//     bounces back onto the attacker — it can kill, Jad included,
+//     and awards no XP. Against PLAYERS (duels, mod duels, casts)
+//     the app's PvP rule applies instead: 40% of the rolled hit is
+//     prayed off (round(dmg x 0.4)) and a quarter of that blocked
+//     part (max(1, round(blocked x 0.25))) deflects back onto the
+//     attacker; the rest gets through. The old "duel prayers do
+//     nothing" rule is gone. See pvpDeflect / monsterDeflect.
+//   - Styles are the app version's again: the same base boosts
+//     (Accurate +3 Attack, Aggressive +3 Strength, Defensive +3
+//     Defence LEVEL — new: it feeds the defence roll, Controlled
+//     +1/+1/+1) PLUS the proc boosts Stage 10 removed: Accurate 25%
+//     bonus extra hit, Aggressive 25% power hit, Defensive 25% full
+//     block; Controlled rolls all three at 12%. See STYLES /
+//     boostChance. Casts (the magic branch) do NOT proc — the app's
+//     casts never did — but a cast can be Deflect-prayed and CAN be
+//     stopped by the defender's Defensive proc, as Stage 19 built.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -1639,9 +1666,10 @@ GOBLIN_SPAWNS.forEach(([x, y], i) => {
 // wizards with MAGIC, rangers with MISSILES — on the ranged-NPC
 // pattern Karil/Ahrim established in Barrows: they hold their
 // ground (they never step toward the player) and swing on a 3-tick
-// cadence inside NPC_RANGE. The matching Protect prayer FULLY
-// blocks them (Magic for wizards, Missiles for rangers) — the
-// npcTick prayer check compares attackType, so it just works.
+// cadence inside NPC_RANGE. The matching Deflect prayer stops
+// them entirely and bounces a quarter of the rolled damage back
+// (Magic for wizards, Missiles for rangers) — the npcTick prayer
+// check compares attackType, so it just works.
 // Tuning (this port's, in line with the goblin/Barrows scale):
 // wizard lvl 13, 20 HP, max hit 4; ranger lvl 11, 18 HP, max hit 4;
 // both respawn 12s after a kill.
@@ -1869,27 +1897,116 @@ function executeTrade(trade) {
   }
 }
 
-// Stage 10: Derek's RuneScape-style rebalance. A swing is an OSRS
-// attack roll vs defence roll, so two identical fighters land about
-// half their swings (measured ~50% for a level-matched mirror match —
-// the pre-Stage-10 flat style constants landed ~76-91%). A combat
-// style is ONE single effect, active at a time (profile.style is a
-// single value — nothing stacks), and each effect is small:
+// Stage 10 built Derek's RuneScape-style rebalance here (an OSRS
+// attack roll vs defence roll — two identical fighters land about
+// half their swings — with each style a single small effect and the
+// Stage 5 procs deleted). Stage 27 replaces the style EFFECTS with
+// the app (Muse-artifact) version's, on Derek's explicit
+// "Everything" decision: the base boosts stay OSRS-shaped, and the
+// procs come back. A combat style is ONE style at a time
+// (profile.style is a single value — nothing stacks):
 //   accurate   +3 effective Attack level in the accuracy roll.
 //   aggressive +3 effective Strength level in the max-hit formula.
-//   defensive  a flat 20% chance to fully block each incoming hit.
-//   controlled +1 effective Attack, +1 effective Strength, 7% block.
-// The old Stage 5 procs (Accurate 25% extra hit, Aggressive 25% power
-// hit, Defensive 25% / Controlled 12% blocks) are GONE — nothing in
-// the tick notes may claim them any more. The defender block chance
-// lives ONLY in this table: rollHit reads it for duels, and the NPC /
-// Barrows / Fight Caves ticks read it for monster swings.
+//   defensive  +3 effective Defence level in the defence roll.
+//   controlled +1 effective Attack, +1 Strength, +1 Defence.
+// PLUS the app version's proc boosts, rolled per swing:
+//   Accurate   25%: a bonus extra hit of randi(1, ceil(maxHit/2))
+//              lands in full as its own damage instance (bonusDmg).
+//   Aggressive 25%: a power hit — +randi(2, max(2, round(maxHit x
+//              0.75))) stacked onto the swing's rolled damage.
+//   Defensive  25%: fully blocks an incoming hit (after prayer).
+//   Controlled rolls each of the three at 12% instead.
+// (maxHit for the proc bases is the NON-special max, as in the app.)
+// The procs live in the roll functions below (melee + ranged
+// branches); casts do not proc (the app's casts never did). The
+// defender's block chance lives ONLY in boostChance(style,
+// 'defensive'): the roll functions read it for player defenders,
+// and the NPC / Barrows / Fight Caves ticks read it (via
+// styleBlockChance) for monster swings at the player.
 const STYLES = {
-  accurate:   { atkBoost: 3, strBoost: 0, block: 0 },
-  aggressive: { atkBoost: 0, strBoost: 3, block: 0 },
-  defensive:  { atkBoost: 0, strBoost: 0, block: 0.20 },
-  controlled: { atkBoost: 1, strBoost: 1, block: 0.07 },
+  accurate:   { atkBoost: 3, strBoost: 0, defBoost: 0 },
+  aggressive: { atkBoost: 0, strBoost: 3, defBoost: 0 },
+  defensive:  { atkBoost: 0, strBoost: 0, defBoost: 3 },
+  controlled: { atkBoost: 1, strBoost: 1, defBoost: 1 },
 };
+// The app version's boostChance, verbatim in shape: fighting IN a
+// style rolls its own boost at 25%; Controlled rolls every boost at
+// 12%; any other pairing is 0. `style` is the FIGHTER's style (the
+// attacker's for Accurate/Aggressive, the defender's for Defensive),
+// `boost` is 'accurate' | 'aggressive' | 'defensive'.
+function boostChance(style, boost) {
+  if (style === boost) return 0.25;
+  if (style === 'controlled') return 0.12;
+  return 0;
+}
+// The chance that `profile`'s fighting style fully blocks one
+// incoming hit (the Defensive proc) — the single source the monster
+// ticks and the roll functions all read.
+function styleBlockChance(profile) {
+  return boostChance(profile && profile.style, 'defensive');
+}
+// Inclusive integer roll, the app version's randi(a, b).
+function randiRange(a, b) { return a + Math.floor(Math.random() * (b - a + 1)); }
+// Accurate proc: the bonus extra hit for one connected, unblocked
+// swing — randi(1, max(1, ceil(normalMax / 2))) in the app. Returns
+// 0 when the proc does not fire. normalMax is the swing's
+// non-special max hit.
+function procAccurateBonus(attackerProfile, normalMax) {
+  if (Math.random() >= boostChance(attackerProfile.style, 'accurate')) return 0;
+  return randiRange(1, Math.max(1, Math.ceil(normalMax / 2)));
+}
+// Aggressive proc: the power-hit bonus stacked onto a landed swing
+// — randi(2, max(2, round(normalMax x 0.75))) in the app. Returns 0
+// when the proc does not fire.
+function procAggressiveBonus(attackerProfile, normalMax) {
+  if (Math.random() >= boostChance(attackerProfile.style, 'aggressive')) return 0;
+  return randiRange(2, Math.max(2, Math.round(normalMax * 0.75)));
+}
+
+// ---------- Stage 27: Deflect prayers (the app version's rules) ----------
+// Prayer values on the wire are unchanged ('melee' | 'missiles' |
+// 'magic'); only their NAMES (client-side) and their combat effect
+// changed: Protect became Deflect. An attack's style maps to the
+// prayer that answers it — a 'ranged' attack is answered by the
+// 'missiles' prayer; melee and magic answer to themselves.
+function prayerForAttackStyle(style) { return style === 'ranged' ? 'missiles' : style; }
+// Does `defenderProfile` currently have the Deflect prayer up that
+// matches an incoming attack of `attackStyle` (a prayer value:
+// 'melee' | 'missiles' | 'magic')? Mirrors the app's prayerDeflect
+// gate: the prayer must be active AND the pool non-empty (the drain
+// loop nulls the prayer at 0, so this is belt-and-braces).
+function deflectUp(defenderProfile, attackStyle) {
+  return !!defenderProfile
+    && defenderProfile.activePrayer === attackStyle
+    && (defenderProfile.prayerPoints || 0) > 0;
+}
+// The MONSTER rule (the app's prayerDeflect, non-PvP branch): a
+// matching Deflect prayer stops the hit ENTIRELY and throws a
+// quarter of the rolled damage back at the attacker —
+// max(1, ceil(raw x 0.25)). The reflected damage can kill (Jad
+// included) and awards no XP. Returns the reflected amount (0 when
+// the prayer does not apply). `raw` is the attacker's rolled damage
+// before armour.
+function monsterDeflect(defenderProfile, attackType, raw) {
+  if (!(raw > 0) || !deflectUp(defenderProfile, attackType)) return 0;
+  return Math.max(1, Math.ceil(raw * 0.25));
+}
+// The PvP rule (the app's prayerDeflect pvp branch, used for duel
+// rivals and Wilderness PKers there): a matching Deflect prayer
+// blocks 40% of the rolled hit — blocked = round(raw x 0.4) — and
+// deflects a quarter of the BLOCKED part back at the attacker —
+// max(1, round(blocked x 0.25)); the rest gets through. Returns
+// { through, deflected } for a rolled damage `raw` (pre-armour, as
+// in the app). A hit too small to block a whole point from
+// (blocked 0) is not deflected at all.
+function pvpDeflect(defenderProfile, attackStyle, raw) {
+  if (!(raw > 0) || !deflectUp(defenderProfile, prayerForAttackStyle(attackStyle))) {
+    return { through: raw, deflected: 0 };
+  }
+  const blocked = Math.round(raw * 0.4);
+  if (blocked <= 0) return { through: raw, deflected: 0 };
+  return { through: raw - blocked, deflected: Math.max(1, Math.round(blocked * 0.25)) };
+}
 // Attack-roll tuning constant: with identical levels and gear on both
 // sides the attack and defence rolls nearly cancel, and this small
 // multiplier on the attack roll centres the mirror match on ~50%
@@ -1944,10 +2061,13 @@ function weaponAccPoints(p) {
 // other call site omits it and rolls real skills, as Stage 10 built.
 function hitChance(attackerProfile, defenderProfile, useSpecial = false, levelOverride = null) {
   const s = STYLES[attackerProfile.style] || STYLES.accurate;
+  const dst = STYLES[defenderProfile.style] || STYLES.accurate;
   const aLv = levelOverride == null ? levelsOf(attackerProfile) : { attack: levelOverride };
   const dLv = levelOverride == null ? levelsOf(defenderProfile) : { defence: levelOverride };
   const atkRoll = (aLv.attack + (s.atkBoost || 0) + 8) * (64 + weaponAccPoints(attackerProfile)) * ACC_BALANCE;
-  const defRoll = (dLv.defence + 8) * 64;
+  // Stage 27: the defender's style Defence boost (Defensive +3,
+  // Controlled +1) feeds the defence roll — the app's effDef().
+  const defRoll = (dLv.defence + (dst.defBoost || 0) + 8) * 64;
   let chance = atkRoll > defRoll
     ? 1 - (defRoll + 2) / (2 * (atkRoll + 1))
     : atkRoll / (2 * (defRoll + 1));
@@ -1968,7 +2088,8 @@ function maxHit(attackerProfile, useSpecial = false, levelOverride = null) {
   if (useSpecial) max = Math.floor(max * 1.5); // Dragon Slash
   return max;
 }
-// One swing, fully resolved: { dmg, connected, outcome }.
+// One swing, fully resolved: { dmg, connected, outcome, bonusDmg,
+// deflected, power }.
 // `connected` is the ACCURACY outcome — the swing was on target —
 // regardless of the defender's style block or armour: a
 // blocked-but-accurate swing still counts as a hit that landed
@@ -1976,30 +2097,58 @@ function maxHit(attackerProfile, useSpecial = false, levelOverride = null) {
 // does not. `outcome` is the client-facing clarity
 // label: 'hit' when damage got through, 'blocked' when the swing
 // connected but was fully stopped (style block, or armour absorbing
-// the whole blow), 'miss' when the accuracy roll failed. The damage
-// law is unchanged: damage is dealt only when the swing is both
-// unblocked and accurate, exactly as before.
-function rollHitDetail(attackerProfile, defenderProfile, useSpecial = false, levelOverride = null) {
-  const d = STYLES[defenderProfile.style] || STYLES.accurate;
-  const blocked = !!(d.block && Math.random() < d.block);
+// the whole blow), 'miss' when the accuracy roll failed.
+// Stage 27 resolution order (the app version's hurtPlayer order):
+// accuracy, the rolled damage, the attacker's Aggressive power
+// proc stacked on, the defender's Deflect prayer (PvP rule — only
+// when the caller passes deflectPvp, i.e. the duel engines), the
+// defender's Defensive style proc (a full block of what remains),
+// then worn armour. The Accurate proc is a SEPARATE instance: it
+// lands in full (no prayer, no armour, no second accuracy roll) as
+// `bonusDmg`, kept out of `dmg` so per-swing caps still read off
+// `dmg` alone; callers add it to the target's HP and to the XP
+// base. `deflected` is the damage the defender's prayer bounced
+// back onto the ATTACKER — the caller subtracts it from the
+// attacker's HP pool. Neither procs nor deflect award notes: the
+// tick messages carry them as fields and the client splats them.
+function rollHitDetail(attackerProfile, defenderProfile, useSpecial = false, levelOverride = null, deflectPvp = false) {
   const connected = Math.random() <= hitChance(attackerProfile, defenderProfile, useSpecial, levelOverride);
-  if (blocked || !connected) return { dmg: 0, connected, outcome: connected ? 'blocked' : 'miss' };
-  const raw = 1 + Math.floor(Math.random() * maxHit(attackerProfile, useSpecial, levelOverride));
+  if (!connected) return { dmg: 0, connected: false, outcome: 'miss', bonusDmg: 0, deflected: 0, power: false };
+  const normalMax = maxHit(attackerProfile, false, levelOverride);
+  let raw = 1 + Math.floor(Math.random() * maxHit(attackerProfile, useSpecial, levelOverride));
+  // Aggressive proc: a randomly harder hit stacked onto this swing.
+  let power = false;
+  const powBonus = procAggressiveBonus(attackerProfile, normalMax);
+  if (powBonus > 0) { raw += powBonus; power = true; }
+  // Deflect (PvP rule) prays off its share BEFORE the style block,
+  // exactly as the app's hurtPlayer runs prayer before the boost
+  // block — a swing can deflect AND still be style-blocked.
+  let deflected = 0;
+  if (deflectPvp) {
+    const dfl = pvpDeflect(defenderProfile, 'melee', raw);
+    raw = dfl.through; deflected = dfl.deflected;
+  }
+  if (Math.random() < boostChance(defenderProfile.style, 'defensive')) {
+    return { dmg: 0, connected: true, outcome: 'blocked', bonusDmg: 0, deflected, power };
+  }
   const dmg = Math.floor(raw * (1 - armourReduction(defenderProfile)));
-  return { dmg, connected: true, outcome: dmg > 0 ? 'hit' : 'blocked' };
+  const bonusDmg = procAccurateBonus(attackerProfile, normalMax);
+  return { dmg, connected: true, outcome: (dmg + bonusDmg) > 0 ? 'hit' : 'blocked', bonusDmg, deflected, power };
 }
 // Returns damage dealt (0 = miss / blocked / fully absorbed by armour).
 function rollHit(attackerProfile, defenderProfile, useSpecial = false) {
   return rollHitDetail(attackerProfile, defenderProfile, useSpecial).dmg;
 }
-// One full player attack for a tick. Since Stage 10 this is a single
-// swing — the style's whole effect is already inside rollHit's rolls
-// (level boosts) or the defender's block — so there are no proc notes
-// to surface. Returns { dmg, connected, outcome, notes } for the callers' tick
-// messages (callers grant combat XP on `dmg` like any other hit).
-function rollPlayerAttack(attackerProfile, defenderProfile, useSpecial = false, levelOverride = null) {
-  const r = rollHitDetail(attackerProfile, defenderProfile, useSpecial, levelOverride);
-  return { dmg: r.dmg, connected: r.connected, outcome: r.outcome, notes: [] };
+// One full player attack for a tick: a single swing whose style
+// effects (base boosts + Stage 27 procs) and the defender's prayer
+// are already inside the roll. Returns { dmg, connected, outcome,
+// bonusDmg, deflected, power, notes } for the callers' tick
+// messages (callers grant combat XP on dmg + bonusDmg, apply
+// `deflected` to the attacker's own HP pool, and surface the proc
+// fields to the client for splats).
+function rollPlayerAttack(attackerProfile, defenderProfile, useSpecial = false, levelOverride = null, deflectPvp = false) {
+  const r = rollHitDetail(attackerProfile, defenderProfile, useSpecial, levelOverride, deflectPvp);
+  return { dmg: r.dmg, connected: r.connected, outcome: r.outcome, bonusDmg: r.bonusDmg, deflected: r.deflected, power: r.power, notes: [] };
 }
 
 // ---------- Stage 19: attack styles (melee / ranged / magic) ----------
@@ -2038,10 +2187,11 @@ function firstArrowStack(p) {
 // equalisation (DUEL_LEVEL) and covers Ranged/Magic too.
 function styleHitChance(attackerProfile, defenderProfile, skill, useSpecial = false, levelOverride = null) {
   const s = STYLES[attackerProfile.style] || STYLES.accurate;
+  const dst = STYLES[defenderProfile.style] || STYLES.accurate;
   const aLv = levelOverride == null ? levelForXp((attackerProfile.xp && attackerProfile.xp[skill]) || 0) : levelOverride;
   const dLv = levelOverride == null ? levelForXp((defenderProfile.xp && defenderProfile.xp.defence) || 0) : levelOverride;
   const atkRoll = (aLv + (s.atkBoost || 0) + 8) * (64 + weaponAccPoints(attackerProfile)) * ACC_BALANCE;
-  const defRoll = (dLv + 8) * 64;
+  const defRoll = (dLv + (dst.defBoost || 0) + 8) * 64; // Stage 27: defender style boost, as in hitChance
   let chance = atkRoll > defRoll
     ? 1 - (defRoll + 2) / (2 * (atkRoll + 1))
     : atkRoll / (2 * (defRoll + 1));
@@ -2066,13 +2216,12 @@ function styleHitChance(attackerProfile, defenderProfile, skill, useSpecial = fa
 //   Both: the defender's style block and worn armour reduction
 //     apply exactly as they do to a melee swing, and Dragon Slash
 //     multiplies the max hit by 1.5 as it does for melee.
-function rollStyleAttack(attackerProfile, defenderProfile, useSpecial = false, levelOverride = null) {
+function rollStyleAttack(attackerProfile, defenderProfile, useSpecial = false, levelOverride = null, deflectPvp = false) {
   const style = attackStyleOf(attackerProfile);
   if (style === 'melee') {
-    const r = rollPlayerAttack(attackerProfile, defenderProfile, useSpecial, levelOverride);
+    const r = rollPlayerAttack(attackerProfile, defenderProfile, useSpecial, levelOverride, deflectPvp);
     return { ...r, style };
   }
-  const dst = STYLES[defenderProfile.style] || STYLES.accurate;
   const s = STYLES[attackerProfile.style] || STYLES.accurate;
   if (style === 'ranged') {
     const stack = firstArrowStack(attackerProfile);
@@ -2081,19 +2230,34 @@ function rollStyleAttack(attackerProfile, defenderProfile, useSpecial = false, l
     const arrowDef = ITEMS[arrowId];
     removeStacks(attackerProfile.backpack, arrowId, 1); // one arrow per shot, hit or miss
     const connected = Math.random() <= styleHitChance(attackerProfile, defenderProfile, 'ranged', useSpecial, levelOverride);
-    if (!connected) return { dmg: 0, connected: false, outcome: 'miss', notes: [], style, ammoUsed: arrowId };
-    if (dst.block && Math.random() < dst.block) return { dmg: 0, connected: true, outcome: 'blocked', notes: [], style, ammoUsed: arrowId };
+    if (!connected) return { dmg: 0, connected: false, outcome: 'miss', notes: [], style, ammoUsed: arrowId, bonusDmg: 0, deflected: 0, power: false };
+    // Stage 27: same resolution order as the melee branch — rolled
+    // damage, Aggressive power proc, Deflect (PvP), Defensive proc,
+    // armour; the Accurate bonus lands in full as bonusDmg.
     const lvl = levelOverride == null ? levelForXp(attackerProfile.xp.ranged || 0) : levelOverride;
-    let max = 6 + Math.floor((lvl + (s.strBoost || 0) - 1) / 3) + (arrowDef ? arrowDef.strBonus || 0 : 0);
+    const normalMax = 6 + Math.floor((lvl + (s.strBoost || 0) - 1) / 3) + (arrowDef ? arrowDef.strBonus || 0 : 0);
+    let max = normalMax;
     if (useSpecial) max = Math.floor(max * 1.5);
-    const raw = 1 + Math.floor(Math.random() * max);
+    let raw = 1 + Math.floor(Math.random() * max);
+    let power = false;
+    const powBonus = procAggressiveBonus(attackerProfile, normalMax);
+    if (powBonus > 0) { raw += powBonus; power = true; }
+    let deflected = 0;
+    if (deflectPvp) {
+      const dfl = pvpDeflect(defenderProfile, 'ranged', raw);
+      raw = dfl.through; deflected = dfl.deflected;
+    }
+    if (Math.random() < boostChance(defenderProfile.style, 'defensive')) {
+      return { dmg: 0, connected: true, outcome: 'blocked', notes: [], style, ammoUsed: arrowId, bonusDmg: 0, deflected, power };
+    }
     const dmg = Math.floor(raw * (1 - armourReduction(defenderProfile)));
-    return { dmg, connected: true, outcome: dmg > 0 ? 'hit' : 'blocked', notes: [], style, ammoUsed: arrowId };
+    const bonusDmg = procAccurateBonus(attackerProfile, normalMax);
+    return { dmg, connected: true, outcome: (dmg + bonusDmg) > 0 ? 'hit' : 'blocked', notes: [], style, ammoUsed: arrowId, bonusDmg, deflected, power };
   }
   // magic — the attacker's selected spell, cast through the shared
   // resolver below (Stage 24 extracted it so placed-button casts
   // resolve with exactly the same machinery).
-  return rollMagicCast(attackerProfile, defenderProfile, spellOf(attackerProfile), useSpecial, levelOverride);
+  return rollMagicCast(attackerProfile, defenderProfile, spellOf(attackerProfile), useSpecial, levelOverride, deflectPvp);
 }
 
 // Stage 24: resolve ONE magic cast of a CHOSEN spell. This is the
@@ -2105,9 +2269,12 @@ function rollStyleAttack(attackerProfile, defenderProfile, useSpecial = false, l
 // CONNECTS (lands and is not blocked) reports froze:true so the
 // caller roots the target for FREEZE_MS — a miss or a block
 // consumes the runes and does nothing, like Derek's brief says.
-function rollMagicCast(attackerProfile, defenderProfile, spell, useSpecial = false, levelOverride = null) {
+// Stage 27: the block is now the defender's Defensive proc chance
+// (boostChance), and duel call sites pass deflectPvp so a damage
+// spell is Deflect-prayed (PvP rule) before the block roll; casts
+// themselves never proc (no bonusDmg / power off a spell).
+function rollMagicCast(attackerProfile, defenderProfile, spell, useSpecial = false, levelOverride = null, deflectPvp = false) {
   const style = 'magic';
-  const dst = STYLES[defenderProfile.style] || STYLES.accurate;
   const s = STYLES[attackerProfile.style] || STYLES.accurate;
   const mLvl = levelForXp((attackerProfile.xp && attackerProfile.xp.magic) || 0);
   if (mLvl < spell.level) return { refused: `You need Magic level ${spell.level} to cast ${spell.name}.`, style, spell: spell.id };
@@ -2117,15 +2284,31 @@ function rollMagicCast(attackerProfile, defenderProfile, spell, useSpecial = fal
     return { refused: `You don't have the runes for ${spell.name}.`, style, spell: spell.id };
   }
   const connected = Math.random() <= styleHitChance(attackerProfile, defenderProfile, 'magic', useSpecial, levelOverride);
-  if (!connected) return { dmg: 0, connected: false, outcome: 'miss', notes: [], style, spell: spell.id };
-  if (dst.block && Math.random() < dst.block) return { dmg: 0, connected: true, outcome: 'blocked', notes: [], style, spell: spell.id };
-  if (spell.id === 'freeze') return { dmg: 0, connected: true, outcome: 'hit', froze: true, notes: [], style, spell: spell.id };
+  if (!connected) return { dmg: 0, connected: false, outcome: 'miss', notes: [], style, spell: spell.id, bonusDmg: 0, deflected: 0, power: false };
+  // Stage 27: casts do NOT proc (the app's casts never roll the
+  // style boosts — no power hits, no bonus hits off a spell), but
+  // the defender's Defensive proc can still stop a cast outright
+  // (Stage 19's rule, at the new 25% / 12% chances), and in a duel
+  // the defender's Deflect Magic prays off its PvP share first
+  // (prayer before the style block, as everywhere). Freeze has no
+  // damage to deflect: the prayer check inside pvpDeflect no-ops
+  // at 0 damage, so a connected, unblocked Freeze still roots.
+  if (spell.id === 'freeze') {
+    if (Math.random() < boostChance(defenderProfile.style, 'defensive')) return { dmg: 0, connected: true, outcome: 'blocked', notes: [], style, spell: spell.id, bonusDmg: 0, deflected: 0, power: false };
+    return { dmg: 0, connected: true, outcome: 'hit', froze: true, notes: [], style, spell: spell.id, bonusDmg: 0, deflected: 0, power: false };
+  }
   const lvl = levelOverride == null ? mLvl : levelOverride;
   let max = spell.max + Math.floor((lvl + (s.strBoost || 0) - 1) / 3);
   if (useSpecial) max = Math.floor(max * 1.5);
-  const raw = 1 + Math.floor(Math.random() * max);
+  let raw = 1 + Math.floor(Math.random() * max);
+  let deflected = 0;
+  if (deflectPvp) {
+    const dfl = pvpDeflect(defenderProfile, 'magic', raw);
+    raw = dfl.through; deflected = dfl.deflected;
+  }
+  if (Math.random() < boostChance(defenderProfile.style, 'defensive')) return { dmg: 0, connected: true, outcome: 'blocked', notes: [], style, spell: spell.id, bonusDmg: 0, deflected, power: false };
   const dmg = Math.floor(raw * (1 - armourReduction(defenderProfile)));
-  return { dmg, connected: true, outcome: dmg > 0 ? 'hit' : 'blocked', notes: [], style, spell: spell.id };
+  return { dmg, connected: true, outcome: dmg > 0 ? 'hit' : 'blocked', notes: [], style, spell: spell.id, bonusDmg: 0, deflected, power: false };
 }
 // Combat XP for one resolved swing, by attack style. Melee is
 // combatXpGains unchanged. Ranged parallels it: dmg*4 Ranged +
@@ -2398,7 +2581,13 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
       // fighters — trained Attack/Strength/Defence do not apply in
       // a duel; Stage 19 extends the equalisation to Ranged/Magic.
       // Weapons, armour, styles, specials and XP stay personal.
-      const res = rollStyleAttack(attProf, defProf, useSpec, DUEL_LEVEL);
+      // Stage 27: duel swings resolve with the PvP Deflect rule —
+      // a fighter's active prayer prays off 40% of an incoming
+      // swing and bounces a quarter of that back (res.deflected,
+      // applied to the ATTACKER below). The Accurate proc's bonus
+      // hit rides as res.bonusDmg, part of the damage the swing
+      // deals and of its XP.
+      const res = rollStyleAttack(attProf, defProf, useSpec, DUEL_LEVEL, true);
       if (res.refused) return { swung: false, note: refuseNote(res.refused) };
       duel.nextSwingAt[attKey] = tick + swingSpeed(res.style);
       duel.specialQueued[attKey] = false;
@@ -2406,15 +2595,21 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
       // Combat XP from damage dealt, per attack style (Stage 19:
       // granted here for every style — the endDuel comment and the
       // free-play end sheet have always said duel XP counts).
-      addXp(attKey, swingXpGains(attProf.style, res.style, res.dmg, res.spell));
+      // Stage 27: the Accurate bonus hit earns XP like the app's
+      // awardHitXp(extra) — on the swing's total damage.
+      const totalDmg = res.dmg + (res.bonusDmg || 0);
+      addXp(attKey, swingXpGains(attProf.style, res.style, totalDmg, res.spell));
       // Special energy charges on landed (damaging) hits.
-      if (res.dmg > 0) attProf.specialEnergy = Math.min(100, attProf.specialEnergy + SPECIAL_CHARGE_PER_HIT);
-      return { swung: true, dmg: res.dmg, outcome: res.outcome, special: useSpec, notes: res.notes || [] };
+      if (totalDmg > 0) attProf.specialEnergy = Math.min(100, attProf.specialEnergy + SPECIAL_CHARGE_PER_HIT);
+      return { swung: true, dmg: res.dmg, bonus: res.bonusDmg || 0, deflected: res.deflected || 0, power: !!res.power, outcome: res.outcome, special: useSpec, notes: res.notes || [] };
     };
     const aSw = trySwing(aKey, a, b, outA, styleA);
     const bSw = trySwing(bKey, b, a, outB, styleB);
-    const dmgToB = aSw.swung ? aSw.dmg : 0;
-    const dmgToA = bSw.swung ? bSw.dmg : 0;
+    // Stage 27: a fighter's incoming damage is the opponent's swing
+    // total (main + Accurate bonus) PLUS whatever their OWN swing
+    // had deflected back onto them by the opponent's prayer.
+    const dmgToB = (aSw.swung ? aSw.dmg + aSw.bonus : 0) + (bSw.swung ? bSw.deflected : 0);
+    const dmgToA = (bSw.swung ? bSw.dmg + bSw.bonus : 0) + (aSw.swung ? aSw.deflected : 0);
     duel.hp[bKey] = Math.max(0, duel.hp[bKey] - dmgToB);
     duel.hp[aKey] = Math.max(0, duel.hp[aKey] - dmgToA);
     for (const k of [aKey, bKey]) {
@@ -2429,6 +2624,16 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
         type: 'duel_tick', hpYou: duel.hp[k], hpOpponent: duel.hp[k === aKey ? bKey : aKey],
         youHit: own.swung ? own.dmg : null,
         oppHit: opp.swung ? opp.dmg : null,
+        // Stage 27: proc / prayer fields — youBonus/oppBonus are the
+        // Accurate bonus hits (own swing / opponent's swing);
+        // youDeflected is the damage MY swing bounced back onto ME
+        // off the opponent's Deflect prayer; oppDeflected is the
+        // damage the OPPONENT's swing bounced back onto THEM off
+        // mine. null when that side never swung.
+        youBonus: own.swung ? own.bonus : null,
+        oppBonus: opp.swung ? opp.bonus : null,
+        youDeflected: own.swung ? own.deflected : null,
+        oppDeflected: opp.swung ? opp.deflected : null,
         youOutcome: own.swung ? own.outcome : null,
         oppOutcome: opp.swung ? opp.outcome : null,
         youSpecial: own.swung ? own.special : false, oppSpecial: opp.swung ? opp.special : false,
@@ -2596,8 +2801,14 @@ function modDuelTick(fight) {
   }
   const notes = [];
   let youHit = null, youOutcome = null, youSpecial = false;
+  // Stage 27: the player's Accurate bonus on the mod, and the damage
+  // the player's Deflect prayer bounces back onto the mod.
+  let youBonus = 0, npcDeflected = 0;
   if (fight.engaged && tick >= fight.nextSwingYou && !playerOut) {
-    const res = rollStyleAttack(profile, fight.modProfile, fight.specialQueued, DUEL_LEVEL);
+    // Stage 27: the PvP Deflect flag is passed for symmetry — the
+    // mod never prays, so res.deflected is always 0 here; the
+    // Accurate bonus rides into the mod's HP and the XP base.
+    const res = rollStyleAttack(profile, fight.modProfile, fight.specialQueued, DUEL_LEVEL, true);
     if (res.refused) {
       // Out of arrows / runes: nothing consumed, timer and queued
       // special untouched — the refusal note is throttled like the
@@ -2607,25 +2818,42 @@ function modDuelTick(fight) {
       fight.nextSwingYou = tick + swingSpeed(res.style);
       youSpecial = fight.specialQueued; fight.specialQueued = false;
       if (youSpecial) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
-      youHit = res.dmg; youOutcome = res.outcome;
+      youHit = res.dmg; youOutcome = res.outcome; youBonus = res.bonusDmg || 0;
       if (res.notes && res.notes.length) notes.push(...res.notes);
       // Combat XP from damage dealt, per attack style — duels
       // grant swing XP for every style (Stage 19), mod duels too.
-      addXp(fight.playerKey, swingXpGains(profile.style, res.style, res.dmg, res.spell));
-      if (res.dmg > 0) profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
-      fight.hpNpc -= res.dmg;
+      addXp(fight.playerKey, swingXpGains(profile.style, res.style, res.dmg + youBonus, res.spell));
+      if (res.dmg + youBonus > 0) profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
+      fight.hpNpc -= res.dmg + youBonus;
     }
   }
   let npcHit = null, npcOutcome = null;
   if (tick >= fight.nextSwingNpc && !npcOut) {
     fight.nextSwingNpc = tick + MELEE_SPEED;
-    const res = rollStyleAttack(fight.modProfile, profile, false, DUEL_LEVEL);
-    if (!res.refused) { npcHit = res.dmg; npcOutcome = res.outcome; fight.hpYou -= res.dmg; }
+    // Stage 27: the mod's swing resolves against the player's
+    // Deflect prayer by the PvP rule (the shared roll applies it —
+    // res.dmg is already the prayed-down amount) and whatever the
+    // prayer bounced back (res.deflected) comes off the mod's HP.
+    // The mod's own Aggressive power proc rides inside res.dmg;
+    // its Accurate bonus is 0 (an Aggressive fighter never rolls
+    // the Accurate boost).
+    const res = rollStyleAttack(fight.modProfile, profile, false, DUEL_LEVEL, true);
+    if (!res.refused) {
+      npcHit = res.dmg; npcOutcome = res.outcome; npcDeflected = res.deflected || 0;
+      fight.hpYou -= res.dmg + (res.bonusDmg || 0);
+      fight.hpNpc -= npcDeflected;
+    }
   }
   send(sess.ws, {
     type: 'mod_duel', phase: 'tick', npcId: def.id,
     hpYou: Math.max(0, fight.hpYou), maxHpYou: 99, hpNpc: Math.max(0, fight.hpNpc), maxHpNpc: 99,
     youHit, npcHit, youOutcome, npcOutcome, youSpecial,
+    // Stage 27: youBonus = my Accurate bonus on the mod;
+    // npcDeflected = damage my Deflect prayer bounced back onto
+    // the mod; npcBonus / youDeflected are structurally 0 (the mod
+    // is Aggressive and never prays) but ride along so the client
+    // renders mod duels exactly like player duels.
+    youBonus, npcBonus: 0, youDeflected: 0, npcDeflected,
     energyYou: profile.specialEnergy, countdownLeft,
     ...(playerOut ? { closing: true, moveTo: approachPoint(sess.x, sess.y, def.x, def.y) } : {}),
     note: notes.length ? notes.join(' ') : undefined,
@@ -2848,6 +3076,7 @@ function npcTick(fight) {
   let useSpec = false;
   let youHit = null; // null: the player's swing is not due this tick
   let youOutcome = null; // the player's swing outcome (Stage 12 clarity)
+  let youBonus = 0; // Stage 27: the player's Accurate bonus hit this tick
   // Stage 19: a melee creature still out of its own reach keeps
   // closing during fighting ticks (a ranging/maging player keeps
   // shooting it as it comes). Ranged creatures hold their ground.
@@ -2869,11 +3098,13 @@ function npcTick(fight) {
       useSpec = fight.specialQueued; fight.specialQueued = false;
       if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
       youHit = atkRes.dmg;
+      youBonus = atkRes.bonusDmg || 0;
       youOutcome = atkRes.outcome;
       tickNotes.push(...atkRes.notes);
       // Combat XP per attack style (Magic's flat cast XP is owed
       // even on a miss; melee/ranged gains at 0 damage are zero).
-      addXp(fight.playerKey, swingXpGains(profile.style, atkRes.style, atkRes.dmg, atkRes.spell));
+      // Stage 27: the Accurate bonus hit earns XP on the total.
+      addXp(fight.playerKey, swingXpGains(profile.style, atkRes.style, atkRes.dmg + youBonus, atkRes.spell));
       // Stage 12 retaliate unlock: the creature's swings stay
       // locked until the player's first CONNECTED swing lands on
       // it — then it unlocks, its first swing one of ITS
@@ -2886,33 +3117,37 @@ function npcTick(fight) {
     }
   }
   // Creature swing (only once unlocked, only on its due ticks, and
-  // only inside its own reach): the matching Protect prayer FULLY
-  // blocks it (Derek's OSRS spec — the check below compares the
-  // creature's attackType, so Melee blocks goblins, Magic blocks
-  // wizards, Missiles blocks rangers); otherwise the duel rules
-  // apply — the style's block chance (Stage 10: Defensive 20% /
-  // Controlled 7%, from the STYLES table), then the creature's
-  // accuracy, then the player's worn armour reduction. Stage 19:
-  // ranged creatures swing on a 3-tick cadence; melee keep 4.
+  // only inside its own reach): Stage 27 resolves it in the app
+  // version's order — the creature's accuracy, its rolled damage,
+  // the player's Deflect prayer (a matching prayer — Melee answers
+  // goblins, Magic wizards, Missiles rangers — stops the hit
+  // ENTIRELY and bounces max(1, ceil(raw x 0.25)) back onto the
+  // creature; it can kill and awards no XP), then the player's
+  // Defensive style proc (25% / Controlled 12% — styleBlockChance),
+  // then the player's worn armour reduction. Stage 19: ranged
+  // creatures swing on a 3-tick cadence; melee keep 4.
   let npcHit = null; // null: the creature never swung this tick (locked, out of reach, or swing not due)
   let npcOutcome = null; // the creature's swing outcome (Stage 12 clarity)
+  let npcDeflected = 0; // Stage 27: damage the player's prayer bounced back onto the creature this tick
   const npcCadence = npc.attackType === 'melee' ? MELEE_SPEED : 3;
   const npcOutNow = Math.hypot(sess.x - npc.x, sess.y - npc.y) > npcReach;
   if (fight.npcUnlocked && !npcOutNow && tick >= (fight.nextSwingNpc || MELEE_SPEED)) {
     fight.nextSwingNpc = tick + npcCadence;
     npcHit = 0;
-    if (profile.activePrayer === npc.attackType) { npcHit = 0; npcOutcome = 'blocked'; }
-    else if (STYLES[profile.style] && STYLES[profile.style].block && Math.random() < STYLES[profile.style].block) {
-      npcHit = 0;
-      npcOutcome = 'blocked';
-      tickNotes.push(`Blocked by your ${cap(profile.style)} style!`);
-    }
-    else if (Math.random() <= npc.acc) {
+    if (Math.random() > npc.acc) npcOutcome = 'miss';
+    else {
       const raw = 1 + Math.floor(Math.random() * npc.maxHit);
-      npcHit = Math.floor(raw * (1 - armourReduction(profile)));
-      npcOutcome = npcHit > 0 ? 'hit' : 'blocked'; // connected, but armour absorbed the whole blow
+      npcDeflected = monsterDeflect(profile, npc.attackType, raw);
+      if (npcDeflected > 0) npcOutcome = 'blocked'; // Deflect: nothing gets through, the creature takes the bounce
+      else if (Math.random() < styleBlockChance(profile)) {
+        npcOutcome = 'blocked';
+        tickNotes.push(`Blocked by your ${cap(profile.style)} style!`);
+      }
+      else {
+        npcHit = Math.floor(raw * (1 - armourReduction(profile)));
+        npcOutcome = npcHit > 0 ? 'hit' : 'blocked'; // connected, but armour absorbed the whole blow
+      }
     }
-    else npcOutcome = 'miss';
   }
   // Stage 6: a Tree Guardian fighting beside its owner sometimes
   // takes the goblin's hit instead — only a hit that actually got
@@ -2924,7 +3159,7 @@ function npcTick(fight) {
     tickNotes.push(`🌳 Your ${ally.name} takes the hit for you!`);
     if (ally.hp <= 0) killAlly(ally);
   }
-  npc.hp -= youHit || 0;
+  npc.hp -= (youHit || 0) + youBonus + npcDeflected;
   // ... and the guardian swings at the goblin itself every 2nd
   // fighting tick (its own cadence, unchanged by Stage 12). Its
   // damage grants no XP.
@@ -2934,7 +3169,7 @@ function npcTick(fight) {
     tickNotes.push(`🌳 ${ally.name} hits for ${allyDmg}!`);
   }
   fight.hpYou -= npcHit || 0;
-  if (youHit > 0) profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
+  if ((youHit || 0) + youBonus > 0) profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
   // (Combat XP moved into the swing resolution above: Stage 19's
   // dispatcher knows the attack style, and Magic's flat cast XP is
   // owed even on a miss. Melee behaviour is unchanged — the old
@@ -2945,6 +3180,9 @@ function npcTick(fight) {
     hpYou: Math.max(0, fight.hpYou), maxHpYou: fight.maxHpYou,
     hpNpc: Math.max(0, npc.hp), maxHpNpc: npc.maxHp,
     youHit, npcHit, youOutcome, npcOutcome, youSpecial: useSpec, energyYou: profile.specialEnergy,
+    // Stage 27: youBonus = my Accurate bonus on the creature;
+    // npcDeflected = damage my Deflect prayer bounced back onto it.
+    youBonus, npcDeflected,
     note: tickNotes.length ? tickNotes.join(' ') : undefined,
     npcFrozenUntil: (npc.frozenUntil && npc.frozenUntil > Date.now()) ? npc.frozenUntil : 0, // Stage 24
   });
@@ -3009,10 +3247,11 @@ setInterval(() => {
 // Fight Caves': ~100 HP. Cadence since Stage 12 is the shared OSRS
 // swing timer: every brother swings once per MELEE_SPEED ticks
 // (a simplification — in OSRS their weapon speeds vary). A mid-level
-// player (HP pool 30-60) with food and the right Protect prayer wins
+// player (HP pool 30-60) with food and the right Deflect prayer wins
 // comfortably; without prayer the incoming damage is real but
 // survivable on food. Mechanics per Derek's 2026-11-13 spec, exactly:
-//   - The matching Protect prayer FULLY prevents a brother's damage
+//   - The matching Deflect prayer stops a brother's hit entirely
+//     and bounces a quarter of the rolled damage back onto him
 //     (Melee for Dharok/Guthan/Torag/Verac, Magic for Ahrim, Missiles
 //     for Karil). Verac has NO prayer bypass — Derek removed it.
 //   - Dharok's max hit scales with his missing health: 8 at full HP
@@ -3130,6 +3369,7 @@ function barrowsTick(fight) {
   let useSpec = false;
   let youHit = null; // null when the player never swung (closing, or the swing is not due yet)
   let youOutcome = null; // the player's swing outcome (Stage 12 clarity)
+  let youBonus = 0; // Stage 27: the player's Accurate bonus hit this tick
   // Stage 19: the player's swing is gated on the reach of THEIR
   // wielded style, not on melee adjacency — a bow or staff fights
   // a brother from up to NPC_RANGE away (the fight itself still
@@ -3157,11 +3397,12 @@ function barrowsTick(fight) {
         useSpec = fight.specialQueued; fight.specialQueued = false;
         if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
         youHit = atkRes.dmg;
+        youBonus = atkRes.bonusDmg || 0;
         youOutcome = atkRes.outcome;
         notes.push(...atkRes.notes);
-        fight.hpNpc -= youHit;
-        addXp(fight.playerKey, swingXpGains(profile.style, atkRes.style, atkRes.dmg, atkRes.spell));
-        if (youHit > 0) profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
+        fight.hpNpc -= youHit + youBonus;
+        addXp(fight.playerKey, swingXpGains(profile.style, atkRes.style, atkRes.dmg + youBonus, atkRes.spell));
+        if (youHit + youBonus > 0) profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
         // Stage 12 retaliate unlock: the brother's swings stay
         // locked until the player's first CONNECTED swing lands
         // on him — then he unlocks, his first swing one
@@ -3206,42 +3447,51 @@ function barrowsTick(fight) {
   const brotherGated = closing && def.attackType === 'melee';
   let npcHit = null;
   let npcOutcome = null; // the brother's swing outcome (Stage 12 clarity)
+  let npcDeflected = 0; // Stage 27: damage the player's Deflect prayer bounces back onto the brother this tick
   if (!brotherGated && fight.npcUnlocked && fight.tickCount >= (fight.nextSwingNpc || MELEE_SPEED)) {
     fight.nextSwingNpc = fight.tickCount + MELEE_SPEED;
     npcHit = 0;
-    if (profile.activePrayer === def.attackType) {
-      npcHit = 0; // the matching Protect prayer FULLY prevents it — Verac included, no bypass
-      npcOutcome = 'blocked';
-    } else {
-      const swings = def.id === 'torag' ? 2 : 1; // Torag's two hammers: two independent rolls
-      let styleBlocked = false;
-      let anyConnected = false; // a hammer was on target (even if armour absorbed it whole)
-      for (let sIdx = 0; sIdx < swings; sIdx++) {
-        if (STYLES[profile.style] && STYLES[profile.style].block && Math.random() < STYLES[profile.style].block) { styleBlocked = true; continue; }
-        if (Math.random() > def.acc) continue;
-        anyConnected = true;
-        let maxHit = def.maxHit;
-        // Dharok: +150% of base spread over his missing health (8 -> 20).
-        if (def.id === 'dharok') maxHit = Math.round(def.maxHit * (1 + 1.5 * (1 - Math.max(0, fight.hpNpc) / fight.maxHpNpc)));
-        const raw = 1 + Math.floor(Math.random() * maxHit);
-        npcHit += Math.floor(raw * (1 - armourReduction(profile)));
-      }
-      // One outcome for the whole swing: damage through = 'hit';
-      // on target but fully stopped (style block / armour) =
-      // 'blocked'; every hammer off target = 'miss'.
-      npcOutcome = npcHit > 0 ? 'hit' : (styleBlocked || anyConnected) ? 'blocked' : 'miss';
-      if (styleBlocked && npcHit === 0 && swings > 0) notes.push(`Blocked by your ${cap(profile.style)} style!`);
-      // Guthan's swirl: a connecting hit (damage got through) has a
-      // 25% chance to heal him for what he dealt — never from the dead.
-      if (def.id === 'guthan' && npcHit > 0 && fight.hpNpc > 0 && Math.random() < 0.25) {
-        fight.hpNpc = Math.min(fight.maxHpNpc, fight.hpNpc + npcHit);
-        notes.push(`Guthan's warspear glows green — he heals for ${npcHit}!`);
-      }
+    // Stage 27: each hammer resolves in the app version's order —
+    // accuracy, the rolled damage (Dharok's rage scaling included),
+    // the player's Deflect prayer, the Defensive style proc, worn
+    // armour. A matching Deflect stops that hammer ENTIRELY and
+    // bounces max(1, ceil(raw x 0.25)) back onto the brother — it
+    // can kill him, and a deflected hit never heals Guthan (his
+    // swirl below keys off npcHit > 0). Verac is answered like
+    // every other brother — NO bypass: Derek's standing online
+    // ruling, and the app's Barrows has no Verac exception either.
+    const swings = def.id === 'torag' ? 2 : 1; // Torag's two hammers: two independent rolls
+    let styleBlocked = false;
+    let anyConnected = false; // a hammer was on target (even if armour absorbed it whole)
+    let anyDeflected = false;
+    for (let sIdx = 0; sIdx < swings; sIdx++) {
+      if (Math.random() > def.acc) continue;
+      anyConnected = true;
+      let maxHit = def.maxHit;
+      // Dharok: +150% of base spread over his missing health (8 -> 20).
+      if (def.id === 'dharok') maxHit = Math.round(def.maxHit * (1 + 1.5 * (1 - Math.max(0, fight.hpNpc) / fight.maxHpNpc)));
+      const raw = 1 + Math.floor(Math.random() * maxHit);
+      const dfl = monsterDeflect(profile, def.attackType, raw);
+      if (dfl > 0) { npcDeflected += dfl; anyDeflected = true; continue; }
+      if (Math.random() < styleBlockChance(profile)) { styleBlocked = true; continue; }
+      npcHit += Math.floor(raw * (1 - armourReduction(profile)));
+    }
+    // One outcome for the whole swing: damage through = 'hit';
+    // on target but fully stopped (prayer / style block / armour)
+    // = 'blocked'; every hammer off target = 'miss'.
+    npcOutcome = npcHit > 0 ? 'hit' : (styleBlocked || anyConnected || anyDeflected) ? 'blocked' : 'miss';
+    if (styleBlocked && npcHit === 0 && swings > 0) notes.push(`Blocked by your ${cap(profile.style)} style!`);
+    fight.hpNpc -= npcDeflected;
+    // Guthan's swirl: a connecting hit (damage got through) has a
+    // 25% chance to heal him for what he dealt — never from the dead.
+    if (def.id === 'guthan' && npcHit > 0 && fight.hpNpc > 0 && Math.random() < 0.25) {
+      fight.hpNpc = Math.min(fight.maxHpNpc, fight.hpNpc + npcHit);
+      notes.push(`Guthan's warspear glows green — he heals for ${npcHit}!`);
     }
   }
   // Stage 6: the guardian sometimes takes a connecting brother hit
-  // instead — only a hit that actually got through (the matching
-  // Protect prayer leaves npcHit at 0, and there is nothing to take).
+  // instead — only a hit that actually got through (a Deflect-prayed
+  // hit leaves npcHit at 0, and there is nothing to take).
   // (Guthan's heal above keys off the rolled hit, redirect or not.)
   if (ally && npcHit > 0 && Math.random() < 0.35) {
     ally.hp -= npcHit;
@@ -3256,6 +3506,9 @@ function barrowsTick(fight) {
     hpYou: Math.max(0, fight.hpYou), maxHpYou: fight.maxHpYou,
     hpNpc: Math.max(0, fight.hpNpc), maxHpNpc: fight.maxHpNpc,
     youHit, npcHit, youOutcome, npcOutcome, youSpecial: useSpec, energyYou: profile.specialEnergy,
+    // Stage 27: youBonus = my Accurate bonus on the brother;
+    // npcDeflected = damage my Deflect prayer bounced back onto him.
+    youBonus, npcDeflected,
     note: notes.length ? notes.join(' ') : undefined,
     npcFrozenUntil: (fight.brotherFrozenUntil && fight.brotherFrozenUntil > Date.now()) ? fight.brotherFrozenUntil : 0, // Stage 24: brothers never move, so Freeze is visual here — but tracked and broadcast like everywhere else
     // Stage 8: on a closing tick, where to walk to reach the brother.
@@ -3329,24 +3582,28 @@ function rollBarrowsLoot(profile, killCount) {
 // Instanced per player: every runner gets their own monster roster
 // inside the shared 'fightcaves' area (other players in the area just
 // see each other walk around). Combat reuses the goblin engine's rolls
-// (rollHit vs NPC_DEFENDER, combatXpGains) and the Stage 1 prayer rule:
-// a Protect prayer FULLY blocks a monster hit of the matching attack
-// type. The player's HP pool is their Hitpoints level, like NPC fights.
+// (rollHit vs NPC_DEFENDER, combatXpGains) and the Stage 1 prayer rule
+// as Stage 27 restated it: a Deflect prayer stops a monster hit of
+// the matching attack type entirely and bounces a quarter of the
+// rolled damage back onto the monster. The player's HP pool is
+// their Hitpoints level, like NPC fights.
 // Runs are session-only state; the RECORDS live on the profile (fc).
 // Monster tuning — the combat levels are Derek's exact table; HP, max
 // hit, accuracy and attack cadence (in 0.6s ticks) are this port's
 // tuning, kept in line with the Muse game:
 //   Tz-Kih 22: on a CONNECTING hit it also drains 2 prayer points —
-//     OSRS-style, Protect from Melee blocks the damage but not the
-//     drain; only a Defensive-style block or an outright miss avoids it.
+//     OSRS-style, Deflect from Melee turns the damage back on the
+//     Tz-Kih but not the drain; only a Defensive-style proc block
+//     or an outright miss avoids it.
 //   Tz-Kek 45: splits into two small Tz-Kek (22) when it dies.
 //   Yt-MejKot 180: on its attack tick, a 25% chance to heal ITSELF for
 //     10 HP instead of attacking (a simplification of OSRS behaviour).
 //   TzTok-Jad 702: attacks strictly alternate missiles / magic (first
 //     one random). Each attack is TELEGRAPHED ({type:'fc_telegraph'})
 //     one tick before it lands, and the pending hit resolves against
-//     the prayer active AT RESOLUTION TIME: matching Protect = 0
-//     damage; wrong / no prayer = acc 0.75, max hit 30, armour applies.
+//     the prayer active AT RESOLUTION TIME: matching Deflect = 0
+//     damage to the player and a quarter of the rolled hit back
+//     into Jad; wrong / no prayer = acc 0.75, max hit 30, armour applies.
 //   Yt-HurKot 108: never attacks; heals Jad for 8 HP every 3 ticks.
 //     Exactly 4 spawn the first time Jad drops to half health or below.
 const FC_DEFS = {
@@ -3491,14 +3748,30 @@ function fcTick(run) {
 
   // 1) A telegraphed Jad hit lands FIRST (it was announced last tick, so
   // the player had a full tick to switch prayer). It resolves against
-  // the prayer active right now: matching Protect fully blocks it.
+  // the prayer active right now: Stage 27 — a matching Deflect prayer
+  // turns a CONNECTED hit back on Jad himself (see below); the wrong
+  // prayer (or none) eats the hit as always.
   if (run.jadPending) {
     const pending = run.jadPending;
     run.jadPending = null;
     const jad = run.monsters.get(pending.from);
     if (jad && jad.alive) {
       if (profile.activePrayer === pending.style) {
-        hitsTaken.push({ from: jad.id, kind: 'jad', dmg: 0, blocked: true });
+        // Deflect (the app version's jadDeflect): Jad's accuracy
+        // still rolls — a miss stays a miss — but a connected hit
+        // deals the PLAYER nothing and throws max(1, ceil(raw x
+        // 0.25)) back into Jad. It can kill him outright (the
+        // completion check below ends the run) and it can trip his
+        // half-health healers, exactly like a player's own hit.
+        let deflected = 0;
+        if (Math.random() <= jad.acc) {
+          const raw = 1 + Math.floor(Math.random() * jad.maxHit);
+          deflected = monsterDeflect(profile, pending.style, raw);
+          jad.hp -= deflected;
+          if (jad.hp <= 0) killFcMonster(run, jad);
+          else maybeSpawnFcHealers(run);
+        }
+        hitsTaken.push({ from: jad.id, kind: 'jad', dmg: 0, blocked: true, deflected });
       } else {
         let dmg = 0;
         if (Math.random() <= jad.acc) {
@@ -3532,6 +3805,7 @@ function fcTick(run) {
   // the old FC_RANGE reach for every style.
   let useSpec = false;
   let youHit = 0;
+  let youBonus = 0; // Stage 27: the player's Accurate bonus hit this tick
   let fcClosing = false;
   if (target && !run.betweenWaves) {
     const tDist = Math.hypot(sess.x - target.x, sess.y - target.y);
@@ -3553,11 +3827,14 @@ function fcTick(run) {
         useSpec = run.specialQueued; run.specialQueued = false;
         if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
         // Stage 10: the style's level boosts ride along on the swing.
+        // Stage 27: so does the Accurate bonus hit (youBonus) — it
+        // lands on the target and earns XP like the main hit.
         youHit = atkRes.dmg;
+        youBonus = atkRes.bonusDmg || 0;
         if (atkRes.notes.length) note = atkRes.notes.join(' ');
-        target.hp -= youHit;
-        addXp(run.playerKey, swingXpGains(profile.style, atkRes.style, atkRes.dmg, atkRes.spell));
-        if (youHit > 0) profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
+        target.hp -= youHit + youBonus;
+        addXp(run.playerKey, swingXpGains(profile.style, atkRes.style, atkRes.dmg + youBonus, atkRes.spell));
+        if (youHit + youBonus > 0) profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
         if (target.hp <= 0) killFcMonster(run, target);
         else if (target.kind === 'jad') maybeSpawnFcHealers(run);
       }
@@ -3631,19 +3908,33 @@ function fcTick(run) {
       if (!note) note = 'The Yt-MejKot heals itself!';
       continue;
     }
-    const styleBlocked = !!(STYLES[profile.style] && STYLES[profile.style].block && Math.random() < STYLES[profile.style].block);
-    if (styleBlocked) anyStyleBlock = true;
-    const prayerBlocked = profile.activePrayer === mon.attackType;
+    // Stage 27: the swing resolves in the app version's order —
+    // accuracy, the rolled damage, the player's Deflect prayer
+    // (a match stops the hit ENTIRELY and bounces max(1, ceil(raw
+    // x 0.25)) back onto the monster — it can kill, Tz-Kek splits
+    // included, and awards no XP), the Defensive style proc, worn
+    // armour. Tz-Kih drains prayer on any CONNECTING hit that is
+    // not style-blocked — through a Deflect prayer too (OSRS-style).
     let dmg = 0;
-    if (!styleBlocked && Math.random() <= mon.acc) {
-      // The hit connects. Tz-Kih drains prayer even through a Protect
-      // prayer (OSRS-style); the damage itself is fully blocked by it.
-      if (mon.kind === 'tzkih') profile.prayerPoints = Math.max(0, profile.prayerPoints - 2);
-      if (!prayerBlocked) {
-        const raw = 1 + Math.floor(Math.random() * mon.maxHit);
+    let deflected = 0;
+    let styleBlocked = false;
+    let prayerBlocked = false;
+    if (Math.random() <= mon.acc) {
+      const raw = 1 + Math.floor(Math.random() * mon.maxHit);
+      deflected = monsterDeflect(profile, mon.attackType, raw);
+      if (deflected > 0) {
+        prayerBlocked = true;
+        if (mon.kind === 'tzkih') profile.prayerPoints = Math.max(0, profile.prayerPoints - 2);
+        mon.hp -= deflected;
+        if (mon.hp <= 0) killFcMonster(run, mon);
+      } else if (Math.random() < styleBlockChance(profile)) {
+        styleBlocked = true;
+      } else {
+        if (mon.kind === 'tzkih') profile.prayerPoints = Math.max(0, profile.prayerPoints - 2);
         dmg = Math.floor(raw * (1 - armourReduction(profile)));
       }
     }
+    if (styleBlocked) anyStyleBlock = true;
     // Stage 6: the guardian sometimes takes a monster's hit instead.
     // Jad never reaches this loop — his telegraphed hits resolve in
     // step 1 and are NEVER redirected (the prayer game stays pure).
@@ -3655,7 +3946,7 @@ function fcTick(run) {
       dmg = 0;
     }
     run.hpYou -= dmg;
-    hitsTaken.push({ from: mon.id, kind: mon.kind, dmg, blocked: prayerBlocked || styleBlocked });
+    hitsTaken.push({ from: mon.id, kind: mon.kind, dmg, blocked: prayerBlocked || styleBlocked, ...(deflected > 0 ? { deflected } : {}) });
   }
 
   if (run.hpYou <= 0) { endFcRun(run, 'death'); return; }
@@ -3681,7 +3972,7 @@ function fcTick(run) {
     type: 'fc_tick', wave: run.wave,
     hpYou: Math.max(0, run.hpYou), maxHpYou: run.maxHpYou,
     targetId: run.targetId, targetHp: tgt ? Math.max(0, tgt.hp) : 0,
-    youHit, hitsTaken, energyYou: profile.specialEnergy,
+    youHit, youBonus, hitsTaken, energyYou: profile.specialEnergy,
     monsters: [...run.monsters.values()].filter((m) => m.alive).map((m) => ({ id: m.id, hp: Math.max(0, m.hp) })),
     note,
     // Stage 8: on a closing tick, where to walk to reach the target.
@@ -4015,7 +4306,7 @@ setInterval(() => {
   broadcast({ type: 'exchange_prices', goods: goodsList() });
 }, 6000);
 
-// Prayer drain: 1 point per 3 seconds while a Protect prayer is active
+// Prayer drain: 1 point per 3 seconds while a Deflect prayer is active
 // (1/3 point per 1s tick). At 0 the prayer switches itself off.
 setInterval(() => {
   let anyOff = false;
@@ -4909,7 +5200,7 @@ wss.on('connection', (ws, req) => {
       return sendProfile(key);
     }
 
-    // ----- Prayers (OSRS Protect: one at a time, tap toggles) -----
+    // ----- Prayers (Deflect since Stage 27: one at a time, tap toggles) -----
     if (m.type === 'prayer') {
       const want = m.prayer === null ? null : String(m.prayer || '');
       if (want !== null && !['melee', 'missiles', 'magic'].includes(want)) {
@@ -5045,20 +5336,30 @@ wss.on('connection', (ws, req) => {
           if (!oppSess || !oppProfile) return castFail('Your opponent is gone.');
           if (Math.hypot(me.x - oppSess.x, me.y - oppSess.y) > NPC_RANGE) return castFail('Too far away — walk closer.');
           if (spell.id === 'freeze' && alreadyFrozen(oppSess.frozenUntil, oppProfile.username)) return;
-          const res = rollMagicCast(profile, oppProfile, spell, false, DUEL_LEVEL);
+          // Stage 27: a duel cast resolves with the PvP Deflect
+          // rule — the opponent's Deflect Magic prays off 40% and
+          // bounces a quarter of that back onto the CASTER.
+          const res = rollMagicCast(profile, oppProfile, spell, false, DUEL_LEVEL, true);
           if (res.refused) return castFail(res.refused);
           finishCast(res);
           duel.hp[oppKey] = Math.max(0, duel.hp[oppKey] - res.dmg);
+          if (res.deflected) duel.hp[key] = Math.max(0, duel.hp[key] - res.deflected);
           let frozenUntil = 0;
           if (res.froze) {
             frozenUntil = Date.now() + FREEZE_MS;
             oppSess.frozenUntil = frozenUntil;
             broadcastState(); // the root rides the player snapshot to the arena
           }
-          const result = { type: 'cast_result', context: 'duel', spell: spell.id, targetId: oppProfile.username, targetName: oppProfile.username, outcome: res.outcome, dmg: res.dmg, froze: !!res.froze, frozenUntil, hpTarget: duel.hp[oppKey], maxHpTarget: 99 };
+          const result = { type: 'cast_result', context: 'duel', spell: spell.id, targetId: oppProfile.username, targetName: oppProfile.username, outcome: res.outcome, dmg: res.dmg, deflected: res.deflected || 0, hpYou: duel.hp[key], froze: !!res.froze, frozenUntil, hpTarget: duel.hp[oppKey], maxHpTarget: 99 };
           send(ws, result);
           send(oppSess.ws, { ...result, incoming: true, by: profile.username }); // the victim splats + toasts on their own screen
-          if (duel.hp[oppKey] <= 0) endDuel(duel, key, 'KO');
+          // Stage 27: a Deflect kill counts too — if the bounce
+          // dropped the caster, the opponent wins; if both pools
+          // hit 0 on one cast, the duel tick's coin-flip rule
+          // decides.
+          if (duel.hp[oppKey] <= 0 && duel.hp[key] <= 0) endDuel(duel, Math.random() < 0.5 ? key : oppKey, 'KO');
+          else if (duel.hp[oppKey] <= 0) endDuel(duel, key, 'KO');
+          else if (duel.hp[key] <= 0) endDuel(duel, oppKey, 'KO');
           return;
         }
         const fight = me.modDuelId ? modDuels.get(me.modDuelId) : null;
@@ -5068,13 +5369,15 @@ wss.on('connection', (ws, req) => {
           if (fight.tickCount <= COUNTDOWN_TICKS) return castFail('The fight has not started yet — wait for the countdown.');
           if (Math.hypot(me.x - def.x, me.y - def.y) > NPC_RANGE) return castFail('Too far away — walk closer.');
           if (spell.id === 'freeze' && alreadyFrozen(fight.modFrozenUntil, def.name)) return;
-          const res = rollMagicCast(profile, fight.modProfile, spell, false, DUEL_LEVEL);
+          // Stage 27: the PvP Deflect flag rides along for symmetry
+          // — the mod never prays, so res.deflected is always 0.
+          const res = rollMagicCast(profile, fight.modProfile, spell, false, DUEL_LEVEL, true);
           if (res.refused) return castFail(res.refused);
           finishCast(res);
           fight.hpNpc = Math.max(0, fight.hpNpc - res.dmg);
           let frozenUntil = 0;
           if (res.froze) { frozenUntil = Date.now() + FREEZE_MS; fight.modFrozenUntil = frozenUntil; }
-          send(ws, { type: 'cast_result', context: 'modduel', spell: spell.id, targetId: def.id, targetName: def.name, outcome: res.outcome, dmg: res.dmg, froze: !!res.froze, frozenUntil, hpTarget: fight.hpNpc, maxHpTarget: 99 });
+          send(ws, { type: 'cast_result', context: 'modduel', spell: spell.id, targetId: def.id, targetName: def.name, outcome: res.outcome, dmg: res.dmg, deflected: res.deflected || 0, froze: !!res.froze, frozenUntil, hpTarget: fight.hpNpc, maxHpTarget: 99 });
           if (fight.hpNpc <= 0) endModDuel(fight, 'win');
           return;
         }
