@@ -189,7 +189,7 @@ for (const [tier, buy, accBonus, maxBonus] of [
   ['bronze', 50, 0.02, 1], ['iron', 120, 0.04, 2], ['steel', 300, 0.06, 4],
   ['mithril', 800, 0.08, 6], ['dragon', 2500, 0.12, 10],
 ]) {
-  ITEMS[`${tier}_sword`] = { name: `${cap(tier)} sword`, kind: 'weapon', slot: 'weapon', tier, buy, accBonus, maxBonus, shop: 'Weapon' };
+  ITEMS[`${tier}_sword`] = { name: `${cap(tier)} sword`, kind: 'weapon', slot: 'weapon', style: 'melee', tier, buy, accBonus, maxBonus, shop: 'Weapon' };
 }
 // Armour: 3 tiers x 4 slots. Each piece cuts incoming damage by `reduction`;
 // wearing all 4 armour slots adds a +5% set bonus. Total capped at 45%.
@@ -283,7 +283,7 @@ for (const [metal, md] of Object.entries(SMITH_METALS)) {
       const name = `${cap(metal)} ${kindName}${u ? ' +' + u : ''} (smithed)`;
       const sellOnly = Math.round(st.sell * (1 + 0.25 * u));
       if (kindName === 'sword') {
-        ITEMS[id] = { name, kind: 'weapon', slot: 'weapon', sellOnly, accBonus: Math.round((st.acc + 0.01 * u) * 100) / 100, maxBonus: st.max + u, smithMetal: metal, smithUpgrade: u, smithBase: baseId };
+        ITEMS[id] = { name, kind: 'weapon', slot: 'weapon', style: 'melee', sellOnly, accBonus: Math.round((st.acc + 0.01 * u) * 100) / 100, maxBonus: st.max + u, smithMetal: metal, smithUpgrade: u, smithBase: baseId };
       } else {
         ITEMS[id] = { name, kind: 'armour', slot: 'body', sellOnly, reduction: Math.round((st.red + 0.01 * u) * 100) / 100, smithMetal: metal, smithUpgrade: u, smithBase: baseId };
       }
@@ -308,6 +308,11 @@ for (const [id, name, accBonus, maxBonus] of [
 ]) {
   ITEMS[id] = { name, kind: 'weapon', slot: 'weapon', sellOnly: 800, accBonus, maxBonus };
 }
+// Stage 19: two of the Barrows weapons were never melee — Ahrim's
+// staff casts spells and Karil's crossbow shoots (arrows, in this
+// port — there is no separate bolt item).
+ITEMS.ahrims_staff.style = 'magic';
+ITEMS.karils_crossbow.style = 'ranged';
 // Stage 7A: NC and Certificate tokens. kind 'token': stackable like
 // any other backpack stack, but NEVER buyable in a shop, NEVER
 // sellable to a shop and NEVER on the Gold Exchange — sellOnly 0
@@ -347,6 +352,79 @@ const GOLD_STAKE_MSG = "Gold can't be staked as an item — use the gold amount.
 // The ONE refusal every path that would move a note off its owner
 // (drop, trade offer, duel item stakes) answers with.
 const NOTE_PERSONAL_MSG = "A note is personal — it can't be dropped, traded, or staked.";
+
+// ---------- Stage 19: Magic & Ranged supplies (Derek's design) ----------
+// Derek, 2026-11-17: "Magic requires runes per spell and range
+// requires bow and arrows. ... For magic you need to collect runes
+// from killing wizards ... For range you need to fletch them out of
+// logs or kill the rangers in the range spot. Rangers drop different
+// tier arrow heads that can be used to fletch with logs as well."
+// Every weapon def now carries a `style` ('melee' default, 'ranged',
+// 'magic') so combat can tell what a wielded weapon does — see
+// attackStyleOf / rollStyleAttack in the combat section.
+// Runes: kind 'rune'. Never sold in shops (no `buy`); a small fixed
+// sell-back (sellOnly 2g) so spares are not worthless. Wizards are
+// the supply (see rollNpcDrops).
+const RUNE_ICONS = { air: '💨', water: '💧', earth: '🪨', fire: '🔥' };
+for (const el of ['air', 'water', 'earth', 'fire']) {
+  ITEMS[`${el}_rune`] = { name: `${cap(el)} rune`, icon: RUNE_ICONS[el], kind: 'rune', sellOnly: 2 };
+}
+// Arrows (kind 'ammo') carry a ranged strength bonus by metal tier;
+// they are sold at the Weapon shop AND dropped by rangers AND made
+// by fletching. Arrowheads (kind 'arrowhead') are the fletching
+// input: rangers drop them; shops buy them back at 3g but never
+// sell them (no `buy`).
+const ARROW_TIERS = ['bronze', 'iron', 'steel', 'mithril', 'adamant', 'rune'];
+const ARROW_STR = { bronze: 2, iron: 4, steel: 6, mithril: 9, adamant: 12, rune: 16 }; // ranged strength bonus per tier
+const ARROW_BUY = { bronze: 6, iron: 9, steel: 14, mithril: 22, adamant: 35, rune: 60 }; // Weapon shop price per arrow
+const FLETCH_GATE = { bronze: 1, iron: 15, steel: 30, mithril: 45, adamant: 60, rune: 75 }; // Fletching level per tier (Derek's gates)
+const FLETCH_XP = { bronze: 10, iron: 16, steel: 24, mithril: 36, adamant: 52, rune: 75 }; // Fletching XP per set of 10 arrows
+for (const t of ARROW_TIERS) {
+  ITEMS[`${t}_arrow`] = { name: `${cap(t)} arrows`, icon: '🏹', kind: 'ammo', strBonus: ARROW_STR[t], buy: ARROW_BUY[t], shop: 'Weapon' };
+  ITEMS[`${t}_arrowhead`] = { name: `${cap(t)} arrowheads`, icon: '🔼', kind: 'arrowhead', sellOnly: 3 };
+}
+// Bows (style 'ranged') and staves (style 'magic'), Weapon shop.
+// Their maxBonus is 0 on purpose: a ranged max hit comes from the
+// Ranged level + the arrow's strength bonus, and a magic max hit
+// from the spell itself (see rollStyleAttack) — the weapon's job
+// is accuracy, rising by tier.
+for (const [id, name, buy, accBonus] of [
+  ['shortbow', 'Shortbow', 120, 0.04], ['oak_shortbow', 'Oak shortbow', 300, 0.06],
+  ['willow_shortbow', 'Willow shortbow', 600, 0.08], ['maple_shortbow', 'Maple shortbow', 1200, 0.10],
+  ['yew_shortbow', 'Yew shortbow', 2400, 0.13], ['magic_shortbow', 'Magic shortbow', 4800, 0.16],
+]) {
+  ITEMS[id] = { name, icon: '🏹', kind: 'weapon', slot: 'weapon', style: 'ranged', buy, accBonus, maxBonus: 0, shop: 'Weapon' };
+}
+for (const [id, name, buy, accBonus] of [
+  ['staff', 'Staff', 150, 0.04], ['magic_staff', 'Magic staff', 700, 0.08], ['mystic_staff', 'Mystic staff', 2500, 0.12],
+]) {
+  ITEMS[id] = { name, icon: '🪄', kind: 'weapon', slot: 'weapon', style: 'magic', buy, accBonus, maxBonus: 0, shop: 'Weapon' };
+}
+// The spellbook (Derek: "Magic also comes with a magic book to see
+// what runes are required for each spell"). Spell tiers low->high
+// are air, water, earth, fire (Derek's order); families are Strike
+// (1 rune), Bolt (2) and Blast (3). A spell costs ONLY its own
+// element's runes. Max hits are the base spell caps; the caster's
+// Magic level scales them modestly (see rollStyleAttack). Magic XP
+// per cast: SPELL_CAST_XP by family, plus damage XP like melee.
+const SPELLS = [
+  { id: 'air_strike', name: 'Air Strike', element: 'air', tier: 'strike', level: 1, runes: 1, max: 6 },
+  { id: 'water_strike', name: 'Water Strike', element: 'water', tier: 'strike', level: 5, runes: 1, max: 7 },
+  { id: 'earth_strike', name: 'Earth Strike', element: 'earth', tier: 'strike', level: 9, runes: 1, max: 8 },
+  { id: 'fire_strike', name: 'Fire Strike', element: 'fire', tier: 'strike', level: 13, runes: 1, max: 9 },
+  { id: 'air_bolt', name: 'Air Bolt', element: 'air', tier: 'bolt', level: 17, runes: 2, max: 10 },
+  { id: 'water_bolt', name: 'Water Bolt', element: 'water', tier: 'bolt', level: 23, runes: 2, max: 11 },
+  { id: 'earth_bolt', name: 'Earth Bolt', element: 'earth', tier: 'bolt', level: 29, runes: 2, max: 12 },
+  { id: 'fire_bolt', name: 'Fire Bolt', element: 'fire', tier: 'bolt', level: 35, runes: 2, max: 13 },
+  { id: 'air_blast', name: 'Air Blast', element: 'air', tier: 'blast', level: 41, runes: 3, max: 14 },
+  { id: 'water_blast', name: 'Water Blast', element: 'water', tier: 'blast', level: 47, runes: 3, max: 15 },
+  { id: 'earth_blast', name: 'Earth Blast', element: 'earth', tier: 'blast', level: 53, runes: 3, max: 16 },
+  { id: 'fire_blast', name: 'Fire Blast', element: 'fire', tier: 'blast', level: 59, runes: 3, max: 17 },
+];
+const SPELL_BY_ID = {};
+for (const s of SPELLS) SPELL_BY_ID[s.id] = s;
+const SPELL_CAST_XP = { strike: 5, bolt: 10, blast: 15 }; // flat Magic XP per resolved cast, hit or miss
+function spellOf(p) { return SPELL_BY_ID[p.spell] || SPELLS[0]; }
 
 // ---------- Stage 7D: custom items + placed objects (registries) ----------
 // Base items are numbered 1..BASE_ITEM_COUNT in ITEMS definition
@@ -396,6 +474,7 @@ function customCatalogEntry(def) {
     heal: 0, prayerRestore: 0,
     accBonus: def.accBonus || 0, maxBonus: def.maxBonus || 0, reduction: def.reduction || 0,
     speed: 0, icon: def.icon || null,
+    style: def.style || null, strBonus: 0, // Stage 19: a custom cloned from a bow/staff keeps its style
     custom: true, num: def.num, base: def.base, by: def.by,
     color: def.color || null, art: def.art || null, // Stage 8: admin tint + drawn art
   };
@@ -481,6 +560,8 @@ function catalogList() {
     accBonus: d.accBonus || 0, maxBonus: d.maxBonus || 0, reduction: d.reduction || 0,
     speed: d.speed || 0, // Stage 3: pickaxe speed multiplier (0 for non-tools)
     icon: d.icon || null, // Stage 7A: token icons (null for older items)
+    style: d.style || null, // Stage 19: weapon attack style ('melee' / 'ranged' / 'magic')
+    strBonus: d.strBonus || 0, // Stage 19: arrow ranged strength bonus
   }));
   // Stage 16: the gold item rides along explicitly (it has no buy
   // price and no sellOnly the filter above would keep): the client
@@ -501,7 +582,7 @@ function goodsList() {
 // OSRS formula: floor( sum_{x=1}^{L-1} floor(x + 300 * 2^(x/7)) / 4 ).
 // (Level 2 = 83, level 10 = 1154, level 99 = 13,034,431.)
 const SKILLS = ['attack', 'strength', 'defence', 'hitpoints', 'ranged', 'magic', 'prayer',
-  'mining', 'smithing', 'woodcutting', 'firemaking', 'fishing', 'cooking'];
+  'mining', 'smithing', 'woodcutting', 'firemaking', 'fishing', 'cooking', 'fletching']; // Stage 19 adds fletching (ranged/magic were already here)
 const XP_TABLE = [0, 0]; // index by level 1..99
 {
   let points = 0;
@@ -622,6 +703,9 @@ function newProfile(username) {
     // born at the current version; older ones are scaled once by
     // the ensureV2 migration below.
     worldV: 2,
+    // Stage 19: the selected spell (an id from SPELLS) — cast from
+    // the spellbook whenever a staff is wielded. Default: Air Strike.
+    spell: 'air_strike',
     // Stage 9: the texts of the signed Notes this player currently
     // HOLDS, oldest first ([{ text, from, at }] — from is the signer).
     // One entry per held 'note' item, FIFO-matched: signing creates
@@ -710,6 +794,9 @@ function ensureV2(p) {
     const clean = p.notes.filter((n) => n && typeof n.text === 'string' && typeof n.from === 'string' && Number.isFinite(+n.at));
     if (clean.length !== p.notes.length) { p.notes = clean; changed = true; }
   }
+  // Stage 19 migration: the selected spell. Anything that is not a
+  // known spell id falls back to Air Strike (the level-1 default).
+  if (typeof p.spell !== 'string' || !SPELL_BY_ID[p.spell]) { p.spell = 'air_strike'; changed = true; }
   // Stage 10 migration: character appearance. A missing one is
   // backfilled with the default; a present one is sanitised in
   // place (merged over the default — a set look is never wiped).
@@ -795,6 +882,8 @@ function publicProfile(p) {
     // Stage 10: character appearance (sanitised on the way in; the
     // spread keeps clients from mutating the stored object).
     appearance: { ...p.appearance },
+    // Stage 19: the selected spell id (the client spellbook marks it).
+    spell: p.spell || 'air_strike',
   };
 }
 function leaderboardProfile(p) {
@@ -1137,7 +1226,7 @@ function broadcastChallengeClear(challengerKey) {
 // side's item stake. Any terms change resets BOTH confirms (the
 // trade flow's rule). The duel — escrow and all — starts only on
 // the second confirm, through the existing startDuel path.
-const DUEL_RULE_KEYS = ['noPrayer', 'noPotions', 'noFood', 'noSpecial', 'noMovement'];
+const DUEL_RULE_KEYS = ['noPrayer', 'noPotions', 'noFood', 'noSpecial', 'noMovement', 'noMelee', 'noRanged', 'noMagic']; // Stage 19 adds the three style bans
 function cleanDuelRules(r) {
   const out = { noPrayer: false, noPotions: false, noFood: false, noSpecial: false, noMovement: false };
   if (r && typeof r === 'object') for (const k of DUEL_RULE_KEYS) out[k] = !!r[k];
@@ -1231,6 +1320,10 @@ const AREAS = {
   // only the stake-match flow moves players in (stake_ready), and
   // startDuel / a match cancel moves them back out.
   waiting: { name: 'Waiting Area', spawn: { x: 800, y: 450 } },
+  // Stage 19: the two hunting grounds. Spawns sit by the south
+  // return gate, mirroring the Training Cave.
+  magic: { name: 'Wizard Grounds', spawn: { x: 800, y: 720 } },
+  range: { name: 'Ranger Camp', spawn: { x: 800, y: 720 } },
 };
 const NPC_RANGE = 150; // server units — attack / stay-in-combat range (15 tiles at 10 units/tile)
 
@@ -1313,20 +1406,46 @@ GOBLIN_SPAWNS.forEach(([x, y], i) => {
   const id = 'goblin' + (i + 1);
   npcs.set(id, { id, ...GOBLIN_DEF, area: 'goblins', x, y, spawnX: x, spawnY: y, hp: GOBLIN_DEF.maxHp, alive: true, respawnAt: 0, fightId: null });
 });
+// ---------- Stage 19 NPCs: Wizards (magic) + Rangers (ranged) ----------
+// Same shared-NPC framework as the goblins (own spawn tables, own
+// respawns), one hunting ground each. Both attack from range —
+// wizards with MAGIC, rangers with MISSILES — on the ranged-NPC
+// pattern Karil/Ahrim established in Barrows: they hold their
+// ground (they never step toward the player) and swing on a 3-tick
+// cadence inside NPC_RANGE. The matching Protect prayer FULLY
+// blocks them (Magic for wizards, Missiles for rangers) — the
+// npcTick prayer check compares attackType, so it just works.
+// Tuning (this port's, in line with the goblin/Barrows scale):
+// wizard lvl 13, 20 HP, max hit 4; ranger lvl 11, 18 HP, max hit 4;
+// both respawn 12s after a kill.
+const WIZARD_DEF = { kind: 'wizard', name: 'Wizard', combatLevel: 13, maxHp: 20, maxHit: 4, acc: 0.55, attackType: 'magic', respawnMs: 12000 };
+const WIZARD_SPAWNS = [[400, 300], [700, 520], [1000, 300], [1250, 560], [800, 180]];
+const RANGER_DEF = { kind: 'ranger', name: 'Ranger', combatLevel: 11, maxHp: 18, maxHit: 4, acc: 0.57, attackType: 'missiles', respawnMs: 12000 };
+const RANGER_SPAWNS = [[360, 320], [640, 560], [960, 320], [1240, 560], [800, 700]];
+WIZARD_SPAWNS.forEach(([x, y], i) => {
+  const id = 'wizard' + (i + 1);
+  npcs.set(id, { id, ...WIZARD_DEF, area: 'magic', x, y, spawnX: x, spawnY: y, hp: WIZARD_DEF.maxHp, alive: true, respawnAt: 0, fightId: null });
+});
+RANGER_SPAWNS.forEach(([x, y], i) => {
+  const id = 'ranger' + (i + 1);
+  npcs.set(id, { id, ...RANGER_DEF, area: 'range', x, y, spawnX: x, spawnY: y, hp: RANGER_DEF.maxHp, alive: true, respawnAt: 0, fightId: null });
+});
+// The areas whose live NPC roster rides on npc_state messages.
+const NPC_AREAS = ['goblins', 'magic', 'range'];
 const npcFights = new Map(); // id -> { id, playerKey, npcId, hpYou, maxHpYou, specialQueued, done, timer, tickCount, nextSwingYou, nextSwingNpc }
 // Pseudo-profile so goblins can be the defender in the duel rollHit():
 // no style block, no worn gear, no armour reduction.
 const NPC_DEFENDER = { style: 'accurate', worn: { weapon: null, shield: null, head: null, body: null, legs: null } };
 
-function npcStateMsg() {
+function npcStateMsg(area) {
   return {
-    type: 'npc_state', area: 'goblins',
-    npcs: [...npcs.values()].filter((n) => n.alive).map((n) => ({ id: n.id, kind: n.kind, x: n.x, y: n.y, hp: n.hp, maxHp: n.maxHp })),
+    type: 'npc_state', area,
+    npcs: [...npcs.values()].filter((n) => n.alive && n.area === area).map((n) => ({ id: n.id, kind: n.kind, name: n.name, combatLevel: n.combatLevel, x: n.x, y: n.y, hp: n.hp, maxHp: n.maxHp })),
   };
 }
-function broadcastNpcState() {
-  const msg = npcStateMsg();
-  for (const p of online.values()) if (p.area === 'goblins') send(p.ws, msg);
+function broadcastNpcState(area) {
+  const msg = npcStateMsg(area);
+  for (const p of online.values()) if (p.area === area) send(p.ws, msg);
 }
 
 function send(ws, obj) { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); }
@@ -1649,6 +1768,131 @@ function rollPlayerAttack(attackerProfile, defenderProfile, useSpecial = false, 
   return { dmg: r.dmg, connected: r.connected, outcome: r.outcome, notes: [] };
 }
 
+// ---------- Stage 19: attack styles (melee / ranged / magic) ----------
+// A wielded weapon's def carries the style: swords (and everything
+// pre-Stage-19) are 'melee', bows 'ranged', staves 'magic'. Unarmed
+// is melee. Swing speeds in ticks: melee 4 (MELEE_SPEED, unchanged),
+// ranged 3, magic 5 (OSRS bow/staff cadences). Reach: melee needs
+// MELEE_REACH; ranged/magic reach NPC_RANGE (150), the same range
+// Karil/Ahrim fight at in Barrows.
+function attackStyleOf(p) {
+  const w = p && p.worn ? p.worn.weapon : null;
+  const d = w ? itemDef(w) : null;
+  return (d && d.style) || 'melee';
+}
+function swingSpeed(style) { return style === 'ranged' ? 3 : style === 'magic' ? 5 : MELEE_SPEED; }
+function styleRange(style) { return style === 'melee' ? MELEE_REACH : NPC_RANGE; }
+function styleBanMsg(style) { return `🚫 No ${cap(style)} in this duel.`; }
+// Arrows are consumed from the FIRST ammo stack in backpack slot
+// order — the player chooses which arrows are spent by ordering
+// their backpack (drag / inv_swap). Said in the arrows' Examine
+// text on the client.
+function firstArrowStack(p) {
+  for (const s of p.backpack) {
+    const d = ITEMS[s.item];
+    if (d && d.kind === 'ammo' && s.qty > 0) return s;
+  }
+  return null;
+}
+// The OSRS attack-roll-vs-defence-roll shape of hitChance(), for
+// the Ranged / Magic skill: attack roll = (effective level + style
+// boost + 8) x (64 + weapon accuracy points) x ACC_BALANCE; defence
+// roll = (Defence + 8) x 64 — the defender's Defence level serves
+// for all three styles (a documented simplification: there are no
+// separate ranged/magic defence rolls). Dragon Slash keeps its
+// +5% on top, for every style. levelOverride is the duel
+// equalisation (DUEL_LEVEL) and covers Ranged/Magic too.
+function styleHitChance(attackerProfile, defenderProfile, skill, useSpecial = false, levelOverride = null) {
+  const s = STYLES[attackerProfile.style] || STYLES.accurate;
+  const aLv = levelOverride == null ? levelForXp((attackerProfile.xp && attackerProfile.xp[skill]) || 0) : levelOverride;
+  const dLv = levelOverride == null ? levelForXp((defenderProfile.xp && defenderProfile.xp.defence) || 0) : levelOverride;
+  const atkRoll = (aLv + (s.atkBoost || 0) + 8) * (64 + weaponAccPoints(attackerProfile)) * ACC_BALANCE;
+  const defRoll = (dLv + 8) * 64;
+  let chance = atkRoll > defRoll
+    ? 1 - (defRoll + 2) / (2 * (atkRoll + 1))
+    : atkRoll / (2 * (defRoll + 1));
+  if (useSpecial) chance += 0.05;
+  return Math.min(0.98, Math.max(0.02, chance));
+}
+// One player swing of ANY style, fully resolved. Melee delegates to
+// the Stage 10 roll untouched. Ranged/magic return the same shape
+// ({ dmg, connected, outcome, notes }) plus the style and what was
+// spent (ammoUsed / spell). A swing that cannot happen at all —
+// no arrows, missing runes, spell above the caster's level —
+// returns { refused: '<reason>' } instead: NOTHING is consumed and
+// the callers do not advance the swing timer or spend a queued
+// special (the refusal mirrors a closing tick's fairness).
+//   Ranged: consumes 1 arrow from the first ammo stack, hit or
+//     miss. Max hit = 6 + floor((Ranged + style boost - 1) / 3) +
+//     the arrow's strength bonus — the melee max-hit shape with a
+//     lower base, the arrow standing in for the weapon bonus.
+//   Magic: consumes the selected spell's runes, hit or miss. Max
+//     hit = the spell's base cap + floor((Magic + style boost - 1)
+//     / 3) — the spell stands in for the base + weapon terms.
+//   Both: the defender's style block and worn armour reduction
+//     apply exactly as they do to a melee swing, and Dragon Slash
+//     multiplies the max hit by 1.5 as it does for melee.
+function rollStyleAttack(attackerProfile, defenderProfile, useSpecial = false, levelOverride = null) {
+  const style = attackStyleOf(attackerProfile);
+  if (style === 'melee') {
+    const r = rollPlayerAttack(attackerProfile, defenderProfile, useSpecial, levelOverride);
+    return { ...r, style };
+  }
+  const dst = STYLES[defenderProfile.style] || STYLES.accurate;
+  const s = STYLES[attackerProfile.style] || STYLES.accurate;
+  if (style === 'ranged') {
+    const stack = firstArrowStack(attackerProfile);
+    if (!stack) return { refused: "You're out of arrows!", style };
+    const arrowId = stack.item;
+    const arrowDef = ITEMS[arrowId];
+    removeStacks(attackerProfile.backpack, arrowId, 1); // one arrow per shot, hit or miss
+    const connected = Math.random() <= styleHitChance(attackerProfile, defenderProfile, 'ranged', useSpecial, levelOverride);
+    if (!connected) return { dmg: 0, connected: false, outcome: 'miss', notes: [], style, ammoUsed: arrowId };
+    if (dst.block && Math.random() < dst.block) return { dmg: 0, connected: true, outcome: 'blocked', notes: [], style, ammoUsed: arrowId };
+    const lvl = levelOverride == null ? levelForXp(attackerProfile.xp.ranged || 0) : levelOverride;
+    let max = 6 + Math.floor((lvl + (s.strBoost || 0) - 1) / 3) + (arrowDef ? arrowDef.strBonus || 0 : 0);
+    if (useSpecial) max = Math.floor(max * 1.5);
+    const raw = 1 + Math.floor(Math.random() * max);
+    const dmg = Math.floor(raw * (1 - armourReduction(defenderProfile)));
+    return { dmg, connected: true, outcome: dmg > 0 ? 'hit' : 'blocked', notes: [], style, ammoUsed: arrowId };
+  }
+  // magic
+  const spell = spellOf(attackerProfile);
+  const mLvl = levelForXp((attackerProfile.xp && attackerProfile.xp.magic) || 0);
+  if (mLvl < spell.level) return { refused: `You need Magic level ${spell.level} to cast ${spell.name}.`, style, spell: spell.id };
+  const runeId = `${spell.element}_rune`;
+  // removeStacks is atomic: false (and nothing taken) when short.
+  if (!removeStacks(attackerProfile.backpack, runeId, spell.runes)) {
+    return { refused: `You don't have the runes for ${spell.name}.`, style, spell: spell.id };
+  }
+  const connected = Math.random() <= styleHitChance(attackerProfile, defenderProfile, 'magic', useSpecial, levelOverride);
+  if (!connected) return { dmg: 0, connected: false, outcome: 'miss', notes: [], style, spell: spell.id };
+  if (dst.block && Math.random() < dst.block) return { dmg: 0, connected: true, outcome: 'blocked', notes: [], style, spell: spell.id };
+  const lvl = levelOverride == null ? mLvl : levelOverride;
+  let max = spell.max + Math.floor((lvl + (s.strBoost || 0) - 1) / 3);
+  if (useSpecial) max = Math.floor(max * 1.5);
+  const raw = 1 + Math.floor(Math.random() * max);
+  const dmg = Math.floor(raw * (1 - armourReduction(defenderProfile)));
+  return { dmg, connected: true, outcome: dmg > 0 ? 'hit' : 'blocked', notes: [], style, spell: spell.id };
+}
+// Combat XP for one resolved swing, by attack style. Melee is
+// combatXpGains unchanged. Ranged parallels it: dmg*4 Ranged +
+// dmg*1.33 Hitpoints (the fighting style's boosts are already in
+// the roll; there is no second Ranged "style" to split by). Magic:
+// dmg*4 Magic + dmg*1.33 Hitpoints PLUS the spell family's flat
+// cast XP (Strike 5 / Bolt 10 / Blast 15) — the cast XP is owed on
+// every resolved cast, hit or miss, which is why the engines call
+// this for every resolved swing, not only damaging ones (at 0
+// damage the melee/ranged gains are all zero and addXp no-ops).
+function swingXpGains(fightStyle, attackStyle, dmg, spellId) {
+  if (attackStyle === 'ranged') return { ranged: dmg * 4, hitpoints: Math.round(dmg * 1.33) };
+  if (attackStyle === 'magic') {
+    const sp = spellId ? SPELL_BY_ID[spellId] : null;
+    return { magic: dmg * 4 + (sp ? SPELL_CAST_XP[sp.tier] : 0), hitpoints: Math.round(dmg * 1.33) };
+  }
+  return combatXpGains(fightStyle, dmg);
+}
+
 // Stage 5: the four duel arenas. A duel picks one at random; both
 // fighters are moved into the shared 'arena' area for the fight (the
 // client renders the variant from the arena id in duel_start) and
@@ -1803,6 +2047,16 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
     send(p.ws, { type: 'area', area: 'arena' });
     send(p.ws, { type: 'duel_start', duelId: id, stake, pot: duel.pot, escrowItems, arena: duel.arena, official: duel.official, rules: duel.rules, freePlay: duel.freePlay, countdownTicks: COUNTDOWN_TICKS, you: db.users[k].profile.username, opponent: db.users[k === aKey ? bKey : aKey].profile.username, profile: publicProfile(db.users[k].profile) });
   }
+  // Stage 19: if a fighter's wielded weapon style is banned by the
+  // agreed rules, tell them once, up front — their swings will be
+  // refused until they swap weapons.
+  for (const k of [aKey, bKey]) {
+    const st = attackStyleOf(db.users[k].profile);
+    if (duelRules['no' + cap(st)]) {
+      const p = online.get(k);
+      if (p) send(p.ws, { type: 'chat', from: 'Game', text: `${styleBanMsg(st)} Swap weapons to fight.` });
+    }
+  }
   broadcast({ type: 'chat', from: 'Duel Master', text: `${a.username} vs ${b.username} — now fighting in the ${arenaDef.name}!` });
   broadcastState();
   duel.timer = setInterval(() => {
@@ -1814,15 +2068,26 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
     // during the countdown — engagement arms the first swing for
     // the tick after it.
     const countdownLeft = Math.max(0, COUNTDOWN_TICKS - tick + 1);
-    // Stage 8: melee adjacency. Every duel attack is melee-type, so
-    // if the fighters are not standing next to each other this tick
-    // is a CLOSING tick: no specials are consumed, no attacks are
-    // rolled and nobody takes damage — each fighter is told where
-    // to walk (moveTo, toward their opponent) to get back in reach.
-    // Hit fields are null (not 0) so the client can tell "no swing"
-    // apart from a swing that missed or was blocked.
+    // Stage 8: melee adjacency. If the fighters are not standing
+    // next to each other, no melee swing can happen — a CLOSING
+    // tick: no specials are consumed, no attacks are rolled and
+    // nobody takes damage — each fighter is told where to walk
+    // (moveTo, toward their opponent) to get back in reach. Hit
+    // fields are null (not 0) so the client can tell "no swing"
+    // apart from a swing that missed or was blocked. Stage 19
+    // generalises "next to each other" per weapon style, below.
     const posA = online.get(aKey), posB = online.get(bKey);
-    if (posA && posB && Math.hypot(posA.x - posB.x, posA.y - posB.y) > MELEE_REACH) {
+    // Stage 19: closing is PER-FIGHTER and style-aware. A melee
+    // fighter must close to MELEE_REACH; a bow/staff fighter only
+    // to NPC_RANGE (the Karil/Ahrim pattern). When BOTH fighters
+    // are out of their own range the tick is a pure closing tick,
+    // exactly as Stage 8 built it. When only one is out, that
+    // fighter's own tick message carries closing + moveTo while
+    // the other fights on.
+    const styleA = attackStyleOf(a), styleB = attackStyleOf(b);
+    const distAB = posA && posB ? Math.hypot(posA.x - posB.x, posA.y - posB.y) : 0;
+    const outA = distAB > styleRange(styleA), outB = distAB > styleRange(styleB);
+    if (posA && posB && outA && outB) {
       for (const k of [aKey, bKey]) {
         const p = online.get(k);
         if (!p) continue;
@@ -1837,56 +2102,77 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
       return;
     }
     // Stage 12: per-fighter swing timers. An ENGAGED fighter swings
-    // only on a tick where their timer is due; each swing re-arms
-    // the timer MELEE_SPEED ticks out. The due time is an absolute
-    // duel tick, so a fighter who was out of reach when their timer
-    // came due (closing ticks above return first) swings on the
-    // first tick they are back in reach — the timer never gets
-    // pushed forward by distance. An UN-engaged fighter never
-    // swings: engagement comes ONLY from their own duel_attack tap
-    // (Derek: "players have to tap attack to retaliate" — being
-    // hit never engages them). On a tick where a fighter does not
-    // swing, their hit field is null (exactly like a closing tick)
-    // and a queued special STAYS queued: Dragon Slash only ever
-    // fires riding a real swing.
-    const aDue = duel.engaged[aKey] && tick >= duel.nextSwingAt[aKey];
-    const bDue = duel.engaged[bKey] && tick >= duel.nextSwingAt[bKey];
-    if (aDue) duel.nextSwingAt[aKey] = tick + MELEE_SPEED;
-    if (bDue) duel.nextSwingAt[bKey] = tick + MELEE_SPEED;
-    const aSpecial = aDue && duel.specialQueued[aKey];
-    const bSpecial = bDue && duel.specialQueued[bKey];
-    if (aDue) duel.specialQueued[aKey] = false;
-    if (bDue) duel.specialQueued[bKey] = false;
-    if (aSpecial) a.specialEnergy = Math.max(0, a.specialEnergy - SPECIAL_COST);
-    if (bSpecial) b.specialEnergy = Math.max(0, b.specialEnergy - SPECIAL_COST);
-    // Stage 10: each fighter's single style effect rides along on
-    // every player attack (inside the shared roll functions).
-    // Stage 12: duel rolls are EQUALISED at DUEL_LEVEL for both
-    // fighters — trained Attack/Strength/Defence do not apply in a
-    // duel; weapons, armour, styles, specials and XP stay personal.
-    const aRes = aDue ? rollPlayerAttack(a, b, aSpecial, DUEL_LEVEL) : { dmg: 0, connected: false, outcome: null, notes: [] };
-    const bRes = bDue ? rollPlayerAttack(b, a, bSpecial, DUEL_LEVEL) : { dmg: 0, connected: false, outcome: null, notes: [] };
-    const dmgToB = aRes.dmg;
-    const dmgToA = bRes.dmg;
+    // only on a tick where their timer is due; each RESOLVED swing
+    // re-arms the timer by that weapon's speed (Stage 19: melee 4,
+    // ranged 3, magic 5 ticks). The due time is an absolute duel
+    // tick, so a fighter who was out of reach when their timer came
+    // due swings on the first tick they are back in THEIR range —
+    // the timer never gets pushed forward by distance. An
+    // UN-engaged fighter never swings: engagement comes ONLY from
+    // their own duel_attack tap (Derek: "players have to tap
+    // attack to retaliate" — being hit never engages them). On a
+    // tick where a fighter does not swing, their hit field is null
+    // (exactly like a closing tick) and a queued special STAYS
+    // queued: Dragon Slash only ever fires riding a real swing.
+    // Stage 19 adds two more ways a due swing does not fire: the
+    // fighter's weapon style is BANNED by the agreed rules (no
+    // Melee / no Ranged / no Magic), or the swing is REFUSED (out
+    // of arrows / runes). Both leave the timer due and the special
+    // queued, consume nothing, and tell the fighter why in their
+    // tick note (throttled to once per 8 ticks so standing still
+    // with the wrong weapon does not spam).
+    const trySwing = (attKey, attProf, defProf, attOut, attStyle) => {
+      if (!(duel.engaged[attKey] && tick >= duel.nextSwingAt[attKey])) return { swung: false };
+      if (attOut) return { swung: false };
+      duel.refuseNoteAt = duel.refuseNoteAt || {};
+      const refuseNote = (text) => {
+        if (tick - (duel.refuseNoteAt[attKey] || -99) >= 8) { duel.refuseNoteAt[attKey] = tick; return text; }
+        return null;
+      };
+      if (duel.rules && duel.rules['no' + cap(attStyle)]) return { swung: false, note: refuseNote(styleBanMsg(attStyle)) };
+      const useSpec = duel.specialQueued[attKey];
+      // Stage 10: each fighter's single style effect rides along on
+      // every player attack (inside the shared roll functions).
+      // Stage 12: duel rolls are EQUALISED at DUEL_LEVEL for both
+      // fighters — trained Attack/Strength/Defence do not apply in
+      // a duel; Stage 19 extends the equalisation to Ranged/Magic.
+      // Weapons, armour, styles, specials and XP stay personal.
+      const res = rollStyleAttack(attProf, defProf, useSpec, DUEL_LEVEL);
+      if (res.refused) return { swung: false, note: refuseNote(res.refused) };
+      duel.nextSwingAt[attKey] = tick + swingSpeed(res.style);
+      duel.specialQueued[attKey] = false;
+      if (useSpec) attProf.specialEnergy = Math.max(0, attProf.specialEnergy - SPECIAL_COST);
+      // Combat XP from damage dealt, per attack style (Stage 19:
+      // granted here for every style — the endDuel comment and the
+      // free-play end sheet have always said duel XP counts).
+      addXp(attKey, swingXpGains(attProf.style, res.style, res.dmg, res.spell));
+      // Special energy charges on landed (damaging) hits.
+      if (res.dmg > 0) attProf.specialEnergy = Math.min(100, attProf.specialEnergy + SPECIAL_CHARGE_PER_HIT);
+      return { swung: true, dmg: res.dmg, outcome: res.outcome, special: useSpec, notes: res.notes || [] };
+    };
+    const aSw = trySwing(aKey, a, b, outA, styleA);
+    const bSw = trySwing(bKey, b, a, outB, styleB);
+    const dmgToB = aSw.swung ? aSw.dmg : 0;
+    const dmgToA = bSw.swung ? bSw.dmg : 0;
     duel.hp[bKey] = Math.max(0, duel.hp[bKey] - dmgToB);
     duel.hp[aKey] = Math.max(0, duel.hp[aKey] - dmgToA);
-    // Special energy charges on landed (damaging) hits.
-    if (dmgToB > 0) a.specialEnergy = Math.min(100, a.specialEnergy + SPECIAL_CHARGE_PER_HIT);
-    if (dmgToA > 0) b.specialEnergy = Math.min(100, b.specialEnergy + SPECIAL_CHARGE_PER_HIT);
     for (const k of [aKey, bKey]) {
       const p = online.get(k);
-      const ownNotes = k === aKey ? aRes.notes : bRes.notes;
-      const oppNotes = k === aKey ? bRes.notes : aRes.notes;
-      const noteParts = [...ownNotes];
-      if (oppNotes.length) noteParts.push(`Opponent: ${oppNotes.join(' ')}`);
+      const own = k === aKey ? aSw : bSw;
+      const opp = k === aKey ? bSw : aSw;
+      const ownOut = k === aKey ? outA : outB;
+      const noteParts = [...(own.notes || [])];
+      if (own.note) noteParts.push(own.note);
+      if (opp.notes && opp.notes.length) noteParts.push(`Opponent: ${opp.notes.join(' ')}`);
       if (p) send(p.ws, {
         type: 'duel_tick', hpYou: duel.hp[k], hpOpponent: duel.hp[k === aKey ? bKey : aKey],
-        youHit: k === aKey ? (aDue ? dmgToB : null) : (bDue ? dmgToA : null),
-        oppHit: k === aKey ? (bDue ? dmgToA : null) : (aDue ? dmgToB : null),
-        youOutcome: k === aKey ? aRes.outcome : bRes.outcome,
-        oppOutcome: k === aKey ? bRes.outcome : aRes.outcome,
-        youSpecial: k === aKey ? aSpecial : bSpecial, oppSpecial: k === aKey ? bSpecial : aSpecial,
+        youHit: own.swung ? own.dmg : null,
+        oppHit: opp.swung ? opp.dmg : null,
+        youOutcome: own.swung ? own.outcome : null,
+        oppOutcome: opp.swung ? opp.outcome : null,
+        youSpecial: own.swung ? own.special : false, oppSpecial: opp.swung ? opp.special : false,
         energyYou: db.users[k].profile.specialEnergy, countdownLeft,
+        ...(ownOut && posA && posB ? { closing: true, moveTo: approachPoint(p.x, p.y, (k === aKey ? posB : posA).x, (k === aKey ? posB : posA).y) } : {}),
         note: noteParts.length ? noteParts.join(' ') : undefined,
       });
     }
@@ -1911,9 +2197,44 @@ function combatXpGains(style, dmg) {
   } else gains.attack = total; // accurate (and any fallback)
   return gains;
 }
-// Goblin drop table: 2-8 gold coins always; plus one item roll —
-// 15% prayer potion, 25% ranarr herbs, 60% no item.
-function rollNpcDrops(profile) {
+// Drop tables by NPC kind.
+//   Goblin: 2-8 gold coins always; plus one item roll — 15% prayer
+//     potion, 25% ranarr herbs, 60% no item.
+//   Wizard (Stage 19): runes — one element per kill, weighted air
+//     45% (most common) / water 25% / earth 18% / fire 12% (rarest),
+//     3-10 of them, plus 3-8 gold.
+//   Ranger (Stage 19): one random tier (weighted bronze 30% / iron
+//     25% / steel 20% / mithril 12% / adamant 8% / rune 5%) and a
+//     drop shape roll — 55% arrows only (5-15), 30% arrowheads only
+//     (1-3), 15% both — plus 3-8 gold.
+function rollNpcDrops(profile, npc) {
+  const kind = npc ? npc.kind : 'goblin';
+  if (kind === 'wizard') {
+    const gold = 3 + Math.floor(Math.random() * 6); // 3-8
+    addGold(profile, gold);
+    const roll = Math.random() * 100;
+    const el = roll < 45 ? 'air' : roll < 70 ? 'water' : roll < 88 ? 'earth' : 'fire';
+    const qty = 3 + Math.floor(Math.random() * 8); // 3-10 of the one element
+    const leftover = addStacks(profile.backpack, `${el}_rune`, qty, BACKPACK_MAX_STACKS);
+    if (leftover > 0) addStacks(profile.bank, `${el}_rune`, leftover); // full pack: bank it, never lose a drop
+    return { gold, items: [{ item: `${el}_rune`, qty }] };
+  }
+  if (kind === 'ranger') {
+    const gold = 3 + Math.floor(Math.random() * 6); // 3-8
+    addGold(profile, gold);
+    const tr = Math.random() * 100;
+    const tier = tr < 30 ? 'bronze' : tr < 55 ? 'iron' : tr < 75 ? 'steel' : tr < 87 ? 'mithril' : tr < 95 ? 'adamant' : 'rune';
+    const what = Math.random();
+    const items = [];
+    const give = (item, qty) => {
+      const leftover = addStacks(profile.backpack, item, qty, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(profile.bank, item, leftover);
+      items.push({ item, qty });
+    };
+    if (what < 0.55 || what >= 0.85) give(`${tier}_arrow`, 5 + Math.floor(Math.random() * 11)); // 5-15 arrows
+    if (what >= 0.55) give(`${tier}_arrowhead`, 1 + Math.floor(Math.random() * 3)); // 1-3 arrowheads
+    return { gold, items };
+  }
   const gold = 2 + Math.floor(Math.random() * 7);
   addGold(profile, gold); // Stage 16: the coins land on the coin stack
   const items = [];
@@ -1959,7 +2280,7 @@ function startNpcFight(key, npc) {
   const id = crypto.randomBytes(6).toString('hex');
   // Fight HP pool = the player's Hitpoints level (duels keep their 99 pool).
   const maxHpYou = Math.max(1, levelForXp(profile.xp.hitpoints));
-  const fight = { id, playerKey: key, npcId: npc.id, hpYou: maxHpYou, maxHpYou, specialQueued: false, done: false, timer: null, tickCount: 0, nextSwingYou: MELEE_SPEED, nextSwingNpc: MELEE_SPEED, npcUnlocked: false };
+  const fight = { id, playerKey: key, npcId: npc.id, hpYou: maxHpYou, maxHpYou, specialQueued: false, done: false, timer: null, tickCount: 0, nextSwingYou: swingSpeed(attackStyleOf(profile)), nextSwingNpc: MELEE_SPEED, npcUnlocked: false, lastRefuseTick: -99 }; // Stage 19: first swing one weapon-speed after engagement (the wielded style's speed); lastRefuseTick throttles out-of-arrows/runes notes
   npcFights.set(id, fight);
   sess.npcFightId = id;
   npc.fightId = id;
@@ -1974,15 +2295,30 @@ function npcTick(fight) {
   const npc = npcs.get(fight.npcId);
   if (!sess || !npc) { finishNpcFight(fight, 'gone'); return; }
   const profile = sess.profile;
-  // Walking too far from the goblin breaks off the fight.
+  // Walking too far from the creature breaks off the fight.
   if (sess.area !== npc.area || Math.hypot(sess.x - npc.x, sess.y - npc.y) > NPC_RANGE) { finishNpcFight(fight, 'range'); return; }
-  // Stage 8: melee adjacency. Beyond MELEE_REACH (but still inside
-  // NPC_RANGE, checked above) this is a CLOSING tick: the goblin
-  // steps toward the player, nobody swings either way, a queued
-  // special stays queued, and the Tree Guardian holds off (its
-  // behaviour below only runs on fighting ticks). Hit fields are
-  // null so the client can tell "no swing" from a missed swing.
-  if (Math.hypot(sess.x - npc.x, sess.y - npc.y) > MELEE_REACH) {
+  // Stage 8: melee adjacency — Stage 19 makes it style-aware. Each
+  // side has its own reach: MELEE_REACH for a melee weapon / melee
+  // creature, NPC_RANGE for a bow, a staff, or a ranged creature
+  // (wizard / ranger — the Karil/Ahrim pattern). This is a CLOSING
+  // tick only when NEITHER side can act AND the creature is a melee
+  // type that still has to walk in: it steps toward the player,
+  // nobody swings either way, a queued special stays queued, and
+  // the Tree Guardian holds off (its behaviour below only runs on
+  // fighting ticks). Hit fields are null so the client can tell
+  // "no swing" from a missed swing. Two mixed cases therefore get
+  // fighting ticks instead: a melee player facing a wizard/ranger
+  // (only the creature can swing — once unlocked — until the
+  // player walks in), and a ranged/magic player facing a goblin
+  // (the player shoots while the goblin keeps stepping in, below).
+  // For the classic both-melee fight this reduces to exactly the
+  // old rule: closing ⟺ distance > MELEE_REACH.
+  const pStyle = attackStyleOf(profile);
+  const pReach = styleRange(pStyle);
+  const npcReach = npc.attackType === 'melee' ? MELEE_REACH : NPC_RANGE;
+  const distNow = Math.hypot(sess.x - npc.x, sess.y - npc.y);
+  const playerOut = distNow > pReach, npcOut = distNow > npcReach;
+  if (playerOut && npcOut && npc.attackType === 'melee') {
     stepToward(npc, sess.x, sess.y, APPROACH_STEP);
     send(sess.ws, {
       type: 'npc_fight', phase: 'tick', npcId: npc.id,
@@ -1991,54 +2327,77 @@ function npcTick(fight) {
       youHit: null, npcHit: null, youOutcome: null, npcOutcome: null, youSpecial: false, energyYou: profile.specialEnergy,
       closing: true, moveTo: approachPoint(sess.x, sess.y, npc.x, npc.y),
     });
-    broadcastNpcState();
+    broadcastNpcState(npc.area);
     return;
   }
   fight.tickCount = (fight.tickCount || 0) + 1;
   const tick = fight.tickCount;
   const tickNotes = [];
   // Stage 12: OSRS swing timers — the player swings once per
-  // MELEE_SPEED fighting ticks, the first swing one full
+  // weapon-speed of fighting ticks, the first swing one full
   // weapon-speed after engagement (no opening beat for NPC fights).
-  // The goblin runs on the same timer but starts LOCKED (see the
-  // retaliate unlock in the player's swing below). Between swings a
-  // fighter's hit field is null (the client reads null as "no
-  // swing", exactly like a closing tick), and a queued special
-  // stays queued until the player's swing is actually due — it only
-  // ever fires riding a real swing.
+  // Stage 19: the weapon-speed depends on the wielded style (melee
+  // 4 / ranged 3 / magic 5 ticks). The creature runs on its own
+  // timer but starts LOCKED (see the retaliate unlock in the
+  // player's swing below). Between swings a fighter's hit field is
+  // null (the client reads null as "no swing", exactly like a
+  // closing tick), and a queued special stays queued until the
+  // player's swing is actually due — it only ever fires riding a
+  // real swing.
   let useSpec = false;
   let youHit = null; // null: the player's swing is not due this tick
   let youOutcome = null; // the player's swing outcome (Stage 12 clarity)
-  if (tick >= (fight.nextSwingYou || MELEE_SPEED)) {
-    fight.nextSwingYou = tick + MELEE_SPEED;
-    useSpec = fight.specialQueued; fight.specialQueued = false;
-    if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
-    // Player swing: the shared Stage 10 roll (style level boosts vs
-    // the NPC defender profile, worn weapon, no armour).
-    const atkRes = rollPlayerAttack(profile, NPC_DEFENDER, useSpec);
-    youHit = atkRes.dmg;
-    youOutcome = atkRes.outcome;
-    tickNotes.push(...atkRes.notes);
-    // Stage 12 retaliate unlock: the goblin's swings stay locked
-    // until the player's first CONNECTED swing lands on it — then
-    // it unlocks, its first swing one weapon-speed after the hit.
-    // (Guardian damage does not unlock it: only the player's own
-    // connected swing counts.)
-    if (atkRes.connected && !fight.npcUnlocked) {
-      fight.npcUnlocked = true;
-      fight.nextSwingNpc = tick + MELEE_SPEED;
+  // Stage 19: a melee creature still out of its own reach keeps
+  // closing during fighting ticks (a ranging/maging player keeps
+  // shooting it as it comes). Ranged creatures hold their ground.
+  if (npcOut && npc.attackType === 'melee') stepToward(npc, sess.x, sess.y, APPROACH_STEP);
+  if (!playerOut && tick >= (fight.nextSwingYou || MELEE_SPEED)) {
+    // Player swing: Stage 19's style dispatcher — melee is the
+    // shared Stage 10 roll; ranged consumes an arrow; magic
+    // consumes the selected spell's runes. A REFUSED swing (no
+    // arrows / no runes / spell level too high) consumes nothing,
+    // leaves the swing timer and a queued special untouched, and
+    // its reason rides the tick note, throttled to once per 8
+    // ticks so standing in place does not spam it.
+    const atkRes = rollStyleAttack(profile, NPC_DEFENDER, fight.specialQueued);
+    if (atkRes.refused) {
+      if (tick - (fight.lastRefuseTick || -99) >= 8) { tickNotes.push(atkRes.refused); fight.lastRefuseTick = tick; }
+    } else {
+      fight.nextSwingYou = tick + swingSpeed(atkRes.style);
+      useSpec = fight.specialQueued; fight.specialQueued = false;
+      if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
+      youHit = atkRes.dmg;
+      youOutcome = atkRes.outcome;
+      tickNotes.push(...atkRes.notes);
+      // Combat XP per attack style (Magic's flat cast XP is owed
+      // even on a miss; melee/ranged gains at 0 damage are zero).
+      addXp(fight.playerKey, swingXpGains(profile.style, atkRes.style, atkRes.dmg, atkRes.spell));
+      // Stage 12 retaliate unlock: the creature's swings stay
+      // locked until the player's first CONNECTED swing lands on
+      // it — then it unlocks, its first swing one of ITS
+      // weapon-speeds after the hit. (Guardian damage does not
+      // unlock it: only the player's own connected swing counts.)
+      if (atkRes.connected && !fight.npcUnlocked) {
+        fight.npcUnlocked = true;
+        fight.nextSwingNpc = tick + (npc.attackType === 'melee' ? MELEE_SPEED : 3);
+      }
     }
   }
-  // Goblin swing (only once unlocked, and only on its due ticks):
-  // Protect from Melee FULLY blocks it (Derek's OSRS spec);
-  // otherwise the duel rules apply — the style's block chance
-  // (Stage 10: Defensive 20% / Controlled 7%, from the STYLES table),
-  // then the goblin's accuracy, then the player's worn armour
-  // reduction.
-  let npcHit = null; // null: the goblin never swung this tick (locked, or swing not due)
-  let npcOutcome = null; // the goblin's swing outcome (Stage 12 clarity)
-  if (fight.npcUnlocked && tick >= (fight.nextSwingNpc || MELEE_SPEED)) {
-    fight.nextSwingNpc = tick + MELEE_SPEED;
+  // Creature swing (only once unlocked, only on its due ticks, and
+  // only inside its own reach): the matching Protect prayer FULLY
+  // blocks it (Derek's OSRS spec — the check below compares the
+  // creature's attackType, so Melee blocks goblins, Magic blocks
+  // wizards, Missiles blocks rangers); otherwise the duel rules
+  // apply — the style's block chance (Stage 10: Defensive 20% /
+  // Controlled 7%, from the STYLES table), then the creature's
+  // accuracy, then the player's worn armour reduction. Stage 19:
+  // ranged creatures swing on a 3-tick cadence; melee keep 4.
+  let npcHit = null; // null: the creature never swung this tick (locked, out of reach, or swing not due)
+  let npcOutcome = null; // the creature's swing outcome (Stage 12 clarity)
+  const npcCadence = npc.attackType === 'melee' ? MELEE_SPEED : 3;
+  const npcOutNow = Math.hypot(sess.x - npc.x, sess.y - npc.y) > npcReach;
+  if (fight.npcUnlocked && !npcOutNow && tick >= (fight.nextSwingNpc || MELEE_SPEED)) {
+    fight.nextSwingNpc = tick + npcCadence;
     npcHit = 0;
     if (profile.activePrayer === npc.attackType) { npcHit = 0; npcOutcome = 'blocked'; }
     else if (STYLES[profile.style] && STYLES[profile.style].block && Math.random() < STYLES[profile.style].block) {
@@ -2073,10 +2432,12 @@ function npcTick(fight) {
     tickNotes.push(`🌳 ${ally.name} hits for ${allyDmg}!`);
   }
   fight.hpYou -= npcHit || 0;
-  if (youHit > 0) {
-    profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
-    addXp(fight.playerKey, combatXpGains(profile.style, youHit));
-  }
+  if (youHit > 0) profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
+  // (Combat XP moved into the swing resolution above: Stage 19's
+  // dispatcher knows the attack style, and Magic's flat cast XP is
+  // owed even on a miss. Melee behaviour is unchanged — the old
+  // call granted combatXpGains on damage, which is exactly what
+  // swingXpGains returns for a melee swing.)
   send(sess.ws, {
     type: 'npc_fight', phase: 'tick', npcId: npc.id,
     hpYou: Math.max(0, fight.hpYou), maxHpYou: fight.maxHpYou,
@@ -2084,35 +2445,37 @@ function npcTick(fight) {
     youHit, npcHit, youOutcome, npcOutcome, youSpecial: useSpec, energyYou: profile.specialEnergy,
     note: tickNotes.length ? tickNotes.join(' ') : undefined,
   });
-  broadcastNpcState();
+  broadcastNpcState(npc.area);
   if (npc.hp <= 0) {
-    // Kill: drops land, the goblin respawns in 10s. If the goblin's last
-    // swing also dropped the player, the kill still counts (duel-style
-    // both-resolve tick) and the player still wakes in the plaza.
+    // Kill: drops land, the creature respawns on its def's timer.
+    // If the creature's last swing also dropped the player, the
+    // kill still counts (duel-style both-resolve tick) and the
+    // player still wakes in the plaza.
     npc.alive = false; npc.hp = 0; npc.respawnAt = Date.now() + npc.respawnMs;
-    const drops = rollNpcDrops(profile);
+    const drops = rollNpcDrops(profile, npc);
     save(fight.playerKey);
     const playerDead = fight.hpYou <= 0;
     finishNpcFight(fight, 'kill', drops);
-    broadcastNpcState();
-    if (playerDead) respawnPlayer(fight.playerKey, 'You took the goblin down with you — you wake up in the plaza. Nothing lost.');
+    broadcastNpcState(npc.area);
+    if (playerDead) respawnPlayer(fight.playerKey, `You took the ${npc.name.toLowerCase()} down with you — you wake up in the plaza. Nothing lost.`);
     return;
   }
   if (fight.hpYou <= 0) {
-    npc.hp = npc.maxHp; // the goblin resets when it wins
+    npc.hp = npc.maxHp; // the creature resets when it wins
     finishNpcFight(fight, 'death', null);
-    broadcastNpcState();
-    respawnPlayer(fight.playerKey, 'The goblin got you! You wake up in the plaza at full health. Nothing lost.');
+    broadcastNpcState(npc.area);
+    respawnPlayer(fight.playerKey, `The ${npc.name.toLowerCase()} got you! You wake up in the plaza at full health. Nothing lost.`);
   }
 }
 
-// Goblin respawns: 10s after death, back at full HP on its spawn point.
+// NPC respawns: after their def's respawnMs, back at full HP on
+// their spawn point (goblins 10s, wizards/rangers 12s — Stage 19).
 setInterval(() => {
-  let any = false;
+  const touched = new Set();
   for (const npc of npcs.values()) {
-    if (!npc.alive && Date.now() >= npc.respawnAt) { npc.alive = true; npc.hp = npc.maxHp; any = true; }
+    if (!npc.alive && Date.now() >= npc.respawnAt) { npc.alive = true; npc.hp = npc.maxHp; touched.add(npc.area); }
   }
-  if (any) broadcastNpcState();
+  for (const a of touched) broadcastNpcState(a);
 }, 1000);
 
 // ---------- Barrows (Stage 5) ----------
@@ -2200,7 +2563,8 @@ function startBarrowsFight(key, def, area, anchorX, anchorY) {
     attackType: def.attackType, area, anchorX, anchorY,
     hpYou: maxHpYou, maxHpYou, hpNpc: def.maxHp, maxHpNpc: def.maxHp,
     specialQueued: false, done: false, timer: null, tickCount: 0, rageFlags: {},
-    nextSwingYou: MELEE_SPEED, nextSwingNpc: MELEE_SPEED, npcUnlocked: false, // Stage 12 swing timers + retaliate lock
+    nextSwingYou: swingSpeed(attackStyleOf(profile)), nextSwingNpc: MELEE_SPEED, npcUnlocked: false, // Stage 12 swing timers + retaliate lock (Stage 19: first swing at the wielded style's speed)
+    lastRefuseTick: -99, // Stage 19: throttles out-of-arrows/runes notes
   };
   barrowsFights.set(id, fight);
   sess.barrowsFightId = id;
@@ -2243,41 +2607,65 @@ function barrowsTick(fight) {
   const notes = [];
 
   // Stage 8: melee adjacency. The brother stays at his anchor; if
-  // the player is not standing next to it, the player's swing cannot
-  // happen this tick (a CLOSING tick for the player: youHit null, a
-  // queued special stays queued, the guardian holds off, and the
-  // tick tells the player where to walk). A melee brother is gated
-  // the same way below; Karil (missiles) and Ahrim (magic) keep
-  // hitting at any range inside NPC_RANGE, as they always have.
+  // the player is not standing next to it, a MELEE player's swing
+  // cannot happen this tick (a CLOSING tick for the player: youHit
+  // null, a queued special stays queued, the guardian holds off,
+  // and the tick tells the player where to walk). A melee brother
+  // is gated the same way below; Karil (missiles) and Ahrim
+  // (magic) keep hitting at any range inside NPC_RANGE, as they
+  // always have. Stage 19: `closing` still measures MELEE
+  // adjacency (it gates melee brothers and the guardian), but the
+  // player's own swing now keys off their weapon's reach — see
+  // playerInReach below.
   const closing = Math.hypot(sess.x - fight.anchorX, sess.y - fight.anchorY) > MELEE_REACH;
   const ally = helperAlly(fight.playerKey, sess.area);
   let useSpec = false;
   let youHit = null; // null when the player never swung (closing, or the swing is not due yet)
   let youOutcome = null; // the player's swing outcome (Stage 12 clarity)
-  if (!closing) {
+  // Stage 19: the player's swing is gated on the reach of THEIR
+  // wielded style, not on melee adjacency — a bow or staff fights
+  // a brother from up to NPC_RANGE away (the fight itself still
+  // breaks off beyond NPC_RANGE from the anchor, checked above).
+  // For a melee player playerInReach is exactly !closing, so melee
+  // behaviour is unchanged. The Tree Guardian and Dharok's rage
+  // stay inside !closing below: the guardian is a melee ally.
+  const pStyleB = attackStyleOf(profile);
+  const playerInReach = Math.hypot(sess.x - fight.anchorX, sess.y - fight.anchorY) <= styleRange(pStyleB);
+  if (playerInReach) {
     // Stage 12: OSRS swing timer — the player swings once per
-    // MELEE_SPEED ticks, the first swing one weapon-speed after
+    // weapon-speed, the first swing one weapon-speed after
     // engagement; on other in-reach ticks youHit stays null and a
-    // queued special stays queued for the due swing. The swing
-    // itself is the shared player attack — style boosts included —
-    // with combat XP on the total damage, like goblin fights.
+    // queued special stays queued for the due swing. Stage 19: the
+    // swing resolves through the style dispatcher (ranged consumes
+    // an arrow, magic consumes runes; a refused swing consumes
+    // nothing, leaves the timer and the queued special untouched,
+    // and its reason rides the note, throttled).
     if (fight.tickCount >= (fight.nextSwingYou || MELEE_SPEED)) {
-      fight.nextSwingYou = fight.tickCount + MELEE_SPEED;
-      useSpec = fight.specialQueued; fight.specialQueued = false;
-      if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
-      const atkRes = rollPlayerAttack(profile, NPC_DEFENDER, useSpec);
-      youHit = atkRes.dmg;
-      youOutcome = atkRes.outcome;
-      notes.push(...atkRes.notes);
-      fight.hpNpc -= youHit;
-      // Stage 12 retaliate unlock: the brother's swings stay locked
-      // until the player's first CONNECTED swing lands on him —
-      // then he unlocks, his first swing one weapon-speed later.
-      if (atkRes.connected && !fight.npcUnlocked) {
-        fight.npcUnlocked = true;
-        fight.nextSwingNpc = fight.tickCount + MELEE_SPEED;
+      const atkRes = rollStyleAttack(profile, NPC_DEFENDER, fight.specialQueued);
+      if (atkRes.refused) {
+        if (fight.tickCount - (fight.lastRefuseTick || -99) >= 8) { notes.push(atkRes.refused); fight.lastRefuseTick = fight.tickCount; }
+      } else {
+        fight.nextSwingYou = fight.tickCount + swingSpeed(atkRes.style);
+        useSpec = fight.specialQueued; fight.specialQueued = false;
+        if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
+        youHit = atkRes.dmg;
+        youOutcome = atkRes.outcome;
+        notes.push(...atkRes.notes);
+        fight.hpNpc -= youHit;
+        addXp(fight.playerKey, swingXpGains(profile.style, atkRes.style, atkRes.dmg, atkRes.spell));
+        if (youHit > 0) profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
+        // Stage 12 retaliate unlock: the brother's swings stay
+        // locked until the player's first CONNECTED swing lands
+        // on him — then he unlocks, his first swing one
+        // weapon-speed later.
+        if (atkRes.connected && !fight.npcUnlocked) {
+          fight.npcUnlocked = true;
+          fight.nextSwingNpc = fight.tickCount + MELEE_SPEED;
+        }
       }
     }
+  }
+  if (!closing) {
     // Stage 6: a Tree Guardian fighting beside its owner swings at
     // the brother every 2nd tick (its own cadence, unchanged by
     // Stage 12). No XP.
@@ -2285,10 +2673,6 @@ function barrowsTick(fight) {
       const allyDmg = allyDamage(ally);
       fight.hpNpc -= allyDmg;
       notes.push(`🌳 ${ally.name} hits for ${allyDmg}!`);
-    }
-    if (youHit > 0) {
-      profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
-      addXp(fight.playerKey, combatXpGains(profile.style, youHit));
     }
     // Dharok's rage: warn once at each HP threshold he falls through.
     if (def.id === 'dharok' && fight.hpNpc > 0) {
@@ -2366,7 +2750,10 @@ function barrowsTick(fight) {
     youHit, npcHit, youOutcome, npcOutcome, youSpecial: useSpec, energyYou: profile.specialEnergy,
     note: notes.length ? notes.join(' ') : undefined,
     // Stage 8: on a closing tick, where to walk to reach the brother.
-    ...(closing ? { closing: true, moveTo: approachPoint(sess.x, sess.y, fight.anchorX, fight.anchorY) } : {}),
+    // Stage 19: "closing" is measured against the PLAYER's style
+    // reach — a ranged/magic player inside 150 is fighting, not
+    // closing, and is never auto-walked into melee range.
+    ...(!playerInReach ? { closing: true, moveTo: approachPoint(sess.x, sess.y, fight.anchorX, fight.anchorY) } : {}),
   });
 
   if (fight.hpNpc <= 0) {
@@ -2616,39 +3003,48 @@ function fcTick(run) {
     target = [...run.monsters.values()].find((m) => m.alive) || null;
     run.targetId = target ? target.id : null;
   }
-  // Stage 8: melee adjacency for the player's swing. The online
-  // Fight Caves has NO ranged weapon mode (checked: neither the
-  // server nor the client stores one — the Melee/Ranged switch only
-  // exists in the old Muse game), so every player attack here is a
-  // melee swing: a target beyond MELEE_REACH cannot be hit, the
-  // swing is held, a queued special stays queued, and the tick
-  // reports closing + moveTo so the client walks the player in.
-  // The ONE exception is Jad himself — his fight is unchanged
-  // (Stage 4 rules), so swings at Jad keep the old FC_RANGE reach.
+  // Stage 8: melee adjacency for the player's swing — a target
+  // beyond the player's reach cannot be hit, the swing is held, a
+  // queued special stays queued, and the tick reports closing +
+  // moveTo so the client walks the player in. Stage 19: the reach
+  // is the wielded weapon's style range (melee 42 / ranged / magic
+  // 150), and the swing resolves through the style dispatcher —
+  // the caves' every-tick cadence is unchanged (a bow shoots or a
+  // staff casts once per tick while in reach, as melee always
+  // swung once per tick here). The ONE exception is Jad himself —
+  // his fight is unchanged (Stage 4 rules), so swings at Jad keep
+  // the old FC_RANGE reach for every style.
   let useSpec = false;
   let youHit = 0;
   let fcClosing = false;
   if (target && !run.betweenWaves) {
     const tDist = Math.hypot(sess.x - target.x, sess.y - target.y);
-    const inReach = target.kind === 'jad' ? tDist <= FC_RANGE : tDist <= MELEE_REACH;
+    const inReach = target.kind === 'jad' ? tDist <= FC_RANGE : tDist <= styleRange(attackStyleOf(profile));
     if (!inReach) {
       fcClosing = true;
       youHit = null; // no swing happened (null, not 0 — see the closing contract)
       if (tDist > FC_RANGE) note = `Too far away from the ${target.name} — walk closer.`;
     } else {
-      useSpec = run.specialQueued; run.specialQueued = false;
-      if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
-      // Stage 10: the style's level boosts ride along on the swing.
-      const atkRes = rollPlayerAttack(profile, NPC_DEFENDER, useSpec);
-      youHit = atkRes.dmg;
-      if (atkRes.notes.length) note = atkRes.notes.join(' ');
-      target.hp -= youHit;
-      if (youHit > 0) {
-        profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
-        addXp(run.playerKey, combatXpGains(profile.style, youHit));
+      // Stage 19: a REFUSED swing (no arrows / no runes) consumes
+      // nothing and holds the queued special; its reason rides the
+      // tick note, throttled — FC swings every tick, so an
+      // unthrottled refusal would spam.
+      const atkRes = rollStyleAttack(profile, NPC_DEFENDER, run.specialQueued);
+      if (atkRes.refused) {
+        if (run.tickCount - (run.lastRefuseTick || -99) >= 8) { note = atkRes.refused; run.lastRefuseTick = run.tickCount; }
+        youHit = null; // refused: no swing happened (null, not 0)
+      } else {
+        useSpec = run.specialQueued; run.specialQueued = false;
+        if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
+        // Stage 10: the style's level boosts ride along on the swing.
+        youHit = atkRes.dmg;
+        if (atkRes.notes.length) note = atkRes.notes.join(' ');
+        target.hp -= youHit;
+        addXp(run.playerKey, swingXpGains(profile.style, atkRes.style, atkRes.dmg, atkRes.spell));
+        if (youHit > 0) profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
+        if (target.hp <= 0) killFcMonster(run, target);
+        else if (target.kind === 'jad') maybeSpawnFcHealers(run);
       }
-      if (target.hp <= 0) killFcMonster(run, target);
-      else if (target.kind === 'jad') maybeSpawnFcHealers(run);
       // Stage 6: the guardian swings at the same target every 2nd
       // tick, through the same kill path — Tz-Kek splits and Jad's
       // healer trigger process normally, and Jad is a valid target.
@@ -3132,7 +3528,7 @@ wss.on('connection', (ws, req) => {
   send(ws, pilesMsg('plaza')); // Stage 5: any drop piles waiting in the plaza
   send(ws, alliesMsg('plaza')); // Stage 6: any Tree Guardians standing in the plaza
   send(ws, objectsMsg('plaza')); // Stage 7D: any placed objects in the plaza
-  send(ws, { type: 'catalog', items: catalogList(), shops: SHOPS });
+  send(ws, { type: 'catalog', items: catalogList(), shops: SHOPS, spells: SPELLS });
   send(ws, { type: 'exchange_prices', goods: goodsList() });
   send(ws, stakeBoardMsg()); // Stage 17: the current Stake Board offers
   broadcast({ type: 'chat', from: 'Game', text: `${profile.username} entered the plaza.` }, key);
@@ -3212,7 +3608,7 @@ wss.on('connection', (ws, req) => {
       me.area = to;
       me.x = AREAS[to].spawn.x; me.y = AREAS[to].spawn.y;
       send(ws, { type: 'area', area: to });
-      if (to === 'goblins') send(ws, npcStateMsg());
+      if (NPC_AREAS.includes(to)) send(ws, npcStateMsg(to));
       // Stage 2: every area entry also brings its node + fire state
       // (empty lists for areas that have none).
       send(ws, nodesMsg(to));
@@ -3539,6 +3935,42 @@ wss.on('connection', (ws, req) => {
       save(key);
       me.actSkill = 'cooking'; me.actAt = Date.now(); // Stage 7C: activity marker
       send(ws, { type: 'cook_result', ok: !burnt, item: resultItem, xp });
+      return sendProfile(key);
+    }
+
+    // ----- Stage 19: spellbook selection + fletching -----
+    if (m.type === 'set_spell') {
+      const sp = SPELL_BY_ID[String(m.spell || '')];
+      if (!sp) return send(ws, { type: 'error', message: 'Unknown spell.' });
+      const mLvl = levelForXp((profile.xp && profile.xp.magic) || 0);
+      if (mLvl < sp.level) return send(ws, { type: 'error', message: `You need Magic level ${sp.level} for ${sp.name} (you are level ${mLvl}).` });
+      profile.spell = sp.id;
+      save(key);
+      return sendProfile(key);
+    }
+    if (m.type === 'fletch') {
+      // Fletching (Derek's design): 1 base Logs + 1 arrowhead ->
+      // 10 arrows of the head's tier, anywhere, like RS. Level
+      // gates per tier (FLETCH_GATE); XP per set in FLETCH_XP.
+      const headId = String(m.item || '');
+      const headDef = itemDef(headId);
+      if (!headDef || headDef.kind !== 'arrowhead') return send(ws, { type: 'error', message: 'You can only fletch arrowheads.' });
+      const tier = headId.replace(/_arrowhead$/, '');
+      const gate = FLETCH_GATE[tier] || 1;
+      const fLvl = levelForXp((profile.xp && profile.xp.fletching) || 0);
+      if (fLvl < gate) return send(ws, { type: 'error', message: `You need Fletching level ${gate} to fletch ${headDef.name} (you are level ${fLvl}).` });
+      if (stackQty(profile.backpack, headId) < 1) return send(ws, { type: 'error', message: `No ${headDef.name} in your backpack.` });
+      if (stackQty(profile.backpack, 'logs') < 1) return send(ws, { type: 'error', message: 'You need a Logs to fletch arrows.' });
+      if (me.duelId || me.npcFightId || me.barrowsFightId || me.fcRunId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
+      removeStacks(profile.backpack, headId, 1);
+      removeStacks(profile.backpack, 'logs', 1);
+      const arrowId = `${tier}_arrow`;
+      const leftover = addStacks(profile.backpack, arrowId, 10, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(profile.bank, arrowId, leftover); // full pack: bank the overflow, never lose them
+      addXp(key, { fletching: FLETCH_XP[tier] || 10 });
+      save(key);
+      me.actSkill = 'fletching'; me.actAt = Date.now(); // Stage 7C pattern: activity marker
+      send(ws, { type: 'fletch_result', item: arrowId, qty: 10 });
       return sendProfile(key);
     }
 
@@ -3932,6 +4364,13 @@ wss.on('connection', (ws, req) => {
       // again while already engaged is a harmless no-op.
       const duel = me.duelId ? duels.get(me.duelId) : null;
       if (!duel) return send(ws, { type: 'error', message: 'You are not in a duel.' });
+      // Stage 19: a fighter whose wielded style is banned by the
+      // agreed rules cannot engage with it at all (a mid-duel swap
+      // onto a banned weapon is caught at swing resolution instead).
+      const myDuelStyle = attackStyleOf(profile);
+      if (duel.rules && duel.rules['no' + cap(myDuelStyle)]) {
+        return send(ws, { type: 'error', message: styleBanMsg(myDuelStyle) });
+      }
       if (!duel.engaged[key]) {
         duel.engaged[key] = true;
         duel.nextSwingAt[key] = Math.max(COUNTDOWN_TICKS, duel.tickCount) + 1;
@@ -4337,6 +4776,7 @@ wss.on('connection', (ws, req) => {
       const def = {
         id: `custom_${num}`, num, base: baseId, name, icon,
         kind: baseDef.kind, slot: baseDef.slot,
+        style: isWeapon ? (baseDef.style || 'melee') : undefined, // Stage 19: a custom cloned from a bow/staff keeps its attack style
         accBonus: isWeapon ? statOr(m.accBonus, 0.50, baseDef.accBonus || 0) : 0,
         maxBonus: isWeapon ? Math.round(statOr(m.maxBonus, 30, baseDef.maxBonus || 0)) : 0,
         reduction: isWeapon ? 0 : statOr(m.reduction, 0.45, baseDef.reduction || 0),
@@ -4410,6 +4850,8 @@ wss.on('connection', (ws, req) => {
       const npcs = [];
       const addNpc = (npcName, area) => npcs.push({ num: npcs.length + 1, name: npcName, area });
       addNpc(GOBLIN_DEF.name, 'goblins');
+      addNpc(WIZARD_DEF.name, 'magic'); // Stage 19
+      addNpc(RANGER_DEF.name, 'range'); // Stage 19
       for (const b of Object.values(BARROWS_BROTHERS)) addNpc(b.name, 'barrows');
       for (const [kind, d] of Object.entries(FC_DEFS)) addNpc(kind === 'tzkek_small' ? 'Tz-Kek (small)' : d.name, 'fightcaves');
       addNpc('Tree Guardian', 'anywhere');
