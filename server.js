@@ -1883,6 +1883,11 @@ function playersSnapshot(area) {
     username: p.profile.username, x: Math.round(p.x), y: Math.round(p.y), area: p.area,
     inDuel: !!p.duelId, activePrayer: p.profile.activePrayer || null,
     wornHead: (p.profile.worn && p.profile.worn.head) || null, // Stage 21: so clients can put a worn party hat on the knight's head
+    // Stage 30: the whole worn set, so clients can dress the knight
+    // in its real gear (helm, plate, legs, boots, weapon, shield,
+    // cape, gloves, amulet) in each piece's own colour — a geared
+    // player now visibly differs from a bare one.
+    worn: p.profile.worn ? { head: p.profile.worn.head || null, body: p.profile.worn.body || null, legs: p.profile.worn.legs || null, feet: p.profile.worn.feet || null, weapon: p.profile.worn.weapon || null, shield: p.profile.worn.shield || null, cape: p.profile.worn.cape || null, hands: p.profile.worn.hands || null, amulet: p.profile.worn.amulet || null } : null,
     frozenUntil: (p.frozenUntil && p.frozenUntil > now) ? p.frozenUntil : 0, // Stage 24: Freeze root — clients render the ❄️ state while this is in the future
     role: effectiveRole(p.profile), // Stage 7A
     appearance: p.profile.appearance ? { ...p.profile.appearance } : defaultAppearance(), // Stage 10: how this knight looks

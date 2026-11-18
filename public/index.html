@@ -859,7 +859,7 @@ window.pickActivity=function(act){
 };
 function onMsg(m){
  if(m.type==='welcome'){ welcomed=true; quickAttempt=false; wasInGame=true; const wasReconnect=reconnecting; stopReconnect(); reconnectMs=2000; if(wasReconnect){ toast('✅ Reconnected.'); logLine('✅ Reconnected.'); } me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); maybeShowActivityPicker(); }
- if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(Array.isArray(m.spells)) spellList=m.spells; if(drawerPanel==='shop') renderDrawer(); renderQuickButtons(); renderSpellBtns(); }
+ if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(Array.isArray(m.spells)) spellList=m.spells; if(drawerPanel==='shop') renderDrawer(); renderQuickButtons(); renderSpellBtns(); for(const av of Object.values(avatars)) av.gearSig=null; }
  if(m.type==='exchange_prices'){ goods={}; for(const g of (m.goods||[])) goods[g.id]=g; if(drawerPanel==='exchange') renderDrawer(); drawMinimap(); }
  if(m.type==='state'){ if(m.area&&m.area!==curArea) setArea(m.area); players=m.players||[]; initMyPos(); syncAvatars(); if(drawerPanel==='players') renderDrawer(); drawMinimap(); }
  if(m.type==='area'){ setArea(m.area); }
@@ -2417,30 +2417,48 @@ function makeKnight(isMe,name,app){
  const female=hasApp&&app.gender==='female';
  const torsoMat=hasApp? outMat(app.torso) : steelMat;
  const torso=new THREE.Mesh(new THREE.CylinderGeometry(0.30*(female?0.88:1),0.41*(female?0.88:1),0.85,12),torsoMat); torso.position.y=1.22; pivot.add(torso);
- box(0.46*(female?0.88:1),0.66,0.07,hasApp? (OUTFIT_COLORS[app.torso]||OUTFIT_COLORS[0]) : main,0,1.18,0.31,pivot); // tabard
+ const tabardMesh=box(0.46*(female?0.88:1),0.66,0.07,hasApp? (OUTFIT_COLORS[app.torso]||OUTFIT_COLORS[0]) : main,0,1.18,0.31,pivot); // tabard (hidden by syncGear while body armour is worn)
  const belt=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.43,0.10,12),trimMat); belt.position.y=0.84; pivot.add(belt);
  // arms on shoulder pivots; the RIGHT arm is the weapon arm; hands are skin
  const armMat=hasApp? outMat(app.arms) : steelMat;
  const armL=limbPart(0.11,0.64,armMat,hasApp?skinMat:null); armL.position.set(-0.47,1.58,0); pivot.add(armL);
  const armR=limbPart(0.11,0.64,armMat,hasApp?skinMat:null); armR.position.set(0.47,1.58,0); pivot.add(armR);
- const sword=new THREE.Group(); sword.position.set(0,-0.68,0.05); armR.add(sword);
- box(0.07,0.85,0.14,0xd9dee6,0,0.32,0,sword); // blade
- box(0.3,0.08,0.2,trim,0,-0.12,0,sword); // crossguard (trim metal)
- box(0.09,0.24,0.09,0x5a4020,0,-0.28,0,sword); // grip
+ // Stage 30: worn-gear anchors. The knight used to carry a fixed
+ // steel sword whatever it wore; now syncGear (below) dresses it
+ // from the state snapshot's worn set — weapon in the right hand,
+ // shield on the left arm, helm/plate/legs/boots/cape/gloves/amulet
+ // in each piece's own colour — and a bare hand stays bare, so a
+ // geared player reads differently from an ungeared one at a glance.
+ const gearAnchors={
+   head:new THREE.Group(), body:new THREE.Group(), cape:new THREE.Group(),
+   legL:new THREE.Group(), legR:new THREE.Group(), footL:new THREE.Group(), footR:new THREE.Group(),
+   armL:new THREE.Group(), armR:new THREE.Group(),
+ };
+ pivot.add(gearAnchors.head); pivot.add(gearAnchors.body); pivot.add(gearAnchors.cape);
+ legL.add(gearAnchors.legL); legL.add(gearAnchors.footL);
+ legR.add(gearAnchors.legR); legR.add(gearAnchors.footR);
+ armL.add(gearAnchors.armL); armR.add(gearAnchors.armR);
+ const hairParts=[]; // hair / classic helm pieces — hidden while a real head item covers them
  // head: skin sphere. Appearance knights wear their HAIR as the cap with
  // a thin steel circlet (still reads armoured); classic knights keep the
  // steel helmet cap + trim band. Beards for male appearance knights.
  const head=new THREE.Mesh(new THREE.SphereGeometry(0.27,14,12),skinMat); head.position.y=1.94; pivot.add(head);
+ // Stage 30: a face — two dark eyes on the front of the head sphere,
+ // so the figure reads as a person (and you can tell which way it is
+ // facing) instead of a blank ball.
+ const eyeMat=new THREE.MeshBasicMaterial({color:0x1c1a18});
+ const eyeL=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.07,0.02),eyeMat); eyeL.position.set(-0.095,2.0,0.252); pivot.add(eyeL);
+ const eyeR=eyeL.clone(); eyeR.position.x=0.095; pivot.add(eyeR);
  if(hasApp){
    const hairMat=new THREE.MeshLambertMaterial({color:HAIR_COLORS[app.hair]||HAIR_COLORS[1]});
-   const cap=new THREE.Mesh(new THREE.SphereGeometry(0.295,14,10,0,Math.PI*2,0,Math.PI/2),hairMat); cap.position.y=1.99; pivot.add(cap);
-   const circlet=new THREE.Mesh(new THREE.CylinderGeometry(0.30,0.30,0.055,14),steelMat); circlet.position.y=2.0; pivot.add(circlet);
-   if(female){ box(0.44,0.52,0.09,(HAIR_COLORS[app.hair]||HAIR_COLORS[1]),0,1.72,-0.235,pivot); } // long back panel
-   else if(app.beard===1){ box(0.26,0.12,0.08,(HAIR_COLORS[app.hair]||HAIR_COLORS[1]),0,1.79,0.235,pivot); } // short beard
-   else if(app.beard>=2){ box(0.31,0.24,0.10,(HAIR_COLORS[app.hair]||HAIR_COLORS[1]),0,1.745,0.225,pivot); } // full beard
+   const cap=new THREE.Mesh(new THREE.SphereGeometry(0.295,14,10,0,Math.PI*2,0,Math.PI/2),hairMat); cap.position.y=1.99; pivot.add(cap); hairParts.push(cap);
+   const circlet=new THREE.Mesh(new THREE.CylinderGeometry(0.30,0.30,0.055,14),steelMat); circlet.position.y=2.0; pivot.add(circlet); hairParts.push(circlet);
+   if(female){ hairParts.push(box(0.44,0.52,0.09,(HAIR_COLORS[app.hair]||HAIR_COLORS[1]),0,1.72,-0.235,pivot)); } // long back panel
+   else if(app.beard===1){ hairParts.push(box(0.26,0.12,0.08,(HAIR_COLORS[app.hair]||HAIR_COLORS[1]),0,1.79,0.235,pivot)); } // short beard
+   else if(app.beard>=2){ hairParts.push(box(0.31,0.24,0.10,(HAIR_COLORS[app.hair]||HAIR_COLORS[1]),0,1.745,0.225,pivot)); } // full beard
  } else {
-   const helm=new THREE.Mesh(new THREE.SphereGeometry(0.305,14,10,0,Math.PI*2,0,Math.PI/2),steelMat); helm.position.y=1.99; pivot.add(helm);
-   const band=new THREE.Mesh(new THREE.CylinderGeometry(0.315,0.315,0.07,14),trimMat); band.position.y=2.0; pivot.add(band);
+   const helm=new THREE.Mesh(new THREE.SphereGeometry(0.305,14,10,0,Math.PI*2,0,Math.PI/2),steelMat); helm.position.y=1.99; pivot.add(helm); hairParts.push(helm);
+   const band=new THREE.Mesh(new THREE.CylinderGeometry(0.315,0.315,0.07,14),trimMat); band.position.y=2.0; pivot.add(band); hairParts.push(band);
  }
  shadowify(pivot);
  const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
@@ -2448,7 +2466,7 @@ function makeKnight(isMe,name,app){
  const label=document.createElement('div'); label.className='plabel';
  label.innerHTML=`<div class="bubble"></div><span class="rbadge"></span><span class="badge"></span><span class="abadge"></span><span class="cbadge"></span><span class="fbadge"></span> <span class="nm">${esc(name)}</span><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
  $('labels').appendChild(label);
- return {group:g,pivot,legL,legR,armL,armR,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),roleEl:label.querySelector('.rbadge'),actEl:label.querySelector('.abadge'),chalEl:label.querySelector('.cbadge'),fzEl:label.querySelector('.fbadge'),hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
+ return {group:g,pivot,legL,legR,armL,armR,gearAnchors,gearSig:null,hairParts,tabardMesh,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),roleEl:label.querySelector('.rbadge'),actEl:label.querySelector('.abadge'),chalEl:label.querySelector('.cbadge'),fzEl:label.querySelector('.fbadge'),hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
    x:0,z:0,tx:0,tz:0,rot:0,jump:null,prayer:null,bubbleUntil:0,bob:Math.random()*6,isMe,
    swingStart:0,phase:Math.random()*6,moveAmt:0,px:0,pz:0,splatY:2.95};
 }
@@ -2497,6 +2515,7 @@ function syncAvatars(){
    a.frozenUntil=p.frozenUntil||0; // Stage 24: Freeze root (❄️ shell + badge, refreshed by the Stage 24 interval)
    if(p.username===me.username) meFrozenUntil=p.frozenUntil||0;
    syncPartyHat(a,p); // Stage 21: worn party hat on the knight's head
+   syncGear(a,p); // Stage 30: the rest of the worn set, in its own colours
    a.prayer=p.activePrayer||null;
    a.badgeEl.textContent=a.prayer?PRAYER_BADGE[a.prayer]:'';
    if(a.roleEl) a.roleEl.textContent=roleBadge(p.role)? roleBadge(p.role)+' ':'';
@@ -2533,6 +2552,154 @@ function syncPartyHat(a,p){
  shadowify(hg);
  a.pivot.add(hg); a.hatGroup=hg;
 }
+/* ================= Stage 30: worn gear on the knight =================
+   The state snapshot now carries each player's whole worn set, and
+   syncGear dresses the knight from it: helm (or hood/coif) over the
+   hair, plate over the torso with pauldrons, guards or a skirt on
+   the legs, boots, the real weapon in the right hand (sword, axe,
+   spear, hammers, flail, bow, crossbow or staff — shaped and
+   coloured by the piece), a shield on the left arm, cape on the
+   back, gauntlets and an amulet. Colours come from the catalog def
+   where it carries one (Barrows pieces, party hats, customs) and
+   otherwise from Derek's metal palette by tier — the same tints as
+   the party hats. Rebuilt only when the worn signature changes. */
+const TIER_COLORS={bronze:0x8a5a2b,iron:0x7f7f7f,steel:0xb9bfc7,mithril:0x6a5fd8,adamant:0x3a9e4f,rune:0x4a90d9,dragon:0xc22f2f,torva:0xa8bfb2,necro:0x4a2470};
+const BOW_COLORS={shortbow:0x8a6b4a,oak_shortbow:0x6e4f2a,willow_shortbow:0x9a7d4f,maple_shortbow:0x7a4a26,yew_shortbow:0x5d7a3a,magic_shortbow:0x3a6ea8};
+const STAFF_ORBS={staff:0xd9dee6,magic_staff:0x4a90d9,mystic_staff:0x9a5ff0,ahrims_staff:0xc22f2f};
+function gearColorFor(id){
+ if(!id) return 0xb9bfc7;
+ const d=catalog[id];
+ if(d&&d.color) return parseInt(d.color.slice(1),16);
+ let m=/^(bronze|iron|steel|mithril|adamant|rune|dragon|torva|necro)_/.exec(id); if(m) return TIER_COLORS[m[1]];
+ m=/^smith_(bronze|iron|steel|mithril|adamant|rune)_/.exec(id); if(m) return TIER_COLORS[m[1]];
+ if(BOW_COLORS[id]) return BOW_COLORS[id];
+ return 0xb9bfc7;
+}
+function weaponShape(id){
+ if(id==='dharoks_greataxe') return 'greataxe';
+ if(id==='guthans_warspear') return 'spear';
+ if(id==='torags_hammers') return 'hammers';
+ if(id==='veracs_flail') return 'flail';
+ if(id==='karils_crossbow') return 'crossbow';
+ const d=catalog[id];
+ if(d&&d.style==='ranged') return 'bow';
+ if(d&&d.style==='magic') return 'staff';
+ if(/staff/.test(id)) return 'staff';
+ if(/bow/.test(id)) return 'bow';
+ return 'sword';
+}
+function buildWeaponInto(a,id){
+ const A=a.gearAnchors, c=gearColorFor(id), shape=weaponShape(id);
+ const wg=new THREE.Group(); wg.position.set(0,-0.68,0.05); A.armR.add(wg);
+ const grip=0x5a4020, gold=0xc9a227;
+ if(shape==='sword'){
+   box(0.07,0.85,0.14,c,0,0.32,0,wg); // blade in the tier's colour
+   box(0.3,0.08,0.2,gold,0,-0.12,0,wg); // crossguard
+   box(0.09,0.24,0.09,grip,0,-0.28,0,wg); // grip
+ } else if(shape==='greataxe'){
+   box(0.08,1.3,0.08,grip,0,0.3,0,wg); // long haft
+   box(0.52,0.36,0.06,c,0,0.78,0,wg); // broad double head
+   box(0.3,0.2,0.06,c,0,0.78,0,wg);
+ } else if(shape==='spear'){
+   box(0.06,1.5,0.06,grip,0,0.42,0,wg); // shaft
+   const tip=new THREE.Mesh(new THREE.ConeGeometry(0.09,0.32,8),new THREE.MeshLambertMaterial({color:c})); tip.position.y=1.32; wg.add(tip);
+ } else if(shape==='hammers'){
+   const one=(parent)=>{ const h=new THREE.Group(); h.position.set(0,-0.68,0.05); parent.add(h);
+     box(0.07,0.62,0.07,grip,0,0.12,0,h); box(0.24,0.22,0.24,c,0,0.46,0,h); };
+   // the group above already sits at the right hand — build the main
+   // hammer in place and a twin at the left hand
+   box(0.07,0.62,0.07,grip,0,0.12,0,wg); box(0.24,0.22,0.24,c,0,0.46,0,wg);
+   one(A.armL);
+ } else if(shape==='flail'){
+   box(0.07,0.5,0.07,grip,0,0.05,0,wg); // handle
+   const chain=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.34,6),new THREE.MeshLambertMaterial({color:0x8a8f96}));
+   chain.position.set(0.13,0.42,0); chain.rotation.z=-0.7; wg.add(chain);
+   const ball=new THREE.Mesh(new THREE.SphereGeometry(0.13,10,8),new THREE.MeshLambertMaterial({color:c})); ball.position.set(0.26,0.56,0); wg.add(ball);
+ } else if(shape==='staff'){
+   box(0.06,1.2,0.06,0x6e4f2a,0,0.32,0,wg); // wooden rod
+   const orb=new THREE.Mesh(new THREE.SphereGeometry(0.11,10,8),new THREE.MeshLambertMaterial({color:STAFF_ORBS[id]||0x4a90d9})); orb.position.y=1.0; wg.add(orb);
+ } else if(shape==='crossbow'){
+   box(0.09,0.1,0.62,grip,0,0.26,0.04,wg); // stock
+   box(0.56,0.06,0.06,c,0,0.34,0.28,wg); // prod
+ } else { // bow
+   const arc=new THREE.Mesh(new THREE.TorusGeometry(0.45,0.04,8,22,2.4),new THREE.MeshLambertMaterial({color:c}));
+   arc.position.set(0,0.28,0); arc.rotation.z=Math.PI/2-1.2; wg.add(arc);
+   box(0.015,0.8,0.015,0xe8e2d2,0.3,0.28,0,wg); // string (approximation at the chord)
+ }
+}
+function syncGear(a,p){
+ if(!a.gearAnchors) return;
+ const w=p.worn||null;
+ const sig=w? [w.head,w.body,w.legs,w.feet,w.weapon,w.shield,w.cape,w.hands,w.amulet].join('|') : '';
+ if(a.gearSig===sig) return;
+ a.gearSig=sig;
+ const A=a.gearAnchors;
+ for(const k of Object.keys(A)){ while(A[k].children.length) A[k].remove(A[k].children[0]); }
+ const mat=c=>new THREE.MeshLambertMaterial({color:c});
+ // --- head: party hats are syncPartyHat's job; anything else covers the hair
+ const headId=w&&w.head;
+ const covered=!!(headId&&!headId.endsWith('_partyhat'));
+ if(a.hairParts) for(const hp of a.hairParts) hp.visible=!covered;
+ if(covered){
+   const c=gearColorFor(headId), m=mat(c);
+   if(/hood|coif/.test(headId)){
+     const dome=new THREE.Mesh(new THREE.SphereGeometry(0.315,14,10,0,Math.PI*2,0,Math.PI*0.62),m); dome.position.y=1.97; A.head.add(dome);
+     box(0.46,0.5,0.08,c,0,1.74,-0.24,A.head); // the hood's fall down the back
+   } else {
+     const dome=new THREE.Mesh(new THREE.SphereGeometry(0.315,14,10,0,Math.PI*2,0,Math.PI/2),m); dome.position.y=1.99; A.head.add(dome);
+     const band=new THREE.Mesh(new THREE.CylinderGeometry(0.325,0.325,0.07,14),mat(0x3a3a3a)); band.position.y=2.0; A.head.add(band);
+     box(0.07,0.22,0.05,c,0,1.86,0.27,A.head); // nasal guard
+     if(/dragon|necro|torva/.test(headId)){ // horned crest on the top tiers
+       const hornG=new THREE.ConeGeometry(0.05,0.24,8);
+       const h1=new THREE.Mesh(hornG,m); h1.position.set(-0.2,2.22,0); h1.rotation.z=0.5; A.head.add(h1);
+       const h2=new THREE.Mesh(hornG,m); h2.position.set(0.2,2.22,0); h2.rotation.z=-0.5; A.head.add(h2);
+     }
+   }
+ }
+ // --- body: plate over the torso (tabard hides underneath), pauldrons, belt
+ if(a.tabardMesh) a.tabardMesh.visible=!(w&&w.body);
+ if(w&&w.body){
+   const c=gearColorFor(w.body), m=mat(c);
+   const plate=new THREE.Mesh(new THREE.CylinderGeometry(0.345,0.455,0.86,12),m); plate.position.y=1.22; A.body.add(plate);
+   const belt2=new THREE.Mesh(new THREE.CylinderGeometry(0.46,0.47,0.09,12),mat(0xc9a227)); belt2.position.y=0.84; A.body.add(belt2);
+   const pauG=new THREE.SphereGeometry(0.17,10,8);
+   const pl=new THREE.Mesh(pauG,m); pl.position.set(-0.47,1.62,0); A.body.add(pl);
+   const pr=new THREE.Mesh(pauG,m); pr.position.set(0.47,1.62,0); A.body.add(pr);
+ }
+ // --- legs: guards that swing with the legs, or a chainskirt from the waist
+ if(w&&w.legs){
+   const c=gearColorFor(w.legs), m=mat(c);
+   if(/skirt/.test(w.legs)){
+     const skirt=new THREE.Mesh(new THREE.CylinderGeometry(0.36,0.54,0.52,12,1,true),m); skirt.position.y=0.68; A.body.add(skirt);
+   } else {
+     for(const anchor of [A.legL,A.legR]){
+       const guard=new THREE.Mesh(new THREE.CylinderGeometry(0.165,0.15,0.52,10),m); guard.position.y=-0.3; anchor.add(guard);
+     }
+   }
+ }
+ // --- feet: boots over the foot spheres
+ if(w&&w.feet){ const c=gearColorFor(w.feet); box(0.2,0.15,0.32,c,0,-0.7,0.04,A.footL); box(0.2,0.15,0.32,c,0,-0.7,0.04,A.footR); }
+ // --- weapon in the right hand (+ Torag's twin in the left)
+ if(w&&w.weapon) buildWeaponInto(a,w.weapon);
+ // --- shield on the left arm
+ if(w&&w.shield){
+   const c=gearColorFor(w.shield);
+   const sg=new THREE.Group(); sg.position.set(0,-0.6,0.17); sg.rotation.x=0.12; A.armL.add(sg);
+   box(0.52,0.74,0.07,c,0,0,0,sg);
+   box(0.38,0.58,0.03,0x3a3a3a,0,0,0.05,sg); // darker inset face
+   const boss=new THREE.Mesh(new THREE.SphereGeometry(0.09,10,8),mat(0xd9dee6)); boss.position.set(0,0,0.08); sg.add(boss);
+ }
+ // --- cape on the back
+ if(w&&w.cape){
+   const c=w.cape==='fire_cape'? 0xe25822 : gearColorFor(w.cape);
+   const cape=box(0.64,1.12,0.05,c,0,1.1,-0.34,A.cape); cape.rotation.x=0.1;
+ }
+ // --- gauntlets + amulet
+ if(w&&w.hands){ const c=gearColorFor(w.hands); box(0.17,0.2,0.17,c,0,-0.64,0,A.armL); box(0.17,0.2,0.17,c,0,-0.64,0,A.armR); }
+ if(w&&w.amulet){ const d=catalog[w.amulet]; box(0.1,0.12,0.05,(d&&d.color)? parseInt(d.color.slice(1),16) : 0xc9a227,0,1.44,0.4,A.body); }
+ for(const k of Object.keys(A)) shadowify(A[k]);
+}
+
 /* ---- Stage 6: Tree Guardians (allies) ---- */
 let alliesByArea={}; // area -> [ally] from 'allies' messages
 let allyAvatars={}; // ally id -> {group,label,nameEl,x,z,tx,tz,rot,bob,hp,maxHp}
