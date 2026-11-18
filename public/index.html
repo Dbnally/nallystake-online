@@ -2453,7 +2453,10 @@ function poseWalk(a,dist,dt){
  a.legL.rotation.x=s*0.55*m;
  a.legR.rotation.x=-s*0.55*m;
  if(a.armL) a.armL.rotation.x=-s*0.42*m;
- if(a.armR&&!a.swingStart) a.armR.rotation.x=s*0.42*m;
+ // Stage 26: the weapon arm EASES back into the walk counter-swing
+ // after a swing ends instead of snapping to the cycle value, so
+ // walk → swing → walk blends instead of clicking off and on.
+ if(a.armR&&!a.swingStart) a.armR.rotation.x+=(s*0.42*m-a.armR.rotation.x)*Math.min(1,dt*14);
 }
 /* ---- NPC goblins ---- */
 function makeGoblin(n){
@@ -3078,24 +3081,31 @@ function startSwing(a){ if(a) a.swingStart=performance.now(); }
    target and lunges: a quick ~7-server-unit step-in and back, so the
    hit visibly lands. Distances below are server units (÷W2S = world). */
 const SWING_SHOW_RANGE=62, LUNGE_DIST=7;
-function startSwingAt(attacker,target){
+function startSwingAt(attacker,target,force){
  if(!attacker||!attacker.group) return;
  if(!target||!target.group){ startSwing(attacker); return; } // no target entry — old behaviour
  const dx=target.group.position.x-attacker.group.position.x;
  const dz=target.group.position.z-attacker.group.position.z;
- if(Math.hypot(dx,dz)*W2S>SWING_SHOW_RANGE) return; // too far apart on screen — no fake swing
+ // Stage 26: the range gate stays for any distant-noise caller, but
+ // a FORCED swing — every swing in the local player's own fights
+ // (duels, mod duels, NPC / Barrows / Fight Caves fights, casts) —
+ // always animates when the attacker is on screen, at any range:
+ // a duel fought at bow/staff distance still shows both fighters
+ // swinging at each other, hit, blocked or miss.
+ if(!force&&Math.hypot(dx,dz)*W2S>SWING_SHOW_RANGE) return; // too far apart on screen — no fake swing
  startSwing(attacker);
  faceTarget(attacker,dx,dz);
  attacker.lunge={dx,dz,t0:performance.now()};
 }
 /* Turn the attacker to face its target on a swing. My knight turns
-   through localRot (animate() eases him); everyone else turns on the
-   spot — a fast turn is fine, and a.rot is kept in step so the
-   per-frame facing logic doesn't snap them back. */
+   through localRot (animate() eases him, ~150ms). Everyone else
+   records a faceTarget and animate() eases their rotation onto it
+   along the shortest arc while they stand — no more instant snap,
+   and the facing persists between swings while a fight is on. */
 function faceTarget(a,dx,dz){
  const ang=Math.atan2(dx,dz);
  if(me&&avatars[me.username]===a){ localRot=ang; return; }
- a.rot=ang; if(a.group) a.group.rotation.y=ang;
+ a.faceTarget=ang;
 }
 /* The lunge, applied in animate() AFTER the frame's position easing:
    out to full reach in ~70ms, a short hold, back over ~120ms (≈ the
@@ -3116,6 +3126,56 @@ function clearLungeOff(a){
  if(!a) return;
  if(a.lungeOff&&a.group){ a.group.position.x-=a.lungeOff.x; a.group.position.z-=a.lungeOff.z; }
  a.lungeOff=null;
+}
+/* ---- Stage 26: getting hit LOOKS like getting hit ----
+   A landed hit (damage > 0) recoils the victim away from the
+   attacker — a quick step/lean back (~260ms, out fast, ease-out
+   recovery). A blocked hit gets a smaller, shorter guard flinch
+   (~170ms). A miss gets nothing — the swing whiffs. Rapid hits
+   RESTART the flinch (startFlinch just overwrites the state), they
+   never stack. Like the lunge, the offset applied each frame is
+   kept on a.flinchOff and taken back off at the top of the next
+   frame (clearFlinchOff), so it never feeds position easing.
+   Knights also lean back a touch on their jump pivot while the
+   flinch runs (skipped mid-jump — updateJump owns the pivot then). */
+const FLINCH_MS=260, FLINCH_GUARD_MS=170, FLINCH_DIST=4.5, FLINCH_GUARD_DIST=2;
+function startFlinch(victim,attacker,guard){
+ if(!victim||!victim.group) return;
+ let dx=0, dz=0;
+ if(attacker&&attacker.group){ dx=victim.group.position.x-attacker.group.position.x; dz=victim.group.position.z-attacker.group.position.z; }
+ if(Math.hypot(dx,dz)<0.01){ // no usable attacker reference — recoil straight back from own facing
+   const r=victim.group.rotation.y||0; dx=-Math.sin(r); dz=-Math.cos(r);
+ }
+ const d=Math.hypot(dx,dz)||1;
+ victim.flinch={dx:dx/d,dz:dz/d,t0:performance.now(),dur:guard?FLINCH_GUARD_MS:FLINCH_MS,amt:(guard?FLINCH_GUARD_DIST:FLINCH_DIST)/W2S,guard:!!guard};
+}
+function applyFlinch(a,now){
+ if(!a||!a.group||!a.flinch) return;
+ const t=now-a.flinch.t0;
+ if(t>=a.flinch.dur){ a.flinch=null; if(a.pivot&&!a.jump) a.pivot.rotation.x=0; return; }
+ const p= t<55 ? 1-Math.pow(1-t/55,2) : Math.max(0,1-(t-55)/(a.flinch.dur-55)); // out fast, ease back
+ const ox=a.flinch.dx*a.flinch.amt*p, oz=a.flinch.dz*a.flinch.amt*p;
+ a.group.position.x+=ox; a.group.position.z+=oz;
+ a.flinchOff={x:ox,z:oz};
+ if(a.pivot&&!a.jump) a.pivot.rotation.x=-0.15*p*(a.flinch.guard?0.6:1); // backward lean
+}
+function clearFlinchOff(a){
+ if(!a) return;
+ if(a.flinchOff&&a.group){ a.group.position.x-=a.flinchOff.x; a.group.position.z-=a.flinchOff.z; }
+ a.flinchOff=null;
+}
+/* The one trigger rule, shared by every fight surface: a miss is a
+   whiff (no reaction); a blocked hit is a guard flinch; a landed
+   hit with damage is a full flinch. A connected hit that rolled 0
+   (or a damage-derived 0 with no outcome tag, which the splats
+   already treat as blocked) reads as a guard flinch. A Freeze root
+   never flinches — the target is locked in ice. */
+function flinchForOutcome(victim,attacker,outcome,dmg){
+ if(!victim) return;
+ if(outcome==='miss') return;
+ if(outcome==='blocked'){ startFlinch(victim,attacker,true); return; }
+ if(typeof dmg==='number'&&dmg>0){ startFlinch(victim,attacker,false); return; }
+ startFlinch(victim,attacker,true);
 }
 /* Swing pose: the weapon-arm pivot chops from raised to struck over
    ~120ms, then recovers over ~200ms. Entries with no arm pivot (most
@@ -3158,6 +3218,28 @@ function projectTo(x,y,z){
  _v.set(x,y,z).project(camera);
  if(_v.z>1) return null;
  return {x:(_v.x*0.5+0.5)*innerWidth, y:(-_v.y*0.5+0.5)*innerHeight};
+}
+/* ---- Stage 26 follow-up: the WHOLE figure is the tap target ----
+   The regular tap tests measure from ONE projected point (torso
+   height), so a tap on the head, the boots, a swung-out sword arm
+   or a party hat could miss the person entirely and walk instead.
+   figureTapDist projects a ladder of points up the body — boots,
+   legs, torso, head/hat — and returns the closest screen distance
+   to the tap, so the whole rendered figure counts. In a duel the
+   opponent gets this test with a generous margin (DUEL_FIGURE_TAP):
+   Derek's rule — tap ANY part of the person you're fighting and
+   you attack them. */
+const DUEL_FIGURE_TAP=58;
+function figureTapDist(a,cx,cy){
+ if(!a||!a.group) return 1e9;
+ let best=1e9;
+ for(const h of [0.25,0.8,1.35,1.95]){
+   const s=projectTo(a.group.position.x,h,a.group.position.z);
+   if(!s) continue;
+   const d=Math.hypot(s.x-cx,s.y-cy);
+   if(d<best) best=d;
+ }
+ return best;
 }
 function updateLabels(now){
  for(const a of Object.values(avatars)){
@@ -3336,10 +3418,14 @@ function handleTap(cx,cy){
  if(settings.tapMode==='menu'){
    const hit=detectWorldTap(cx,cy);
    if(hit&&(hit.kind==='player'||hit.kind==='npc'||hit.kind==='fc'||hit.kind==='node'||hit.kind==='pile'||hit.kind==='mound'||hit.kind==='modnpc')){
+     // Stage 26: in a duel, a tap on my opponent is an ATTACK, never
+     // a menu — fall through to the normal branches below, which
+     // engage (duel) / engage (mod duel). No action screen mid-fight.
+     const duelTap=(duel&&hit.kind==='player'&&hit.name===duel.opponent)||(modDuel&&hit.kind==='modnpc'&&hit.id===modDuel.npcId);
      // Stage 24: with a spell armed, a tap on a combat target casts
      // (falls through to the normal branches below) instead of
      // opening the menu — arming works the same in both tap modes.
-     if(!(armedSpell&&(hit.kind==='player'||hit.kind==='npc'||hit.kind==='fc'||hit.kind==='modnpc'))){
+     if(!duelTap&&!(armedSpell&&(hit.kind==='player'||hit.kind==='npc'||hit.kind==='fc'||hit.kind==='modnpc'))){
        handleLongPress(cx,cy);
        return;
      }
@@ -3366,6 +3452,10 @@ function handleTap(cx,cy){
      const d=Math.hypot(s.x-cx,s.y-cy);
      if(d<48 && d<mbD){ mb=id; mbD=d; }
    }
+   // Stage 26 follow-up: mid mod-duel, ANY tap on my opponent's
+   // whole figure is the tap — the centre-point test doesn't get
+   // to miss their head, plume or sword arm.
+   if(modDuel&&modAvatars[modDuel.npcId]&&figureTapDist(modAvatars[modDuel.npcId],cx,cy)<DUEL_FIGURE_TAP) mb=modDuel.npcId;
    if(mb){ if(modDuel&&modDuel.npcId===mb){ const n=modNpcList.find(x=>x.id===mb); if(n&&armedCastAt('duel',mb,n.x,n.y)) return; } tapModNpc(mb); return; }
  }
  // Fight Caves monsters (tap to target; walks over first if too far)
@@ -3427,6 +3517,13 @@ function handleTap(cx,cy){
    const d=Math.hypot(s.x-cx,s.y-cy);
    if(d<44 && d<bestD){ best=name; bestD=d; }
  }
+ // Stage 26 follow-up: in a duel, a tap ANYWHERE on my opponent's
+ // whole figure (head, torso, limbs, weapon, hat — figureTapDist
+ // walks the whole body) makes THEM the tap's target, even when
+ // the centre-point test above missed or picked someone nearer
+ // the middle. The duel branch below then attacks — never a menu,
+ // never a walk.
+ if(duel&&avatars[duel.opponent]&&figureTapDist(avatars[duel.opponent],cx,cy)<DUEL_FIGURE_TAP) best=duel.opponent;
  if(best){
    if(duel&&best===duel.opponent){
      // Stage 24: an armed spell casts at the opponent instead of
@@ -3436,9 +3533,12 @@ function handleTap(cx,cy){
      const op=players.find(p=>p.username===best);
      if(op&&armedCastAt('duel',best,op.x,op.y)) return;
      // Tap-to-engage: tell the server I'm attacking (repeats are no-ops
-     // server-side). Existing behaviour below (menu / closing) is kept.
+     // server-side).
      send({type:'duel_attack'});
      if(!duelEngaged){ duelEngaged=true; renderDuelHint(); }
+     // Stage 26: in a duel the opponent tap ONLY attacks — the
+     // tap-player action menu never opens on my opponent mid-fight.
+     return;
    }
    if(best!==me.username){
      // Derek's rule: a challenger wears the ❗. Tapping them while THEIR
@@ -3705,21 +3805,40 @@ function animate(){
  // driven by the distance actually travelled this frame.
  for(const [name,a] of Object.entries(avatars)){
    clearLungeOff(a); // last frame's lunge offset comes off before easing/walk math
+   clearFlinchOff(a); // Stage 26: same for last frame's flinch recoil
    const gx0=a.group.position.x, gz0=a.group.position.z;
    if(me && name===me.username){
      const k=1-Math.exp(-18*dt); // tight: smooth but never laggy
      const dx=a.x-a.group.position.x, dz=a.z-a.group.position.z;
      if(Math.hypot(dx,dz)>6){ a.group.position.x=a.x; a.group.position.z=a.z; } // teleports snap, steps glide
      else { a.group.position.x+=dx*k; a.group.position.z+=dz*k; }
+     // Stage 26: standing in a duel (or mod duel), my knight faces
+     // his opponent — localRot eases onto the line to them whenever
+     // I'm not steering or walking somewhere myself.
+     const foeAv=duel? avatars[duel.opponent] : (modDuel? modAvatars[modDuel.npcId] : null);
+     if(foeAv&&Math.hypot(myVel.x,myVel.z)<0.05&&!tapTarget){
+       const fang=Math.atan2(foeAv.group.position.x-a.group.position.x,foeAv.group.position.z-a.group.position.z);
+       let fd=fang-localRot; fd=Math.atan2(Math.sin(fd),Math.cos(fd));
+       localRot+=fd*(1-Math.exp(-12*dt));
+     }
      easeRot(a,localRot,dt);
    }
    else {
      const k=1-Math.exp(-12*dt);
      a.x+=(a.tx-a.x)*k; a.z+=(a.tz-a.z)*k;
      a.group.position.x=a.x; a.group.position.z=a.z;
+     // Stage 26: my duel opponent keeps facing ME while the fight
+     // is on — refreshed every frame from my rendered position.
+     if(duel&&name===duel.opponent&&me&&avatars[me.username]){
+       const mp=avatars[me.username].group.position;
+       a.faceTarget=Math.atan2(mp.x-a.group.position.x,mp.z-a.group.position.z);
+     }
      // face movement direction roughly (toward target), eased
      const dx=a.tx-a.x, dz=a.tz-a.z;
      if(Math.hypot(dx,dz)>0.05) easeRot(a,Math.atan2(dx,dz),dt);
+     // Stage 26: standing still, ease onto the last swing facing
+     // instead of snapping to a.rot.
+     else if(a.faceTarget!==undefined) easeRot(a,a.faceTarget,dt);
      else a.group.rotation.y=a.rot||0;
    }
    const dist=Math.hypot(a.group.position.x-gx0,a.group.position.z-gz0);
@@ -3728,38 +3847,57 @@ function animate(){
    applySwing(a,now);
    updateJump(a,now);
    applyLunge(a,now);
+   applyFlinch(a,now);
  }
  // NPC meshes ease the same way (Stage 8: goblins and cave monsters
  // walk toward you server-side; brothers hold their anchor — no tx).
  for(const a of Object.values(npcAvatars)){
    clearLungeOff(a);
+   clearFlinchOff(a);
    if(a.tx!==undefined){
      const k=1-Math.exp(-12*dt);
      a.x+=(a.tx-a.x)*k; a.z+=(a.tz-a.z)*k;
      a.group.position.x=a.x; a.group.position.z=a.z;
      const dx=a.tx-a.x, dz=a.tz-a.z;
      if(Math.hypot(dx,dz)>0.05) easeRot(a,Math.atan2(dx,dz),dt);
+     // Stage 26: standing in a fight, ease onto the swing facing.
+     else if(a.faceTarget!==undefined) easeRot(a,a.faceTarget,dt);
    }
+   // Stage 26: brothers hold their anchor (no tx) but still turn
+   // to face their attacker on a swing.
+   else if(a.faceTarget!==undefined) easeRot(a,a.faceTarget,dt);
    applySwing(a,now);
    applyLunge(a,now);
+   applyFlinch(a,now);
  }
  for(const a of Object.values(fcAvatars)){
    clearLungeOff(a);
+   clearFlinchOff(a);
    if(a.tx!==undefined){
      const k=1-Math.exp(-12*dt);
      a.group.position.x+=(a.tx-a.group.position.x)*k;
      a.group.position.z+=(a.tz-a.group.position.z)*k;
      const dx=a.tx-a.group.position.x, dz=a.tz-a.group.position.z;
      if(Math.hypot(dx,dz)>0.05) easeRot(a,Math.atan2(dx,dz),dt);
+     else if(a.faceTarget!==undefined) easeRot(a,a.faceTarget,dt);
    }
    applySwing(a,now);
    applyLunge(a,now);
+   applyFlinch(a,now);
  }
  // Stage 22: moderators hold their post — only swings/lunges animate.
- for(const a of Object.values(modAvatars)){
+ // Stage 26: mid mod-duel the mod also turns to face me, and flinches.
+ for(const [mid,a] of Object.entries(modAvatars)){
    clearLungeOff(a);
+   clearFlinchOff(a);
+   if(modDuel&&modDuel.npcId===mid&&me&&avatars[me.username]){
+     const mp=avatars[me.username].group.position;
+     easeRot(a,Math.atan2(mp.x-a.group.position.x,mp.z-a.group.position.z),dt);
+   }
+   else if(a.faceTarget!==undefined) easeRot(a,a.faceTarget,dt);
    applySwing(a,now);
    applyLunge(a,now);
+   applyFlinch(a,now);
  }
  // Brazier flames flicker (tournament dais)
  for(const f of flickerLights){
@@ -5273,25 +5411,43 @@ function duelTickUI(m){
  const oppAv=avatars[duel.opponent]; if(oppAv) setHpBar(oppAv,duel.hpOpponent/99,duel.hpOpponent,99); // opponent's overhead bar + number
  const myAv=me?avatars[me.username]:null; if(myAv) setHpBar(myAv,duel.hpYou/99,duel.hpYou,99); // my overhead bar + number (duels only)
  applyClosing(m); // Stage 8: on a closing tick, walk into reach (moveTo)
- const closing=!!m.closing||typeof m.youHit!=='number';
+ // Stage 26 AUDIT FIX: closing is ONLY what the server says it is.
+ // The old line also treated "I didn't swing this tick" as a
+ // closing tick — but the two fighters swing on INDEPENDENT timers
+ // (weapon speeds, engage times), so on most ticks only one side
+ // swings, and the old test threw the other side's swing away:
+ // no animation, no hitsplat, no flinch — hits landed invisibly,
+ // from a statue. Now every tick renders whichever swings it
+ // actually carries.
+ const closing=!!m.closing;
  if(!closing){
    // Swings + hitsplats only on real swings (null hit = nobody swung).
    // Stage 12: when the server tags the swing with an outcome, the
    // splat shows it — red damage / blue shield / grey Miss. Absent
    // outcome → the damage-derived splat, exactly as before.
-   if(typeof m.youHit==='number'){ startSwingAt(me?avatars[me.username]:null,avatars[duel.opponent]);
+   if(typeof m.youHit==='number'){ startSwingAt(me?avatars[me.username]:null,avatars[duel.opponent],true);
      if(typeof m.youOutcome==='string') spawnOutcomeSplat(duel.opponent,m.youOutcome,m.youHit,m.youSpecial);
-     else spawnSplat(duel.opponent,m.youHit,m.youSpecial); }
-   if(typeof m.oppHit==='number'){ startSwingAt(avatars[duel.opponent],me?avatars[me.username]:null);
+     else spawnSplat(duel.opponent,m.youHit,m.youSpecial);
+     flinchForOutcome(oppAv,myAv,typeof m.youOutcome==='string'?m.youOutcome:null,m.youHit); } // Stage 26: my landed hit recoils them
+   if(typeof m.oppHit==='number'){ startSwingAt(avatars[duel.opponent],me?avatars[me.username]:null,true);
      if(typeof m.oppOutcome==='string') spawnOutcomeSplat(me.username,m.oppOutcome,m.oppHit,m.oppSpecial);
-     else spawnSplat(me.username,m.oppHit,m.oppSpecial); }
+     else spawnSplat(me.username,m.oppHit,m.oppSpecial);
+     flinchForOutcome(myAv,oppAv,typeof m.oppOutcome==='string'?m.oppOutcome:null,m.oppHit); } // Stage 26: their landed hit recoils me
  }
  if(typeof m.youHit==='number'&&!duelEngaged){ duelEngaged=true; renderDuelHint(); } // a swing of mine appeared — I'm engaged (tap or auto-retaliate)
+ // Stage 26 AUDIT FIX (companion): the strip text names only the
+ // swings this tick actually carried — the old text printed
+ // "You hit null · they hit null" on between-swings ticks once
+ // the closing test above stopped covering for it.
  let last;
- if(closing) last=m.note||'⚔️ Too far apart — closing in to strike…';
+ if(m.note) last=m.note;
+ else if(m.countdownLeft>0) last='Get ready…';
+ else if(closing) last='⚔️ Too far apart — closing in to strike…';
  else {
-   last=`You hit ${m.youHit}${m.youSpecial?' (DRAGON SLASH!)':''} · they hit ${m.oppHit}${m.oppSpecial?' (special!)':''}`;
-   if(m.note) last=m.note;
+   const parts=[];
+   if(typeof m.youHit==='number') parts.push(`You hit ${m.youHit}${m.youSpecial?' (DRAGON SLASH!)':''}`);
+   if(typeof m.oppHit==='number') parts.push(`they hit ${m.oppHit}${m.oppSpecial?' (special!)':''}`);
+   last=parts.length? parts.join(' · ') : '⚔️ Fight!';
  }
  $('duellast').textContent=last;
  renderDuelBar(); renderOrbs();
@@ -5386,12 +5542,14 @@ function npcFightUI(m){
    // that side never swung (closing tick / gated melee brother).
    // Stage 12: a present outcome field picks the splat (hit / blocked
    // shield / Miss); absent → the damage-derived splat, as before.
-   if(typeof m.youHit==='number'){ startSwingAt(me?avatars[me.username]:null,ba);
+   if(typeof m.youHit==='number'){ startSwingAt(me?avatars[me.username]:null,ba,true);
      if(typeof m.youOutcome==='string') spawnOutcomeSplatOn(ba,m.youOutcome,m.youHit,m.youSpecial);
-     else spawnSplatOn(ba,m.youHit,m.youSpecial); }
-   if(typeof m.npcHit==='number'){ startSwingAt(ba,me?avatars[me.username]:null);
+     else spawnSplatOn(ba,m.youHit,m.youSpecial);
+     flinchForOutcome(ba,me?avatars[me.username]:null,typeof m.youOutcome==='string'?m.youOutcome:null,m.youHit); } // Stage 26
+   if(typeof m.npcHit==='number'){ startSwingAt(ba,me?avatars[me.username]:null,true);
      if(typeof m.npcOutcome==='string') spawnOutcomeSplat(me.username,m.npcOutcome,m.npcHit,false);
-     else spawnSplat(me.username,m.npcHit,false); }
+     else spawnSplat(me.username,m.npcHit,false);
+     flinchForOutcome(me?avatars[me.username]:null,ba,typeof m.npcOutcome==='string'?m.npcOutcome:null,m.npcHit); } // Stage 26
    if(ba&&ba.isBrother){ ba.hp=m.hpNpc; ba.maxHp=m.maxHpNpc; }
    if(ba&&typeof m.npcFrozenUntil==='number') ba.frozenUntil=m.npcFrozenUntil; // Stage 24: Freeze root on my target
    if(ba) setHpBar(ba,m.hpNpc/Math.max(1,m.maxHpNpc),m.hpNpc,m.maxHpNpc); // overhead bar + number tracks the fight, green → yellow → red
@@ -5493,14 +5651,19 @@ function modDuelUI(m){
    if(ma) setHpBar(ma,m.hpNpc/99,m.hpNpc,99);
    const myAv=me?avatars[me.username]:null; if(myAv) setHpBar(myAv,m.hpYou/99,m.hpYou,99);
    applyClosing(m); // on a closing tick, walk into reach (moveTo)
-   const closing=!!m.closing||typeof m.youHit!=='number';
+   // Stage 26 AUDIT FIX: same invisible-swing bug as duelTickUI —
+   // "I didn't swing this tick" is not a closing tick; the mod's
+   // swing on such a tick now renders (animation + splat + flinch).
+   const closing=!!m.closing;
    if(!closing){
-     if(typeof m.youHit==='number'){ startSwingAt(me?avatars[me.username]:null,ma);
+     if(typeof m.youHit==='number'){ startSwingAt(me?avatars[me.username]:null,ma,true);
        if(typeof m.youOutcome==='string') spawnOutcomeSplatOn(ma,m.youOutcome,m.youHit,m.youSpecial);
-       else spawnSplatOn(ma,m.youHit,m.youSpecial); }
-     if(typeof m.npcHit==='number'){ startSwingAt(ma,me?avatars[me.username]:null);
+       else spawnSplatOn(ma,m.youHit,m.youSpecial);
+       flinchForOutcome(ma,me?avatars[me.username]:null,typeof m.youOutcome==='string'?m.youOutcome:null,m.youHit); } // Stage 26
+     if(typeof m.npcHit==='number'){ startSwingAt(ma,me?avatars[me.username]:null,true);
        if(typeof m.npcOutcome==='string') spawnOutcomeSplat(me.username,m.npcOutcome,m.npcHit,false);
-       else spawnSplat(me.username,m.npcHit,false); }
+       else spawnSplat(me.username,m.npcHit,false);
+       flinchForOutcome(me?avatars[me.username]:null,ma,typeof m.npcOutcome==='string'?m.npcOutcome:null,m.npcHit); } // Stage 26
    }
    if(typeof m.youHit==='number') modDuelEngaged=true; // one of my swings appeared — I'm engaged
    let last;
@@ -5617,25 +5780,27 @@ function onFcTick(m){
    const prev=prevFcHp[u.id];
    if(typeof prev==='number'&&u.hp<prev){
      spawnSplatOn(fcAvatars[u.id],prev-u.hp,false);
-     if(u.id===m.targetId) startSwingAt(me?avatars[me.username]:null,fcAvatars[u.id]);
+     if(u.id===m.targetId) startSwingAt(me?avatars[me.username]:null,fcAvatars[u.id],true);
+     startFlinch(fcAvatars[u.id],me?avatars[me.username]:null,false); // Stage 26: a real HP drop recoils the monster
    }
    prevFcHp[u.id]=u.hp;
    if(fcMonsters[u.id]) fcMonsters[u.id].hp=u.hp;
  }
  for(const id of Object.keys(prevFcHp)){
    if(!aliveIds.has(id)){
-     if(prevFcHp[id]>0){ spawnSplatOn(fcAvatars[id],prevFcHp[id],false); if(id===m.targetId) startSwingAt(me?avatars[me.username]:null,fcAvatars[id]); }
+     if(prevFcHp[id]>0){ spawnSplatOn(fcAvatars[id],prevFcHp[id],false); if(id===m.targetId) startSwingAt(me?avatars[me.username]:null,fcAvatars[id],true); }
      delete prevFcHp[id];
    }
  }
- if(typeof prevFcMyHp==='number'&&m.hpYou<prevFcMyHp) spawnSplat(me.username,prevFcMyHp-m.hpYou,false);
+ if(typeof prevFcMyHp==='number'&&m.hpYou<prevFcMyHp){ spawnSplat(me.username,prevFcMyHp-m.hpYou,false);
+   startFlinch(me?avatars[me.username]:null,m.targetId?fcAvatars[m.targetId]:null,false); } // Stage 26: a landed cave hit recoils me (away from my target)
  prevFcMyHp=m.hpYou;
  for(const id of Object.keys(fcMonsters)){ if(!aliveIds.has(id)) delete fcMonsters[id]; }
  syncFcMonsters();
  // Blocked hits arrive in hitsTaken as 0-damage — blue splat each.
  let taken=0, blockedN=0, jadDmg=0;
  for(const h of (m.hitsTaken||[])){
-   if(h.blocked){ blockedN++; spawnSplat(me.username,0,false); }
+   if(h.blocked){ blockedN++; spawnSplat(me.username,0,false); startFlinch(me?avatars[me.username]:null,m.targetId?fcAvatars[m.targetId]:null,true); } // Stage 26: blocked = guard flinch
    else if(h.dmg>0){ taken+=h.dmg; if(h.kind==='jad') jadDmg+=h.dmg; }
  }
  let last;
@@ -5751,6 +5916,9 @@ function detectWorldTap(cx,cy){
    }
  }
  if(curArea==='plaza'){
+   // Stage 26 follow-up: mid mod-duel, my opponent's WHOLE figure
+   // resolves to them (menu-tap routing + long-press use this too).
+   if(modDuel&&modAvatars[modDuel.npcId]&&figureTapDist(modAvatars[modDuel.npcId],cx,cy)<DUEL_FIGURE_TAP) return {kind:'modnpc',id:modDuel.npcId};
    for(const [id,a] of Object.entries(modAvatars)){
      const s=projectTo(a.group.position.x,1.4,a.group.position.z);
      if(s&&Math.hypot(s.x-cx,s.y-cy)<48) return {kind:'modnpc',id};
@@ -5787,6 +5955,10 @@ function detectWorldTap(cx,cy){
    const d=Math.hypot(s.x-cx,s.y-cy);
    if(d<44&&d<bestD){ best=name; bestD=d; }
  }
+ // Stage 26 follow-up: in a duel, a tap anywhere on my opponent's
+ // whole figure resolves to THEM here too — so the long-press and
+ // Menu-tap paths also attack instead of opening the action menu.
+ if(duel&&avatars[duel.opponent]&&figureTapDist(avatars[duel.opponent],cx,cy)<DUEL_FIGURE_TAP) return {kind:'player',name:duel.opponent};
  if(best) return {kind:'player',name:best};
  const groundRoot=areaGroups[curArea];
  const gh=groundRoot? raycaster.intersectObjects(groundRoot.children.filter(o=>o.geometry&&o.geometry.type==='PlaneGeometry'),false)[0] : null;
@@ -6082,6 +6254,13 @@ function handleLongPress(cx,cy){
  const hit=detectWorldTap(cx,cy);
  if(!hit) return;
  if(hit.kind==='player'){
+   // Stage 26: a long-press on my duel opponent attacks — the
+   // action menu stays shut for the whole duel, on every tap path.
+   if(duel&&hit.name===duel.opponent){
+     send({type:'duel_attack'});
+     if(!duelEngaged){ duelEngaged=true; renderDuelHint(); }
+     return;
+   }
    if(hit.name!==me.username) openPlayerMenu(hit.name);
    return;
  }
@@ -6095,6 +6274,9 @@ function handleLongPress(cx,cy){
    return;
  }
  if(hit.kind==='modnpc'){
+   // Stage 26: mid mod-duel, a long-press on my opponent engages
+   // the attack — no context sheet while the fight is on.
+   if(modDuel&&modDuel.npcId===hit.id){ tapModNpc(hit.id); return; }
    const n=modNpcList.find(x=>x.id===hit.id);
    const nm=n? n.name:'Moderator';
    openCtxSheet(`⭐ ${esc(nm)}`,[
@@ -6382,12 +6564,13 @@ function onCastResult(m){
  };
  if(m.incoming){
    showSplat(av);
+   if(!m.froze) flinchForOutcome(myAv,m.by?avatars[m.by]:null,m.outcome,m.dmg); // Stage 26: a landed cast recoils me (Freeze roots instead)
    if(m.froze){ meFrozenUntil=m.frozenUntil||0; toast(`❄️ You're frozen by ${m.by||'a spell'} — you can't move for 5 seconds!`); }
    if(duel&&typeof m.hpTarget==='number'){ duel.hpYou=m.hpTarget; renderDuelBar(); }
    logLine(`🪄 ${m.by||'Someone'} cast ${spName} on you${m.froze?' — ❄️ FROZEN!':''}`);
    return;
  }
- if(av){ startSwingAt(myAv,av); showSplat(av); }
+ if(av){ startSwingAt(myAv,av,true); showSplat(av); if(!m.froze) flinchForOutcome(av,myAv,m.outcome,m.dmg); } // Stage 26
  if(m.context==='duel'&&duel&&typeof m.hpTarget==='number'){ duel.hpOpponent=m.hpTarget; renderDuelBar(); const oav=avatars[duel.opponent]; if(oav) setHpBar(oav,m.hpTarget/99,m.hpTarget,99); }
  if(m.context==='modduel'&&modDuel&&typeof m.hpTarget==='number'){ modDuel.hpNpc=m.hpTarget; renderModDuelBar(); if(av) setHpBar(av,m.hpTarget/99,m.hpTarget,99); }
  if((m.context==='npc'||m.context==='barrows')&&npcFight&&typeof m.hpTarget==='number'){ npcFight.hpNpc=m.hpTarget; renderNpcBar(); if(av) setHpBar(av,m.hpTarget/Math.max(1,m.maxHpTarget||npcFight.maxHpNpc),m.hpTarget,m.maxHpTarget||npcFight.maxHpNpc); }
