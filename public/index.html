@@ -3305,6 +3305,10 @@ function openModSheet(id){
  let action;
  if(!unlocked) action=`<p>🔒 <b>Tier ${n.tier} is locked.</b> Win 3 Tier ${n.tier-1} fights to unlock ${esc(n.name)}.</p>`;
  else if(n.busy) action=`<p>⏳ ${esc(n.name)} is in a fight right now — wait your turn.</p>`;
+ // Stage 31: an unaffordable stake used to fail silently (the
+ // sheet closed, the server's refusal scrolled by in a toast).
+ // The sheet itself now says so, in place of the button.
+ else if((me?me.gold:0)<n.stake) action=`<p>🪙 <b>You need ${n.stake}g for this stake duel — you have ${me?me.gold:0}g.</b></p><p class="note" style="color:#4a3826">Win gold in duels, on the Stake Board, or by selling loot — then come back.</p>`;
  else action=`<div class="btns"><button class="act" onclick="modDuelStart('${n.id}')">⚔️ Stake duel — ${n.stake}g</button></div>`;
  $('modnpcsheet').innerHTML=`<h3>⭐ ${esc(n.name)} · Tier ${n.tier} moderator</h3>
  <p class="note" style="color:#4a3826">Stake duel: <b>${n.stake}g</b> each — winner takes <b>${n.stake*2}g</b>. Equal stats (40) like a player duel; your gear, style and Dragon Slash count. Tap ${esc(n.name)} to attack — there's no auto-retaliate. Walking away forfeits your stake, and mod fights never touch your duel record or rating.</p>
@@ -3313,7 +3317,7 @@ function openModSheet(id){
  <div class="btns"><button class="ghost" onclick="closeModal('modnpcmodal')">Close</button></div>`;
  $('modnpcmodal').classList.add('open');
 }
-window.modDuelStart=function(id){ closeModal('modnpcmodal'); send({type:'mod_duel_start',id}); };
+window.modDuelStart=function(id){ const n=modNpcList.find(x=>x.id===id); if(n&&(me?me.gold:0)<n.stake){ toast(`⚠️ You need ${n.stake}g for this stake duel — you have ${me?me.gold:0}g.`); openModSheet(id); return; } closeModal('modnpcmodal'); send({type:'mod_duel_start',id}); }; // Stage 31: a stale sheet can't start an unaffordable duel silently either — the sheet stays open with the reason
 /* ---- Stage 4: Fight Caves monsters (my run only — instanced) ---- */
 let fcMonsters={}; // monster id -> roster entry from fc_state / fc_wave (server coords)
 let fcAvatars={}; // monster id -> {group,label,hpWrap,hpFill,labelY,hp,maxHp,kind}
@@ -4035,6 +4039,22 @@ function updateLabels(now){
 
 /* ================= controls & movement ================= */
 let camYaw=0.7, camDist=21;
+/* Stage 31: camera-behind-facing (Derek: "make the camera face the
+   direction your guys facing"). Third person only: while my knight
+   is moving (stick, tap-to-move, a fight approach) or in a fight,
+   camYaw eases toward the yaw that puts the camera directly behind
+   his facing — camera forward is -(sin,cos)(camYaw) and his facing
+   is (sin,cos)(localRot), so the behind-facing yaw is localRot+PI.
+   The ease is exponential at CAM_BEHIND_RATE (about 63% of the gap
+   closed in ~0.45s — a swing-around, never a snap). Dragging the
+   view or working the camera stick still wins outright: manual
+   input stamps lastCamInputAt and the ease stays out of the way
+   for a 1.2s settle after it, so looking around mid-walk is never
+   fought — start moving again after that and the camera comes
+   back behind him. First person is untouched (camYaw has no
+   effect there), and camPitch keeps its Stage 25 clamp/persist. */
+const CAM_BEHIND_RATE=2.2; // 1/s
+let lastCamInputAt=0;
 let camPitch=clamp(settings.camPitch,CAM_PITCH_MIN,CAM_PITCH_MAX); // camera elevation angle (right stick / drag-tilt adjust it; Stage 25: restored from settings)
 /* Stage 25: pitch changes persist in the settings store, debounced —
    drags and the stick move it continuously, so the save lands once
@@ -4042,6 +4062,23 @@ let camPitch=clamp(settings.camPitch,CAM_PITCH_MIN,CAM_PITCH_MAX); // camera ele
 let pitchSaveT=null;
 function saveCamPitch(){ settings.camPitch=camPitch; if(pitchSaveT) return; pitchSaveT=setTimeout(()=>{ pitchSaveT=null; saveSettings(); },350); }
 let localRot=0; // local knight facing (world radians, atan2(x,z) convention)
+/* Stage 31: RuneScape-style turning — localRot no longer snaps to a
+   new heading. stepMovement turns it toward the movement (or face)
+   goal at a capped rate, so a tap across the screen reads as the
+   knight visibly TURNING and then walking the straight line, and a
+   joystick direction change swings him around the same way. The
+   cap is fast enough that facing and movement direction are only
+   briefly apart at the start of a turn (no sustained sideways
+   sliding), slow enough to read as a turn (~0.35s for a full
+   about-face). Swing facing (faceTarget) and the duel-start snap
+   stay instant — a swing has to read on the tick it lands. */
+const TURN_RATE=9; // radians per second
+let faceGoal=null; // a heading to turn to while standing (Face tap mode)
+function turnLocalRotTo(target,dt){
+ let d=target-localRot; d=Math.atan2(Math.sin(d),Math.cos(d));
+ const max=TURN_RATE*dt;
+ if(Math.abs(d)<=max) localRot=target; else localRot+=Math.sign(d)*max;
+}
 let tapTarget=null; // server coords
 let joyVec={x:0,y:0};
 let camVec={x:0,y:0}; // right (camera) stick deflection
@@ -4107,6 +4144,7 @@ addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
    const dx=e.clientX-prev.x, dy=e.clientY-prev.y;
    if(Math.hypot(e.clientX-downX,e.clientY-downY)>9){ dragged=true; clearHold(); } // camera drag cancels a pending hold
    if(dragged && (e.pointerType==='mouse' ? e.buttons===1 : true)){
+     lastCamInputAt=performance.now(); // Stage 31: manual camera control — the behind-facing ease pauses
      camYaw-=dx*0.006*settings.camSpeed;
      // Stage 25: vertical drag TILTS the camera too — the view can
      // now move up and down, not just around. Same convention as the
@@ -4377,7 +4415,7 @@ function handleTap(cx,cy){
 function faceToward(pt){
  if(!myPos) return;
  const dx=pt.x-myPos.x, dy=pt.y-myPos.y; // server deltas scale 1:1 with world deltas
- if(Math.hypot(dx,dy)>1) localRot=Math.atan2(dx,dy);
+ if(Math.hypot(dx,dy)>1) faceGoal=Math.atan2(dx,dy); // Stage 31: a goal, turned to at the capped rate in stepMovement — not a snap
 }
 let gateCooldownUntil=0;
 function checkGates(){
@@ -4442,6 +4480,9 @@ function stepMovement(dt){
  // interface is the only thing happening while it's on.
  if(grabMode||duelCountdownLeft>0||(duel&&duel.rules&&duel.rules.noMovement)||meFrozenNow()){ tapTarget=null; myVel={x:0,z:0}; finishStep(false); return; } // Stage 24: meFrozenNow — a Freeze root stops my knight locally too (the server ignores the moves anyway)
  if(wildLeaving&&isWildClient()) tapTarget={x:800,y:895}; // Stage 30: Leave keeps walking you to the ditch until the crossing fires (steering yourself cancels it)
+ // Stage 31: standing still with a face goal (Face tap mode) — turn
+ // toward it at the capped rate until we're looking that way.
+ if(faceGoal!==null && !tapTarget && !stickActive()){ turnLocalRotTo(faceGoal,dt); if(localRot===faceGoal) faceGoal=null; }
  let vx=0, vz=0; // world units / s
  const sYaw=Math.sin(camYaw), cYaw=Math.cos(camYaw);
  // camera forward on the ground (world): (-sinYaw, -cosYaw); right: (cosYaw, -sinYaw)
@@ -4449,19 +4490,19 @@ function stepMovement(dt){
  if(keys.w||keys.arrowup) f+=1; if(keys.s||keys.arrowdown) f-=1;
  if(keys.d||keys.arrowright) r+=1; if(keys.a||keys.arrowleft) r-=1;
  f+=-joyVec.y; r+=joyVec.x;
- if(f||r){ tapTarget=null; pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false; pendingWildAttack=null; pendingWildPker=null; wildLeaving=false; stopGather(); const l=Math.hypot(f,r); f/=l; r/=l;
+ if(f||r){ tapTarget=null; faceGoal=null; pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false; pendingWildAttack=null; pendingWildPker=null; wildLeaving=false; stopGather(); const l=Math.hypot(f,r); f/=l; r/=l;
    vx=(-sYaw*f + cYaw*r); vz=(-cYaw*f - sYaw*r); myVel={x:vx,z:vz}; }
  else if(tapTarget){
    const dx=tapTarget.x-myPos.x, dy=tapTarget.y-myPos.y, d=Math.hypot(dx,dy);
    if(d<6){ tapTarget=null; myVel={x:0,z:0}; }
    else { const sp=moveSpeed()*10*dt; // server units per step
-          localRot=Math.atan2(dx,dy);
+          turnLocalRotTo(Math.atan2(dx,dy),dt); faceGoal=null; // Stage 31: turn toward the tap spot at the capped rate while walking the straight line to it
           myVel={x:(dx/d)*moveSpeed(),z:(dy/d)*moveSpeed()}; // world units/s, same speed as stick movement
           myPos.x+=(dx/d)*sp; myPos.y+=(dy/d)*sp;
           finishStep(true); return; }
  }
  if(vx||vz){
-   localRot=Math.atan2(vx,vz);
+   turnLocalRotTo(Math.atan2(vx,vz),dt); faceGoal=null; // Stage 31: facing follows the movement direction at the same capped turn rate
    const sp=moveSpeed()*dt; // world units/s
    myPos.x=clamp(myPos.x+vx*sp*W2S,0,WORLD_W);
    myPos.y=clamp(myPos.y+vz*sp*W2S,0,WORLD_H);
@@ -4665,6 +4706,7 @@ function animate(){
  if(!scene) return;
  // right stick drives the camera continuously (scaled by the speed setting)
  if(camVec.x||camVec.y){
+   lastCamInputAt=now; // Stage 31: the camera stick is manual control too
    camYaw-=camVec.x*2.4*dt*settings.camSpeed;
    camPitch=clamp(camPitch+camVec.y*1.6*dt*settings.camSpeed,CAM_PITCH_MIN,CAM_PITCH_MAX); // Stage 25: shared pitch clamp
    saveCamPitch(); // Stage 25: stick-set pitch persists too (debounced)
@@ -4688,7 +4730,12 @@ function animate(){
      // his opponent — localRot eases onto the line to them whenever
      // I'm not steering or walking somewhere myself.
      const foeAv=duel? avatars[duel.opponent] : (modDuel? modAvatars[modDuel.npcId] : null);
-     const foeAvW=foeAv||(wildFight? wildOppAvatar() : null); // Stage 30: my knight faces his wild opponent too
+     // Stage 31: NPC / Barrows opponents and my current Fight Caves
+     // target are fight-facing foes too, exactly like duels — when
+     // no duel/mod foe applies, my knight eases to face them while
+     // standing in the fight, through the same foeAvW path below.
+     const foeAv31=foeAv? null : (npcFight? npcAvatars[npcFight.npcId] : (fcRun&&fcRun.targetId? fcAvatars[fcRun.targetId] : null));
+     const foeAvW=foeAv||foeAv31||(wildFight? wildOppAvatar() : null); // Stage 30: my knight faces his wild opponent too
      if(foeAvW&&Math.hypot(myVel.x,myVel.z)<0.05&&!tapTarget){
        const fang=Math.atan2(foeAvW.group.position.x-a.group.position.x,foeAvW.group.position.z-a.group.position.z);
        let fd=fang-localRot; fd=Math.atan2(Math.sin(fd),Math.cos(fd));
@@ -4796,6 +4843,21 @@ function animate(){
    applySwing(a,now);
    applyLunge(a,now);
    applyFlinch(a,now);
+ }
+ // Stage 31: camera-behind-facing — while I'm moving or in a
+ // fight, ease camYaw behind my facing (see the CAM_BEHIND_RATE
+ // note at the camYaw declaration). Runs after the avatar loop so
+ // it reads this frame's fight-eased localRot: standing in a fight
+ // my facing is the line to my opponent, so the fight frames
+ // itself. Manual camera input (drag / stick) suppresses the ease
+ // for a 1.2s settle; Grab mode and first person are excluded.
+ if(settings.camPov!=='first'&&!grabMode&&me&&avatars[me.username]){
+   const camMoving=Math.hypot(myVel.x,myVel.z)>0.05||!!tapTarget;
+   const camFighting=!!(duel||modDuel||npcFight||wildFight||fcRun);
+   if((camMoving||camFighting)&&now-lastCamInputAt>1200){
+     let cd=(localRot+Math.PI)-camYaw; cd=Math.atan2(Math.sin(cd),Math.cos(cd));
+     camYaw+=cd*(1-Math.exp(-CAM_BEHIND_RATE*dt));
+   }
  }
  // Brazier flames flicker (tournament dais)
  for(const f of flickerLights){
