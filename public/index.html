@@ -529,7 +529,7 @@ let goods={}; // id -> {id,name,price}
 const ICONS={restore_potion:'🍷',prayer_potion:'🌟',ration:'🍗',bronze_sword:'🗡️',iron_sword:'🗡️',steel_sword:'⚔️',mithril_sword:'⚔️',dragon_sword:'🐉',
  bronze_helm:'⛑️',steel_helm:'⛑️',dragon_helm:'⛑️',bronze_platebody:'🦺',steel_platebody:'🦺',dragon_platebody:'🦺',
  bronze_platelegs:'👖',steel_platelegs:'👖',dragon_platelegs:'👖',bronze_shield:'🛡️',steel_shield:'🛡️',dragon_shield:'🛡️',
- bronze_partyhat:'🥳',iron_partyhat:'🥳',steel_partyhat:'🥳',mithril_partyhat:'🥳',adamant_partyhat:'🥳',rune_partyhat:'🥳',dragon_partyhat:'🥳',
+ bronze_partyhat:'👑',iron_partyhat:'👑',steel_partyhat:'👑',mithril_partyhat:'👑',adamant_partyhat:'👑',rune_partyhat:'👑',dragon_partyhat:'👑', // Stage 32: party hats wear as crowns, so the icon is a crown (tier tint channel still colours it)
  bones:'🦴',herbs:'🌿',gems:'💎',bars:'🟨',runes:'🔮',charms:'🧿',
  copper_ore:'🟠',tin_ore:'⚪',iron_ore:'🔘',coal:'⚫',uncut_gem:'🔷',logs:'🪵',oak_logs:'🪵',
  raw_shrimps:'🦐',raw_trout:'🐠',cooked_trout:'🐟',cooked_shrimps:'🍤',burnt_fish:'🖤',
@@ -861,12 +861,41 @@ window.pickActivity=function(act){
  else if(act==='gathering'){ send({type:'travel',to:'gathering'}); toast('⛏️ Gathering Cave — mine, fish, chop and cook.'); }
  else toast('🏰 Explore the plaza — every gate leads somewhere.');
 };
+/* Stage 32: the respawn hold. Death used to whisk the victim (and,
+   after a duel, the winner too) to the plaza in the same instant —
+   no fall could ever be seen. Now, when a death fall starts for ME
+   or for my duel opponent, the area/state messages that would
+   switch the scene are held for ~1.6s while the fall plays, then
+   replayed. Other players need no hold (their scene never changes);
+   syncAvatars' corpse-keep covers their view of the body. */
+let deathHoldUntil=0, heldAreaMsg=null, heldStateMsg=null;
+function holdActive(){ return !!deathHoldUntil&&performance.now()<deathHoldUntil; }
+function beginDeathHold(){ deathHoldUntil=performance.now()+1600; }
+function onAreaMsg(m){
+ if(m.area!==curArea&&holdActive()){ heldAreaMsg=m.area; return; }
+ setArea(m.area);
+}
+function onStateMsg(m){
+ if(m.area&&m.area!==curArea&&holdActive()){ heldStateMsg=m; return; }
+ if(m.area&&m.area!==curArea) setArea(m.area);
+ players=m.players||[]; initMyPos(); syncAvatars(); if(drawerPanel==='players') renderDrawer(); drawMinimap();
+}
+function releaseHeldMsgs(){
+ if(heldStateMsg){ const m=heldStateMsg; heldStateMsg=null; heldAreaMsg=null; onStateMsg(m); }
+ else if(heldAreaMsg){ const a=heldAreaMsg; heldAreaMsg=null; setArea(a); }
+}
+function onPlayerFell(m){
+ const fa=avatars[m.username];
+ if(fa) startDeathFall(fa);
+ if(m.respawn&&me&&(m.username===me.username||(duel&&m.username===duel.opponent))) beginDeathHold();
+}
 function onMsg(m){
  if(m.type==='welcome'){ welcomed=true; quickAttempt=false; wasInGame=true; const wasReconnect=reconnecting; stopReconnect(); reconnectMs=2000; if(wasReconnect){ toast('✅ Reconnected.'); logLine('✅ Reconnected.'); } me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); maybeShowActivityPicker(); }
  if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(Array.isArray(m.spells)) spellList=m.spells; if(drawerPanel==='shop') renderDrawer(); renderQuickButtons(); renderSpellBtns(); for(const av of Object.values(avatars)) av.gearSig=null; }
  if(m.type==='exchange_prices'){ goods={}; for(const g of (m.goods||[])) goods[g.id]=g; if(drawerPanel==='exchange') renderDrawer(); drawMinimap(); }
- if(m.type==='state'){ if(m.area&&m.area!==curArea) setArea(m.area); players=m.players||[]; initMyPos(); syncAvatars(); if(drawerPanel==='players') renderDrawer(); drawMinimap(); }
- if(m.type==='area'){ setArea(m.area); }
+ if(m.type==='state'){ onStateMsg(m); }
+ if(m.type==='area'){ onAreaMsg(m); }
+ if(m.type==='player_fell'){ onPlayerFell(m); }
  if(m.type==='npc_state'){ npcList=m.npcs||[]; syncNpcs(); drawMinimap(); }
  if(m.type==='npc_fight'){ npcFightUI(m); }
  if(m.type==='mod_npcs'){ modNpcList=m.npcs||[]; syncModNpcs(); drawMinimap(); if($('modnpcmodal').classList.contains('open')&&modSheetId) openModSheet(modSheetId); }
@@ -2149,6 +2178,7 @@ function setArenaVariant(id){
    phone-sane (one shared point light for both lava pools). */
 function makePkNoobFigure(root,area,x,y){
  const g=new THREE.Group(); g.position.set(sx2w(x),0,sy2w(y)); root.add(g);
+ if(g.scale) g.scale.setScalar(1.32); // Stage 32: PK Noob grows with the players too (literal: this builder sits above the AVATAR_SCALE const in source order)
  box(0.24,0.7,0.24,0x1c1c22,-0.16,0.35,0,g); box(0.24,0.7,0.24,0x1c1c22,0.16,0.35,0,g); // legs
  box(0.72,0.85,0.42,0x2a2a33,0,1.12,0,g); // dark robe body
  box(0.46,0.46,0.46,0xe8e2d0,0,1.78,0,g); // pale skull-like face
@@ -2157,7 +2187,7 @@ function makePkNoobFigure(root,area,x,y){
  const label=document.createElement('div'); label.className='plabel';
  label.innerHTML=`<div class="nname">💀 PK Noob — Pure Wild ⇄ normal Wild · tap to talk</div>`;
  $('labels').appendChild(label);
- worldLabels.push({el:label,x:sx2w(x),y:3.1,z:sy2w(y),area,kind:'static'});
+ worldLabels.push({el:label,x:sx2w(x),y:3.85,z:sy2w(y),area,kind:'static'}); // Stage 32: label rides above the scaled figure
  return g;
 }
 function buildWilderness(root,pure){
@@ -2498,8 +2528,21 @@ function limbPart(r,len,mat,endMat){
 const SKIN_TONES=[0xf2c9a0,0xd9a066,0x8a5a33];
 const HAIR_COLORS=[0xe8c96a,0x6b4226,0x1c1a18];
 const OUTFIT_COLORS=[0x8a6b4a,0x5d4028,0x3f7a3a,0x2c4a8a,0x8e2f32,0x555a60];
+/* Stage 32: players stand BIGGER and read as PEOPLE. The rig below
+   was re-proportioned (longer legs from higher hip pivots, a slimmer
+   torso, arms from higher shoulders, the head at 2.17 — about 2.47
+   local units tall against the old knight's ~2.28) and the whole
+   group is scaled by AVATAR_SCALE on top, so a player ends up ~3.2
+   world units tall. Server positions and reach are world units and
+   do NOT change; the anchors that live OUTSIDE the scaled group
+   (label height, splatY, the figure-tap ladder, first-person eye
+   height, the freeze shell) are scaled to match where they are used.
+   PKers and PK Noob's hop-targets reuse this rig, so they grow too;
+   mod NPCs get the same group scale in makeModNpc. */
+const AVATAR_SCALE=1.32;
 function makeKnight(isMe,name,app){
  const g=new THREE.Group();
+ if(g.scale) g.scale.setScalar(AVATAR_SCALE); // guarded: the headless gear test's THREE stub has no scale
  // Stage 6: the body rides on an inner pivot so a jump can lift it
  // (pivot.position.y) and flip it (pivot.rotation.x/z) without moving
  // the group's ground position, facing (rotation.y) or shadow.
@@ -2517,19 +2560,19 @@ function makeKnight(isMe,name,app){
  // legs on hip pivots (walk cycle swings them); feet = the end spheres
  const legMat=hasApp? outMat(app.legs) : steelDarkMat;
  const footMat=hasApp? outMat(app.feet) : steelDarkMat;
- const legL=limbPart(0.13,0.72,legMat,footMat); legL.position.set(-0.18,0.80,0); pivot.add(legL);
- const legR=limbPart(0.13,0.72,legMat,footMat); legR.position.set(0.18,0.80,0); pivot.add(legR);
+ const legL=limbPart(0.115,0.92,legMat,footMat); legL.position.set(-0.19,1.00,0); pivot.add(legL);
+ const legR=limbPart(0.115,0.92,legMat,footMat); legR.position.set(0.19,1.00,0); pivot.add(legR);
  // torso: tapered cylinder; appearance repaints it + the tabard in the
  // outfit colour, classic knights keep steel + heraldic tabard
  const female=hasApp&&app.gender==='female';
  const torsoMat=hasApp? outMat(app.torso) : steelMat;
- const torso=new THREE.Mesh(new THREE.CylinderGeometry(0.30*(female?0.88:1),0.41*(female?0.88:1),0.85,12),torsoMat); torso.position.y=1.22; pivot.add(torso);
- const tabardMesh=box(0.46*(female?0.88:1),0.66,0.07,hasApp? (OUTFIT_COLORS[app.torso]||OUTFIT_COLORS[0]) : main,0,1.18,0.31,pivot); // tabard (hidden by syncGear while body armour is worn)
- const belt=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.43,0.10,12),trimMat); belt.position.y=0.84; pivot.add(belt);
+ const torso=new THREE.Mesh(new THREE.CylinderGeometry(0.27*(female?0.88:1),0.36*(female?0.88:1),0.86,12),torsoMat); torso.position.y=1.45; pivot.add(torso);
+ const tabardMesh=box(0.42*(female?0.88:1),0.68,0.07,hasApp? (OUTFIT_COLORS[app.torso]||OUTFIT_COLORS[0]) : main,0,1.41,0.28,pivot); // tabard (hidden by syncGear while body armour is worn)
+ const belt=new THREE.Mesh(new THREE.CylinderGeometry(0.37,0.38,0.10,12),trimMat); belt.position.y=1.05; pivot.add(belt);
  // arms on shoulder pivots; the RIGHT arm is the weapon arm; hands are skin
  const armMat=hasApp? outMat(app.arms) : steelMat;
- const armL=limbPart(0.11,0.64,armMat,hasApp?skinMat:null); armL.position.set(-0.47,1.58,0); pivot.add(armL);
- const armR=limbPart(0.11,0.64,armMat,hasApp?skinMat:null); armR.position.set(0.47,1.58,0); pivot.add(armR);
+ const armL=limbPart(0.10,0.72,armMat,hasApp?skinMat:null); armL.position.set(-0.44,1.80,0); pivot.add(armL);
+ const armR=limbPart(0.10,0.72,armMat,hasApp?skinMat:null); armR.position.set(0.44,1.80,0); pivot.add(armR);
  // Stage 30: worn-gear anchors. The knight used to carry a fixed
  // steel sword whatever it wore; now syncGear (below) dresses it
  // from the state snapshot's worn set — weapon in the right hand,
@@ -2549,23 +2592,23 @@ function makeKnight(isMe,name,app){
  // head: skin sphere. Appearance knights wear their HAIR as the cap with
  // a thin steel circlet (still reads armoured); classic knights keep the
  // steel helmet cap + trim band. Beards for male appearance knights.
- const head=new THREE.Mesh(new THREE.SphereGeometry(0.27,14,12),skinMat); head.position.y=1.94; pivot.add(head);
+ const head=new THREE.Mesh(new THREE.SphereGeometry(0.26,14,12),skinMat); head.position.y=2.17; pivot.add(head);
  // Stage 30: a face — two dark eyes on the front of the head sphere,
  // so the figure reads as a person (and you can tell which way it is
  // facing) instead of a blank ball.
  const eyeMat=new THREE.MeshBasicMaterial({color:0x1c1a18});
- const eyeL=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.07,0.02),eyeMat); eyeL.position.set(-0.095,2.0,0.252); pivot.add(eyeL);
- const eyeR=eyeL.clone(); eyeR.position.x=0.095; pivot.add(eyeR);
+ const eyeL=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.07,0.02),eyeMat); eyeL.position.set(-0.09,2.23,0.242); pivot.add(eyeL);
+ const eyeR=eyeL.clone(); eyeR.position.x=0.09; pivot.add(eyeR);
  if(hasApp){
    const hairMat=new THREE.MeshLambertMaterial({color:HAIR_COLORS[app.hair]||HAIR_COLORS[1]});
-   const cap=new THREE.Mesh(new THREE.SphereGeometry(0.295,14,10,0,Math.PI*2,0,Math.PI/2),hairMat); cap.position.y=1.99; pivot.add(cap); hairParts.push(cap);
-   const circlet=new THREE.Mesh(new THREE.CylinderGeometry(0.30,0.30,0.055,14),steelMat); circlet.position.y=2.0; pivot.add(circlet); hairParts.push(circlet);
-   if(female){ hairParts.push(box(0.44,0.52,0.09,(HAIR_COLORS[app.hair]||HAIR_COLORS[1]),0,1.72,-0.235,pivot)); } // long back panel
-   else if(app.beard===1){ hairParts.push(box(0.26,0.12,0.08,(HAIR_COLORS[app.hair]||HAIR_COLORS[1]),0,1.79,0.235,pivot)); } // short beard
-   else if(app.beard>=2){ hairParts.push(box(0.31,0.24,0.10,(HAIR_COLORS[app.hair]||HAIR_COLORS[1]),0,1.745,0.225,pivot)); } // full beard
+   const cap=new THREE.Mesh(new THREE.SphereGeometry(0.285,14,10,0,Math.PI*2,0,Math.PI/2),hairMat); cap.position.y=2.22; pivot.add(cap); hairParts.push(cap);
+   const circlet=new THREE.Mesh(new THREE.CylinderGeometry(0.29,0.29,0.055,14),steelMat); circlet.position.y=2.23; pivot.add(circlet); hairParts.push(circlet);
+   if(female){ hairParts.push(box(0.42,0.55,0.09,(HAIR_COLORS[app.hair]||HAIR_COLORS[1]),0,1.95,-0.225,pivot)); } // long back panel
+   else if(app.beard===1){ hairParts.push(box(0.25,0.12,0.08,(HAIR_COLORS[app.hair]||HAIR_COLORS[1]),0,2.02,0.225,pivot)); } // short beard
+   else if(app.beard>=2){ hairParts.push(box(0.30,0.24,0.10,(HAIR_COLORS[app.hair]||HAIR_COLORS[1]),0,1.975,0.215,pivot)); } // full beard
  } else {
-   const helm=new THREE.Mesh(new THREE.SphereGeometry(0.305,14,10,0,Math.PI*2,0,Math.PI/2),steelMat); helm.position.y=1.99; pivot.add(helm); hairParts.push(helm);
-   const band=new THREE.Mesh(new THREE.CylinderGeometry(0.315,0.315,0.07,14),trimMat); band.position.y=2.0; pivot.add(band); hairParts.push(band);
+   const helm=new THREE.Mesh(new THREE.SphereGeometry(0.295,14,10,0,Math.PI*2,0,Math.PI/2),steelMat); helm.position.y=2.22; pivot.add(helm); hairParts.push(helm);
+   const band=new THREE.Mesh(new THREE.CylinderGeometry(0.305,0.305,0.07,14),trimMat); band.position.y=2.23; pivot.add(band); hairParts.push(band);
  }
  shadowify(pivot);
  const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
@@ -2575,7 +2618,7 @@ function makeKnight(isMe,name,app){
  $('labels').appendChild(label);
  return {group:g,pivot,legL,legR,armL,armR,gearAnchors,gearSig:null,hairParts,tabardMesh,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),roleEl:label.querySelector('.rbadge'),actEl:label.querySelector('.abadge'),chalEl:label.querySelector('.cbadge'),fzEl:label.querySelector('.fbadge'),skullEl:label.querySelector('.skbadge'),hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
    x:0,z:0,tx:0,tz:0,rot:0,jump:null,prayer:null,bubbleUntil:0,bob:Math.random()*6,isMe,
-   swingStart:0,phase:Math.random()*6,moveAmt:0,px:0,pz:0,splatY:2.95};
+   swingStart:0,phase:Math.random()*6,moveAmt:0,px:0,pz:0,splatY:3.55}; // Stage 32: splat height follows the scaled rig (2.95 × ~1.2 of headroom over the ~3.2-tall figure)
 }
 const PRAYER_BADGE={melee:'🛡️',missiles:'🏹',magic:'🔮'};
 /* ================= Stage 7C: activity markers + challenger ❗ ================= */
@@ -2632,18 +2675,30 @@ function syncAvatars(){
    if(a.chalEl) a.chalEl.textContent=chalMark(p.username)?'❗':'';
  }
  for(const name of Object.keys(avatars)){
-   if(!seen.has(name)){ scene.remove(avatars[name].group); avatars[name].label.remove(); delete avatars[name]; }
+   if(!seen.has(name)){
+     // Stage 32: corpse-keep — a player who just died has already
+     // respawned server-side (so they're out of this area's
+     // snapshot), but their body stays on the ground here until
+     // the fall finishes instead of vanishing mid-topple.
+     const a=avatars[name];
+     if(a.deathFall&&performance.now()-a.deathFall.t0<FALL_KEEP_MS) continue;
+     scene.remove(a.group); a.label.remove(); delete avatars[name];
+   }
  }
 }
 function showBubble(name,text){
  const a=avatars[name]; if(!a) return;
  a.bubbleEl.textContent=text; a.bubbleEl.style.display='block'; a.bubbleUntil=Date.now()+3000;
 }
-/* Stage 21: a worn party hat shows on the knight's head — a jauntily
-   tilted cone + brim + pompom in the hat's tier colour, read from the
-   catalog def's `color` (the same tint that colours its item face).
-   Fed by the state snapshot's wornHead; rebuilt knights (appearance
-   changes) start with hatItem unset, so the cone re-applies next sync. */
+/* Stage 21: a worn party hat shows on the knight's head in the hat's
+   tier colour, read from the catalog def's `color` (the same tint
+   that colours its item face). Fed by the state snapshot's wornHead;
+   rebuilt knights (appearance changes) start with hatItem unset, so
+   the crown re-applies next sync.
+   Stage 32: the worn look is a CROWN now, not the old cone hat — a
+   band with points around it and a gem at the front, in the tier
+   colour. (The item is still called a party hat everywhere else;
+   ids, prices and stats are untouched — looks only.) */
 function syncPartyHat(a,p){
  const want=(p.wornHead&&p.wornHead.endsWith('_partyhat'))? p.wornHead : null;
  if(a.hatItem===want) return;
@@ -2653,10 +2708,17 @@ function syncPartyHat(a,p){
  const d=catalog[want];
  const col=(d&&d.color)? parseInt(d.color.slice(1),16) : 0xc22f2f;
  const mat=new THREE.MeshLambertMaterial({color:col});
- const hg=new THREE.Group(); hg.position.y=2.10; hg.rotation.z=0.13; hg.rotation.x=-0.05;
- const brim=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,0.055,14),mat); hg.add(brim);
- const cone=new THREE.Mesh(new THREE.ConeGeometry(0.30,0.62,12),mat); cone.position.y=0.33; hg.add(cone);
- const pom=new THREE.Mesh(new THREE.SphereGeometry(0.095,8,8),new THREE.MeshLambertMaterial({color:0xf5f0e6})); pom.position.y=0.66; hg.add(pom);
+ const hg=new THREE.Group(); hg.position.y=2.34; hg.rotation.z=0.05; hg.rotation.x=-0.03;
+ const band=new THREE.Mesh(new THREE.CylinderGeometry(0.295,0.315,0.17,14),mat); band.position.y=0.02; hg.add(band);
+ const trim=new THREE.Mesh(new THREE.CylinderGeometry(0.32,0.32,0.045,14),new THREE.MeshLambertMaterial({color:0xc9a227})); trim.position.y=-0.07; hg.add(trim);
+ const spikeG=new THREE.ConeGeometry(0.055,0.24,6);
+ for(let i=0;i<6;i++){
+   const s=new THREE.Mesh(spikeG,mat);
+   const ang=i*Math.PI/3;
+   s.position.set(Math.sin(ang)*0.26,0.21,Math.cos(ang)*0.26);
+   hg.add(s);
+ }
+ const gem=new THREE.Mesh(new THREE.SphereGeometry(0.075,10,8),new THREE.MeshLambertMaterial({color:0xf5f0e6})); gem.position.set(0,0.02,0.30); hg.add(gem);
  shadowify(hg);
  a.pivot.add(hg); a.hatGroup=hg;
 }
@@ -2698,7 +2760,7 @@ function weaponShape(id){
 }
 function buildWeaponInto(a,id){
  const A=a.gearAnchors, c=gearColorFor(id), shape=weaponShape(id);
- const wg=new THREE.Group(); wg.position.set(0,-0.68,0.05); A.armR.add(wg);
+ const wg=new THREE.Group(); wg.position.set(0,-0.74,0.05); A.armR.add(wg);
  const grip=0x5a4020, gold=0xc9a227;
  if(shape==='sword'){
    box(0.07,0.85,0.14,c,0,0.32,0,wg); // blade in the tier's colour
@@ -2712,7 +2774,7 @@ function buildWeaponInto(a,id){
    box(0.06,1.5,0.06,grip,0,0.42,0,wg); // shaft
    const tip=new THREE.Mesh(new THREE.ConeGeometry(0.09,0.32,8),new THREE.MeshLambertMaterial({color:c})); tip.position.y=1.32; wg.add(tip);
  } else if(shape==='hammers'){
-   const one=(parent)=>{ const h=new THREE.Group(); h.position.set(0,-0.68,0.05); parent.add(h);
+   const one=(parent)=>{ const h=new THREE.Group(); h.position.set(0,-0.74,0.05); parent.add(h);
      box(0.07,0.62,0.07,grip,0,0.12,0,h); box(0.24,0.22,0.24,c,0,0.46,0,h); };
    // the group above already sits at the right hand — build the main
    // hammer in place and a twin at the left hand
@@ -2751,16 +2813,16 @@ function syncGear(a,p){
  if(covered){
    const c=gearColorFor(headId), m=mat(c);
    if(/hood|coif/.test(headId)){
-     const dome=new THREE.Mesh(new THREE.SphereGeometry(0.315,14,10,0,Math.PI*2,0,Math.PI*0.62),m); dome.position.y=1.97; A.head.add(dome);
-     box(0.46,0.5,0.08,c,0,1.74,-0.24,A.head); // the hood's fall down the back
+     const dome=new THREE.Mesh(new THREE.SphereGeometry(0.305,14,10,0,Math.PI*2,0,Math.PI*0.62),m); dome.position.y=2.20; A.head.add(dome);
+     box(0.44,0.52,0.08,c,0,1.97,-0.23,A.head); // the hood's fall down the back
    } else {
-     const dome=new THREE.Mesh(new THREE.SphereGeometry(0.315,14,10,0,Math.PI*2,0,Math.PI/2),m); dome.position.y=1.99; A.head.add(dome);
-     const band=new THREE.Mesh(new THREE.CylinderGeometry(0.325,0.325,0.07,14),mat(0x3a3a3a)); band.position.y=2.0; A.head.add(band);
-     box(0.07,0.22,0.05,c,0,1.86,0.27,A.head); // nasal guard
+     const dome=new THREE.Mesh(new THREE.SphereGeometry(0.305,14,10,0,Math.PI*2,0,Math.PI/2),m); dome.position.y=2.22; A.head.add(dome);
+     const band=new THREE.Mesh(new THREE.CylinderGeometry(0.315,0.315,0.07,14),mat(0x3a3a3a)); band.position.y=2.23; A.head.add(band);
+     box(0.07,0.22,0.05,c,0,2.09,0.26,A.head); // nasal guard
      if(/dragon|necro|torva/.test(headId)){ // horned crest on the top tiers
        const hornG=new THREE.ConeGeometry(0.05,0.24,8);
-       const h1=new THREE.Mesh(hornG,m); h1.position.set(-0.2,2.22,0); h1.rotation.z=0.5; A.head.add(h1);
-       const h2=new THREE.Mesh(hornG,m); h2.position.set(0.2,2.22,0); h2.rotation.z=-0.5; A.head.add(h2);
+       const h1=new THREE.Mesh(hornG,m); h1.position.set(-0.19,2.45,0); h1.rotation.z=0.5; A.head.add(h1);
+       const h2=new THREE.Mesh(hornG,m); h2.position.set(0.19,2.45,0); h2.rotation.z=-0.5; A.head.add(h2);
      }
    }
  }
@@ -2768,31 +2830,31 @@ function syncGear(a,p){
  if(a.tabardMesh) a.tabardMesh.visible=!(w&&w.body);
  if(w&&w.body){
    const c=gearColorFor(w.body), m=mat(c);
-   const plate=new THREE.Mesh(new THREE.CylinderGeometry(0.345,0.455,0.86,12),m); plate.position.y=1.22; A.body.add(plate);
-   const belt2=new THREE.Mesh(new THREE.CylinderGeometry(0.46,0.47,0.09,12),mat(0xc9a227)); belt2.position.y=0.84; A.body.add(belt2);
-   const pauG=new THREE.SphereGeometry(0.17,10,8);
-   const pl=new THREE.Mesh(pauG,m); pl.position.set(-0.47,1.62,0); A.body.add(pl);
-   const pr=new THREE.Mesh(pauG,m); pr.position.set(0.47,1.62,0); A.body.add(pr);
+   const plate=new THREE.Mesh(new THREE.CylinderGeometry(0.315,0.40,0.87,12),m); plate.position.y=1.45; A.body.add(plate);
+   const belt2=new THREE.Mesh(new THREE.CylinderGeometry(0.41,0.42,0.09,12),mat(0xc9a227)); belt2.position.y=1.05; A.body.add(belt2);
+   const pauG=new THREE.SphereGeometry(0.16,10,8);
+   const pl=new THREE.Mesh(pauG,m); pl.position.set(-0.44,1.84,0); A.body.add(pl);
+   const pr=new THREE.Mesh(pauG,m); pr.position.set(0.44,1.84,0); A.body.add(pr);
  }
  // --- legs: guards that swing with the legs, or a chainskirt from the waist
  if(w&&w.legs){
    const c=gearColorFor(w.legs), m=mat(c);
    if(/skirt/.test(w.legs)){
-     const skirt=new THREE.Mesh(new THREE.CylinderGeometry(0.36,0.54,0.52,12,1,true),m); skirt.position.y=0.68; A.body.add(skirt);
+     const skirt=new THREE.Mesh(new THREE.CylinderGeometry(0.33,0.50,0.52,12,1,true),m); skirt.position.y=0.78; A.body.add(skirt);
    } else {
      for(const anchor of [A.legL,A.legR]){
-       const guard=new THREE.Mesh(new THREE.CylinderGeometry(0.165,0.15,0.52,10),m); guard.position.y=-0.3; anchor.add(guard);
+       const guard=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.135,0.66,10),m); guard.position.y=-0.40; anchor.add(guard);
      }
    }
  }
  // --- feet: boots over the foot spheres
- if(w&&w.feet){ const c=gearColorFor(w.feet); box(0.2,0.15,0.32,c,0,-0.7,0.04,A.footL); box(0.2,0.15,0.32,c,0,-0.7,0.04,A.footR); }
+ if(w&&w.feet){ const c=gearColorFor(w.feet); box(0.19,0.16,0.34,c,0,-0.90,0.04,A.footL); box(0.19,0.16,0.34,c,0,-0.90,0.04,A.footR); }
  // --- weapon in the right hand (+ Torag's twin in the left)
  if(w&&w.weapon) buildWeaponInto(a,w.weapon);
  // --- shield on the left arm
  if(w&&w.shield){
    const c=gearColorFor(w.shield);
-   const sg=new THREE.Group(); sg.position.set(0,-0.6,0.17); sg.rotation.x=0.12; A.armL.add(sg);
+   const sg=new THREE.Group(); sg.position.set(0,-0.66,0.16); sg.rotation.x=0.12; A.armL.add(sg);
    box(0.52,0.74,0.07,c,0,0,0,sg);
    box(0.38,0.58,0.03,0x3a3a3a,0,0,0.05,sg); // darker inset face
    const boss=new THREE.Mesh(new THREE.SphereGeometry(0.09,10,8),mat(0xd9dee6)); boss.position.set(0,0,0.08); sg.add(boss);
@@ -2800,11 +2862,11 @@ function syncGear(a,p){
  // --- cape on the back
  if(w&&w.cape){
    const c=w.cape==='fire_cape'? 0xe25822 : gearColorFor(w.cape);
-   const cape=box(0.64,1.12,0.05,c,0,1.1,-0.34,A.cape); cape.rotation.x=0.1;
+   const cape=box(0.60,1.16,0.05,c,0,1.33,-0.31,A.cape); cape.rotation.x=0.1;
  }
  // --- gauntlets + amulet
- if(w&&w.hands){ const c=gearColorFor(w.hands); box(0.17,0.2,0.17,c,0,-0.64,0,A.armL); box(0.17,0.2,0.17,c,0,-0.64,0,A.armR); }
- if(w&&w.amulet){ const d=catalog[w.amulet]; box(0.1,0.12,0.05,(d&&d.color)? parseInt(d.color.slice(1),16) : 0xc9a227,0,1.44,0.4,A.body); }
+ if(w&&w.hands){ const c=gearColorFor(w.hands); box(0.16,0.2,0.16,c,0,-0.70,0,A.armL); box(0.16,0.2,0.16,c,0,-0.70,0,A.armR); }
+ if(w&&w.amulet){ const d=catalog[w.amulet]; box(0.1,0.12,0.05,(d&&d.color)? parseInt(d.color.slice(1),16) : 0xc9a227,0,1.67,0.35,A.body); }
  for(const k of Object.keys(A)) shadowify(A[k]);
 }
 
@@ -2913,15 +2975,23 @@ function easeRot(a,target,dt){
    counter-swing, all phased by distance actually travelled; the
    moveAmt envelope eases in/out so stopping settles into the rest
    pose instead of snapping. The weapon arm is left to applySwing
-   while a swing is playing. */
+   while a swing is playing.
+   Stage 32: BOTH arms and BOTH legs swing in opposite phase (left
+   arm with right leg), and the phase factor is matched to the new
+   rig's stride: the leg is 0.92 local × 1.32 scale ≈ 1.21 world
+   units, swinging ±0.6 rad, so one full cycle covers ≈ 2 × 2 ×
+   1.21 × sin(0.6) ≈ 2.7 world units of ground — a factor of
+   2π / 2.7 ≈ 2.3 keeps the feet planted instead of skating, at
+   walk pace and run pace alike (phase is driven by distance, so
+   the stride rate follows the actual speed on its own). */
 function poseWalk(a,dist,dt){
  if(!a.legL) return; // only knights have articulated limbs
- a.phase=(a.phase||0)+dist*2.4;
+ a.phase=(a.phase||0)+dist*2.3;
  const target=dist>0.002?1:0;
  a.moveAmt=(a.moveAmt||0)+(target-(a.moveAmt||0))*Math.min(1,dt*10);
  const m=a.moveAmt||0, s=Math.sin(a.phase||0);
- a.legL.rotation.x=s*0.55*m;
- a.legR.rotation.x=-s*0.55*m;
+ a.legL.rotation.x=s*0.6*m;
+ a.legR.rotation.x=-s*0.6*m;
  if(a.armL) a.armL.rotation.x=-s*0.42*m;
  // Stage 26: the weapon arm EASES back into the walk counter-swing
  // after a swing ends instead of snapping to the cycle value, so
@@ -3250,6 +3320,7 @@ function wildFightUI(m){
 const MOD_PLUME=[0xb0793f,0xb9bfc7,0xc22f2f]; // tier 1 / 2 / 3
 function makeModNpc(n){
  const g=new THREE.Group();
+ if(g.scale) g.scale.setScalar(AVATAR_SCALE); // Stage 32: the plaza's human NPCs grow with the players (their own rig, same factor)
  const steel=new THREE.MeshLambertMaterial({color:0x9aa2ad});
  const accent=MOD_PLUME[(n.tier||1)-1]||0xc9a227;
  box(0.2,0.45,0.2,0x6b5636,-0.14,0.23,0,g); box(0.2,0.45,0.2,0x6b5636,0.14,0.23,0,g); // legs
@@ -3270,7 +3341,7 @@ function makeModNpc(n){
  label.innerHTML=`<div class="gname">⭐ ${esc(n.name||'Mod')} · Tier ${n.tier||1} — ${n.stake||0}g</div><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
  $('labels').appendChild(label);
  return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
-   x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:1.95,hp:99,maxHp:99};
+   x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:2.6,hp:99,maxHp:99}; // Stage 32: splatY 1.95 × AVATAR_SCALE ≈ 2.6
 }
 function syncModNpcs(){
  if(!scene) return;
@@ -3884,6 +3955,7 @@ function clearLungeOff(a){
 const FLINCH_MS=260, FLINCH_GUARD_MS=170, FLINCH_DIST=4.5, FLINCH_GUARD_DIST=2;
 function startFlinch(victim,attacker,guard){
  if(!victim||!victim.group) return;
+ if(guard) startGuardRaise(victim); // Stage 32: a blocked hit also raises the guard (shield/weapon arm up) — see applyFightStance
  let dx=0, dz=0;
  if(attacker&&attacker.group){ dx=victim.group.position.x-attacker.group.position.x; dz=victim.group.position.z-attacker.group.position.z; }
  if(Math.hypot(dx,dz)<0.01){ // no usable attacker reference — recoil straight back from own facing
@@ -3915,10 +3987,119 @@ function clearFlinchOff(a){
    never flinches — the target is locked in ice. */
 function flinchForOutcome(victim,attacker,outcome,dmg){
  if(!victim) return;
+ // Stage 32: a miss is still no FLINCH (the Stage 26 rule below
+ // stands) — but the defender now visibly dodges: a quick lean/step
+ // aside, so a whiff reads as a dodge instead of nothing happening.
+ if(outcome==='miss') startDodge(victim,attacker);
  if(outcome==='miss') return;
  if(outcome==='blocked'){ startFlinch(victim,attacker,true); return; }
  if(typeof dmg==='number'&&dmg>0){ startFlinch(victim,attacker,false); return; }
  startFlinch(victim,attacker,true);
+}
+/* ---- Stage 32: livelier fights + death falls ----
+   Guard raise: a blocked hit (startFlinch with guard=true, from
+   flinchForOutcome's blocked branch and the Fight Caves' blocked
+   path) raises the defender's off arm — shield arm on knights —
+   across the body for ~280ms, applied in applyFightStance.
+   Dodge: a missed swing (flinchForOutcome's miss branch) steps the
+   defender sideways with a lean — same offset bookkeeping as the
+   flinch (applied after easing, taken back off next frame). */
+function startGuardRaise(a){
+ if(!a||!a.group) return;
+ a.guardUntil=performance.now()+280;
+}
+const DODGE_MS=230, DODGE_DIST=2.6;
+function startDodge(victim,attacker){
+ if(!victim||!victim.group||victim.deathFall) return;
+ let dx=0, dz=0;
+ if(attacker&&attacker.group){ dx=victim.group.position.x-attacker.group.position.x; dz=victim.group.position.z-attacker.group.position.z; }
+ if(Math.hypot(dx,dz)<0.01){ const r=victim.group.rotation.y||0; dx=Math.cos(r); dz=-Math.sin(r); }
+ const d=Math.hypot(dx,dz)||1;
+ // step sideways: perpendicular to the attack line
+ victim.dodge={dx:-dz/d,dz:dx/d,t0:performance.now(),dur:DODGE_MS,amt:DODGE_DIST/W2S};
+}
+function applyDodge(a,now){
+ if(!a||!a.group||!a.dodge) return;
+ const t=now-a.dodge.t0;
+ if(t>=a.dodge.dur){ a.dodge=null; if(a.pivot&&!a.jump&&!a.deathFall) a.pivot.rotation.z=0; return; }
+ const p=Math.sin((t/a.dodge.dur)*Math.PI); // out and back
+ const ox=a.dodge.dx*a.dodge.amt*p, oz=a.dodge.dz*a.dodge.amt*p;
+ a.group.position.x+=ox; a.group.position.z+=oz;
+ a.dodgeOff={x:ox,z:oz};
+ if(a.pivot&&!a.jump&&!a.deathFall) a.pivot.rotation.z=a.dodge.dx*0.14*p; // lean into the step aside
+}
+function clearDodgeOff(a){
+ if(!a) return;
+ if(a.dodgeOff&&a.group){ a.group.position.x-=a.dodgeOff.x; a.group.position.z-=a.dodgeOff.z; }
+ a.dodgeOff=null;
+}
+/* Combat stance + shuffle (applied every frame from the avatar
+   loops, AFTER swing/lunge/flinch so it never fights them):
+   an engaged fighter who is standing still holds their weapon arm
+   raised-ready, sways a touch on the jump pivot, bounces lightly,
+   and every second or so takes a small shuffle step — a VISUAL
+   offset only (out and back, lunge-style bookkeeping), never a
+   server position, so reach reads stay exact. */
+function applyFightStance(a,now,dt,engaged){
+ if(!a||!a.group||a.deathFall) return;
+ if(a.armL&&a.guardUntil&&now<a.guardUntil&&!a.swingStart){
+   a.armL.rotation.x+=(-1.15-a.armL.rotation.x)*Math.min(1,dt*16); // guard up
+ }
+ if(!engaged){ if(a.pivot&&!a.jump&&!a.dodge) a.pivot.rotation.z=0; return; }
+ if(a.armR&&!a.swingStart&&(a.moveAmt||0)<0.3){
+   a.armR.rotation.x+=(-0.5-a.armR.rotation.x)*Math.min(1,dt*8); // weapon ready
+ }
+ if(a.pivot&&!a.jump&&!a.dodge) a.pivot.rotation.z=Math.sin(now*0.0021+(a.bob||0))*0.03; // sway (a live dodge owns the lean)
+ if(a.shuffle){
+   const t=now-a.shuffle.t0;
+   if(t>=560) a.shuffle=null;
+ } else if(now>(a.nextShuffle||0)&&!a.swingStart&&(a.moveAmt||0)<0.3){
+   const ang=Math.random()*Math.PI*2, d=(1.2+Math.random()*1.6)/W2S;
+   a.shuffle={dx:Math.cos(ang)*d,dz:Math.sin(ang)*d,t0:now};
+   a.nextShuffle=now+900+Math.random()*900;
+ }
+ if(a.shuffle){
+   const s=Math.sin(Math.min(1,(now-a.shuffle.t0)/560)*Math.PI);
+   const ox=a.shuffle.dx*s, oz=a.shuffle.dz*s;
+   a.group.position.x+=ox; a.group.position.z+=oz;
+   a.shuffleOff={x:ox,z:oz};
+ }
+}
+function clearShuffleOff(a){
+ if(!a) return;
+ if(a.shuffleOff&&a.group){ a.group.position.x-=a.shuffleOff.x; a.group.position.z-=a.shuffleOff.z; }
+ a.shuffleOff=null;
+}
+/* Death falls: when a player dies, their knight TOPPLES — pivot
+   rotation.x tips the whole figure backward to the ground over
+   ~450ms (gravity ease-in, a small settle bounce), lies there, and
+   eases back up at the tail ONLY so a persisting avatar (mod-duel
+   knockdown in the plaza) isn't left lying forever; avatars that
+   respawn elsewhere are removed by then anyway. Triggers: the
+   server's player_fell broadcast (every death type — see
+   respawnPlayer / endDuel / endModDuel server-side) plus local
+   hooks in endDuelUI and the mod-duel end handler. syncAvatars
+   keeps a falling avatar alive (corpse-keep) until FALL_KEEP_MS
+   even though the state snapshots have already moved its owner to
+   the plaza. */
+const FALL_TOPPLE_MS=450, FALL_KEEP_MS=2600;
+function startDeathFall(a){
+ if(!a||!a.pivot||a.deathFall) return;
+ a.deathFall={t0:performance.now()};
+ a.swingStart=0; a.lunge=null; a.flinch=null; a.dodge=null; a.jump=null; a.shuffle=null;
+ if(a.iceShell) a.iceShell.visible=false; // the ice stays standing-shape; hide it on a corpse
+}
+function applyDeathFall(a,now){
+ if(!a||!a.deathFall||!a.pivot) return;
+ const t=now-a.deathFall.t0;
+ if(t>=FALL_KEEP_MS){ a.deathFall=null; a.pivot.rotation.x=0; return; }
+ let ang;
+ if(t<FALL_TOPPLE_MS){ const p=t/FALL_TOPPLE_MS; ang=-1.52*p*p; } // accelerating over, like gravity
+ else {
+   ang=-1.52+0.06*Math.sin((t-FALL_TOPPLE_MS)/70)*Math.exp(-(t-FALL_TOPPLE_MS)/180); // settle bounce
+   if(t>2100) ang*=1-(t-2100)/(FALL_KEEP_MS-2100); // ease back up at the tail (persisting avatars only)
+ }
+ a.pivot.rotation.x=ang;
 }
 /* Swing pose: the weapon-arm pivot chops from raised to struck over
    ~120ms, then recovers over ~200ms. Entries with no arm pivot (most
@@ -3973,11 +4154,15 @@ function projectTo(x,y,z){
    Derek's rule — tap ANY part of the person you're fighting and
    you attack them. */
 const DUEL_FIGURE_TAP=58;
+/* Stage 32: the ladder below was written for the old ~2.3-tall
+   knight; the figure is ~3.2 + crown now, so every rung scales by
+   FIGURE_TAP_SCALE (the base values stay — Stage 26 pins them). */
+const FIGURE_TAP_SCALE=1.5;
 function figureTapDist(a,cx,cy){
  if(!a||!a.group) return 1e9;
  let best=1e9;
  for(const h of [0.25,0.8,1.35,1.95]){
-   const s=projectTo(a.group.position.x,h,a.group.position.z);
+   const s=projectTo(a.group.position.x,h*FIGURE_TAP_SCALE,a.group.position.z);
    if(!s) continue;
    const d=Math.hypot(s.x-cx,s.y-cy);
    if(d<best) best=d;
@@ -3989,7 +4174,7 @@ function updateLabels(now){
    // Stage 18: in first person my own name/HP label would hang in
    // the middle of the view — it stays hidden while the POV is on.
    if(a.isMe&&settings.camPov==='first'){ a.label.style.display='none'; continue; }
-   const s=projectTo(a.group.position.x,2.75,a.group.position.z);
+   const s=projectTo(a.group.position.x,3.9,a.group.position.z); // Stage 32: above the scaled knight (~3.2 tall + crown room)
    if(!s){ a.label.style.display='none'; continue; }
    a.label.style.display='block';
    a.label.style.left=s.x+'px'; a.label.style.top=s.y+'px';
@@ -4001,8 +4186,17 @@ function updateLabels(now){
    a.label.style.display='block';
    a.label.style.left=s.x+'px'; a.label.style.top=s.y+'px';
  }
+ // Stage 32: PKer labels were never positioned at all (a Stage 30
+ // gap — the labels sat wherever the layer left them). PKers ride
+ // the knight rig, so they get the knight label height.
+ for(const a of Object.values(pkerAvatars)){
+   const s=projectTo(a.group.position.x,3.9,a.group.position.z);
+   if(!s){ a.label.style.display='none'; continue; }
+   a.label.style.display='block';
+   a.label.style.left=s.x+'px'; a.label.style.top=s.y+'px';
+ }
  for(const a of Object.values(modAvatars)){
-   const s=projectTo(a.group.position.x,2.75,a.group.position.z);
+   const s=projectTo(a.group.position.x,3.35,a.group.position.z); // Stage 32: mods are group-scaled too (see makeModNpc)
    if(!s){ a.label.style.display='none'; continue; }
    a.label.style.display='block';
    a.label.style.left=s.x+'px'; a.label.style.top=s.y+'px';
@@ -4029,7 +4223,8 @@ function updateLabels(now){
  splats=splats.filter(sp=>{
    const age=now-sp.born;
    if(age>950){ sp.el.remove(); return false; }
-   const s=projectTo(sp.av.group.position.x,2.3-age/950*0.9,sp.av.group.position.z);
+   const baseY=(sp.av&&sp.av.splatY)? sp.av.splatY-0.6 : 2.3; // Stage 32: float from the avatar's own splat height (knights grew)
+   const s=projectTo(sp.av.group.position.x,baseY-age/950*0.9,sp.av.group.position.z);
    if(!s){ sp.el.style.opacity='0'; return true; }
    sp.el.style.left=s.x+'px'; sp.el.style.top=s.y+'px';
    sp.el.style.opacity=age<80? String(age/80) : String(1-(age-80)/870);
@@ -4713,6 +4908,9 @@ function animate(){
  }
  if(now-lastMapDraw>150){ lastMapDraw=now; drawMinimap(); }
  stepMovement(dt);
+ // Stage 32: the respawn hold expires — replay the held area/state
+ // messages so the scene switches to the plaza now the fall played.
+ if(deathHoldUntil&&now>=deathHoldUntil){ deathHoldUntil=0; releaseHeldMsgs(); }
  // Avatars ease toward their targets: frame-rate-independent easing
  // (Stage 8: a touch snappier for remote players), teleports snap,
  // facings ease along the shortest arc, and the walk cycle's phase is
@@ -4720,6 +4918,8 @@ function animate(){
  for(const [name,a] of Object.entries(avatars)){
    clearLungeOff(a); // last frame's lunge offset comes off before easing/walk math
    clearFlinchOff(a); // Stage 26: same for last frame's flinch recoil
+   clearDodgeOff(a); // Stage 32: same for the dodge step-aside
+   clearShuffleOff(a); // Stage 32: same for the fight shuffle steps
    const gx0=a.group.position.x, gz0=a.group.position.z;
    if(me && name===me.username){
      const k=1-Math.exp(-18*dt); // tight: smooth but never laggy
@@ -4767,18 +4967,30 @@ function animate(){
      else a.group.rotation.y=a.rot||0;
    }
    const dist=Math.hypot(a.group.position.x-gx0,a.group.position.z-gz0);
+   // Stage 32: a fallen knight does nothing but lie there (the
+   // position easing above still settles the body at the death spot).
+   if(a.deathFall){ a.group.position.y=0; applyDeathFall(a,now); continue; }
+   // Stage 32: who is "in a fight" for the stance/shuffle layer —
+   // me in any of my fights; a remote knight who is my duel/wild
+   // opponent, or whose snapshot activity says duel/fight.
+   const eng=(me&&name===me.username)? !!(duel||modDuel||npcFight||fcRun||wildFight)
+     : (a.act==='duel'||a.act==='fight'||(duel&&name===duel.opponent)||(wildFight&&wildFight.oppKind==='player'&&name===wildFight.oppName));
    poseWalk(a,dist,dt);
-   a.group.position.y=Math.abs(Math.sin(a.phase||0))*0.07*(a.moveAmt||0);
+   a.group.position.y=Math.abs(Math.sin(a.phase||0))*0.08*(a.moveAmt||0)+(eng&&(a.moveAmt||0)<0.3? Math.abs(Math.sin(now*0.0055+(a.phase||0)))*0.05 : 0); // walk bob + engaged stance bounce
    applySwing(a,now);
    updateJump(a,now);
    applyLunge(a,now);
    applyFlinch(a,now);
+   applyDodge(a,now);
+   applyFightStance(a,now,dt,eng);
  }
  // NPC meshes ease the same way (Stage 8: goblins and cave monsters
  // walk toward you server-side; brothers hold their anchor — no tx).
- for(const a of Object.values(npcAvatars)){
+ for(const [nid,a] of Object.entries(npcAvatars)){
    clearLungeOff(a);
    clearFlinchOff(a);
+   clearDodgeOff(a); // Stage 32
+   clearShuffleOff(a); // Stage 32
    if(a.tx!==undefined){
      const k=1-Math.exp(-12*dt);
      a.x+=(a.tx-a.x)*k; a.z+=(a.tz-a.z)*k;
@@ -4794,10 +5006,14 @@ function animate(){
    applySwing(a,now);
    applyLunge(a,now);
    applyFlinch(a,now);
+   applyDodge(a,now); // Stage 32
+   applyFightStance(a,now,dt,!!(npcFight&&npcFight.npcId===nid)); // Stage 32: my current NPC/Barrows opponent gets the stance layer
  }
  for(const a of Object.values(fcAvatars)){
    clearLungeOff(a);
    clearFlinchOff(a);
+   clearDodgeOff(a); // Stage 32
+   clearShuffleOff(a); // Stage 32
    if(a.tx!==undefined){
      const k=1-Math.exp(-12*dt);
      a.group.position.x+=(a.tx-a.group.position.x)*k;
@@ -4809,11 +5025,15 @@ function animate(){
    applySwing(a,now);
    applyLunge(a,now);
    applyFlinch(a,now);
+   applyDodge(a,now); // Stage 32
+   applyFightStance(a,now,dt,!!fcRun&&a.kind!=='jad'); // Stage 32: cave monsters in my run get the stance layer (Jad is exempt — he does not shuffle)
  }
  // Stage 30: PKers ease like NPCs (they chase server-side).
- for(const a of Object.values(pkerAvatars)){
+ for(const [pid,a] of Object.entries(pkerAvatars)){
    clearLungeOff(a);
    clearFlinchOff(a);
+   clearDodgeOff(a); // Stage 32
+   clearShuffleOff(a); // Stage 32
    const gx0=a.group.position.x, gz0=a.group.position.z;
    if(a.tx!==undefined){
      const k=1-Math.exp(-12*dt);
@@ -4824,17 +5044,22 @@ function animate(){
      else if(a.faceTarget!==undefined) easeRot(a,a.faceTarget,dt);
    }
    const pdist=Math.hypot(a.group.position.x-gx0,a.group.position.z-gz0);
+   const peng=!!(wildFight&&wildFight.oppKind==='pker'&&wildFight.oppId===pid); // Stage 32
    poseWalk(a,pdist,dt);
-   a.group.position.y=Math.abs(Math.sin(a.phase||0))*0.07*(a.moveAmt||0);
+   a.group.position.y=Math.abs(Math.sin(a.phase||0))*0.08*(a.moveAmt||0)+(peng&&(a.moveAmt||0)<0.3? Math.abs(Math.sin(now*0.0055+(a.phase||0)))*0.05 : 0);
    applySwing(a,now);
    applyLunge(a,now);
    applyFlinch(a,now);
+   applyDodge(a,now); // Stage 32
+   applyFightStance(a,now,dt,peng); // Stage 32
  }
  // Stage 22: moderators hold their post — only swings/lunges animate.
  // Stage 26: mid mod-duel the mod also turns to face me, and flinches.
  for(const [mid,a] of Object.entries(modAvatars)){
    clearLungeOff(a);
    clearFlinchOff(a);
+   clearDodgeOff(a); // Stage 32
+   clearShuffleOff(a); // Stage 32
    if(modDuel&&modDuel.npcId===mid&&me&&avatars[me.username]){
      const mp=avatars[me.username].group.position;
      easeRot(a,Math.atan2(mp.x-a.group.position.x,mp.z-a.group.position.z),dt);
@@ -4843,6 +5068,8 @@ function animate(){
    applySwing(a,now);
    applyLunge(a,now);
    applyFlinch(a,now);
+   applyDodge(a,now); // Stage 32
+   applyFightStance(a,now,dt,!!(modDuel&&modDuel.npcId===mid)); // Stage 32: my mod-duel opponent gets the stance layer
  }
  // Stage 31: camera-behind-facing — while I'm moving or in a
  // fight, ease camYaw behind my facing (see the CAM_BEHIND_RATE
@@ -4903,7 +5130,7 @@ function animate(){
    // the joystick are untouched; drag-rotate is ignored in this
    // view (v1) — camYaw simply has no effect here.
    a.group.visible=false;
-   const rot=a.group.rotation.y, hy=a.group.position.y+1.9;
+   const rot=a.group.rotation.y, hy=a.group.position.y+2.8; // Stage 32: eye height follows the scaled rig (head centre ≈ 2.17 × 1.32 ≈ 2.86)
    camera.position.set(fx+Math.sin(rot)*0.35,hy,fz+Math.cos(rot)*0.35);
    camera.lookAt(fx+Math.sin(rot)*10,hy,fz+Math.cos(rot)*10);
  } else {
@@ -6500,6 +6727,15 @@ function duelTickUI(m){
 }
 function endDuelUI(m){
  const wasDuel=duel; duel=null;
+ // Stage 32: a KO'd loser falls down in the arena (the server's
+ // player_fell broadcast usually beats this message here; this is
+ // the same trigger from the duel's own end message, idempotent).
+ if(wasDuel&&/KO/.test(m.reason||'')){
+   const loserName=(m.winner===me.username)? wasDuel.opponent : me.username;
+   const la=avatars[loserName];
+   if(la) startDeathFall(la);
+   beginDeathHold(); // both fighters watch the fall before the plaza switch
+ }
  duelEngaged=false; renderDuelHint();
  clearDuelCountdown(); // Stage 12: overlay off, movement unlocked
  if(wasDuel){ const oppAv=avatars[wasDuel.opponent]; if(oppAv) hideHpBar(oppAv); const myAv=me?avatars[me.username]:null; if(myAv) hideHpBar(myAv); } // both overhead bars off
@@ -6748,6 +6984,7 @@ function modDuelUI(m){
  if(m.phase==='end'){
    modDuel=null; modDuelEngaged=false;
    clearDuelCountdown();
+   if(m.result==='loss'){ const myAv=me?avatars[me.username]:null; if(myAv) startDeathFall(myAv); } // Stage 32: a lost mod duel knocks me down (the player_fell broadcast covers the plaza's view)
    const ma=modAvatars[m.npcId]; if(ma) hideHpBar(ma);
    const myAv=me?avatars[me.username]:null; if(myAv) hideHpBar(myAv);
    $('duelbar').classList.remove('open');
@@ -7708,10 +7945,11 @@ function setFrozenShell(a,on){
  if(!a||!a.group) return;
  if(on&&!a.iceShell){
    const big=a.kind==='jad';
-   const geo=new THREE.BoxGeometry(big?3.4:1.15,big?6:2.5,big?3.4:1.15);
+   const knight=!!a.legL; // Stage 32: knights are taller now — their shell grows to fit the new rig (it rides the scaled group, so local size is what matters)
+   const geo=big? new THREE.BoxGeometry(3.4,6,3.4) : knight? new THREE.BoxGeometry(1.1,2.7,1.1) : new THREE.BoxGeometry(1.15,2.5,1.15);
    const mat=new THREE.MeshBasicMaterial({color:0x9fd8ef,transparent:true,opacity:0.35,depthWrite:false});
    a.iceShell=new THREE.Mesh(geo,mat);
-   a.iceShell.position.y=big?3:1.25;
+   a.iceShell.position.y=big?3:(knight?1.35:1.25);
    a.group.add(a.iceShell);
  }
  if(a.iceShell) a.iceShell.visible=!!on;
