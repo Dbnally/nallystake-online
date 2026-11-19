@@ -24,15 +24,23 @@ _Gold-only. No real-money buy, sell, or cash-out. Compiled 2026-11-13 from Derek
 
 ## Phase 3 — Areas
 - North gate: Fight Caves — full 63-wave table, TzTok-Jad, prayer switching, fire cape, saved records
-- South gate: Barrows — six original brothers (Dharok, Guthan, Ahrim, Torag, Verac, Karil), tunnel crypt randomised per run, puzzle door, reward chest; leaving mid-run keeps kills until the round is finished
+- South gate: Barrows — six original brothers (Dharok, Guthan, Ahrim, Torag, Verac, Karil), tunnel crypt randomised per run, puzzle door, reward chest; leaving mid-run keeps kills until the round is finished. Brother mechanics per Derek's 2026-11-13 spec: Dharok's 2h axe hits harder as his HP falls (max ~20→49, rage warnings at 75/50/25%), Guthan randomly heals for his hit (green swirl splat), Karil Ranged, Ahrim Magic, Verac Melee with no prayer bypass, Torag two hammers, faster cycle, two hits per swing; matching Protect prayer fully prevents that brother's damage
 - East: goblins dropping prayer-potion supplies
 - South-east: Training Cave (safe, per-skill stations)
 - South-west: Gathering Cave (Mining / Fishing / Woodcutting, sellable resources)
+- West gate (added 2026-11-13): Fishing Cove — path out the west gate, Fisher Wren, lake with dock and three fishing spots, six cuttable trees; chop logs (Woodcutting XP), light a fire with a log (Firemaking XP, ~1 min burn), fish raw trout (Fishing XP), cook trout on the fire (Cooking XP, burn chance falls with level); cooked trout heals 15 HP, eats from Backpack or Quick Use; logs/raw/cooked trout save and bank. New skills: Woodcutting, Firemaking, Fishing, Cooking
+- North-east corner (added 2026-11-13): Emberfall Mine & Smithy — mine gate in the plaza's north-east corner; 22 rocks covering all nine ores (Copper/Tin 1, Iron 10, Silver 20, Coal 30, Gold 40, Mithril 55, Adamantite 70, Runite 85), each with own look, level gate, progress bar, auto-repeat mining, regrow timer; pickaxes Bronze → Dragon (faster), from Pickaxe Pete's stall or the anvil; furnace smelts all eight bars with Derek's exact recipes, live pack + metal-bank counts, 1 / 5 / All; anvil has twelve categories across six metals, RS3 loop (unfinished item, progress bar, heat fades and slows work, reheat at forge, upgrades +1 to +4); smithed gear is wearable with real stats; ores/bars bank as ore box / metal bank, Pete buys stock for gold. New skills: Mining, Smithing (OSRS XP curve to 99)
+
+## Visuals (added 2026-11-13)
+- Textures + soft shadows pass across plaza, pits, caves, camp and Barrows: stone/grass/wood/rock/sand surfaces with bump relief, dragon-scale bump on knight armour (recolouring unchanged), sun follows the player, underground lighting dims to torch/lava
 
 ## Prayers — rule locked by Derek's spec
 - Protect from Melee / Protect from Missiles / Protect from Magic — OSRS style: one active at a time, tap on/off, switching turns the previous off, active one lit gold and shown above the head, stacked vertically above the analog stick
 - Prayer potions: doses on a quick-drink button, restore prayer points
 - NOTE: the earlier "Deflect" delivery in Muse nallystake is marked unverified / naming-unresolved. The online version uses Protect, block-only, per Derek's pasted OSRS spec — do not carry Deflect over.
+
+## Live-check status (2026-11-13 evening)
+- Fishing Cove and Emberfall Mine & Smithy were built the same day and code-reviewed, but their full loops (chop → fire → fish → cook; mine → smelt → smith a full heat cycle) were not driven live end-to-end — Derek's phone check is the verification. Port them as specified, but re-verify against his live check before treating them as settled.
 
 ## Not in scope
 - Real-money gold buy/sell or cash-out — OFF until a lawyer gives a written yes with conditions

@@ -779,7 +779,28 @@ refreshQuickLogin();
    shows a reconnecting bar and retries with backoff until the
    server answers; the server takes the new sign-in over from the
    zombie session, so no reload is ever needed. */
-let reconnectTimer=null, reconnectMs=2000, wasInGame=false, reconnecting=false;
+let reconnectTimer=null, reconnectMs=1000, wasInGame=false, reconnecting=false;
+/* Stage 34: chat outbox. A message sent while the socket is down
+   used to be lost (public chat) or stuck in its compose sheet
+   (whispers). Now chat and whisper sends that can't go out are
+   queued here and flushed on the next welcome — a brief drop no
+   longer eats what you typed. Capped and time-boxed so a long
+   outage never replays stale lines. */
+let chatOutbox=[];
+function queueChat(msg){
+ chatOutbox.push({msg,at:Date.now()});
+ while(chatOutbox.length>20) chatOutbox.shift();
+ toast('📥 Connection lost — your message is queued and will send itself when you are back.');
+}
+function flushChatOutbox(){
+ if(!chatOutbox.length) return;
+ const now=Date.now();
+ const q=chatOutbox.filter(e=>now-e.at<5*60*1000);
+ chatOutbox=[];
+ let sent=0;
+ for(const e of q){ if(send(e.msg)) sent++; else { chatOutbox.push(e); break; } }
+ if(sent) logLine(`📥 Sent ${sent} queued message${sent===1?'':'s'} from while you were disconnected.`);
+}
 function showConnbar(v){ const b=$('connbar'); if(b) b.classList.toggle('open',!!v); }
 function scheduleReconnect(){
  if(reconnectTimer) return;
@@ -890,7 +911,9 @@ function onPlayerFell(m){
  if(m.respawn&&me&&(m.username===me.username||(duel&&m.username===duel.opponent))) beginDeathHold();
 }
 function onMsg(m){
- if(m.type==='welcome'){ welcomed=true; quickAttempt=false; wasInGame=true; const wasReconnect=reconnecting; stopReconnect(); reconnectMs=2000; if(wasReconnect){ toast('✅ Reconnected.'); logLine('✅ Reconnected.'); } me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); maybeShowActivityPicker(); }
+ if(m.type==='ping'){ send({type:'pong'}); return; }
+ if(m.type==='pong'){ return; }
+ if(m.type==='welcome'){ welcomed=true; quickAttempt=false; wasInGame=true; const wasReconnect=reconnecting; stopReconnect(); reconnectMs=1000; if(wasReconnect){ toast('✅ Reconnected.'); logLine('✅ Reconnected.'); } flushChatOutbox(); me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); maybeShowActivityPicker(); }
  if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(Array.isArray(m.spells)) spellList=m.spells; if(drawerPanel==='shop') renderDrawer(); renderQuickButtons(); renderSpellBtns(); for(const av of Object.values(avatars)) av.gearSig=null; }
  if(m.type==='exchange_prices'){ goods={}; for(const g of (m.goods||[])) goods[g.id]=g; if(drawerPanel==='exchange') renderDrawer(); drawMinimap(); }
  if(m.type==='state'){ onStateMsg(m); }
@@ -2751,6 +2774,15 @@ function weaponShape(id){
  if(id==='torags_hammers') return 'hammers';
  if(id==='veracs_flail') return 'flail';
  if(id==='karils_crossbow') return 'crossbow';
+ // Stage 34: the weapons chart's shapes — crossbow, wands, and the
+ // two-handed row (greatsword / battleaxe / war hammer & maul /
+ // scythe), told apart by their id endings.
+ if(id==='steel_crossbow') return 'crossbow';
+ if(/_wand$/.test(id)) return 'wand';
+ if(/_greatsword$/.test(id)) return 'greatsword';
+ if(/_battleaxe$/.test(id)) return 'axe';
+ if(/_war_hammer$|_maul$/.test(id)) return 'hammer2h';
+ if(/_scythe$/.test(id)) return 'scythe';
  const d=catalog[id];
  if(d&&d.style==='ranged') return 'bow';
  if(d&&d.style==='magic') return 'staff';
@@ -2762,6 +2794,12 @@ function buildWeaponInto(a,id){
  const A=a.gearAnchors, c=gearColorFor(id), shape=weaponShape(id);
  const wg=new THREE.Group(); wg.position.set(0,-0.74,0.05); A.armR.add(wg);
  const grip=0x5a4020, gold=0xc9a227;
+ // Stage 34: a two-handed weapon is built bigger and carried
+ // diagonally across both hands (the shield hand is on the haft
+ // too — the server keeps the shield slot empty while one is
+ // wielded, so nothing renders on the left arm but Torag's twin).
+ const d0=catalog[id];
+ if(d0&&d0.twoHanded){ wg.scale.set(1.18,1.18,1.18); wg.rotation.z=-0.30; wg.rotation.x=0.10; }
  if(shape==='sword'){
    box(0.07,0.85,0.14,c,0,0.32,0,wg); // blade in the tier's colour
    box(0.3,0.08,0.2,gold,0,-0.12,0,wg); // crossguard
@@ -2785,9 +2823,27 @@ function buildWeaponInto(a,id){
    const chain=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.34,6),new THREE.MeshLambertMaterial({color:0x8a8f96}));
    chain.position.set(0.13,0.42,0); chain.rotation.z=-0.7; wg.add(chain);
    const ball=new THREE.Mesh(new THREE.SphereGeometry(0.13,10,8),new THREE.MeshLambertMaterial({color:c})); ball.position.set(0.26,0.56,0); wg.add(ball);
+ } else if(shape==='greatsword'){
+   box(0.09,1.18,0.16,c,0,0.44,0,wg); // long broad blade in the tier's colour
+   box(0.38,0.08,0.22,gold,0,-0.18,0,wg); // wide crossguard
+   box(0.1,0.34,0.1,grip,0,-0.38,0,wg); // two-hand grip
+ } else if(shape==='axe'){
+   box(0.07,1.0,0.07,grip,0,0.26,0,wg); // haft
+   box(0.36,0.3,0.05,c,0.14,0.68,0,wg); // crescent head
+   box(0.1,0.12,0.06,c,0,0.78,0,wg); // top spike base
+ } else if(shape==='hammer2h'){
+   box(0.08,1.05,0.08,grip,0,0.28,0,wg); // long haft
+   box(0.3,0.26,0.3,c,0,0.82,0,wg); // heavy head
+ } else if(shape==='scythe'){
+   box(0.06,1.4,0.06,grip,0,0.4,0,wg); // long haft
+   const blade=new THREE.Mesh(new THREE.TorusGeometry(0.44,0.035,8,20,1.9),new THREE.MeshLambertMaterial({color:c}));
+   blade.position.set(0.3,1.06,0); blade.rotation.z=-0.5; wg.add(blade); // curved moon blade
+ } else if(shape==='wand'){
+   box(0.05,0.55,0.05,0x6e4f2a,0,0.1,0,wg); // short rod
+   const orb=new THREE.Mesh(new THREE.SphereGeometry(0.085,10,8),new THREE.MeshLambertMaterial({color:c})); orb.position.y=0.46; wg.add(orb); // tier-coloured tip
  } else if(shape==='staff'){
    box(0.06,1.2,0.06,0x6e4f2a,0,0.32,0,wg); // wooden rod
-   const orb=new THREE.Mesh(new THREE.SphereGeometry(0.11,10,8),new THREE.MeshLambertMaterial({color:STAFF_ORBS[id]||0x4a90d9})); orb.position.y=1.0; wg.add(orb);
+   const orb=new THREE.Mesh(new THREE.SphereGeometry(0.11,10,8),new THREE.MeshLambertMaterial({color:STAFF_ORBS[id]||c})); orb.position.y=1.0; wg.add(orb);
  } else if(shape==='crossbow'){
    box(0.09,0.1,0.62,grip,0,0.26,0.04,wg); // stock
    box(0.56,0.06,0.06,c,0,0.34,0.28,wg); // prod
@@ -2812,7 +2868,12 @@ function syncGear(a,p){
  if(a.hairParts) for(const hp of a.hairParts) hp.visible=!covered;
  if(covered){
    const c=gearColorFor(headId), m=mat(c);
-   if(/hood|coif/.test(headId)){
+   if(/wizard/.test(headId)){
+     // Stage 34: a wizard's POINTED hat — wide brim + tall cone,
+     // the magic line's silhouette (distinct from helm and coif).
+     const brim=new THREE.Mesh(new THREE.CylinderGeometry(0.43,0.45,0.05,14),m); brim.position.y=2.24; A.head.add(brim);
+     const cone=new THREE.Mesh(new THREE.ConeGeometry(0.33,0.66,12),m); cone.position.y=2.58; cone.rotation.z=0.07; A.head.add(cone);
+   } else if(/hood|coif/.test(headId)){
      const dome=new THREE.Mesh(new THREE.SphereGeometry(0.305,14,10,0,Math.PI*2,0,Math.PI*0.62),m); dome.position.y=2.20; A.head.add(dome);
      box(0.44,0.52,0.08,c,0,1.97,-0.23,A.head); // the hood's fall down the back
    } else {
@@ -2830,11 +2891,17 @@ function syncGear(a,p){
  if(a.tabardMesh) a.tabardMesh.visible=!(w&&w.body);
  if(w&&w.body){
    const c=gearColorFor(w.body), m=mat(c);
-   const plate=new THREE.Mesh(new THREE.CylinderGeometry(0.315,0.40,0.87,12),m); plate.position.y=1.45; A.body.add(plate);
+   // Stage 34: body silhouettes by armour family — plate is the
+   // broad cylinder with pauldrons; a robe top flares to a skirt
+   // hem with no pauldrons; a d'hide body is slimmer, no pauldrons.
+   const fam=/_robe_top$/.test(w.body)? 'robe' : (/_body$|karils_top/.test(w.body)? 'hide' : 'plate');
+   const plate=new THREE.Mesh(new THREE.CylinderGeometry(fam==='hide'?0.29:0.315,fam==='robe'?0.47:(fam==='hide'?0.37:0.40),0.87,12),m); plate.position.y=1.45; A.body.add(plate);
    const belt2=new THREE.Mesh(new THREE.CylinderGeometry(0.41,0.42,0.09,12),mat(0xc9a227)); belt2.position.y=1.05; A.body.add(belt2);
-   const pauG=new THREE.SphereGeometry(0.16,10,8);
-   const pl=new THREE.Mesh(pauG,m); pl.position.set(-0.44,1.84,0); A.body.add(pl);
-   const pr=new THREE.Mesh(pauG,m); pr.position.set(0.44,1.84,0); A.body.add(pr);
+   if(fam==='plate'){
+     const pauG=new THREE.SphereGeometry(0.16,10,8);
+     const pl=new THREE.Mesh(pauG,m); pl.position.set(-0.44,1.84,0); A.body.add(pl);
+     const pr=new THREE.Mesh(pauG,m); pr.position.set(0.44,1.84,0); A.body.add(pr);
+   }
  }
  // --- legs: guards that swing with the legs, or a chainskirt from the waist
  if(w&&w.legs){
@@ -2842,8 +2909,11 @@ function syncGear(a,p){
    if(/skirt/.test(w.legs)){
      const skirt=new THREE.Mesh(new THREE.CylinderGeometry(0.33,0.50,0.52,12,1,true),m); skirt.position.y=0.78; A.body.add(skirt);
    } else {
+     // Stage 34: chaps are slimmer than platelegs — same guards,
+     // narrower cut, so the ranged line reads differently.
+     const chap=/_chaps$/.test(w.legs);
      for(const anchor of [A.legL,A.legR]){
-       const guard=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.135,0.66,10),m); guard.position.y=-0.40; anchor.add(guard);
+       const guard=new THREE.Mesh(new THREE.CylinderGeometry(chap?0.125:0.15,chap?0.11:0.135,0.66,10),m); guard.position.y=-0.40; anchor.add(guard);
      }
    }
  }
@@ -5268,6 +5338,8 @@ function examineHTML(item){
    if(d.maxBonus) stats.push(`+${d.maxBonus} max hit`);
    if(d.strBonus) stats.push(`+${d.strBonus} ranged strength`);
    if(d.kind==='weapon'&&d.style) stats.push(`fights with ${d.style}`);
+   if(d.twoHanded) stats.push(`two-handed — no shield while wielded`); // Stage 34
+   if(d.ticks) stats.push(`⏱ ${d.ticks}-tick swings`); // Stage 34: per-weapon cadence (2h / crossbow)
    if(d.reduction) stats.push(`−${Math.round(d.reduction*100)}% damage taken`);
    if(d.heal) stats.push(`heals ${d.heal} HP`);
    if(d.prayerRestore) stats.push(`restores ${d.prayerRestore} prayer`);
@@ -6286,7 +6358,7 @@ window.openTalk=function(name){
  <p class="note">Only ${esc(name)} will see this — it appears in the chat log as a 💬 line.</p>`;
  $('talkmodal').classList.add('open');
  const inp=$('talktext');
- const doSend=()=>{ const v=inp.value.trim(); if(!v){ closeModal('talkmodal'); return; } if(send({type:'whisper',to:name,text:v})) closeModal('talkmodal'); else toast('⚠️ Not connected — that message was NOT sent.'); };
+ const doSend=()=>{ const v=inp.value.trim(); if(!v){ closeModal('talkmodal'); return; } if(send({type:'whisper',to:name,text:v})) closeModal('talkmodal'); else { queueChat({type:'whisper',to:name,text:v}); closeModal('talkmodal'); } };
  $('talksend').onclick=doSend;
  inp.addEventListener('keydown',e=>{ if(e.key==='Enter') doSend(); });
  setTimeout(()=>{ try{ inp.focus(); }catch(e){} },50);
@@ -7203,7 +7275,7 @@ $('fcleavebtn').onclick=()=>send({type:'fc_leave'});
 $('jadwarn').onclick=()=>{ if(jadWarnStyle){ send({type:'prayer',prayer:jadWarnStyle}); } $('jadwarn').style.display='none'; };
 
 /* ================= chat ================= */
-$('sendchat').onclick=()=>{ const v=$('chat').value.trim(); if(!v) return; if(send({type:'chat',text:v})){ $('chat').value=''; const el=$('log'); if(el) el.scrollTop=1e6; } else { toast('⚠️ Not connected — that message was NOT sent. It is still in the box; tap Send again once you are reconnected.'); } };
+$('sendchat').onclick=()=>{ const v=$('chat').value.trim(); if(!v) return; if(send({type:'chat',text:v})){ $('chat').value=''; const el=$('log'); if(el) el.scrollTop=1e6; } else { queueChat({type:'chat',text:v}); $('chat').value=''; } };
 $('chat').addEventListener('keydown',e=>{ if(e.key==='Enter') $('sendchat').click(); });
 $('chathead').onclick=()=>{ const b=$('chatbox'); b.classList.toggle('closed'); $('chatchev').textContent=b.classList.contains('closed')?'▸':'▾'; if(!b.classList.contains('closed')) clearUnread(); };
 logLine('Welcome to nallystake online. Create an account or sign in to enter the plaza.');

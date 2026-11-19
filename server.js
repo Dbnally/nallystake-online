@@ -211,24 +211,79 @@ const ITEMS = {
   prayer_potion: { name: 'Prayer potion', kind: 'potion', prayerRestore: 15, buy: 15, shop: 'Potion' },
   ration: { name: 'Cooked ration', kind: 'food', heal: 15, buy: 8, shop: 'Food & Supplies' },
 };
-// Weapons: 5 tiers of sword, worn in the weapon slot.
-for (const [tier, buy, accBonus, maxBonus] of [
-  ['bronze', 50, 0.02, 1], ['iron', 120, 0.04, 2], ['steel', 300, 0.06, 4],
-  ['mithril', 800, 0.08, 6], ['dragon', 2500, 0.12, 10],
+// Weapons: the 1h melee row of the weapons chart (Stage 34 port of
+// the app version's chart): nine tiers, Bronze -> Necro. The five
+// original ids keep their ids and names; their prices and max hits
+// are aligned to the chart (bronze 50->90g, iron 120->180g, steel
+// 300->360g, mithril 800->720g and max 6->5, dragon 2500->5760g and
+// max 10->9). accBonus keeps the online ladder (the app's melee row
+// carries no accuracy stat; its `bonus` is the max hit here).
+for (const [id, name, tier, buy, accBonus, maxBonus, icon, color] of [
+  ['bronze_sword', 'Bronze sword', 'bronze', 90, 0.02, 1, null, null],
+  ['iron_sword', 'Iron sword', 'iron', 180, 0.04, 2, null, null],
+  ['steel_sword', 'Steel sword', 'steel', 360, 0.06, 4, null, null],
+  ['mithril_sword', 'Mithril sword', 'mithril', 720, 0.08, 5, null, null],
+  ['adamant_sword', 'Adamant sword', 'adamant', 1440, 0.10, 6, '⚔️', null],
+  ['rune_scimitar', 'Rune scimitar', 'rune', 2880, 0.11, 7, '🗡', null],
+  ['dragon_sword', 'Dragon sword', 'dragon', 5760, 0.12, 9, null, null],
+  ['torva_sword', 'Torva sword', 'torva', 11520, 0.14, 11, '⚔️', '#9fd4e8'],
+  ['necro_blade', 'Necro blade', 'necro', 23040, 0.16, 13, '🗡', '#8a3ffc'],
 ]) {
-  ITEMS[`${tier}_sword`] = { name: `${cap(tier)} sword`, kind: 'weapon', slot: 'weapon', style: 'melee', tier, buy, accBonus, maxBonus, shop: 'Weapon' };
+  ITEMS[id] = { name, kind: 'weapon', slot: 'weapon', style: 'melee', tier, buy, accBonus, maxBonus, shop: 'Weapon',
+    ...(icon ? { icon } : {}), ...(color ? { color } : {}) };
 }
-// Armour: 3 tiers x 4 slots. Each piece cuts incoming damage by `reduction`;
-// wearing all 4 armour slots adds a +5% set bonus. Total capped at 45%.
-for (const [tier, reduction, prices] of [
-  ['bronze', 0.03, { head: 60, body: 90, legs: 75, shield: 60 }],
-  ['steel', 0.06, { head: 250, body: 375, legs: 300, shield: 250 }],
-  ['dragon', 0.10, { head: 1500, body: 2250, legs: 1800, shield: 1500 }],
-]) {
-  const label = { head: 'helm', body: 'platebody', legs: 'platelegs', shield: 'shield' };
-  for (const slot of ['head', 'body', 'legs', 'shield']) {
-    ITEMS[`${tier}_${label[slot]}`] = { name: `${cap(tier)} ${label[slot]}`, kind: 'armour', slot, tier, buy: prices[slot], reduction, shop: 'Armour' };
+// Armour: the MELEE PLATE line of the armour chart (Stage 34 port
+// of the app version's chart): nine tiers, Bronze -> Necro, x helm /
+// platebody / platelegs / boots. The app's per-slot `block` is the
+// online `reduction`, its `acc` points are accBonus at the x40
+// scale, its `hit` is maxBonus (the Stage 28 mapping). The three
+// original tiers' pieces keep their ids; their stats and prices are
+// aligned to the chart (e.g. bronze helm reduction 0.03 -> 0.01 and
+// 60 -> 90g, dragon platebody 0.10 -> 0.32 and 2250 -> 8960g).
+// Wearing head+body+legs plus a shield or boots adds a +5% set
+// bonus (see armourReduction); the total is capped at 45%.
+// The three SHIELDS are not chart pieces (the app's chart has no
+// shield row) — they keep their existing stats and prices as-is.
+const PLATE_CHART = {
+  //            color       helm {block,buy,hit}        body {block,buy}      legs {block,buy}      boots {block,buy,acc}
+  bronze: { color: '#b0703f', helm: [0.01, 90, 0], body: [0.04, 140], legs: [0.01, 80], boots: [0.01, 70, 0] },
+  iron: { color: '#9aa2ad', helm: [0.02, 150, 0], body: [0.08, 280], legs: [0.02, 200], boots: [0.02, 130, 0] },
+  steel: { color: '#dfe8f2', helm: [0.03, 350, 0], body: [0.12, 560], legs: [0.03, 380], boots: [0.03, 320, 0] },
+  mithril: { color: '#4a6fd4', helm: [0.04, 520, 0], body: [0.16, 1120], legs: [0.04, 500], boots: [0.03, 480, 1] },
+  adamant: { color: '#3fae6a', helm: [0.05, 640, 0], body: [0.20, 2240], legs: [0.05, 620], boots: [0.04, 600, 1] },
+  rune: { color: '#2a4fd0', helm: [0.06, 720, 0], body: [0.24, 4480], legs: [0.06, 700], boots: [0.05, 680, 1] },
+  dragon: { color: '#a8161f', helm: [0.07, 800, 1], body: [0.32, 8960], legs: [0.07, 850], boots: [0.05, 700, 2] },
+  torva: { color: '#cfe2ec', helm: [0.08, 1600, 1], body: [0.36, 17920], legs: [0.08, 1500], boots: [0.06, 1400, 2] },
+  necro: { color: '#5b21b6', helm: [0.09, 2800, 2], body: [0.40, 35840], legs: [0.09, 2600], boots: [0.07, 2400, 3] },
+};
+const PLATE_SLOT_DEF = {
+  helm: { slot: 'head', suffix: 'helm', icon: '🪖' },
+  body: { slot: 'body', suffix: 'platebody', icon: '🛡️' },
+  legs: { slot: 'legs', suffix: 'platelegs', icon: '🦵' },
+  boots: { slot: 'feet', suffix: 'boots', icon: '🥾' },
+};
+const PLATE_DESC = {
+  helm: ['A brown bronze helm — the first rung of the armour ladder.', 'A plain iron helm with a brim and plume.', 'Bright polished steel, plume and all.', 'A blue-purple mithril helm, light for its strength.', 'A green adamant helm — stubborn, heavy plate.', 'A deep blue rune helm, humming faintly with old magic.', 'Bright crimson dragon plate helm with the full crown of bone horns.', 'Pale steel crowned with horns and cyan ice-crystal trim — Torva, the frost tier above dragon.', 'Dark purple and cruelly spiked — the Necro helm, the strongest helm on the ladder.'],
+  body: ['A brown bronze platebody — the first rung of the armour ladder.', 'A plain iron platebody.', 'Bright polished steel plate.', 'A blue-purple mithril platebody, light for its strength.', 'A green adamant platebody — stubborn, heavy plate.', 'A deep blue rune platebody, humming faintly with old magic.', 'Bright crimson dragon plate, the full chest piece.', 'Pale steel plate trimmed with cyan ice crystal — Torva, the frost tier above dragon.', 'Dark purple and cruelly spiked — the Necro platebody, the strongest body on the ladder.'],
+  legs: ['Brown bronze platelegs — the first rung of the armour ladder.', 'Grey iron platelegs.', 'Bright steel platelegs.', 'Blue-purple mithril platelegs, light for their strength.', 'Green adamant platelegs — stubborn, heavy plate.', 'Deep blue rune platelegs, humming faintly with old magic.', 'Bright crimson dragon plate legs.', 'Pale steel platelegs trimmed with cyan ice crystal — Torva, the frost tier above dragon.', 'Dark purple and cruelly spiked — the Necro platelegs, the strongest legs on the ladder.'],
+  boots: ['Brown bronze boots — the first rung of the armour ladder.', 'Grey iron boots.', 'Bright steel boots.', 'Blue-purple mithril boots, light for their strength.', 'Green adamant boots — stubborn, heavy plate.', 'Deep blue rune boots, humming faintly with old magic.', 'Bright crimson dragon boots.', 'Pale steel boots trimmed with cyan ice crystal — Torva, the frost tier above dragon.', 'Dark purple and cruelly spiked — the Necro boots, the strongest boots on the ladder.'],
+};
+const PLATE_TIER_ORDER = ['bronze', 'iron', 'steel', 'mithril', 'adamant', 'rune', 'dragon', 'torva', 'necro'];
+for (let t = 0; t < PLATE_TIER_ORDER.length; t += 1) {
+  const tier = PLATE_TIER_ORDER[t];
+  const row = PLATE_CHART[tier];
+  for (const part of ['helm', 'body', 'legs', 'boots']) {
+    const sd = PLATE_SLOT_DEF[part];
+    const st = row[part];
+    ITEMS[`${tier}_${sd.suffix}`] = {
+      name: `${cap(tier)} ${sd.suffix}`, icon: sd.icon, kind: 'armour', slot: sd.slot, tier, buy: st[1], shop: 'Armour',
+      reduction: st[0], maxBonus: part === 'helm' ? (st[2] || 0) : 0, accBonus: part === 'boots' ? (st[2] || 0) / 40 : 0,
+      color: row.color, desc: PLATE_DESC[part][t],
+    };
   }
+}
+for (const [tier, reduction, buy] of [['bronze', 0.03, 60], ['steel', 0.06, 250], ['dragon', 0.10, 1500]]) {
+  ITEMS[`${tier}_shield`] = { name: `${cap(tier)} shield`, kind: 'armour', slot: 'shield', tier, buy, reduction, shop: 'Armour' };
 }
 // Stage 21: party hats — Derek's design. One per metal tier, in that
 // tier's colour, prices doubling from Bronze 500,000g to Dragon
@@ -551,6 +606,143 @@ for (const [id, name, buy, accBonus] of [
 ]) {
   ITEMS[id] = { name, icon: '🪄', kind: 'weapon', slot: 'weapon', style: 'magic', buy, accBonus, maxBonus: 0, shop: 'Weapon' };
 }
+// ---------- Stage 34: the four gear charts (port of the app version) ----------
+// The RANGED armour line (d'hide): Leather -> Studded -> Snakeskin
+// -> Green / Blue / Red / Black D'hide -> Karil's -> Armadyl, x coif
+// (head) / body / chaps (legs) / boots (feet). The Karil's rung is
+// the existing Barrows loot (karils_coif / karils_top /
+// karils_leatherskirt / karils_boots — their app stats already match
+// this chart, so they are not redefined). The line trades the plate
+// line's heavy reduction for accuracy: its `acc` points ride as
+// accBonus at the x40 scale and count from armour slots through
+// weaponAccPoints, exactly like the Barrows pieces. The app encodes
+// no style-specific defence (its block is one number), so the
+// online single `reduction` is a direct port, no simplification.
+const DHIDE_TIERS = ['leather', 'studded', 'snakeskin', 'green', 'blue', 'red', 'black', 'armadyl'];
+const DHIDE_NAME = { leather: 'Leather', studded: 'Studded', snakeskin: 'Snakeskin', green: "Green d'hide", blue: "Blue d'hide", red: "Red d'hide", black: "Black d'hide", armadyl: 'Armadyl' };
+const DHIDE_COLORS = ['#9a6b42', '#7a5230', '#9a9a6a', '#2fae4e', '#2456d0', '#c02727', '#2b2b33', '#e8e0c8'];
+const DHIDE_STATS = {
+  //            acc pts        block by tier                       buy by tier
+  coif: { acc: [1, 2, 3, 4, 5, 6, 7, 10], block: [0, 0.01, 0.01, 0.02, 0.02, 0.03, 0.03, 0.05], buy: [60, 120, 240, 400, 560, 720, 900, 2000], slot: 'head', suffix: 'coif', icon: '🧢' },
+  body: { acc: [1, 2, 3, 4, 5, 6, 7, 10], block: [0.02, 0.04, 0.06, 0.09, 0.12, 0.15, 0.18, 0.25], buy: [120, 240, 480, 960, 1920, 3840, 7680, 15360], slot: 'body', suffix: 'body', icon: '🧥' },
+  chaps: { acc: [1, 2, 3, 4, 5, 6, 7, 10], block: [0, 0.01, 0.01, 0.02, 0.02, 0.03, 0.03, 0.05], buy: [55, 110, 220, 380, 540, 700, 880, 1900], slot: 'legs', suffix: 'chaps', icon: '👖' },
+  boots: { acc: [1, 2, 3, 4, 5, 6, 7, 10], block: [0, 0.01, 0.01, 0.02, 0.02, 0.03, 0.03, 0.05], buy: [50, 100, 200, 350, 500, 650, 820, 1800], slot: 'feet', suffix: 'boots', icon: '🥾' },
+};
+const DHIDE_DESC = {
+  coif: ["Ranged armour — a plain brown leather coif. Accuracy over bulk: +1 to every hit chance.", 'Ranged armour — studded leather, a little tougher than plain.', 'Ranged armour — a snakeskin bandana-coif in khaki scales.', 'Ranged armour — green dragonhide, light and springy.', 'Ranged armour — blue dragonhide, a grade above green.', 'Ranged armour — red dragonhide, rich and tough.', 'Ranged armour — black dragonhide, the finest hide on the shelf.', 'Ranged armour — white-and-gold Armadyl, ornate winged crest. The strongest coif on the ranged line.'],
+  body: ['Ranged armour — a plain brown leather body. Accuracy over bulk.', 'Ranged armour — studded leather body, a little tougher than plain.', 'Ranged armour — a snakeskin body in khaki scales.', 'Ranged armour — green dragonhide body, light and springy.', 'Ranged armour — blue dragonhide body, a grade above green.', 'Ranged armour — red dragonhide body, rich and tough.', 'Ranged armour — black dragonhide body, the finest hide on the shelf.', 'Ranged armour — white-and-gold Armadyl platebody. The strongest body on the ranged line.'],
+  chaps: ['Ranged armour — plain brown leather chaps. Accuracy over bulk.', 'Ranged armour — studded leather chaps.', 'Ranged armour — khaki snakeskin chaps.', 'Ranged armour — green dragonhide chaps.', 'Ranged armour — blue dragonhide chaps.', 'Ranged armour — red dragonhide chaps.', 'Ranged armour — black dragonhide chaps, the finest hide on the shelf.', 'Ranged armour — white-and-gold Armadyl chaps with an ornate skirted waist. The strongest chaps on the ranged line.'],
+  boots: ['Ranged armour — plain brown leather boots. Accuracy over bulk.', 'Ranged armour — studded leather boots.', 'Ranged armour — khaki snakeskin boots.', 'Ranged armour — green dragonhide boots.', 'Ranged armour — blue dragonhide boots.', 'Ranged armour — red dragonhide boots.', 'Ranged armour — black dragonhide boots, the finest hide on the shelf.', 'Ranged armour — white-and-gold Armadyl boots. The strongest boots on the ranged line.'],
+};
+for (const part of ['coif', 'body', 'chaps', 'boots']) {
+  const st = DHIDE_STATS[part];
+  for (let t = 0; t < DHIDE_TIERS.length; t += 1) {
+    const tier = DHIDE_TIERS[t];
+    const id = tier === 'armadyl' && part === 'body' ? 'armadyl_platebody' : `${tier}_${st.suffix === 'body' ? 'body' : st.suffix}`;
+    ITEMS[id] = {
+      name: part === 'body' && tier === 'armadyl' ? 'Armadyl platebody' : `${DHIDE_NAME[tier]} ${st.suffix}`,
+      icon: tier === 'armadyl' && part === 'coif' ? '👑' : st.icon, kind: 'armour', slot: st.slot, tier,
+      buy: st.buy[t], shop: 'Armour', reduction: st.block[t], accBonus: st.acc[t] / 40, maxBonus: 0,
+      color: DHIDE_COLORS[t], desc: DHIDE_DESC[part][t],
+    };
+  }
+}
+// The MAGIC armour line (robes): the same nine metal tier names as
+// wizard gear — pointed hat (head) / robe top (body) / robe skirt
+// (legs) / wizard boots (feet). The least reduction of any line and
+// the most accuracy: robes are for landing spells. Distinct pieces
+// from the plate line — a Bronze wizard hat is not a Bronze helm.
+const ROBE_COLORS = ['#9a6b42', '#6b6560', '#b9c2cc', '#35d0e0', '#2f9e57', '#2a3fd0', '#c02727', '#cfe2ec', '#5b21b6'];
+const ROBE_STATS = {
+  wizard_hat: { acc: [2, 3, 4, 6, 7, 8, 10, 12, 14], block: [0, 0, 0.01, 0.01, 0.02, 0.02, 0.03, 0.04, 0.05], buy: [70, 140, 300, 550, 700, 850, 1000, 1800, 3000], slot: 'head', icon: '🧙', label: 'wizard hat' },
+  robe_top: { acc: [2, 3, 4, 6, 7, 8, 10, 12, 14], block: [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.10, 0.12], buy: [130, 260, 520, 1040, 2080, 4160, 8320, 16640, 33280], slot: 'body', icon: '👘', label: 'robe top' },
+  robe_skirt: { acc: [2, 3, 4, 6, 7, 8, 10, 12, 14], block: [0, 0, 0.01, 0.01, 0.02, 0.02, 0.03, 0.04, 0.05], buy: [65, 130, 280, 520, 680, 820, 980, 1700, 2900], slot: 'legs', icon: '👗', label: 'robe skirt' },
+  wizard_boots: { acc: [2, 3, 4, 5, 6, 7, 9, 11, 13], block: [0, 0, 0.01, 0.01, 0.02, 0.02, 0.03, 0.04, 0.05], buy: [55, 110, 240, 450, 600, 750, 900, 1600, 2700], slot: 'feet', icon: '🥾', label: 'wizard boots' },
+};
+const ROBE_DESC = {
+  wizard_hat: ['Magic armour — a plain tan pointed hat, cloth and leather-toned. The first rung of the wizard ladder.', 'Magic armour — a grey cloth pointed hat with a buckled band.', 'Magic armour — a silver-grey pointed hat, stiffened with steel thread.', 'Magic armour — a glowing cyan pointed hat, humming with stored spells.', 'Magic armour — a green pointed hat with a gold clasp.', 'Magic armour — a dark blue hood stitched with glowing runes.', 'Magic armour — a red-and-gold hood with flame trim, warm to the touch.', 'Magic armour — a pale ice-crystal crown-helm, frost curling off its horns. The wizard Torva tier.', 'Magic armour — a dark purple hood with a single watching eye. The strongest wizard hat on the ladder.'],
+  robe_top: ['Magic armour — a plain tan robe top, cloth and leather-toned. The first rung of the wizard ladder.', 'Magic armour — a grey cloth robe top.', 'Magic armour — a silver-grey robe top.', 'Magic armour — a glowing cyan robe top, humming with stored spells.', 'Magic armour — a green robe top with gold trim.', 'Magic armour — a dark blue robe top stitched with glowing runes.', 'Magic armour — a red robe top with gold flame trim.', 'Magic armour — a pale ice-crystal robe top. The wizard Torva tier.', 'Magic armour — a dark purple robe top with a watching-eye clasp. The strongest robe top on the ladder.'],
+  robe_skirt: ['Magic armour — a plain tan robe skirt, cloth and leather-toned.', 'Magic armour — a grey cloth robe skirt.', 'Magic armour — a silver-grey robe skirt with chevron hems.', 'Magic armour — a glowing cyan robe skirt, panels drifting with stored spells.', 'Magic armour — a green robe skirt with gold trim.', 'Magic armour — a dark blue robe skirt stitched with glowing runes.', 'Magic armour — a red robe skirt with gold flame trim.', 'Magic armour — a pale ice-crystal robe skirt, frost at its hem. The wizard Torva tier.', 'Magic armour — a dark purple robe skirt with a watching-eye clasp. The strongest robe skirt on the ladder.'],
+  wizard_boots: ['Magic armour — plain tan wizard boots, cloth and leather-toned.', 'Magic armour — grey cloth wizard boots with buckles.', 'Magic armour — silver-grey wizard boots with wrapped straps.', 'Magic armour — glowing cyan wizard boots.', 'Magic armour — green wizard boots with gold trim.', 'Magic armour — dark blue wizard boots stitched with glowing runes.', 'Magic armour — red wizard boots with gold flame trim.', 'Magic armour — pale ice-crystal wizard boots. The wizard Torva tier.', 'Magic armour — dark purple wizard boots with glowing eye clasps. The strongest wizard boots on the ladder.'],
+};
+for (const part of ['wizard_hat', 'robe_top', 'robe_skirt', 'wizard_boots']) {
+  const st = ROBE_STATS[part];
+  for (let t = 0; t < PLATE_TIER_ORDER.length; t += 1) {
+    const tier = PLATE_TIER_ORDER[t];
+    ITEMS[`${tier}_${part}`] = {
+      name: `${cap(tier)} ${st.label}`, icon: st.icon, kind: 'armour', slot: st.slot, tier,
+      buy: st.buy[t], shop: 'Armour', reduction: st.block[t], accBonus: st.acc[t] / 40, maxBonus: 0,
+      color: ROBE_COLORS[t], desc: ROBE_DESC[part][t],
+    };
+  }
+}
+// The weapons chart's other three rows (the 1h row is the sword
+// ladder above). Row 2 — TWO-HANDED melee: +4 max hit over the 1h
+// of its tier, a slower 6-tick swing (speedTicks), and no shield
+// while wielded (twoHanded — the equip handler moves a worn shield
+// back to the backpack, and a shield equip displaces a wielded 2h;
+// see the equip handler). Dragon Slash still rides a 2h swing, as
+// in the app ("Special: Dragon Slash (55% energy)").
+// Row 3 — ranged: bows by tier, with a CROSSBOW at Steel (5-tick
+// swing, the app's ticks). The app has no bolt item — its ranged
+// weapons use the same ammunition story as Karil's crossbow here:
+// the crossbow fires ARROWS, one per shot from the first ammo
+// stack, exactly like a bow. A bow's app `bonus` rides as the
+// weapon's own strBonus (added to the shot's max hit in
+// rollStyleAttack, beside the arrow's); its `acc` points are
+// accBonus at the x40 scale.
+// Row 4 — magic: staves and wands whose app `bonus` is maxBonus
+// (added to spell max hits in rollMagicCast when a magic weapon is
+// wielded) and whose `acc` points are accBonus at the x40 scale —
+// so a Necro staff (acc 17, bonus 12) visibly out-casts a Bronze
+// staff (acc 2, bonus 1). Torva and Necro are shop-bought at top
+// prices like their armour — no ores exist for them, in either
+// version, and nothing in these rows is smithable (the app's
+// smithing makes its own instance gear, as online's does).
+for (const [id, name, tier, buy, accBonus, maxBonus, icon, color] of [
+  ['bronze_greatsword', 'Bronze greatsword', 'bronze', 150, 0.02, 5, '⚔️', null],
+  ['iron_battleaxe', 'Iron battleaxe', 'iron', 300, 0.04, 6, '🪓', null],
+  ['steel_war_hammer', 'Steel war hammer', 'steel', 600, 0.06, 8, '🔨', null],
+  ['mithril_battleaxe', 'Mithril battleaxe', 'mithril', 1200, 0.08, 9, '🪓', null],
+  ['adamant_greatsword', 'Adamant greatsword', 'adamant', 2400, 0.10, 10, '⚔️', null],
+  ['rune_battleaxe', 'Rune battleaxe', 'rune', 4800, 0.11, 11, '🪓', null],
+  ['dragon_greatsword', 'Dragon greatsword', 'dragon', 9600, 0.12, 13, '⚔️', null],
+  ['torva_maul', 'Torva maul', 'torva', 19200, 0.14, 15, '🔨', '#9fd4e8'],
+  ['necro_scythe', 'Necro scythe', 'necro', 38400, 0.16, 17, '🌙', '#8a3ffc'],
+]) {
+  ITEMS[id] = { name, icon, kind: 'weapon', slot: 'weapon', style: 'melee', tier, buy, accBonus, maxBonus, shop: 'Weapon',
+    speedTicks: 6, twoHanded: true, ...(color ? { color } : {}),
+    desc: `Max hit +${maxBonus} · Two-handed: slower 6-tick swings, and no shield while wielded · Special: Dragon Slash (55% energy).` };
+}
+for (const [id, name, tier, buy, accPts, strBonus, ticks, color] of [
+  ['bronze_bow', 'Bronze bow', 'bronze', 80, 1, 1, 0, null],
+  ['iron_bow', 'Iron bow', 'iron', 160, 2, 2, 0, null],
+  ['steel_crossbow', 'Steel crossbow', 'steel', 320, 3, 4, 5, null],
+  ['mithril_bow', 'Mithril bow', 'mithril', 640, 4, 5, 0, null],
+  ['adamant_bow', 'Adamant bow', 'adamant', 1280, 5, 6, 0, null],
+  ['rune_bow', 'Rune bow', 'rune', 2560, 6, 7, 0, null],
+  ['dragon_bow', 'Dragon bow', 'dragon', 5120, 8, 9, 0, null],
+  ['torva_bow', 'Torva bow', 'torva', 10240, 10, 11, 0, '#9fd4e8'],
+  ['necro_bow', 'Necro bow', 'necro', 20480, 12, 13, 0, '#8a3ffc'],
+]) {
+  ITEMS[id] = { name, icon: '🏹', kind: 'weapon', slot: 'weapon', style: 'ranged', tier, buy, accBonus: accPts / 40, maxBonus: 0, strBonus, shop: 'Weapon',
+    ...(ticks ? { speedTicks: ticks } : {}), ...(color ? { color } : {}),
+    desc: id === 'steel_crossbow' ? 'A steel crossbow — slower 5-tick shots. It fires ordinary arrows, like every ranged weapon here; there is no separate bolt.' : `A ${name.toLowerCase()} — its strength adds to every shot's max hit.` };
+}
+for (const [id, name, tier, buy, accPts, maxBonus, icon, color] of [
+  ['bronze_staff', 'Bronze staff', 'bronze', 70, 2, 1, '🪄', null],
+  ['iron_wand', 'Iron wand', 'iron', 140, 3, 2, '🪄', null],
+  ['steel_wand', 'Steel wand', 'steel', 280, 5, 3, '🪄', null],
+  ['mithril_staff', 'Mithril staff', 'mithril', 560, 6, 4, '🪄', null],
+  ['adamant_staff', 'Adamant staff', 'adamant', 1120, 8, 5, '🪄', null],
+  ['rune_staff', 'Rune staff', 'rune', 2240, 9, 6, '🪄', null],
+  ['dragon_staff', 'Dragon staff', 'dragon', 4480, 11, 8, '🪄', null],
+  ['torva_staff', 'Torva staff', 'torva', 8960, 14, 10, '🪄', '#9fd4e8'],
+  ['necro_staff', 'Necro staff', 'necro', 17920, 17, 12, '🪄', '#8a3ffc'],
+]) {
+  ITEMS[id] = { name, icon, kind: 'weapon', slot: 'weapon', style: 'magic', tier, buy, accBonus: accPts / 40, maxBonus, shop: 'Weapon',
+    ...(color ? { color } : {}), desc: `A casting weapon — its accuracy and max-hit bonus feed every spell you cast with it.` };
+}
 // The spellbook (Derek: "Magic also comes with a magic book to see
 // what runes are required for each spell"). Spell tiers low->high
 // are air, water, earth, fire (Derek's order); families are Strike
@@ -663,6 +855,7 @@ function customCatalogEntry(def) {
     accBonus: def.accBonus || 0, maxBonus: def.maxBonus || 0, reduction: def.reduction || 0,
     speed: 0, icon: def.icon || null,
     style: def.style || null, strBonus: 0, // Stage 19: a custom cloned from a bow/staff keeps its style
+    tier: null, ticks: 0, twoHanded: false, // Stage 34: customs are never chart pieces or two-handed
     custom: true, num: def.num, base: def.base, by: def.by,
     color: def.color || null, art: def.art || null, // Stage 8: admin tint + drawn art
   };
@@ -753,6 +946,9 @@ function catalogList() {
     style: d.style || null, // Stage 19: weapon attack style ('melee' / 'ranged' / 'magic')
     strBonus: d.strBonus || 0, // Stage 19: arrow ranged strength bonus
     noStack: !!d.noStack, // Stage 29: never-stacking items (seaweed) — the client sums their stacks for counts
+    tier: d.tier || null, // Stage 34: gear-chart tier (the armour/weapon ladders)
+    ticks: d.speedTicks || 0, // Stage 34: per-weapon swing cadence in ticks (0 = the style default)
+    twoHanded: !!d.twoHanded, // Stage 34: a two-handed weapon — occupies the shield slot too
   }));
   // Stage 16: the gold item rides along explicitly (it has no buy
   // price and no sellOnly the filter above would keep): the client
@@ -1494,13 +1690,23 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 // the player vanishes from the world promptly and can sign straight
 // back in, instead of haunting the plaza while their real client
 // types into a dead connection and every chat line vanishes.
+// Stage 34: the same tick also sends an application-level
+// {type:'ping'} DATA frame (the client answers {type:'pong'}).
+// Why: the Stage 30 protocol ping alone did not stop playtest
+// sockets dropping every ~20–40s in the browser — some proxies /
+// load balancers only count data frames as activity and quietly
+// reap a connection whose traffic is control frames + server
+// pushes. Guaranteed data traffic in BOTH directions every 15s
+// keeps every middlebox's idle timer reset. Interval dropped
+// 25s → 15s so two missed rounds still reap a zombie in ~30s.
 setInterval(() => {
   for (const p of online.values()) {
     if (p.ws.isAlive === false) { try { p.ws.terminate(); } catch {} continue; }
     p.ws.isAlive = false;
     try { p.ws.ping(); } catch {}
+    send(p.ws, { type: 'ping', t: Date.now() });
   }
-}, +(process.env.HEARTBEAT_MS || 25000));
+}, +(process.env.HEARTBEAT_MS || 15000));
 const online = new Map(); // usernameKey -> { ws, profile, x, y, area, duelId, npcFightId }
 const challenges = new Map(); // id -> { id, from, to, stake, items, itemsTo, rules, freePlay, confirm: {from,to}, expires } (Stage 14/15)
 const duels = new Map(); // id -> duel
@@ -1903,7 +2109,17 @@ function broadcastNpcState(area) {
   for (const p of online.values()) if (p.area === area) send(p.ws, msg);
 }
 
-function send(ws, obj) { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+function send(ws, obj) {
+  if (ws.readyState !== 1) return;
+  // Stage 34 backpressure guard: a stalled consumer (a backgrounded
+  // phone tab that stopped draining) would otherwise grow this
+  // socket's send buffer without bound until the free-tier process
+  // runs out of memory and EVERY player drops. Past 16MB the socket
+  // is a dead consumer — terminate it; the client's auto-reconnect
+  // + Stage 31 restore put the player straight back.
+  if (ws.bufferedAmount > 16 * 1024 * 1024) { try { ws.terminate(); } catch {} return; }
+  try { ws.send(JSON.stringify(obj)); } catch {}
+}
 function broadcast(obj, exceptKey) {
   for (const [k, p] of online) if (k !== exceptKey) send(p.ws, obj);
 }
@@ -2236,25 +2452,31 @@ function capeBonus(p) {
   return p.worn && p.worn.cape ? itemDef(p.worn.cape) : null;
 }
 function armourReduction(p) {
-  let r = 0, filled = 0;
+  let r = 0, core = 0, fourth = false;
   // Stage 28: the reduction SUM now also reads the feet and hands
   // slots (Karil's boots protect from the feet slot, as the app's
-  // worn block totals do). The full-set count stays over the
-  // original four slots, so existing sets behave exactly as before;
-  // no pre-Stage-28 item occupies feet/hands, so the sum is
-  // unchanged for every existing piece of gear.
+  // worn block totals do).
+  // Stage 34: what counts as a SET — head + body + legs in
+  // protective armour, plus a fourth protective piece in EITHER
+  // the shield or the feet slot. The original metal line completes
+  // with its shield, exactly as before (no pre-Stage-34 feet piece
+  // existed in that line); the chart's lines complete with their
+  // boots, since the d'hide and robe lines have no shields and the
+  // plate line's chart row is helm/body/legs/boots. A mixed set
+  // (any tiers/lines) completes the same way mixed tiers always
+  // did. Only a piece that actually protects (reduction > 0)
+  // counts — a cosmetic party hat never completes a set (Stage 21).
   for (const slot of ['head', 'body', 'legs', 'shield', 'feet', 'hands']) {
     const def = p.worn && p.worn[slot] ? itemDef(p.worn[slot]) : null;
-    // Stage 21: only a piece that actually protects (reduction > 0)
-    // counts toward the full-set bonus — a cosmetic party hat in the
-    // head slot must never complete a set. Every real armour piece
-    // has reduction >= 0.03, so existing sets are unchanged.
     if (def && def.kind === 'armour') {
       r += def.reduction || 0;
-      if (def.reduction > 0 && ['head', 'body', 'legs', 'shield'].includes(slot)) filled += 1;
+      if (def.reduction > 0) {
+        if (slot === 'head' || slot === 'body' || slot === 'legs') core += 1;
+        else if (slot === 'shield' || slot === 'feet') fourth = true;
+      }
     }
   }
-  if (filled === 4) r += 0.05; // full-set bonus
+  if (core === 3 && fourth) r += 0.05; // full-set bonus
   return Math.min(r, 0.45);
 }
 // OSRS-style accuracy points for the attack roll: the item table's
@@ -2403,6 +2625,18 @@ function attackStyleOf(p) {
   return (d && d.style) || 'melee';
 }
 function swingSpeed(style) { return style === 'ranged' ? 3 : style === 'magic' ? 5 : MELEE_SPEED; }
+// Stage 34: a weapon def may carry its own swing cadence
+// (speedTicks — the weapons chart's two-handers swing every 6
+// ticks, its Steel crossbow every 5); it overrides the style
+// default for the PLAYER's swing timers in every engine that
+// times them (duels, mod duels, NPC fights, Barrows, the
+// Wilderness). Fight Caves keeps its every-tick cadence for all
+// weapons, as it always has.
+function weaponSwingTicks(p) {
+  const w = weaponBonus(p);
+  if (w && w.speedTicks) return w.speedTicks;
+  return swingSpeed(attackStyleOf(p));
+}
 function styleRange(style) { return style === 'melee' ? MELEE_REACH : NPC_RANGE; }
 function styleBanMsg(style) { return `🚫 No ${cap(style)} in this duel.`; }
 // Arrows are consumed from the FIRST ammo stack in backpack slot
@@ -2474,7 +2708,12 @@ function rollStyleAttack(attackerProfile, defenderProfile, useSpecial = false, l
     // damage, Aggressive power proc, Deflect (PvP), Defensive proc,
     // armour; the Accurate bonus lands in full as bonusDmg.
     const lvl = levelOverride == null ? levelForXp(attackerProfile.xp.ranged || 0) : levelOverride;
-    const normalMax = 6 + Math.floor((lvl + (s.strBoost || 0) - 1) / 3) + (arrowDef ? arrowDef.strBonus || 0 : 0);
+    // Stage 34: the wielded bow's own strBonus (the app chart's
+    // `bonus` for the ranged row) adds beside the arrow's — the
+    // pre-chart bows carry no strBonus, so their shots are
+    // unchanged, and Karil's crossbow (maxBonus only) is too.
+    const wDef = weaponBonus(attackerProfile);
+    const normalMax = 6 + Math.floor((lvl + (s.strBoost || 0) - 1) / 3) + (arrowDef ? arrowDef.strBonus || 0 : 0) + (wDef ? wDef.strBonus || 0 : 0);
     let max = normalMax;
     if (useSpecial) max = Math.floor(max * 1.5);
     let raw = 1 + Math.floor(Math.random() * max);
@@ -2538,6 +2777,15 @@ function rollMagicCast(attackerProfile, defenderProfile, spell, useSpecial = fal
   }
   const lvl = levelOverride == null ? mLvl : levelOverride;
   let max = spell.max + Math.floor((lvl + (s.strBoost || 0) - 1) / 3);
+  // Stage 34: a wielded MAGIC weapon's maxBonus (the app chart's
+  // `bonus` for the magic row) feeds the spell's max hit, exactly
+  // as a melee weapon's feeds maxHit. Gated on the weapon's style
+  // so a sword in hand never boosts a placed-button cast. The
+  // pre-chart staves all carry maxBonus 0 (unchanged); Ahrim's
+  // staff — a magic weapon that has carried maxBonus 7 since
+  // Stage 5 — now actually applies it to its casts.
+  const wDef = weaponBonus(attackerProfile);
+  if (wDef && wDef.style === 'magic') max += wDef.maxBonus || 0;
   if (useSpecial) max = Math.floor(max * 1.5);
   let raw = 1 + Math.floor(Math.random() * max);
   let deflected = 0;
@@ -2889,7 +3137,7 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
       // deals and of its XP.
       const res = rollStyleAttack(attProf, defProf, useSpec, DUEL_LEVEL, true);
       if (res.refused) return { swung: false, note: refuseNote(res.refused) };
-      duel.nextSwingAt[attKey] = tick + swingSpeed(res.style);
+      duel.nextSwingAt[attKey] = tick + weaponSwingTicks(attProf);
       duel.specialQueued[attKey] = false;
       if (useSpec) attProf.specialEnergy = Math.max(0, attProf.specialEnergy - SPECIAL_COST);
       // Combat XP from damage dealt, per attack style (Stage 19:
@@ -3115,7 +3363,7 @@ function modDuelTick(fight) {
       // duel engine's (once per 8 ticks).
       if (tick - fight.lastRefuseTick >= 8) { notes.push(res.refused); fight.lastRefuseTick = tick; }
     } else {
-      fight.nextSwingYou = tick + swingSpeed(res.style);
+      fight.nextSwingYou = tick + weaponSwingTicks(profile);
       youSpecial = fight.specialQueued; fight.specialQueued = false;
       if (youSpecial) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
       youHit = res.dmg; youOutcome = res.outcome; youBonus = res.bonusDmg || 0;
@@ -3324,7 +3572,7 @@ function startNpcFight(key, npc) {
   const id = crypto.randomBytes(6).toString('hex');
   // Fight HP pool = the player's Hitpoints level (duels keep their 99 pool).
   const maxHpYou = Math.max(1, levelForXp(profile.xp.hitpoints));
-  const fight = { id, playerKey: key, npcId: npc.id, hpYou: maxHpYou, maxHpYou, specialQueued: false, done: false, timer: null, tickCount: 0, nextSwingYou: swingSpeed(attackStyleOf(profile)), nextSwingNpc: MELEE_SPEED, npcUnlocked: false, lastRefuseTick: -99 }; // Stage 19: first swing one weapon-speed after engagement (the wielded style's speed); lastRefuseTick throttles out-of-arrows/runes notes
+  const fight = { id, playerKey: key, npcId: npc.id, hpYou: maxHpYou, maxHpYou, specialQueued: false, done: false, timer: null, tickCount: 0, nextSwingYou: weaponSwingTicks(profile), nextSwingNpc: MELEE_SPEED, npcUnlocked: false, lastRefuseTick: -99 }; // Stage 19: first swing one weapon-speed after engagement (the wielded style's speed); lastRefuseTick throttles out-of-arrows/runes notes
   npcFights.set(id, fight);
   sess.npcFightId = id;
   npc.fightId = id;
@@ -3412,7 +3660,7 @@ function npcTick(fight) {
     if (atkRes.refused) {
       if (tick - (fight.lastRefuseTick || -99) >= 8) { tickNotes.push(atkRes.refused); fight.lastRefuseTick = tick; }
     } else {
-      fight.nextSwingYou = tick + swingSpeed(atkRes.style);
+      fight.nextSwingYou = tick + weaponSwingTicks(profile);
       useSpec = fight.specialQueued; fight.specialQueued = false;
       if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
       youHit = atkRes.dmg;
@@ -3750,7 +3998,7 @@ function startBarrowsFight(key, def, area, guardX, guardY, opts = {}) {
     hpYou: opts.hpYou != null ? Math.max(1, Math.min(maxHpYou, opts.hpYou)) : maxHpYou, maxHpYou, hpNpc: def.maxHp, maxHpNpc: def.maxHp,
     pool: !!opts.pool,
     specialQueued: false, done: false, timer: null, tickCount: 0, rageFlags: {},
-    nextSwingYou: swingSpeed(attackStyleOf(profile)), nextSwingNpc: MELEE_SPEED, npcUnlocked: false, // Stage 12 swing timers + retaliate lock (Stage 19: first swing at the wielded style's speed)
+    nextSwingYou: weaponSwingTicks(profile), nextSwingNpc: MELEE_SPEED, npcUnlocked: false, // Stage 12 swing timers + retaliate lock (Stage 19: first swing at the wielded style's speed)
     lastRefuseTick: -99, // Stage 19: throttles out-of-arrows/runes notes
   };
   barrowsFights.set(id, fight);
@@ -3878,7 +4126,7 @@ function barrowsTick(fight) {
       if (atkRes.refused) {
         if (fight.tickCount - (fight.lastRefuseTick || -99) >= 8) { notes.push(atkRes.refused); fight.lastRefuseTick = fight.tickCount; }
       } else {
-        fight.nextSwingYou = fight.tickCount + swingSpeed(atkRes.style);
+        fight.nextSwingYou = fight.tickCount + weaponSwingTicks(profile);
         useSpec = fight.specialQueued; fight.specialQueued = false;
         if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
         youHit = atkRes.dmg;
@@ -5237,7 +5485,7 @@ function wildResolveSwing(pair, attRef) {
   if (res.refused) return { refused: res.refused, style: res.style || style };
   pair.spec[attRef] = false;
   if (useSpec) A.profile.specialEnergy = Math.max(0, A.profile.specialEnergy - SPECIAL_COST);
-  pair.next[attRef] = wildTickCount + swingSpeed(res.style);
+  pair.next[attRef] = wildTickCount + weaponSwingTicks(A.profile);
   pair.lastAction = wildTickCount;
   const total = res.dmg + (res.bonusDmg || 0);
   D.setHp(Math.max(0, D.hp() - total));
@@ -5712,11 +5960,16 @@ function cleanupDisconnect(key) {
     const r = fcRuns.get(me.fcRunId);
     if (r) endFcRun(r, 'disconnect'); // records settle silently; the run is gone
   }
-  // Stage 7C: pending challenges involving the leaver die with
-  // them — clear the challenger's '!' marker either way.
-  for (const [cid, ch] of [...challenges]) {
-    if (ch.from === key || ch.to === key) { challenges.delete(cid); broadcastChallengeClear(ch.from); }
-  }
+  // Stage 34: pending challenges involving the leaver SURVIVE the
+  // disconnect (Stage 7C deleted them here). A challenge lives at
+  // most ~30s and every negotiation action refreshes that clock;
+  // a brief drop used to silently kill the other player's open
+  // answer panel mid-countdown. Now the challenge simply stays
+  // until it expires on its own (the lazy expiry checks in the
+  // challenge handlers clear it then), and the connection handler
+  // re-pushes it to the leaver when they reconnect in time. A
+  // STARTED duel is different — it was settled above as a forfeit,
+  // exactly as before.
   // Stage 17: the leaver's open stake offers come down, and a
   // matched stake match is cancelled — the other party (if they
   // were standing in the Waiting Area) is returned to the plaza
@@ -5776,6 +6029,10 @@ wss.on('connection', (ws, req) => {
   if (!key) { ws.close(4001, 'bad token'); return; }
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
+  // Stage 34: a socket 'error' with no listener throws and would
+  // crash the process for every player — log it and let the close
+  // handler do the cleanup.
+  ws.on('error', (e) => { console.error('socket error for', key, e && e.message); });
   // Session takeover: if this account still has a session it is a
   // leftover — a phone whose socket died without the server seeing
   // a close frame (a locked screen, a dropped network). Before the
@@ -5820,6 +6077,19 @@ wss.on('connection', (ws, req) => {
     if (sess.area === 'barrows' || sess.area === 'barrows_tunnels' || sess.area === 'barrows_crypt') send(ws, barrowsStateMsg(sess));
     send(ws, { type: 'chat', from: 'Game', text: `🔄 Reconnected — you're back where you left off: ${AREAS[sess.area].name}.` });
   }
+  // Stage 34: a pending duel challenge that survived this player's
+  // drop (see cleanupDisconnect) is re-pushed, so their answer /
+  // negotiation panel comes back with the remaining seconds instead
+  // of having silently vanished mid-countdown.
+  for (const ch of challenges.values()) {
+    if (ch.from !== key && ch.to !== key) continue;
+    if (ch.expires < Date.now()) { challenges.delete(ch.id); broadcastChallengeClear(ch.from); continue; }
+    send(ws, challengeTermsMsg(ch, key));
+    if (ch.to === key) {
+      const fromU = db.users[ch.from];
+      send(ws, { type: 'challenge_incoming', challengeId: ch.id, from: fromU ? fromU.profile.username : ch.from, stake: ch.stake, items: ch.items, rules: ch.rules, freePlay: ch.freePlay, seconds: Math.max(1, Math.ceil((ch.expires - Date.now()) / 1000)), h2h: h2hVs(profile, fromU ? fromU.profile.username : '') });
+    }
+  }
   send(ws, pilesMsg(sess.area)); // Stage 5: any drop piles waiting in the area
   send(ws, alliesMsg(sess.area)); // Stage 6: any Tree Guardians standing in the area
   send(ws, objectsMsg(sess.area)); // Stage 7D: any placed objects in the area
@@ -5832,8 +6102,21 @@ wss.on('connection', (ws, req) => {
   broadcastState();
 
   ws.on('message', (raw) => {
+    // Stage 34: one malformed or unlucky message must never crash
+    // the process (dropping EVERY player and every session token
+    // with it) — log the failure and keep the world running.
+    try { handleMessage(raw); } catch (e) { console.error('message handler error for', key, e); }
+  });
+  function handleMessage(raw) {
     let m; try { m = JSON.parse(raw); } catch { return; }
+    if (!m || typeof m !== 'object') return; // Stage 35: 'null' / scalar frames used to throw on m.type below
     const me = online.get(key); if (!me) return;
+    // Stage 34: application-level keepalive. 'pong' is the reply to
+    // the server's data-frame ping; 'ping' gets a 'pong' back. Both
+    // exist so real data traffic flows in both directions at least
+    // every heartbeat, whatever the proxies in between count.
+    if (m.type === 'pong') return;
+    if (m.type === 'ping') { send(ws, { type: 'pong' }); return; }
     if (m.type === 'move') {
       // Stage 12: duel countdown freeze — while a duel's countdown
       // is still running (its tick count has not passed
@@ -6643,6 +6926,35 @@ wss.on('connection', (ws, req) => {
       const def = itemDef(item);
       if (!def || !def.slot) return send(ws, { type: 'error', message: 'That can\'t be worn.' });
       if (stackQty(profile.backpack, item) < 1) return send(ws, { type: 'error', message: `No ${def.name} in your backpack.` });
+      // Stage 34: TWO-HANDED weapons occupy the shield slot too.
+      // Equipping one sends a worn shield back to the backpack
+      // first; equipping a shield while a two-hander is wielded
+      // sends the two-hander back instead. The displaced piece
+      // moves as its own atomic unequip BEFORE the swap below runs
+      // (qty 1 either merges onto its own stack or takes a free
+      // slot; if neither exists the equip is refused here, before
+      // anything moves). If the swap below then refuses on its own
+      // full-pack rule, the displaced piece is simply already in
+      // the pack, unworn — nothing is lost either way. Invariant
+      // from here on: while a twoHanded weapon is worn, worn.shield
+      // is null, so the snapshot and renderer never show a shield
+      // with one.
+      if (def.slot === 'weapon' && def.twoHanded && profile.worn.shield) {
+        const sh = profile.worn.shield;
+        if (addStacks(profile.backpack, sh, 1, BACKPACK_MAX_STACKS) > 0) {
+          return send(ws, { type: 'error', message: 'Backpack full — no room for your shield to come off for a two-handed weapon.' });
+        }
+        profile.worn.shield = null;
+      } else if (def.slot === 'shield' && profile.worn.weapon) {
+        const wDef = itemDef(profile.worn.weapon);
+        if (wDef && wDef.twoHanded) {
+          const wp = profile.worn.weapon;
+          if (addStacks(profile.backpack, wp, 1, BACKPACK_MAX_STACKS) > 0) {
+            return send(ws, { type: 'error', message: 'Backpack full — no room for your two-handed weapon to come off for a shield.' });
+          }
+          profile.worn.weapon = null;
+        }
+      }
       const old = profile.worn[def.slot];
       // Stage 29: EXACT-SPOT swap (the app version's rule) — when
       // the client names the backpack slot the piece came from
@@ -8283,7 +8595,7 @@ wss.on('connection', (ws, req) => {
       if (!match || match.status !== 'matched' || (match.fromKey !== key && match.toKey !== key)) return send(ws, { type: 'error', message: 'That stake match is gone.' });
       cancelStakeMatch(match, `${profile.username} cancelled the stake match — no gold was taken.`);
     }
-  });
+  }
 
   ws.on('close', () => {
     // A replaced session's socket closing must not clean up the
@@ -8294,6 +8606,10 @@ wss.on('connection', (ws, req) => {
     cleanupDisconnect(key);
   });
 });
+
+// Stage 34: last-resort safety net — log and keep the world up
+// rather than letting one stray throw drop every player at once.
+process.on('uncaughtException', (e) => { console.error('uncaughtException (kept running):', e); });
 
 store.init().then((users) => {
   db.users = users;
