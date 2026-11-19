@@ -1879,6 +1879,11 @@ function send(ws, obj) { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); 
 function broadcast(obj, exceptKey) {
   for (const [k, p] of online) if (k !== exceptKey) send(p.ws, obj);
 }
+// Stage 32: an area-scoped broadcast (the victim included) — used for
+// the death-fall signal below.
+function broadcastArea(area, obj) {
+  for (const p of online.values()) if (p.area === area) send(p.ws, obj);
+}
 function playersSnapshot(area) {
   const now = Date.now();
   return [...online.entries()].filter(([, p]) => !area || p.area === area).map(([k, p]) => ({
@@ -2582,6 +2587,14 @@ function endDuel(duel, winnerKey, reason) {
     winner.rating += 11; loser.rating = Math.max(0, loser.rating - 11);
   }
   save(winnerKey); save(loserKey);
+  // Stage 32: a KO'd loser FALLS DOWN in the arena before both
+  // fighters are returned to the plaza — the whole arena (both
+  // fighters + any watchers) gets the signal first. Flee / forfeit
+  // endings are not deaths and never fall.
+  if (/KO/.test(reason || '')) {
+    const loserSess = online.get(loserKey);
+    if (loserSess) broadcastArea(loserSess.area, { type: 'player_fell', username: loser.username, respawn: true });
+  }
   // Stage 20: ANY duel win (staked, Free Play or mod-run) completes
   // the winner's "Win a duel" starter goal.
   completeStarterGoal(winnerKey, 'win_duel');
@@ -3107,6 +3120,12 @@ function endModDuel(fight, result) { // 'win' | 'loss' | 'forfeit'
     });
     send(sess.ws, modLadderMsg(profile));
   }
+  // Stage 32: losing a mod duel knocks the player DOWN in the plaza
+  // (fight HP is a per-fight pool — there is no respawn to wait for,
+  // so respawn:false; the fall plays and the knight gets back up).
+  if (result === 'loss' && sess) {
+    broadcastArea(sess.area, { type: 'player_fell', username: profile.username, respawn: false });
+  }
   if (result === 'win') {
     broadcast({ type: 'chat', from: 'Duel Master', text: `⭐ ${profile.username} beat ${def.name} (Tier ${fight.tier}) and won the ${fight.pot}g pot! (${winsNow}/3 Tier ${fight.tier} wins${unlockedNext ? ` — Tier ${fight.tier + 1} unlocked!` : ''})` });
   }
@@ -3197,6 +3216,12 @@ function finishNpcFight(fight, reason, drops) {
 function respawnPlayer(key, note) {
   const sess = online.get(key);
   if (!sess) return;
+  // Stage 32: every death that lands here (NPC fight, Barrows crypt /
+  // tunnels / puzzle door, Fight Caves, Wilderness) first tells the
+  // whole area — victim included — so every client can topple the
+  // avatar over before the respawn whisk-away. Sent BEFORE the area
+  // change below, on the same socket, so ordering is guaranteed.
+  broadcastArea(sess.area, { type: 'player_fell', username: sess.profile.username, respawn: true });
   sess.area = 'plaza';
   sess.x = AREAS.plaza.spawn.x; sess.y = AREAS.plaza.spawn.y;
   // Stage 28: death wakes you in the plaza, so the Barrows drains
