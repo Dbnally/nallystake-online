@@ -916,6 +916,11 @@ function newProfile(username) {
     // the three plaza moderators ({ t1, t2, t3 }, each capped at 3:
     // 3 wins in a tier unlock the next). See MOD_NPCS / startModDuel.
     modLadder: { wins: { t1: 0, t2: 0, t3: 0 } },
+    // Stage 33: head-to-head duel records — { oppName: { w, l } }
+    // from THIS player's perspective, one entry per human opponent
+    // ever dueled (see recordH2H / h2hVs). A bragging record only:
+    // it never touches rating or the overall win/loss record.
+    h2h: {},
   };
 }
 // Migration: Phase 1 accounts gain the v2 fields with defaults. Existing
@@ -1033,6 +1038,21 @@ function ensureV2(p) {
       const v = Math.max(0, Math.min(3, Math.floor(+p.modLadder.wins[t] || 0)));
       if (p.modLadder.wins[t] !== v) { p.modLadder.wins[t] = v; changed = true; }
     }
+  }
+  // Stage 33 migration: head-to-head duel records. Only the shape
+  // is enforced — entries are server-written ({ w, l } counts keyed
+  // by the opponent's canonical username); malformed entries drop
+  // and counts are clamped to non-negative integers. Recorded
+  // records are never reset.
+  if (!p.h2h || typeof p.h2h !== 'object' || Array.isArray(p.h2h)) { p.h2h = {}; changed = true; }
+  else {
+    const cleanH2h = {};
+    for (const [name, rec] of Object.entries(p.h2h)) {
+      if (name && rec && typeof rec === 'object' && !Array.isArray(rec)) {
+        cleanH2h[name] = { w: Math.max(0, Math.floor(+rec.w || 0)), l: Math.max(0, Math.floor(+rec.l || 0)) };
+      }
+    }
+    if (JSON.stringify(cleanH2h) !== JSON.stringify(p.h2h)) { p.h2h = cleanH2h; changed = true; }
   }
   // Stage 10 migration: character appearance. A missing one is
   // backfilled with the default; a present one is sanitised in
@@ -1649,8 +1669,16 @@ function cleanDuelRules(r) {
   if (r && typeof r === 'object') for (const k of DUEL_RULE_KEYS) out[k] = !!r[k];
   return out;
 }
-function challengeTermsMsg(ch) {
+function challengeTermsMsg(ch, forKey) {
   const fromU = db.users[ch.from], toU = db.users[ch.to];
+  // Stage 33: the terms are built PER RECEIVER because each side
+  // sees their OWN head-to-head record vs the other player
+  // ({ w, l } from the receiver's perspective; null = the two
+  // have never fought). Everything else in the payload is shared.
+  const viewer = forKey ? db.users[forKey] : null;
+  const otherName = forKey === ch.from
+    ? (toU ? toU.profile.username : null)
+    : (fromU ? fromU.profile.username : null);
   return {
     type: 'challenge_terms', challengeId: ch.id,
     from: fromU ? fromU.profile.username : ch.from,
@@ -1658,13 +1686,13 @@ function challengeTermsMsg(ch) {
     stake: ch.stake, items: ch.items, itemsTo: ch.itemsTo,
     rules: ch.rules, freePlay: ch.freePlay, confirm: { from: ch.confirm.from, to: ch.confirm.to },
     seconds: Math.max(0, Math.ceil((ch.expires - Date.now()) / 1000)),
+    h2h: viewer && otherName ? h2hVs(viewer.profile, otherName) : null,
   };
 }
 function pushChallengeTerms(ch) {
-  const msg = challengeTermsMsg(ch);
   const a = online.get(ch.from), b = online.get(ch.to);
-  if (a) send(a.ws, msg);
-  if (b) send(b.ws, msg);
+  if (a) send(a.ws, challengeTermsMsg(ch, ch.from));
+  if (b) send(b.ws, challengeTermsMsg(ch, ch.to));
 }
 // Applies a terms edit (challenge_update / challenge_confirm) to a
 // pending challenge. `items` in m are always the SENDER's own side —
@@ -2550,6 +2578,45 @@ const DUEL_ARENAS = [
   { id: 'violet', name: 'Violet Arena' },
 ];
 
+// ---------- Stage 33: head-to-head duel records ----------
+// profile.h2h maps an opponent's canonical username to { w, l }
+// from THIS player's perspective ("your wins – your losses vs
+// them"). recordH2H writes it once per settled player duel in
+// endDuel — staked, Stake Board, mod-run NC, disconnect-forfeit
+// AND Free Play duels all count: it is a bragging record, kept
+// deliberately separate from the overall W/L and rating (Free
+// Play still bypasses those — see the settlement below). Lookups
+// are case-insensitive; writes always use the canonical casing
+// from the opponent's own profile.
+function h2hVs(profile, oppName) {
+  const h = profile && profile.h2h;
+  if (!h || typeof h !== 'object' || !oppName) return null;
+  if (h[oppName] && typeof h[oppName] === 'object') return h[oppName];
+  const want = String(oppName).toLowerCase();
+  for (const k of Object.keys(h)) if (k.toLowerCase() === want && h[k] && typeof h[k] === 'object') return h[k];
+  return null;
+}
+function h2hEntryFor(profile, oppName) {
+  if (!profile.h2h || typeof profile.h2h !== 'object' || Array.isArray(profile.h2h)) profile.h2h = {};
+  const found = h2hVs(profile, oppName);
+  if (found) {
+    // Normalise a differently-cased legacy key to the canonical one.
+    if (!profile.h2h[oppName]) {
+      const want = String(oppName).toLowerCase();
+      for (const k of Object.keys(profile.h2h)) if (k.toLowerCase() === want) { delete profile.h2h[k]; break; }
+      profile.h2h[oppName] = found;
+    }
+    return found;
+  }
+  const e = { w: 0, l: 0 };
+  profile.h2h[oppName] = e;
+  return e;
+}
+function recordH2H(winner, loser) {
+  h2hEntryFor(winner, loser.username).w += 1;
+  h2hEntryFor(loser, winner.username).l += 1;
+}
+
 function endDuel(duel, winnerKey, reason) {
   if (duel.done) return;
   duel.done = true;
@@ -2558,6 +2625,12 @@ function endDuel(duel, winnerKey, reason) {
   const winner = db.users[winnerKey].profile;
   const loserKey = duel.a === winnerKey ? duel.b : duel.a;
   const loser = db.users[loserKey].profile;
+  // Stage 33: the head-to-head record updates for EVERY settled
+  // player duel — including Free Play (a bragging record, not a
+  // ranking; Free Play's rating / overall-W-L bypass in the
+  // settlement below is untouched). The done-guard above makes
+  // this exactly-once per duel, double-KO coin flip included.
+  recordH2H(winner, loser);
   const itemsWon = [];
   let officialRunner = null;
   if (duel.freePlay) {
@@ -2605,7 +2678,11 @@ function endDuel(duel, winnerKey, reason) {
       // Stage 5: the fight is over — both fighters return to the plaza.
       p.area = 'plaza';
       p.x = AREAS.plaza.spawn.x; p.y = AREAS.plaza.spawn.y;
-      send(p.ws, { type: 'duel_end', winner: winner.username, reason, pot: duel.pot, itemsWon, freePlay: !!duel.freePlay, profile: publicProfile(db.users[k].profile) });
+      // Stage 33: each fighter also gets the opponent's name and
+      // their own UPDATED head-to-head record vs them (this fight
+      // included) for the end screen.
+      const oppName = db.users[k === duel.a ? duel.b : duel.a].profile.username;
+      send(p.ws, { type: 'duel_end', winner: winner.username, reason, pot: duel.pot, itemsWon, freePlay: !!duel.freePlay, opponent: oppName, h2h: h2hVs(db.users[k].profile, oppName), profile: publicProfile(db.users[k].profile) });
       send(p.ws, { type: 'area', area: 'plaza' });
       send(p.ws, pilesMsg('plaza'));
       send(p.ws, alliesMsg('plaza')); // Stage 6: your guardian waited for you in the plaza
@@ -2708,7 +2785,11 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
   for (const k of [aKey, bKey]) {
     const p = online.get(k);
     send(p.ws, { type: 'area', area: 'arena' });
-    send(p.ws, { type: 'duel_start', duelId: id, stake, pot: duel.pot, escrowItems, arena: duel.arena, official: duel.official, rules: duel.rules, freePlay: duel.freePlay, countdownTicks: COUNTDOWN_TICKS, you: db.users[k].profile.username, opponent: db.users[k === aKey ? bKey : aKey].profile.username, profile: publicProfile(db.users[k].profile) });
+    // Stage 33: duel_start also carries each fighter's own
+    // head-to-head record vs the opponent (BEFORE this fight;
+    // null = first fight) for the countdown chat line.
+    const oppName33 = db.users[k === aKey ? bKey : aKey].profile.username;
+    send(p.ws, { type: 'duel_start', duelId: id, stake, pot: duel.pot, escrowItems, arena: duel.arena, official: duel.official, rules: duel.rules, freePlay: duel.freePlay, countdownTicks: COUNTDOWN_TICKS, you: db.users[k].profile.username, opponent: oppName33, h2h: h2hVs(db.users[k].profile, oppName33), profile: publicProfile(db.users[k].profile) });
   }
   // Stage 19: if a fighter's wielded weapon style is banned by the
   // agreed rules, tell them once, up front — their swings will be
@@ -7790,6 +7871,10 @@ wss.on('connection', (ws, req) => {
       const levels = levelsOf(target.profile);
       return send(ws, {
         type: 'examine',
+        // Stage 33: the VIEWER's head-to-head record vs the examined
+        // player ({ w, l } from the viewer's perspective; null when
+        // the two have never dueled — the sheet then shows no row).
+        h2h: h2hVs(profile, target.profile.username),
         player: {
           username: target.profile.username, role: effectiveRole(target.profile), area: target.area,
           combatLevel: Math.round(combatLevelOf(levels) * 100) / 100,
@@ -8003,7 +8088,7 @@ wss.on('connection', (ws, req) => {
       // the target's accept.
       const ch = { id, from: key, to: targetKey, stake, items, itemsTo: [], rules: cleanDuelRules(m.rules), freePlay, confirm: { from: false, to: false }, expires: Date.now() + 30000 };
       challenges.set(id, ch);
-      send(target.ws, { type: 'challenge_incoming', challengeId: id, from: profile.username, stake, items, rules: ch.rules, freePlay: ch.freePlay, seconds: 30 });
+      send(target.ws, { type: 'challenge_incoming', challengeId: id, from: profile.username, stake, items, rules: ch.rules, freePlay: ch.freePlay, seconds: 30, h2h: h2hVs(target.profile, profile.username) }); // Stage 33: the challenged player's own record vs the challenger
       broadcastChallenging(key, targetKey); // Stage 7C: '!' over the challenger
       pushChallengeTerms(ch); // both screens open on the same terms
       send(ws, { type: 'chat', from: 'Game', text: freePlay ? `Challenge sent to ${target.profile.username} — 🆓 free play, no stakes.` : `Challenge sent to ${target.profile.username} for ${stake}g${items.length ? ' + items' : ''}.` });
