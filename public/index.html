@@ -205,6 +205,8 @@
  /* Stage 7B: follow chip */
  #followchip{position:fixed;left:146px;bottom:170px;z-index:30;background:rgba(23,19,16,var(--uia));border:2px solid #7a6748;border-radius:10px;padding:6px 8px;font-size:12px;font-weight:700;display:none;align-items:center;gap:7px}
  #followchip.on{display:flex}
+ #wildchip{position:fixed;left:146px;bottom:216px;z-index:30;background:rgba(30,10,10,var(--uia));border:2px solid #8e2f32;border-radius:10px;padding:6px 8px;font-size:12px;font-weight:700;display:none;align-items:center;gap:7px;color:#f0d9c8}
+ #wildchip.on{display:flex}
  /* auth + errors */
  #auth{position:fixed;inset:0;z-index:60;background:linear-gradient(160deg,#241a10,#171310 55%,#0f0d0a);display:flex;align-items:center;justify-content:center;padding:16px}
  #auth .card{background:#221a13;border:2px solid #c9a227;border-radius:14px;padding:18px;width:min(400px,94vw);box-shadow:0 0 34px #c9a22733}
@@ -389,6 +391,7 @@
 </div>
 
 <div id="followchip"><span id="followtxt">🚶 Following</span><button class="ghost" id="followstop">✖ Stop</button></div>
+<div id="wildchip"><span id="wildtxt">💀 Wilderness level: 1</span></div>
 <div id="usechip" title="Tap to cancel"></div>
 
 <div id="duelbar">
@@ -472,6 +475,7 @@
 <div class="modal" id="fightoffermodal"><div class="sheet" id="fightoffersheet"></div></div>
 <div class="modal" id="certreqmodal"><div class="sheet" id="certreqsheet"></div></div>
 <div class="modal" id="playermenumodal"><div class="sheet" id="playermenusheet"></div></div>
+<div class="modal" id="pknoobmodal"><div class="sheet" id="pknoobsheet"></div></div>
 <div class="modal" id="talkmodal"><div class="sheet" id="talksheet"></div></div>
 <div class="modal" id="examinemodal"><div class="sheet" id="examinesheet"></div></div>
 <div class="modal" id="partyinvitemodal"><div class="sheet" id="partyinvitesheet"></div></div>
@@ -868,6 +872,9 @@ function onMsg(m){
  if(m.type==='mod_npcs'){ modNpcList=m.npcs||[]; syncModNpcs(); drawMinimap(); if($('modnpcmodal').classList.contains('open')&&modSheetId) openModSheet(modSheetId); }
  if(m.type==='mod_ladder'){ modLadderWins=m.wins||{t1:0,t2:0,t3:0}; if($('modnpcmodal').classList.contains('open')&&modSheetId) openModSheet(modSheetId); }
  if(m.type==='mod_duel'){ modDuelUI(m); }
+ if(m.type==='wild_state'){ if(m.area===curArea){ pkerList=m.pkers||[]; wildInfo=m.you||null; syncPkers(); renderWildChip(); drawMinimap(); } }
+ if(m.type==='wild_fight'){ wildFightUI(m); }
+ if(m.type==='wild_hp'){ if(wildFight){ wildFight.hpYou=m.hp; wildFight.maxHpYou=m.maxHp; renderWildBar(); } renderOrbs(); }
  if(m.type==='nodes'){ nodesByArea[m.area]=m.nodes||[];
    if(m.area===curArea){ rebuildNodes();
      if(activeNode){ const an=(m.nodes||[]).find(x=>x.id===activeNode.id);
@@ -967,20 +974,21 @@ function renderOrbs(){
  let hp=99, hpMax=99;
  if(duel){ hp=duel.hpYou; hpMax=99; }
  else if(npcFight){ hp=npcFight.hpYou; hpMax=npcFight.maxHpYou||99; }
+ else if(wildFight){ hp=wildFight.hpYou; hpMax=wildFight.maxHpYou||99; }
  else if(fcRun){ hp=fcRun.hpYou; hpMax=fcRun.maxHpYou||99; }
  $('orbhpv').textContent=hp;
  $('orbhp').querySelector('.fill').style.height=clamp(hp/hpMax*100,0,100)+'%';
  $('orbprv').textContent=`${Math.floor(me.prayerPoints)}/${me.prayerMax}`;
  $('orbpr').querySelector('.fill').style.height=clamp(me.prayerPoints/me.prayerMax*100,0,100)+'%';
- const en = duel? duel.energyYou : npcFight? npcFight.energyYou : fcRun? Math.floor(fcRun.energyYou||0) : Math.floor(me.specialEnergy||0);
+ const en = duel? duel.energyYou : npcFight? npcFight.energyYou : wildFight? wildFight.energyYou : fcRun? Math.floor(fcRun.energyYou||0) : Math.floor(me.specialEnergy||0);
  $('orbspv').textContent=en+'%';
  $('orbsp').querySelector('.fill').style.height=clamp(en,0,100)+'%';
  $('orbsp').classList.toggle('ready', en>=50);
  const ro=$('orbrun'); if(ro){ ro.classList.toggle('on',!!settings.run); $('orbrunv').textContent=settings.run?'RUN':'WALK'; }
 }
 $('orbpr').onclick=()=>togglePanel('prayers');
-$('orbsp').onclick=()=>{ if(duel||npcFight||fcRun) send({type:'special'}); else toast('Special attack is for fights — it charges as you land hits.'); };
-$('orbhp').onclick=()=>{ if(duel||npcFight||fcRun) toast('Eat food or drink a restore potion from your backpack to heal mid-fight.'); };
+$('orbsp').onclick=()=>{ if(duel||npcFight||fcRun||wildFight) send({type:'special'}); else toast('Special attack is for fights — it charges as you land hits.'); };
+$('orbhp').onclick=()=>{ if(duel||npcFight||fcRun||wildFight) toast('Eat food or drink a restore potion from your backpack to heal mid-fight.'); };
 $('orbrun').onclick=()=>{ settings.run=!settings.run; saveSettings(); renderOrbs(); toast(settings.run?'🏃 Run on — full speed':'🚶 Run off — walking pace'); };
 
 /* ================= XP drops ================= */
@@ -1397,6 +1405,20 @@ function buildPlaza(root){
  tplabel.innerHTML=`<div class="nname">🗺️ Teleports — tap to travel</div>`;
  $('labels').appendChild(tplabel);
  worldLabels.push({el:tplabel,x:sx2w(TELEPORT_SIGN_POS.x),y:3.9,z:sy2w(TELEPORT_SIGN_POS.y),area:'plaza',kind:'static'});
+ // 💀 PK NOOB + THE DITCH (Stage 30) — PK Noob stands north-east
+ // (server 1150,120), clear of the dais, the mods and the gates;
+ // the ditch crossing runs along the north edge's east stretch
+ // (x 1020–1560): walk across it to enter the Wilderness.
+ makePkNoobFigure(scene,'plaza',PK_NOOB_PLAZA_POS.x,PK_NOOB_PLAZA_POS.y);
+ const ditchStrip=new THREE.Mesh(new THREE.PlaneGeometry(54,1.6),new THREE.MeshBasicMaterial({color:0x0d0906}));
+ ditchStrip.rotation.x=-Math.PI/2; ditchStrip.position.set(sx2w(1290),0.03,sy2w(6)); scene.add(ditchStrip);
+ const wsg=new THREE.Group(); wsg.position.set(sx2w(1290),0,sy2w(26)); scene.add(wsg);
+ box(0.18,2.4,0.18,0x3a2a16,0,1.2,0,wsg);
+ const wst=textSprite('💀 THE WILDERNESS','#ff6b5e','rgba(20,8,8,0.9)'); wst.position.set(0,3.1,0); wsg.add(wst);
+ const wsl=document.createElement('div'); wsl.className='plabel';
+ wsl.innerHTML=`<div class="nname">💀 The Wilderness — ditch crossing · PvP, skulls, death drops loot</div>`;
+ $('labels').appendChild(wsl);
+ worldLabels.push({el:wsl,x:sx2w(1290),y:3.8,z:sy2w(26),area:'plaza',kind:'static'});
  // Duel Master — static figure standing by the board (Fisher Wren pattern)
  const dm=new THREE.Group(); dm.position.set(23,0,5.6); scene.add(dm); // Stage 13: x2, still beside the duel board
  box(0.24,0.7,0.24,0x241a12,-0.16,0.35,0,dm); box(0.24,0.7,0.24,0x241a12,0.16,0.35,0,dm); // legs
@@ -2119,6 +2141,83 @@ function setArenaVariant(id){
  for(const k of Object.keys(arenaDecor)) for(const o of arenaDecor[k]) o.visible=(k===arenaVariant);
 }
 /* ---- Stage 17: Waiting Area (Stake Board matches) ---- */
+/* ---- Stage 30: Wilderness scenery — dead, dark, ruined ----
+   One builder serves both variants (Pure is the same map with a
+   redder cast). The ditch runs along the SOUTH edge; the obelisk
+   (the teleport landing) and PK Noob stand just north of it.
+   Scenery is non-colliding decoration; light count stays
+   phone-sane (one shared point light for both lava pools). */
+function makePkNoobFigure(root,area,x,y){
+ const g=new THREE.Group(); g.position.set(sx2w(x),0,sy2w(y)); root.add(g);
+ box(0.24,0.7,0.24,0x1c1c22,-0.16,0.35,0,g); box(0.24,0.7,0.24,0x1c1c22,0.16,0.35,0,g); // legs
+ box(0.72,0.85,0.42,0x2a2a33,0,1.12,0,g); // dark robe body
+ box(0.46,0.46,0.46,0xe8e2d0,0,1.78,0,g); // pale skull-like face
+ box(0.56,0.22,0.56,0x1c1c22,0,2.06,0,g); // hood brim
+ const scy=box(0.06,1.15,0.06,0x8a6d3b,0.55,1.45,0,g); scy.rotation.z=-0.35; // staff
+ const label=document.createElement('div'); label.className='plabel';
+ label.innerHTML=`<div class="nname">💀 PK Noob — Pure Wild ⇄ normal Wild · tap to talk</div>`;
+ $('labels').appendChild(label);
+ worldLabels.push({el:label,x:sx2w(x),y:3.1,z:sy2w(y),area,kind:'static'});
+ return g;
+}
+function buildWilderness(root,pure){
+ const S=root;
+ const areaName=pure?'purewild':'wilderness';
+ const ground=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:noiseTexture(pure?'#3d2320':'#33261d',['#2a1c14','#3a2a1e','#241811'],16,10),color:pure?0xb08a80:0xffffff}));
+ ground.rotation.x=-Math.PI/2; ground.receiveShadow=true; S.add(ground);
+ // the ditch: a dark trench strip along the south edge
+ const ditch=new THREE.Mesh(new THREE.PlaneGeometry(160,1.6),new THREE.MeshBasicMaterial({color:0x0d0906}));
+ ditch.rotation.x=-Math.PI/2; ditch.position.set(0,0.03,sy2w(885)); S.add(ditch);
+ const ditchLip=new THREE.Mesh(new THREE.PlaneGeometry(160,0.5),new THREE.MeshLambertMaterial({color:0x54402a}));
+ ditchLip.rotation.x=-Math.PI/2; ditchLip.position.set(0,0.025,sy2w(862)); S.add(ditchLip);
+ // the obelisk (teleport landing) at (700,830)
+ const ob=new THREE.Group(); ob.position.set(sx2w(WILD_OBELISK_POS.x),0,sy2w(WILD_OBELISK_POS.y)); S.add(ob);
+ box(1.1,3.4,1.1,0x17171d,0,1.7,0,ob);
+ box(1.4,0.35,1.4,0x23232c,0,0.18,0,ob);
+ const gem=new THREE.Mesh(new THREE.OctahedronGeometry(0.34),new THREE.MeshBasicMaterial({color:0xff3b30})); gem.position.set(0,3.7,0); ob.add(gem);
+ const obl=document.createElement('div'); obl.className='plabel';
+ obl.innerHTML=`<div class="nname">🗿 Wilderness Obelisk</div>`;
+ $('labels').appendChild(obl);
+ worldLabels.push({el:obl,x:sx2w(WILD_OBELISK_POS.x),y:4.6,z:sy2w(WILD_OBELISK_POS.y),area:areaName,kind:'static'});
+ // warning sign by the ditch
+ const sg=new THREE.Group(); sg.position.set(sx2w(800),0,sy2w(855)); S.add(sg);
+ box(0.18,2.4,0.18,0x3a2a16,0,1.2,0,sg);
+ const sgt=textSprite(pure?'💀 PURE WILD':'💀 THE WILDERNESS','#ff6b5e','rgba(20,8,8,0.9)'); sgt.position.set(0,3.1,0); sg.add(sgt);
+ const sgl=document.createElement('div'); sgl.className='plabel';
+ sgl.innerHTML=`<div class="nname">${pure?'💀 Pure Wild — no prayer, no food':'💀 The Wilderness — PvP · skulls · death drops loot'}</div>`;
+ $('labels').appendChild(sgl);
+ worldLabels.push({el:sgl,x:sx2w(800),y:3.8,z:sy2w(855),area:areaName,kind:'static'});
+ makePkNoobFigure(S,areaName,PK_NOOB_WILD_POS.x,PK_NOOB_WILD_POS.y);
+ // dead trees: bare trunks with snapped branches
+ const deadSpots=[[300,700],[1250,640],[520,470],[1080,430],[210,300],[1420,330],[760,240],[380,140],[1180,120],[900,560],[150,520],[1330,760]];
+ for(const [tx,ty] of deadSpots){
+   const t=new THREE.Group(); t.position.set(sx2w(tx),0,sy2w(ty)); S.add(t);
+   const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.16,1.9,6),new THREE.MeshLambertMaterial({color:0x4a3a28})); trunk.position.y=0.95; t.add(trunk);
+   const b1=box(0.07,0.9,0.07,0x4a3a28,0.3,1.7,0,t); b1.rotation.z=0.8;
+   const b2=box(0.06,0.7,0.06,0x4a3a28,-0.25,1.5,0.1,t); b2.rotation.z=-0.7;
+ }
+ // rocks + bones scattered
+ for(const [rx,ry] of [[450,780],[980,690],[640,380],[1290,520],[260,180],[1100,250],[840,90],[560,60]]){
+   const r=new THREE.Mesh(new THREE.DodecahedronGeometry(0.5),new THREE.MeshLambertMaterial({color:0x5a5348}));
+   r.position.set(sx2w(rx),0.3,sy2w(ry)); r.rotation.set(rx%3,ry%5,0); S.add(r);
+ }
+ for(const [bx,by] of [[700,600],[350,420],[1150,540],[950,180],[480,90],[1240,700]]){
+   box(0.5,0.09,0.12,0xd8d2c0,sx2w(bx),0.06,sy2w(by),S);
+   box(0.3,0.09,0.12,0xd8d2c0,sx2w(bx)+0.4,0.06,sy2w(by)+0.2,S);
+ }
+ // northern ruins: broken stone walls
+ for(const [wx,wy,ww,rot] of [[620,110,7,0],[1010,90,6,0.5],[800,60,8,-0.3]]){
+   const w=box(ww,1.6,0.5,0x4c463c,sx2w(wx),0.8,sy2w(wy),S); w.rotation.y=rot;
+   const w2=box(ww*0.5,0.9,0.5,0x554f44,sx2w(wx)+1,0.45,sy2w(wy)+0.8,S); w2.rotation.y=rot;
+ }
+ // lava pools deep north + ONE shared point light
+ for(const [lx,ly] of [[430,120],[1150,70]]){
+   const pool=new THREE.Mesh(new THREE.CircleGeometry(1.6,18),new THREE.MeshBasicMaterial({color:0xff5a1f}));
+   pool.rotation.x=-Math.PI/2; pool.position.set(sx2w(lx),0.04,sy2w(ly)); S.add(pool);
+ }
+ const lavaLight=new THREE.PointLight(0xff7b24,0.7,26); lavaLight.position.set(sx2w(800),2.5,sy2w(95)); S.add(lavaLight);
+ shadowify(S);
+}
 function buildWaiting(root){
  const S=root;
  const floor=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:stoneTexture(18,12),color:0x9a958a}));
@@ -2318,6 +2417,8 @@ function buildAreas(){
  areaGroups.waiting=new THREE.Group(); scene.add(areaGroups.waiting); buildWaiting(areaGroups.waiting);
  areaGroups.magic=new THREE.Group(); scene.add(areaGroups.magic); buildWizardGrounds(areaGroups.magic);
  areaGroups.range=new THREE.Group(); scene.add(areaGroups.range); buildRangerCamp(areaGroups.range);
+ areaGroups.wilderness=new THREE.Group(); scene.add(areaGroups.wilderness); buildWilderness(areaGroups.wilderness,false);
+ areaGroups.purewild=new THREE.Group(); scene.add(areaGroups.purewild); buildWilderness(areaGroups.purewild,true);
  applyAreaVisibility();
 }
 function applyAreaVisibility(){
@@ -2344,6 +2445,12 @@ function setArea(a){
      clearFcMonsters();
    }
    pendingMound=null; pendingPile=null; pendingSeaweed=null; pendingChest=null;
+   // Stage 30: leaving a wild area drops the local wild state
+   // (PKer avatars, the wild fight bar, the HUD chip) — the server
+   // ends the fights themselves and its end messages settle them.
+   pendingWildAttack=null; pendingWildPker=null; wildLeaving=false;
+   if(!isWildClient()){ pkerList=[]; syncPkers(); if(wildFight){ wildFight=null; $('duelbar').classList.remove('open'); $('duelflee').style.display='none'; $('fleebtn').textContent='🏃 Flee'; } wildInfo=null; }
+   renderWildChip();
    challengeMarks={}; // ❗ marks belong to the area they were seen in
    puzzleSolved=false; puzzleShown=[]; puzzleOptions=[]; $('puzzlemodal').classList.remove('open'); // Stage 28: the next barrows_state re-syncs puzzleSolved from the saved run
    clearAllies(); // guardians re-sync from the new area's 'allies' message
@@ -2359,7 +2466,7 @@ function setArea(a){
  }
  drawMinimap();
 }
-const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_crypt:1,barrows_tunnels:1,arena:1,waiting:1,magic:1,range:1};
+const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_crypt:1,barrows_tunnels:1,arena:1,waiting:1,magic:1,range:1,wilderness:1,purewild:1}; // Stage 30 adds the two wild variants
 // Stage 19: the areas with a live shared-NPC roster (npc_state).
 const NPC_AREAS_CLIENT=['goblins','magic','range'];
 /* Knight armour (Stage 8 medieval theme): rounded bodies — sphere
@@ -2464,9 +2571,9 @@ function makeKnight(isMe,name,app){
  const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
  sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
  const label=document.createElement('div'); label.className='plabel';
- label.innerHTML=`<div class="bubble"></div><span class="rbadge"></span><span class="badge"></span><span class="abadge"></span><span class="cbadge"></span><span class="fbadge"></span> <span class="nm">${esc(name)}</span><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
+ label.innerHTML=`<div class="bubble"></div><span class="rbadge"></span><span class="badge"></span><span class="abadge"></span><span class="cbadge"></span><span class="fbadge"></span><span class="skbadge"></span> <span class="nm">${esc(name)}</span><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
  $('labels').appendChild(label);
- return {group:g,pivot,legL,legR,armL,armR,gearAnchors,gearSig:null,hairParts,tabardMesh,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),roleEl:label.querySelector('.rbadge'),actEl:label.querySelector('.abadge'),chalEl:label.querySelector('.cbadge'),fzEl:label.querySelector('.fbadge'),hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
+ return {group:g,pivot,legL,legR,armL,armR,gearAnchors,gearSig:null,hairParts,tabardMesh,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),roleEl:label.querySelector('.rbadge'),actEl:label.querySelector('.abadge'),chalEl:label.querySelector('.cbadge'),fzEl:label.querySelector('.fbadge'),skullEl:label.querySelector('.skbadge'),hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
    x:0,z:0,tx:0,tz:0,rot:0,jump:null,prayer:null,bubbleUntil:0,bob:Math.random()*6,isMe,
    swingStart:0,phase:Math.random()*6,moveAmt:0,px:0,pz:0,splatY:2.95};
 }
@@ -2514,6 +2621,7 @@ function syncAvatars(){
    if(p.username!==me.username){ a.tx=sx2w(p.x); a.tz=sy2w(p.y); }
    a.frozenUntil=p.frozenUntil||0; // Stage 24: Freeze root (❄️ shell + badge, refreshed by the Stage 24 interval)
    if(p.username===me.username) meFrozenUntil=p.frozenUntil||0;
+   if(a.skullEl) a.skullEl.textContent=p.skulled?'💀 ':''; // Stage 30: the Wilderness skull rides the snapshot
    syncPartyHat(a,p); // Stage 21: worn party hat on the knight's head
    syncGear(a,p); // Stage 30: the rest of the worn set, in its own colours
    a.prayer=p.activePrayer||null;
@@ -2926,6 +3034,214 @@ function attackNpc(id){
  const d=Math.hypot(myPos.x-n.x,myPos.y-n.y);
  if(d<=140){ lastAttackTry={id,at:Date.now()}; send({type:'attack_npc',id}); }
  else { pendingAttack={id}; tapTarget={x:n.x,y:n.y}; toast(`🚶 Walking to the ${(n.name||'goblin').toLowerCase()}…`); }
+}
+/* ================= Stage 30: the Wilderness (client) =================
+   PKer avatars reuse the knight builder (heraldic colours by name);
+   the wild fight shares the Stage 23 fight strip with NPC fights;
+   Leave WALKS out (Derek's rule) — the ditch crossing in
+   checkGates does the actual leaving. Face-and-chase rides the
+   Stage 26 machinery: the server's closing ticks carry moveTo and
+   applyClosing walks the knight in at run-orb speed, facing the
+   target (stepMovement sets localRot from the walk vector, and
+   startSwingAt/faceTarget handles swing facing). */
+const PK_NOOB_PLAZA_POS={x:1150,y:120};
+const PK_NOOB_WILD_POS={x:900,y:830};
+const WILD_OBELISK_POS={x:700,y:830};
+function isWildClient(){ return curArea==='wilderness'||curArea==='purewild'; }
+let pkerList=[]; // from wild_state: [{id,name,cbt,style,x,y,hp,maxHp,frozenUntil}]
+let pkerAvatars={}; // pker id -> knight avatar
+let wildInfo=null; // the 'you' half of wild_state {level,skulled,teleblockLeft,hp,maxHp,pure}
+let wildFight=null; // {oppKind,oppId,oppName,hpYou,maxHpYou,hpOpp,maxHpOpp,energyYou}
+let pendingWildAttack=null; // {name} — walk to a player, then attack
+let pendingWildPker=null; // {id} — walk to a PKer, then attack
+let wildLeaving=false; // Leave pressed: keep walking to the ditch until the crossing fires
+function makePkerAvatar(n){
+ const a=makeKnight(false,n.name,null);
+ a.isPker=true;
+ const nm=a.label.querySelector('.nm'); if(nm) nm.textContent=`${n.name} · lvl ${n.cbt}`;
+ a.x=a.tx=sx2w(n.x); a.z=a.tz=sy2w(n.y);
+ a.hp=n.hp; a.maxHp=n.maxHp;
+ return a;
+}
+function syncPkers(){
+ if(!scene) return;
+ const seen=new Set();
+ if(isWildClient()){
+   for(const n of pkerList){
+     seen.add(n.id);
+     let a=pkerAvatars[n.id];
+     if(!a){ a=makePkerAvatar(n); a.group.position.set(a.x,0,a.z); pkerAvatars[n.id]=a; scene.add(a.group); }
+     a.tx=sx2w(n.x); a.tz=sy2w(n.y);
+     a.frozenUntil=n.frozenUntil||0; // Stage 24: Freeze root rides wild_state
+     a.hp=n.hp; a.maxHp=n.maxHp;
+     a.hpFill.style.width=clamp(n.hp/Math.max(1,n.maxHp)*100,0,100)+'%';
+     a.hpFill.style.background=hpBarColor(n.hp/Math.max(1,n.maxHp));
+     a.hpWrap.style.display=(n.hp<n.maxHp||(wildFight&&wildFight.oppId===n.id))?'block':'none';
+     if(a.hpNum) a.hpNum.textContent=n.hp+'/'+n.maxHp;
+   }
+ }
+ for(const id of Object.keys(pkerAvatars)){
+   if(!seen.has(id)){ scene.remove(pkerAvatars[id].group); pkerAvatars[id].label.remove(); delete pkerAvatars[id]; }
+ }
+}
+function renderWildChip(){
+ const chip=$('wildchip');
+ if(!isWildClient()||!wildInfo){ chip.classList.remove('on'); return; }
+ let t=`💀 ${curArea==='purewild'?'Pure Wild':'Wilderness'} level: ${wildInfo.level}`;
+ if(wildInfo.skulled) t+=' · 💀 SKULLED';
+ if(wildInfo.teleblockLeft>0) t+=` · 🌀 Teleblocked ${wildInfo.teleblockLeft}s`;
+ if(wildInfo.pure) t+=' · PURE — no prayer, no food';
+ $('wildtxt').textContent=t;
+ chip.classList.add('on');
+}
+function wildOppAvatar(){
+ if(!wildFight) return null;
+ return wildFight.oppKind==='player'? (avatars[wildFight.oppName]||null) : (pkerAvatars[wildFight.oppId]||null);
+}
+function attackPlayerWild(name){
+ const op=players.find(p=>p.username===name); if(!op||!myPos) return;
+ wildLeaving=false;
+ const d=Math.hypot(myPos.x-op.x,myPos.y-op.y);
+ if(d<=140){ send({type:'wild_attack',target:name}); }
+ else { pendingWildAttack={name}; tapTarget={x:op.x,y:op.y}; toast(`🚶 Walking to ${name}…`); }
+}
+function attackPker(id){
+ const n=pkerList.find(x=>x.id===id); if(!n||!myPos) return;
+ wildLeaving=false;
+ const d=Math.hypot(myPos.x-n.x,myPos.y-n.y);
+ if(d<=140){ send({type:'wild_attack',pker:id}); }
+ else { pendingWildPker={id}; tapTarget={x:n.x,y:n.y}; toast(`🚶 Walking to ${n.name}…`); }
+}
+function checkPendingWildAttack(){
+ if(!pendingWildAttack||!myPos) return;
+ const op=players.find(p=>p.username===pendingWildAttack.name);
+ if(!op){ pendingWildAttack=null; return; }
+ if(Math.hypot(myPos.x-op.x,myPos.y-op.y)<=120){
+   const name=pendingWildAttack.name; pendingWildAttack=null; tapTarget=null;
+   send({type:'wild_attack',target:name});
+ } else tapTarget={x:op.x,y:op.y}; // they move — keep chasing the live position
+}
+function checkPendingWildPker(){
+ if(!pendingWildPker||!myPos) return;
+ const n=pkerList.find(x=>x.id===pendingWildPker.id);
+ if(!n){ pendingWildPker=null; return; }
+ if(Math.hypot(myPos.x-n.x,myPos.y-n.y)<=120){
+   const id=pendingWildPker.id; pendingWildPker=null; tapTarget=null;
+   send({type:'wild_attack',pker:id});
+ } else tapTarget={x:n.x,y:n.y};
+}
+/* PK Noob: the hop between the normal Wilderness and Pure Wild. */
+window.openPkNoob=function(){
+ let h=`<h3>💀 PK Noob</h3>`;
+ if(curArea==='plaza'){
+   h+=`<p class="note" style="margin-bottom:8px">The Wilderness is north — walk across the ditch on the plaza's north edge (east stretch) or take the obelisk teleport. Feeling pure? I can hop you straight to <b>Pure Wild</b>: the same Wilderness, but NO prayer and NO food or potions for anyone. Skulls and death drops are the same. Coming back works the same way — find me there by the ditch.</p>
+   <button class="act" style="width:100%;margin-bottom:6px" onclick="pkNoobTravel()">💀 Enter the Wilderness (obelisk)</button>
+   <button class="ghost" style="width:100%;margin-bottom:6px" onclick="pkNoobHop(true)">💀 Hop to Pure Wild</button>`;
+ } else if(curArea==='purewild'){
+   h+=`<p class="note" style="margin-bottom:8px">Pure Wild: no prayer, no food, no potions. To leave for good, walk south and cross the ditch. To switch back to the normal Wilderness — where prayer and food work — hop here.</p>
+   <button class="act" style="width:100%;margin-bottom:6px" onclick="pkNoobHop(false)">Hop to the normal Wilderness</button>`;
+ } else {
+   h+=`<p class="note" style="margin-bottom:8px">This is the normal Wilderness — prayer and food work here. Hop with me to <b>Pure Wild</b>: same map, same skulls, same drops, but NO prayer and NO food or potions for anyone.</p>
+   <button class="act" style="width:100%;margin-bottom:6px" onclick="pkNoobHop(true)">💀 Hop to Pure Wild</button>`;
+ }
+ h+=`<div class="btns"><button class="ghost" onclick="closeModal('pknoobmodal')">Close</button></div>`;
+ $('pknoobsheet').innerHTML=h;
+ $('pknoobmodal').classList.add('open');
+};
+window.pkNoobHop=function(pure){ closeModal('pknoobmodal'); send({type:'pk_noob_hop',pure:!!pure}); };
+window.pkNoobTravel=function(){ closeModal('pknoobmodal'); doTravel('wilderness'); };
+window.pmWildAttack=function(name){ closeModal('playermenumodal'); attackPlayerWild(name); };
+/* Leave in the wild WALKS you out (Derek's rule): the knight heads
+   for the ditch and stays attackable until the crossing fires. */
+function wildLeave(){
+ if(!isWildClient()) return;
+ send({type:'wild_leave'});
+ wildLeaving=true;
+ tapTarget={x:800,y:895};
+ toast('🚪 Walking back to the ditch — you are still in the Wilderness until you cross!');
+}
+function renderWildBar(){
+ if(!wildFight) return;
+ const nmW=$('duelnomove'); if(nmW) nmW.style.display='none'; // the No Movement chip is player-duel only
+ const joyW=$('joy'); if(joyW) joyW.style.opacity='';
+ $('hpyou').style.width=clamp(wildFight.hpYou/Math.max(1,wildFight.maxHpYou)*100,0,100)+'%'; $('hpyouv').textContent=wildFight.hpYou;
+ $('hpopp').style.width=clamp(wildFight.hpOpp/Math.max(1,wildFight.maxHpOpp)*100,0,100)+'%'; $('hpoppv').textContent=wildFight.hpOpp;
+ $('duelctx').textContent=`💀 ${curArea==='purewild'?'Pure Wild':'Wilderness'} — ${wildFight.oppName}`;
+ $('fleebtn').textContent='🚪 Leave (walk out)';
+ syncBarPrayers(false);
+ const consum=(me?me.backpack:[]).filter(s=>catalog[s.item]&&(catalog[s.item].kind==='food'||catalog[s.item].kind==='potion'));
+ let h=`<button class="fchip spec" id="specbtn" title="Dragon Slash">⚡ ${wildFight.energyYou}%</button>`;
+ for(const s of consum) h+=`<button class="fchip" title="${esc(nameOf(s.item))}" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ×${s.qty}</button>`;
+ $('duelquick').innerHTML=h;
+ const sb=$('specbtn');
+ sb.classList.toggle('ready',wildFight.energyYou>=50);
+ sb.onclick=()=>send({type:'special'});
+}
+function wildFightUI(m){
+ if(m.phase==='start'){
+   pendingWildAttack=null; pendingWildPker=null;
+   stopGather();
+   stopFollow();
+   cancelUse(true);
+   wildFight={oppKind:m.oppKind,oppId:m.oppId,oppName:m.oppName,hpYou:m.hpYou,maxHpYou:m.maxHpYou,hpOpp:m.hpOpp,maxHpOpp:m.maxHpOpp,energyYou:Math.floor(m.energyYou||0)};
+   $('duelbar').classList.add('open');
+   $('duelflee').style.display='block';
+   $('dueloppname').textContent=m.oppName;
+   $('dueltitle').textContent=`💀 ${m.oppName} · lvl ${m.oppCbt||'?'}`;
+   $('duellast').textContent=m.theyStarted? `${m.oppName} attacks you! Tap them to fight back — or 🚪 Leave and walk to the ditch.` : 'Fight! Movement is free — kite, dodge, eat, pray. Death here drops loot.';
+   const oa=wildOppAvatar(); if(oa) setHpBar(oa,wildFight.hpOpp/Math.max(1,wildFight.maxHpOpp),wildFight.hpOpp,wildFight.maxHpOpp);
+   renderWildBar(); renderOrbs();
+   return;
+ }
+ if(m.phase==='tick'){
+   if(!wildFight) return;
+   wildFight.hpYou=m.hpYou; wildFight.maxHpYou=m.maxHpYou; wildFight.hpOpp=m.hpOpp; wildFight.maxHpOpp=m.maxHpOpp; wildFight.energyYou=m.energyYou;
+   if(me) me.specialEnergy=m.energyYou;
+   applyClosing(m); // Stage 8/26: on a closing tick, walk into reach (moveTo) — face + chase
+   const oa=wildOppAvatar();
+   const myAv=me?avatars[me.username]:null;
+   if(typeof m.youHit==='number'){ startSwingAt(myAv,oa,true);
+     if(typeof m.youOutcome==='string') spawnOutcomeSplatOn(oa,m.youOutcome,m.youHit,m.youSpecial);
+     else spawnSplatOn(oa,m.youHit,m.youSpecial);
+     flinchForOutcome(oa,myAv,typeof m.youOutcome==='string'?m.youOutcome:null,m.youHit); } // Stage 26
+   if(typeof m.oppHit==='number'){ startSwingAt(oa,myAv,true);
+     if(typeof m.oppOutcome==='string') spawnOutcomeSplatOn(myAv,m.oppOutcome,m.oppHit,m.oppSpecial);
+     else spawnSplatOn(myAv,m.oppHit,m.oppSpecial);
+     flinchForOutcome(myAv,oa,typeof m.oppOutcome==='string'?m.oppOutcome:null,m.oppHit); } // Stage 26
+   // Stage 27: Accurate bonus bursts (mine on them, theirs on me)
+   // and Deflect bounces (oppDeflected = my prayer bouncing their
+   // swing back onto them; youDeflected = the reverse, onto me).
+   if(m.youBonus>0) spawnBonusSplatOn(oa,m.youBonus);
+   if(m.oppBonus>0&&myAv) spawnBonusSplatOn(myAv,m.oppBonus);
+   if(m.oppDeflected>0){ spawnDeflectSplatOn(oa,m.oppDeflected); startFlinch(oa,myAv,false); }
+   if(m.youDeflected>0&&myAv){ spawnDeflectSplatOn(myAv,m.youDeflected); startFlinch(myAv,oa,false); }
+   if(oa&&typeof m.oppFrozenUntil==='number') oa.frozenUntil=m.oppFrozenUntil; // Stage 24: Freeze root on my opponent
+   if(oa) setHpBar(oa,m.hpOpp/Math.max(1,m.maxHpOpp),m.hpOpp,m.maxHpOpp);
+   const parts=[];
+   if(typeof m.youHit==='number') parts.push(`You hit ${m.youHit}${m.youBonus>0?` +${m.youBonus} bonus`:''}${m.youSpecial?' (DRAGON SLASH!)':''}`);
+   else if(m.closing) parts.push('⚔️ Closing in — you strike on arrival!');
+   if(typeof m.oppHit==='number') parts.push(`${wildFight.oppName} hit ${m.oppHit}`);
+   if(m.oppDeflected>0) parts.push(`↩ deflected ${m.oppDeflected}`);
+   if(m.youDeflected>0) parts.push(`↩ their prayer bounced ${m.youDeflected} back on you`);
+   let last=parts.join(' · ');
+   if(m.note) last=m.note;
+   $('duellast').textContent=last;
+   renderWildBar(); renderOrbs();
+   return;
+ }
+ if(m.phase==='end'){
+   const name=(wildFight&&wildFight.oppName)||m.oppName||'Your opponent';
+   wildFight=null;
+   $('duelbar').classList.remove('open');
+   $('duelflee').style.display='none';
+   $('fleebtn').textContent='🏃 Flee';
+   if(m.reason==='kill'){ toast(`💀 You killed ${name}! Their loot is on the ground — grab the piles.`); logLine(`💀 You killed ${name} in the Wilderness.`); }
+   else if(m.reason==='death'){ toast(`💀 ${name} killed you in the Wilderness.`); }
+   else if(m.reason==='escaped'){ toast(`🏃 ${name} crossed the ditch and escaped.`); }
+   else if(m.reason==='left'){ toast('🚪 You crossed the ditch — out of the Wilderness.'); }
+   else { toast('The fight broke off.'); }
+   renderOrbs(); renderAll();
+ }
 }
 /* ---- Stage 22: plaza moderators (stake ladder NPCs) ----
    Knight figures in white-and-gold moderator colours with a
@@ -3853,10 +4169,13 @@ function handleTap(cx,cy){
      // a menu — fall through to the normal branches below, which
      // engage (duel) / engage (mod duel). No action screen mid-fight.
      const duelTap=(duel&&hit.kind==='player'&&hit.name===duel.opponent)||(modDuel&&hit.kind==='modnpc'&&hit.id===modDuel.npcId);
+     // Stage 30: the same rule in the wild — a tap on the player
+     // I'm fighting is an ATTACK, never a menu.
+     const wildTap=wildFight&&wildFight.oppKind==='player'&&hit.kind==='player'&&hit.name===wildFight.oppName;
      // Stage 24: with a spell armed, a tap on a combat target casts
      // (falls through to the normal branches below) instead of
      // opening the menu — arming works the same in both tap modes.
-     if(!duelTap&&!(armedSpell&&(hit.kind==='player'||hit.kind==='npc'||hit.kind==='fc'||hit.kind==='modnpc'))){
+     if(!duelTap&&!(armedSpell&&(hit.kind==='player'||hit.kind==='npc'||hit.kind==='fc'||hit.kind==='modnpc'))&&!wildTap){
        handleLongPress(cx,cy);
        return;
      }
@@ -3888,6 +4207,25 @@ function handleTap(cx,cy){
    // to miss their head, plume or sword arm.
    if(modDuel&&modAvatars[modDuel.npcId]&&figureTapDist(modAvatars[modDuel.npcId],cx,cy)<DUEL_FIGURE_TAP) mb=modDuel.npcId;
    if(mb){ if(modDuel&&modDuel.npcId===mb){ const n=modNpcList.find(x=>x.id===mb); if(n&&armedCastAt('duel',mb,n.x,n.y)) return; } tapModNpc(mb); return; }
+ }
+ // Stage 30: Wilderness — PKer taps (attack; walks over first if
+ // too far) and the PK Noob figure (in the wild, by the ditch).
+ if(isWildClient()){
+   let kb=null,kbD=1e9;
+   for(const [id,a] of Object.entries(pkerAvatars)){
+     const s=projectTo(a.group.position.x,1.4,a.group.position.z);
+     if(!s) continue;
+     const d=Math.hypot(s.x-cx,s.y-cy);
+     if(d<52 && d<kbD){ kb=id; kbD=d; }
+   }
+   if(kb){ const pk=pkerList.find(x=>x.id===kb); if(pk&&armedCastAt('wild',kb,pk.x,pk.y)) return; attackPker(kb); return; }
+   const ns=projectTo(sx2w(PK_NOOB_WILD_POS.x),1.4,sy2w(PK_NOOB_WILD_POS.y));
+   if(ns&&Math.hypot(ns.x-cx,ns.y-cy)<52){ openPkNoob(); return; }
+ }
+ // Stage 30: PK Noob in the plaza (by the north gate).
+ if(curArea==='plaza'){
+   const ns=projectTo(sx2w(PK_NOOB_PLAZA_POS.x),1.4,sy2w(PK_NOOB_PLAZA_POS.y));
+   if(ns&&Math.hypot(ns.x-cx,ns.y-cy)<52){ openPkNoob(); return; }
  }
  // Fight Caves monsters (tap to target; walks over first if too far)
  if(curArea==='fightcaves'&&fcRun){
@@ -3981,7 +4319,25 @@ function handleTap(cx,cy){
  // the middle. The duel branch below then attacks — never a menu,
  // never a walk.
  if(duel&&avatars[duel.opponent]&&figureTapDist(avatars[duel.opponent],cx,cy)<DUEL_FIGURE_TAP) best=duel.opponent;
+ // Stage 30: the same whole-figure rule for my wild opponent.
+ if(wildFight&&wildFight.oppKind==='player'&&avatars[wildFight.oppName]&&figureTapDist(avatars[wildFight.oppName],cx,cy)<DUEL_FIGURE_TAP) best=wildFight.oppName;
  if(best){
+   if(isWildClient()&&best!==me.username){
+     // In the wild a player tap ATTACKS (Derek's rule — the
+     // player menu's first action here is Attack, and my current
+     // opponent is tap-to-attack only, never a menu: Stage 26).
+     const op=players.find(p=>p.username===best);
+     if(wildFight&&wildFight.oppKind==='player'&&wildFight.oppName===best){
+       if(op&&armedCastAt('wild',best,op.x,op.y)) return;
+       wildLeaving=false;
+       send({type:'wild_attack',target:best});
+       return;
+     }
+     if(settings.tapMode==='menu'){ openPlayerMenu(best); return; } // the menu leads with Attack in the wild
+     if(op&&armedCastAt('wild',best,op.x,op.y)) return;
+     attackPlayerWild(best);
+     return;
+   }
    if(duel&&best===duel.opponent){
      // Stage 24: an armed spell casts at the opponent instead of
      // the weapon tap (in range only — armedCastAt leaves the spell
@@ -4012,6 +4368,7 @@ function handleTap(cx,cy){
  if(gh){
    const pt={x:clamp(wx2s(gh.point.x),0,WORLD_W), y:clamp(wz2s(gh.point.z),0,WORLD_H)};
    pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingSeaweed=null; pendingChest=false;
+   pendingWildAttack=null; pendingWildPker=null; wildLeaving=false; // Stage 30: a fresh ground tap takes over from Leave / a pending chase
    pendingUseCook=null; pendingUseLogs=null;
    stopFollow();
    if(settings.groundTap==='face') faceToward(pt); else tapTarget=pt;
@@ -4025,7 +4382,7 @@ function faceToward(pt){
 let gateCooldownUntil=0;
 function checkGates(){
  if(!myPos||!me||Date.now()<gateCooldownUntil) return;
- const go=(to,msg)=>{ gateCooldownUntil=Date.now()+2000; stopGather(); send({type:'travel',to}); toast(msg); };
+ const go=(to,msg)=>{ gateCooldownUntil=Date.now()+2000; stopGather(); send({type:'travel',to,via:'gate'}); toast(msg); }; // Stage 30: gate crossings say so (the wild exit rule reads it)
  if(curArea==='plaza'){
    // corners first, then edges (Stage 13: every trigger zone is the
    // old zone x2, matching the doubled gate visuals)
@@ -4040,8 +4397,13 @@ function checkGates(){
    if(myPos.x>=1590){ go('goblins','🚪 East gate → Goblin Camp…'); return; }
    if(myPos.x<=10){ go('cove','🚪 West gate → Fishing Cove…'); return; }
    if(myPos.y<=10&&myPos.x>=600&&myPos.x<=1000){ go('fightcaves','🚪 North gate → Fight Caves…'); return; }
+   // Stage 30: the ditch crossing — north edge, east stretch
+   // (clear of the mine corner at x>=1580 and the Fight Caves
+   // strip at 600–1000). Crossing it walks you into the wild.
+   if(myPos.y<=10&&myPos.x>=1020&&myPos.x<=1560){ go('wilderness','💀 The ditch → THE WILDERNESS…'); return; }
    if(myPos.y>=890&&myPos.x>=600&&myPos.x<=1000){ go('barrows','🚪 South gate → Barrows…'); return; }
  }
+ else if(isWildClient()&&myPos.y>=890){ go('plaza','🚪 The ditch → back to safety…'); }
  else if(curArea==='barrows'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
  else if(curArea==='goblins'&&myPos.x<=10){ go('plaza','🚪 West gate → Plaza…'); }
  else if(curArea==='cove'&&myPos.x<=10){ go('plaza','🚪 West gate → Plaza…'); }
@@ -4079,6 +4441,7 @@ function stepMovement(dt){
  // Stage 23: Grab mode freezes the knight too — arranging the
  // interface is the only thing happening while it's on.
  if(grabMode||duelCountdownLeft>0||(duel&&duel.rules&&duel.rules.noMovement)||meFrozenNow()){ tapTarget=null; myVel={x:0,z:0}; finishStep(false); return; } // Stage 24: meFrozenNow — a Freeze root stops my knight locally too (the server ignores the moves anyway)
+ if(wildLeaving&&isWildClient()) tapTarget={x:800,y:895}; // Stage 30: Leave keeps walking you to the ditch until the crossing fires (steering yourself cancels it)
  let vx=0, vz=0; // world units / s
  const sYaw=Math.sin(camYaw), cYaw=Math.cos(camYaw);
  // camera forward on the ground (world): (-sinYaw, -cosYaw); right: (cosYaw, -sinYaw)
@@ -4086,7 +4449,7 @@ function stepMovement(dt){
  if(keys.w||keys.arrowup) f+=1; if(keys.s||keys.arrowdown) f-=1;
  if(keys.d||keys.arrowright) r+=1; if(keys.a||keys.arrowleft) r-=1;
  f+=-joyVec.y; r+=joyVec.x;
- if(f||r){ tapTarget=null; pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false; stopGather(); const l=Math.hypot(f,r); f/=l; r/=l;
+ if(f||r){ tapTarget=null; pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false; pendingWildAttack=null; pendingWildPker=null; wildLeaving=false; stopGather(); const l=Math.hypot(f,r); f/=l; r/=l;
    vx=(-sYaw*f + cYaw*r); vz=(-cYaw*f - sYaw*r); myVel={x:vx,z:vz}; }
  else if(tapTarget){
    const dx=tapTarget.x-myPos.x, dy=tapTarget.y-myPos.y, d=Math.hypot(dx,dy);
@@ -4151,7 +4514,7 @@ function finishStep(moved){
    lastSend=now;
  }
  checkGates();
- if(moved){ checkPendingAttack(); checkPendingNode(); checkPendingFcAttack(); checkPendingMound(); checkPendingPile(); checkPendingSeaweed(); checkPendingChest(); checkPendingUse(); }
+ if(moved){ checkPendingAttack(); checkPendingNode(); checkPendingFcAttack(); checkPendingMound(); checkPendingPile(); checkPendingSeaweed(); checkPendingChest(); checkPendingUse(); checkPendingWildAttack(); checkPendingWildPker(); }
 }
 /* ================= minimap (rotating, player-centred) ================= */
 const MM_S=128/520; // minimap px per server unit (~520 units across — Stage 13 kept the same view window: the map is player-centred, so a bigger world just means more of it lies off-map; every feature below is drawn in the new 0..1600 x 0..900 server coords)
@@ -4175,6 +4538,7 @@ function drawMinimap(){
    : (curArea==='barrows_tunnels'||curArea==='barrows_crypt')? '#0d0a12'
    : curArea==='waiting'? '#33302a'
    : curArea==='arena'? ARENA_VARIANTS[arenaVariant].css
+   : isWildClient()? '#2a1a14'
    : caveBg? (curArea==='fightcaves'? '#241a12' : '#2b2b30') : (curArea==='goblins')? '#55702f' : '#241d15'; g.fillRect(0,0,1600,900);
  if(curArea==='plaza'){
    g.fillStyle='#8a7a5f'; g.fillRect(800-420,450-270,840,540); // cobblestone centre
@@ -4186,6 +4550,8 @@ function drawMinimap(){
    g.fillStyle='#ffd75e'; g.beginPath(); g.arc(STAKE_SIGN_POS.x,STAKE_SIGN_POS.y,13,0,7); g.fill(); // Stake Board sign (SW)
    g.fillStyle='#7ec8ff'; g.beginPath(); g.arc(TELEPORT_SIGN_POS.x,TELEPORT_SIGN_POS.y,11,0,7); g.fill(); // Stage 25: teleport sign (by the bank)
    for(const n of modNpcList){ g.fillStyle='#ffd75e'; g.beginPath(); g.arc(n.x,n.y,11,0,7); g.fill(); g.fillStyle='#3a2c1c'; g.beginPath(); g.arc(n.x,n.y,5,0,7); g.fill(); } // Stage 22: the three moderators
+   g.fillStyle='#120c08'; g.fillRect(1020,0,540,14); // Stage 30: the ditch crossing (north edge, east stretch)
+   g.fillStyle='#e8e2d0'; g.beginPath(); g.arc(1150,120,9,0,7); g.fill(); // Stage 30: PK Noob
  } else if(curArea==='waiting'){
    g.fillStyle='#ffd75e'; g.beginPath(); g.arc(700,450,16,0,7); g.fill(); // spawn pads
    g.fillStyle='#d9dee6'; g.beginPath(); g.arc(900,450,16,0,7); g.fill();
@@ -4224,6 +4590,12 @@ function drawMinimap(){
      g.fillStyle= mon.kind==='jad'? '#ff3b30' : '#ffb03a';
      g.beginPath(); g.arc(mon.x,mon.y, mon.kind==='jad'?16:10, 0, 7); g.fill();
    }
+ } else if(isWildClient()){
+   g.fillStyle='#120c08'; g.fillRect(0,878,1600,22); // the ditch (south edge)
+   g.fillStyle='#ff3b30'; g.beginPath(); g.arc(700,830,10,0,7); g.fill(); // the obelisk
+   g.fillStyle='#e8e2d0'; g.beginPath(); g.arc(900,830,9,0,7); g.fill(); // PK Noob
+   g.fillStyle='#ff3b30';
+   for(const n of pkerList){ g.beginPath(); g.arc(n.x,n.y,10,0,7); g.fill(); } // PKers (red)
  }
  // resource node + fire dots for the current area
  for(const n of (nodesByArea[curArea]||[])){
@@ -4316,8 +4688,9 @@ function animate(){
      // his opponent — localRot eases onto the line to them whenever
      // I'm not steering or walking somewhere myself.
      const foeAv=duel? avatars[duel.opponent] : (modDuel? modAvatars[modDuel.npcId] : null);
-     if(foeAv&&Math.hypot(myVel.x,myVel.z)<0.05&&!tapTarget){
-       const fang=Math.atan2(foeAv.group.position.x-a.group.position.x,foeAv.group.position.z-a.group.position.z);
+     const foeAvW=foeAv||(wildFight? wildOppAvatar() : null); // Stage 30: my knight faces his wild opponent too
+     if(foeAvW&&Math.hypot(myVel.x,myVel.z)<0.05&&!tapTarget){
+       const fang=Math.atan2(foeAvW.group.position.x-a.group.position.x,foeAvW.group.position.z-a.group.position.z);
        let fd=fang-localRot; fd=Math.atan2(Math.sin(fd),Math.cos(fd));
        localRot+=fd*(1-Math.exp(-12*dt));
      }
@@ -4330,6 +4703,11 @@ function animate(){
      // Stage 26: my duel opponent keeps facing ME while the fight
      // is on — refreshed every frame from my rendered position.
      if(duel&&name===duel.opponent&&me&&avatars[me.username]){
+       const mp=avatars[me.username].group.position;
+       a.faceTarget=Math.atan2(mp.x-a.group.position.x,mp.z-a.group.position.z);
+     }
+     // Stage 30: my wild opponent keeps facing ME while we fight.
+     if(wildFight&&wildFight.oppKind==='player'&&name===wildFight.oppName&&me&&avatars[me.username]){
        const mp=avatars[me.username].group.position;
        a.faceTarget=Math.atan2(mp.x-a.group.position.x,mp.z-a.group.position.z);
      }
@@ -4381,6 +4759,26 @@ function animate(){
      if(Math.hypot(dx,dz)>0.05) easeRot(a,Math.atan2(dx,dz),dt);
      else if(a.faceTarget!==undefined) easeRot(a,a.faceTarget,dt);
    }
+   applySwing(a,now);
+   applyLunge(a,now);
+   applyFlinch(a,now);
+ }
+ // Stage 30: PKers ease like NPCs (they chase server-side).
+ for(const a of Object.values(pkerAvatars)){
+   clearLungeOff(a);
+   clearFlinchOff(a);
+   const gx0=a.group.position.x, gz0=a.group.position.z;
+   if(a.tx!==undefined){
+     const k=1-Math.exp(-12*dt);
+     a.x+=(a.tx-a.x)*k; a.z+=(a.tz-a.z)*k;
+     a.group.position.x=a.x; a.group.position.z=a.z;
+     const dx=a.tx-a.x, dz=a.tz-a.z;
+     if(Math.hypot(dx,dz)>0.05) easeRot(a,Math.atan2(dx,dz),dt);
+     else if(a.faceTarget!==undefined) easeRot(a,a.faceTarget,dt);
+   }
+   const pdist=Math.hypot(a.group.position.x-gx0,a.group.position.z-gz0);
+   poseWalk(a,pdist,dt);
+   a.group.position.y=Math.abs(Math.sin(a.phase||0))*0.07*(a.moveAmt||0);
    applySwing(a,now);
    applyLunge(a,now);
    applyFlinch(a,now);
@@ -5249,7 +5647,7 @@ function pSmithy(){
 /* ---- Teleport ---- */
 window.doTravel=function(to){
  if(to===curArea){ toast('You are already here.'); return; }
- send({type:'travel',to});
+ send({type:'travel',to,via:'teleport'}); // Stage 30: teleports say so (no teleporting out of the deep wild)
  closeDrawer();
 };
 function pTeleport(){
@@ -5265,6 +5663,7 @@ function pTeleport(){
  h+=`<div class="rowline"><span class="ic">💀</span><span class="grow"><b>Barrows</b><br><span class="sub">South gate · 6 brothers, tunnels, chest</span></span>${here('barrows')||here('barrows_tunnels')||here('barrows_crypt')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('barrows')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">🧙</span><span class="grow"><b>Wizard Grounds</b><br><span class="sub">North-west corner · wizards drop the runes for your spells</span></span>${here('magic')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('magic')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">🏹</span><span class="grow"><b>Ranger Camp</b><br><span class="sub">North gate (west stretch) · rangers drop arrows &amp; arrowheads</span></span>${here('range')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('range')">Teleport</button>`}</div>`;
+ h+=`<div class="rowline"><span class="ic">💀</span><span class="grow"><b>The Wilderness</b><br><span class="sub">North ditch crossing (east stretch) or this obelisk teleport · PvP, skulls, death drops loot · NO teleporting out above level 20</span></span>${here('wilderness')||here('purewild')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('wilderness')">Teleport</button>`}</div>`;
  return h;
 }
 /* ---- Settings ---- */
@@ -5567,6 +5966,7 @@ window.openPlayerMenu=function(name){
  const p=players.find(x=>x.username===name);
  const inParty=myParty.includes(name);
  $('playermenusheet').innerHTML=`<h3>${p?rolePrefix(p.role):''}${esc(name)}</h3>
+ ${isWildClient()?`<button class="act" style="width:100%;margin-bottom:6px" onclick="pmWildAttack('${esc(name)}')">💀 Attack</button>`:''}
  <button class="ghost" style="width:100%;margin-bottom:6px" ${inParty?'disabled':''} onclick="pmInvite('${esc(name)}')">${inParty?'🎉 In your party ✓':'🎉 Invite'}</button>
  <button class="act" style="width:100%;margin-bottom:6px" onclick="pmChallenge('${esc(name)}')">⚔️ Challenge</button>
  <button class="ghost" style="width:100%;margin-bottom:6px" onclick="pmTrade('${esc(name)}')">🤝 Trade</button>
@@ -5596,7 +5996,7 @@ window.openTalk=function(name){
  setTimeout(()=>{ try{ inp.focus(); }catch(e){} },50);
 };
 /* ---- Examine sheet ---- */
-const AREA_LABELS={plaza:'🏰 Plaza',goblins:'👺 Goblin Camp',training:'🏋️ Training Cave',gathering:'⛏️ Gathering Cave',cove:'🎣 Fishing Cove',mine:'⛏️🔥 Emberfall Mine & Smithy',fightcaves:'🌋 Fight Caves',barrows:'💀 Barrows',barrows_crypt:'💀 Barrows Crypt',barrows_tunnels:'💀 Barrows Tunnels',arena:'⚔️ Duel Arena',waiting:'⏳ Waiting Area'};
+const AREA_LABELS={plaza:'🏰 Plaza',goblins:'👺 Goblin Camp',training:'🏋️ Training Cave',gathering:'⛏️ Gathering Cave',cove:'🎣 Fishing Cove',mine:'⛏️🔥 Emberfall Mine & Smithy',fightcaves:'🌋 Fight Caves',barrows:'💀 Barrows',barrows_crypt:'💀 Barrows Crypt',barrows_tunnels:'💀 Barrows Tunnels',arena:'⚔️ Duel Arena',waiting:'⏳ Waiting Area',magic:'🧙 Wizard Grounds',range:'🏹 Ranger Camp',wilderness:'💀 The Wilderness',purewild:'💀 Pure Wild'};
 function openExamine(m){
  const p=m.player; if(!p) return;
  const wornRows=SLOT_DEFS.filter(([slot])=>p.worn&&p.worn[slot]).map(([slot,label])=>`<div class="rowline"><span class="ic">${itemIconHTML(p.worn[slot],24)}</span><span class="grow"><b>${label}</b><br><span class="sub">${esc(nameOf(p.worn[slot]))}</span></span></div>`).join('');
@@ -6065,7 +6465,7 @@ function endDuelUI(m){
  renderAll();
 }
 /* ================= NPC fight UI (shares the duel bar) ================= */
-$('fleebtn').onclick=()=>send({type:'flee'});
+$('fleebtn').onclick=()=>{ if(wildFight) wildLeave(); else send({type:'flee'}); }; // Stage 30: in the wild, the chip WALKS you out to the ditch
 function renderNpcBar(){
  if(!npcFight) return;
  const nmNpc=$('duelnomove'); if(nmNpc) nmNpc.style.display='none'; // Stage 18: the No Movement chip is duel-only
@@ -7200,6 +7600,7 @@ function onCastResult(m){
  if(m.context==='duel') av=m.incoming? myAv : avatars[m.targetId];
  else if(m.context==='modduel') av=modAvatars[m.targetId];
  else if(m.context==='fc') av=fcAvatars[m.targetId];
+ else if(m.context==='wild') av=m.incoming? myAv : (avatars[m.targetId]||pkerAvatars[m.targetId]); // Stage 30
  else av=npcAvatars[m.targetId];
  const showSplat=(targetAv)=>{
    if(!targetAv) return;
@@ -7211,6 +7612,8 @@ function onCastResult(m){
    if(!m.froze) flinchForOutcome(myAv,m.by?avatars[m.by]:null,m.outcome,m.dmg); // Stage 26: a landed cast recoils me (Freeze roots instead)
    if(m.froze){ meFrozenUntil=m.frozenUntil||0; toast(`❄️ You're frozen by ${m.by||'a spell'} — you can't move for 5 seconds!`); }
    if(duel&&typeof m.hpTarget==='number'){ duel.hpYou=m.hpTarget; renderDuelBar(); }
+   if(wildFight&&typeof m.hpTarget==='number'){ wildFight.hpYou=m.hpTarget; renderWildBar(); } // Stage 30: a cast at me in the wild
+   if(wildFight&&typeof m.hpYou==='number'&&m.context==='wild'){ wildFight.hpOpp=m.hpYou; renderWildBar(); const cav=m.by?avatars[m.by]:null; if(cav) setHpBar(cav,m.hpYou/Math.max(1,wildFight.maxHpOpp),m.hpYou,wildFight.maxHpOpp); }
    // Stage 27: if my Deflect prayer bounced part of their cast
    // back, the CASTER's pool dropped too (hpYou on this copy is
    // theirs) — sync their bar and burst the bounce on them.
@@ -7227,6 +7630,10 @@ function onCastResult(m){
  if(m.context==='modduel'&&modDuel&&typeof m.hpTarget==='number'){ modDuel.hpNpc=m.hpTarget; renderModDuelBar(); if(av) setHpBar(av,m.hpTarget/99,m.hpTarget,99); }
  if((m.context==='npc'||m.context==='barrows')&&npcFight&&typeof m.hpTarget==='number'){ npcFight.hpNpc=m.hpTarget; renderNpcBar(); if(av) setHpBar(av,m.hpTarget/Math.max(1,m.maxHpTarget||npcFight.maxHpNpc),m.hpTarget,m.maxHpTarget||npcFight.maxHpNpc); }
  if(m.context==='fc'&&fcRun){ if(fcMonsters[m.targetId]&&typeof m.hpTarget==='number'){ fcMonsters[m.targetId].hp=m.hpTarget; prevFcHp[m.targetId]=m.hpTarget; } syncFcMonsters(); renderFcBar(); }
+ // Stage 30: my wild cast — sync the fight bar, and if their
+ // Deflect prayer bounced it back, my own pool dropped too.
+ if(m.context==='wild'&&wildFight&&typeof m.hpTarget==='number'){ wildFight.hpOpp=m.hpTarget; renderWildBar(); if(av) setHpBar(av,m.hpTarget/Math.max(1,m.maxHpTarget||wildFight.maxHpOpp),m.hpTarget,m.maxHpTarget||wildFight.maxHpOpp); }
+ if(m.context==='wild'&&wildFight&&m.deflected>0&&typeof m.hpYou==='number'){ wildFight.hpYou=m.hpYou; renderWildBar(); if(myAv){ spawnDeflectSplatOn(myAv,m.deflected); startFlinch(myAv,av,false); } logLine(`↩️ ${m.targetName||'They'} deflected ${m.deflected} back onto you!`); }
  if(m.froze) toast(`❄️ ${m.targetName||'Target'} is frozen solid for 5 seconds!`);
  else if(m.outcome==='miss') logLine(`🪄 Your ${spName} missed ${m.targetName||'the target'}.`);
  else if(m.outcome==='blocked') logLine(`🪄 Your ${spName} was blocked by ${m.targetName||'the target'}.`);
@@ -7251,6 +7658,7 @@ function refreshFrozenFx(){
  const now=Date.now();
  for(const a of Object.values(avatars)){ const on=(a.frozenUntil||0)>now; setFrozenShell(a,on); if(a.fzEl) a.fzEl.textContent=on?'❄️ ':''; }
  for(const a of Object.values(npcAvatars)) setFrozenShell(a,(a.frozenUntil||0)>now);
+ for(const a of Object.values(pkerAvatars)) setFrozenShell(a,(a.frozenUntil||0)>now); // Stage 30: frozen PKers get the ice shell too
  for(const a of Object.values(fcAvatars)) setFrozenShell(a,(a.frozenUntil||0)>now);
  for(const a of Object.values(modAvatars)) setFrozenShell(a,(a.frozenUntil||0)>now);
 }
