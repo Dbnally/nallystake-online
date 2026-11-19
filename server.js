@@ -1747,6 +1747,8 @@ const AREAS = {
   // return gate, mirroring the Training Cave.
   magic: { name: 'Wizard Grounds', spawn: { x: 800, y: 720 } },
   range: { name: 'Ranger Camp', spawn: { x: 800, y: 720 } },
+  wilderness: { name: 'The Wilderness', spawn: { x: 800, y: 845 } }, // Stage 30: PvP — ditch crossing + obelisk teleport
+  purewild: { name: 'Pure Wild', spawn: { x: 800, y: 845 } }, // Stage 30: PK Noob's hop — no prayer, no food
 };
 const NPC_RANGE = 150; // server units — attack / stay-in-combat range (15 tiles at 10 units/tile)
 
@@ -1895,8 +1897,9 @@ function playersSnapshot(area) {
     // Stage 7C: what this player is visibly doing right now, so other
     // players can tell at a glance. A duel beats a monster fight,
     // which beats a just-used skill (4s window after the action).
+    skulled: !!p.skulled, // Stage 30 (Wilderness): 💀 overhead while skulled in the wild
     act: (p.duelId || p.modDuelId) ? 'duel'
-      : (p.npcFightId || p.barrowsFightId || p.fcRunId) ? 'fight'
+      : (p.npcFightId || p.barrowsFightId || p.fcRunId || (p.wildPairs && p.wildPairs.size)) ? 'fight'
       : (p.actAt && now - p.actAt < 4000) ? (p.actSkill || null)
       : null,
   }));
@@ -4670,6 +4673,681 @@ setInterval(() => {
   if (touched) broadcastSeaweed('cove');
 }, 1000);
 
+// ---------- Stage 30: the Wilderness (PvP, skulling, PKers, Pure Wild) ----------
+// Derek's settled rules, ported from the app version's Wilderness
+// (built there 2026-11-17/18) onto this game's real-multiplayer
+// architecture. Where the app and the online brief disagreed, the
+// brief won:
+//  * Walkable-connected (Derek's standing rule): a ditch crossing on
+//    the plaza's north edge (the east stretch, x 1020–1560) walks
+//    you in and out; the obelisk teleport is the shortcut IN.
+//    Teleporting OUT is refused above Wilderness level 20 or while
+//    teleblocked. The 🚪 Leave button WALKS you back to the ditch —
+//    you stay in the wild, and attackable, until you actually cross.
+//  * Geometry: each wild area is its own 1600x900 space like every
+//    area. The ditch is the SOUTH edge (y = 880); depth runs north.
+//    Wilderness level = 1 + floor(clamp((880 - y) / 880, 0, 1) * 50)
+//    → 1 at the ditch, 51 at the far north (the app's mapping).
+//  * Bracket (the app's rule): you may only attack / be attacked by
+//    a combatant whose combat level is within ±(the Wilderness
+//    level at the ATTACKER's position) of yours. Shallow wild
+//    (level < 20 on either side) is single-way: nobody already in a
+//    fight can be piled, and nobody in a fight can start a second.
+//  * SKULL: attacking first skulls you — weapon engage or a button
+//    cast, players and PKers alike. Attacking a skulled player
+//    never skulls you; fighting back against whoever struck you
+//    first never skulls you. The app's skull is session-only with
+//    NO countdown — it lasts until you leave the Wilderness or die
+//    there — and Derek's brief carries no timer either, so online
+//    matches the app: the skull clears on leaving the wild (ditch,
+//    teleport, PK Noob hop) or on death. It is never saved, and a
+//    logout in the wild is a death (below), so no skull survives a
+//    logout. Shown as 💀 overhead via the players snapshot.
+//  * DEATH: unskulled keeps the 3 most valuable backpack stacks
+//    (valued by stackValueOf; personal notes are never at risk and
+//    never counted) and ALL worn gear; everything else drops as
+//    standard piles where you fell. SKULLED drops EVERYTHING —
+//    the whole backpack AND every worn piece. The bank is never
+//    touched. Piles follow the standard pile rules: anyone in
+//    range can loot them, 3-minute despawn (the app keeps loot on
+//    the ground until picked up — online's shared pile lifetime
+//    wins; documented deviation). Respawn is the plaza, as usual.
+//  * DISCONNECT mid-fight in the wild = death with drops (the
+//    online reading of the app's combat-logout danger, and the
+//    same spirit as a duel forfeit).
+//  * TELEBLOCK: Hex Hanna, the magic PKer — when one of her casts
+//    CONNECTS on a player whose Deflect Magic prayer is off, the
+//    player is teleblocked for 12 seconds (the app's 20 ticks).
+//    The swing still lands; teleblock is in addition. (The app
+//    rolls its hit chance separately; riding her connected cast
+//    is this port's documented simplification.)
+//  * PURE WILD + PK NOOB: PK Noob stands in the plaza by the north
+//    gate and in the wild by the ditch; talking to him hops you
+//    between the normal wild and `purewild` — the same map and
+//    rules, but PRAYER and FOOD are hard-blocked server-side for
+//    everyone (players and PKers: no flicking, no eating).
+//  * A wild fight is FREE combat on the shared Stage 27 machinery
+//    (rollStyleAttack: procs, PvP Deflect, all three styles,
+//    button casts via cast_at kind 'wild'), real levels (NOT the
+//    duel equalisation), duel-rate XP, free movement throughout —
+//    melee closes to reach exactly like Stage 8/12/26 (closing
+//    ticks + moveTo; a due swing fires on return to reach), and NO
+//    auto-retaliate: you swing only on your own attack order.
+//    Face-and-chase (Derek, 2026-11-18): an attack order turns the
+//    attacker to face the target and walks/runs them in (client
+//    closing machinery, run-orb speed); PKers face + chase the
+//    same way server-side. NO rating, NO W/L, NO escrow — this
+//    never touches startDuel.
+const WILD_AREAS = ['wilderness', 'purewild'];
+const WILD_DITCH_Y = 880;
+const WILD_EXIT_MIN_Y = 840; // a gate exit only counts from beside the ditch
+const PK_NOOB_PLAZA = { x: 1150, y: 120 };
+const PK_NOOB_WILD = { x: 900, y: 830 };
+const WILD_OBELISK_POS = { x: 700, y: 830 };
+const TELEBLOCK_MS = 12000;
+const PKER_RESPAWN_MS = 25000;
+const WILD_PAIR_IDLE_TICKS = 100; // 60s with no swing attempt breaks a fight off
+const PRAYER_FOR_ATTACK_STYLE = { melee: 'melee', ranged: 'missiles', magic: 'magic' };
+function isWildArea(a) { return WILD_AREAS.includes(a); }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function wildLevelAt(y) { return 1 + Math.floor(clamp((WILD_DITCH_Y - y) / WILD_DITCH_Y, 0, 1) * 50); }
+// Per-stack valuation for the 3-kept-stacks rule: gold at face
+// value; anything with a price at that price; never-sellable gear
+// (Barrows pieces and the like) at a flat gear value so it is not
+// treated as worthless next to a stack of potions. (The game has
+// no general stack valuation elsewhere — duel staking never
+// values stacks — so this follows the brief's fallback: sell
+// price x qty, with buy price standing in where sellOnly is 0.)
+function stackValueOf(item, qty) {
+  if (item === 'gold') return qty;
+  const def = itemDef(item);
+  if (!def) return 0;
+  const unit = def.buy || def.sellOnly || ((def.kind === 'weapon' || def.kind === 'armour') ? 1000 : 0);
+  return unit * qty;
+}
+let pileSeq = 900000; // wild-death / PKer loot piles share the piles map
+function spawnPile(area, item, qty, x, y, owner) {
+  const id = 'wp' + (++pileSeq);
+  piles.set(id, { id, item, qty, x: clamp(x, 10, 1590), y: clamp(y, 10, 890), area, owner: owner || null, bornAt: Date.now() });
+  return id;
+}
+
+// ----- combatant refs: 'p:<userKey>' for players, 'n:<pkerId>' for PKers -----
+function wildRefPlayer(key) { return 'p:' + key; }
+function wildRefPker(id) { return 'n:' + id; }
+function combatant(ref) {
+  if (!ref) return null;
+  if (ref[0] === 'p') {
+    const key = ref.slice(2);
+    const sess = online.get(key);
+    if (!sess) return null;
+    if (sess.wildHp == null && isWildArea(sess.area)) { // belt-and-braces: entering always sets the pool
+      sess.wildMaxHp = Math.max(1, levelForXp((sess.profile.xp && sess.profile.xp.hitpoints) || 0));
+      sess.wildHp = sess.wildMaxHp;
+    }
+    return {
+      ref, isPlayer: true, key, sess, profile: sess.profile, name: sess.profile.username,
+      x: sess.x, y: sess.y, area: sess.area,
+      hp: () => (sess.wildHp == null ? (sess.wildMaxHp || 1) : sess.wildHp),
+      setHp: (v) => { sess.wildHp = v; },
+      maxHp: () => sess.wildMaxHp || 1,
+      frozenUntil: () => sess.frozenUntil || 0,
+    };
+  }
+  const pk = pkers.get(ref.slice(2));
+  if (!pk) return null;
+  return {
+    ref, isPlayer: false, id: pk.id, pker: pk, profile: pk.profile, name: pk.name,
+    x: pk.x, y: pk.y, area: pk.area,
+    hp: () => pk.hp, setHp: (v) => { pk.hp = v; },
+    maxHp: () => pk.maxHp,
+    frozenUntil: () => pk.frozenUntil || 0,
+  };
+}
+
+// ----- wild pairs: one record per fight, combatants may hold several (deep wild) -----
+const wildFights = new Map(); // id -> pair
+let wildPairSeq = 0;
+let wildTickCount = 0;
+function pairOtherRef(pair, ref) { return pair.a === ref ? pair.b : pair.a; }
+function wildPairBetween(refA, refB) {
+  for (const f of wildFights.values()) if ((f.a === refA && f.b === refB) || (f.a === refB && f.b === refA)) return f;
+  return null;
+}
+function wildPairsOf(ref) { return [...wildFights.values()].filter((f) => !f.done && (f.a === ref || f.b === ref)); }
+function trackWildPair(ref, pair) {
+  if (ref[0] === 'p') { const s = online.get(ref.slice(2)); if (s) { s.wildPairs = s.wildPairs || new Set(); s.wildPairs.add(pair.id); } }
+  else { const pk = pkers.get(ref.slice(2)); if (pk) pk.pairIds.add(pair.id); }
+}
+function untrackWildPair(ref, pair) {
+  if (ref[0] === 'p') { const s = online.get(ref.slice(2)); if (s && s.wildPairs) s.wildPairs.delete(pair.id); }
+  else { const pk = pkers.get(ref.slice(2)); if (pk) pk.pairIds.delete(pair.id); }
+}
+function wildStartMsg(pair, forRef) {
+  const meC = combatant(forRef);
+  const oppC = combatant(pairOtherRef(pair, forRef));
+  if (!meC || !oppC || !meC.isPlayer) return;
+  send(meC.sess.ws, {
+    type: 'wild_fight', phase: 'start',
+    oppKind: oppC.isPlayer ? 'player' : 'pker', oppId: oppC.isPlayer ? oppC.name : oppC.id, oppName: oppC.name,
+    oppCbt: oppC.isPlayer ? Math.floor(combatLevelOf(levelsOf(oppC.profile))) : oppC.pker.cbt,
+    hpYou: meC.hp(), maxHpYou: meC.maxHp(), hpOpp: Math.max(0, oppC.hp()), maxHpOpp: oppC.maxHp(),
+    energyYou: meC.profile.specialEnergy,
+    theyStarted: pair.aggro === pairOtherRef(pair, forRef),
+    wildLevel: wildLevelAt(meC.y), pure: pair.area === 'purewild',
+  });
+}
+function createWildPair(area, refA, refB, aggroRef) {
+  const pair = {
+    id: 'wf' + (++wildPairSeq), area, a: refA, b: refB, aggro: aggroRef,
+    eng: { [refA]: false, [refB]: false }, next: { [refA]: 0, [refB]: 0 }, spec: { [refA]: false, [refB]: false },
+    lastAction: wildTickCount, lastRefuse: {}, tickRes: {}, notes: {}, done: false,
+  };
+  wildFights.set(pair.id, pair);
+  trackWildPair(refA, pair);
+  trackWildPair(refB, pair);
+  wildStartMsg(pair, refA);
+  wildStartMsg(pair, refB);
+  return pair;
+}
+function endWildPair(pair, reasonFor) {
+  if (!pair || pair.done) return;
+  pair.done = true;
+  wildFights.delete(pair.id);
+  untrackWildPair(pair.a, pair);
+  untrackWildPair(pair.b, pair);
+  for (const ref of [pair.a, pair.b]) {
+    const C = combatant(ref);
+    if (C && C.isPlayer) {
+      if (C.sess.wildTarget === pairOtherRef(pair, ref)) C.sess.wildTarget = null;
+      const O = combatant(pairOtherRef(pair, ref));
+      send(C.sess.ws, {
+        type: 'wild_fight', phase: 'end',
+        oppKind: O ? (O.isPlayer ? 'player' : 'pker') : 'player', oppId: O ? (O.isPlayer ? O.name : O.id) : '', oppName: O ? O.name : '',
+        reason: (reasonFor && reasonFor[ref]) || 'gone',
+      });
+    }
+  }
+}
+function engageWild(pair, ref) {
+  if (!pair || pair.done || pair.eng[ref]) return;
+  pair.eng[ref] = true;
+  pair.next[ref] = wildTickCount + 1; // first swing arms for the next tick (Stage 12 pattern)
+  pair.lastAction = wildTickCount;
+  const C = combatant(ref);
+  if (C && C.isPlayer) C.sess.wildTarget = pairOtherRef(pair, ref);
+}
+// The skull rule: striking a combatant who is not skulled and has
+// not struck YOU first (in this pair, or — for a PKer — ever since
+// it respawned) skulls the attacker. Fighting back is always clean.
+function wildSkullCheck(attKey, defRef) {
+  const attSess = online.get(attKey);
+  if (!attSess || attSess.skulled) return;
+  const defC = combatant(defRef);
+  if (!defC) return;
+  if (defC.isPlayer && defC.sess.skulled) return; // attacking a skulled player never skulls
+  const pair = wildPairBetween(wildRefPlayer(attKey), defRef);
+  if (pair && pair.aggro === defRef) return; // they struck me first in this fight
+  if (!defC.isPlayer && defC.pker.aggroPlayers.has(attKey)) return; // this PKer came for me first
+  attSess.skulled = true;
+  send(attSess.ws, { type: 'chat', from: 'Game', text: '💀 You attacked first — you are SKULLED! Die now and you drop EVERYTHING. The skull clears when you leave the Wilderness.' });
+  broadcastState();
+}
+// Entering the wild cancels anything that must not follow a player
+// in (duel challenges, trades, party invites, stake offers) —
+// party MEMBERSHIP itself stays, per the disconnect patterns.
+function cancelWildPendings(key) {
+  for (const [cid, ch] of [...challenges]) {
+    if (ch.from === key || ch.to === key) { challenges.delete(cid); broadcastChallengeClear(ch.from); }
+  }
+  clearPartyInvitesInvolving(key);
+  const myTrade = activeTradeForKey(key);
+  if (myTrade) cancelTrade(myTrade, 'Trade cancelled — a player entered the Wilderness.');
+  clearTradeRequestsInvolving(key);
+  let boardChanged = false;
+  for (const [oid, o] of [...stakeOffers]) {
+    if (o.status === 'open' && o.fromKey === key) { stakeOffers.delete(oid); boardChanged = true; }
+  }
+  if (boardChanged) broadcastStakeBoard();
+  const myMatch = stakeMatchForKey(key);
+  if (myMatch) cancelStakeMatch(myMatch, 'The stake match is cancelled — a fighter entered the Wilderness.');
+}
+function enterWildState(key, area) {
+  const sess = online.get(key);
+  if (!sess) return;
+  sess.skulled = false;
+  sess.teleblockUntil = 0;
+  sess.wildTarget = null;
+  sess.wildMaxHp = Math.max(1, levelForXp((sess.profile.xp && sess.profile.xp.hitpoints) || 0));
+  sess.wildHp = sess.wildMaxHp;
+  if (area === 'purewild' && sess.profile.activePrayer) sess.profile.activePrayer = null; // Pure Wild: no prayer for anyone
+  send(sess.ws, wildStateMsg(area, sess));
+}
+// Leaving the wild (any route): my fights end — I got out, my
+// opponents' quarry escaped — and skull / teleblock / HP pool go.
+function exitWildCleanup(key) {
+  const sess = online.get(key);
+  if (!sess) return;
+  const myRef = wildRefPlayer(key);
+  for (const pair of wildPairsOf(myRef)) {
+    endWildPair(pair, { [myRef]: 'left', [pairOtherRef(pair, myRef)]: 'escaped' });
+  }
+  if (sess.wildPairs) sess.wildPairs.clear();
+  sess.wildTarget = null;
+  sess.skulled = false;
+  sess.teleblockUntil = 0;
+  sess.wildHp = null;
+  sess.wildMaxHp = 0;
+}
+// Death in the wild — Derek's drop rules (see the header). Also
+// the disconnect-in-a-wild-fight path (opts.disconnect).
+function wildDeath(key, killerName, opts = {}) {
+  const sess = online.get(key);
+  if (!sess) return;
+  const profile = sess.profile;
+  const area = sess.area;
+  const myRef = wildRefPlayer(key);
+  if (!opts.skipPairEnd) {
+    for (const pair of wildPairsOf(myRef)) {
+      endWildPair(pair, { [myRef]: 'death', [pairOtherRef(pair, myRef)]: 'kill' });
+    }
+  }
+  if (sess.wildPairs) sess.wildPairs.clear();
+  sess.wildTarget = null;
+  if (!isWildArea(area)) { sess.skulled = false; sess.teleblockUntil = 0; sess.wildHp = null; return; }
+  const wasSkulled = !!sess.skulled;
+  const dx = sess.x, dy = sess.y;
+  const jit = () => (Math.random() * 24 - 12);
+  // Risk pool: every backpack stack except personal notes (Stage 9:
+  // a note is personal — it is never dropped, traded or staked).
+  const entries = profile.backpack
+    .map((s, i) => ({ s, i, value: stackValueOf(s.item, s.qty) }))
+    .filter((e) => { const d = itemDef(e.s.item); return !(d && d.kind === 'note'); });
+  let kept = [];
+  let lost = entries;
+  if (!wasSkulled) {
+    const sorted = [...entries].sort((a, b) => b.value - a.value);
+    kept = sorted.slice(0, 3);
+    lost = sorted.slice(3);
+  }
+  const lostIdx = new Set(lost.map((e) => e.i));
+  profile.backpack = profile.backpack.filter((s, i) => !lostIdx.has(i));
+  for (const e of lost) spawnPile(area, e.s.item, e.s.qty, dx + jit(), dy + jit(), profile.username);
+  const gearLost = [];
+  if (wasSkulled && profile.worn) {
+    for (const slot of WORN_SLOTS) {
+      const it = profile.worn[slot];
+      if (it) { spawnPile(area, it, 1, dx + jit(), dy + jit(), profile.username); profile.worn[slot] = null; gearLost.push(it); }
+    }
+  }
+  syncGoldMirror(profile);
+  save(key);
+  broadcastPiles(area);
+  sess.skulled = false;
+  sess.teleblockUntil = 0;
+  sess.wildHp = null;
+  sess.wildMaxHp = 0;
+  broadcast({
+    type: 'chat', from: 'Game',
+    text: opts.disconnect
+      ? `💀 ${profile.username} logged out in combat in the Wilderness — their loot dropped where they stood.`
+      : killerName
+        ? `💀 ${profile.username} was killed by ${killerName} in the Wilderness!`
+        : `💀 ${profile.username} died in the Wilderness!`,
+  });
+  const note = opts.disconnect
+    ? '☠ You logged out mid-fight in the Wilderness — that counts as a death there.'
+    : `☠ You died in the Wilderness${killerName ? ` — ${killerName} got you` : ''}!`
+      + (wasSkulled
+        ? ' You were 💀 SKULLED, so EVERYTHING dropped — backpack and worn gear.'
+        : (kept.length ? ` You kept your ${kept.length} most valuable stack${kept.length > 1 ? 's' : ''} and everything you were wearing.` : ''))
+      + ((lost.length || gearLost.length) ? ' The rest lies where you fell — run back and grab the piles before someone else does (they fade in 3 minutes).' : '')
+      + ' Your bank was never touched.';
+  respawnPlayer(key, note);
+  sendProfile(key);
+}
+
+// ----- NPC PKers (the app's roster, ported in spirit) -----
+// The app's abstract acc/def/maxHit numbers do not map 1:1 onto
+// this game's OSRS-style rolls, so each PKer's synthetic profile
+// is tuned to land close: attack level = the app's accuracy,
+// defence level = the app's defence, and strength/weapon picked
+// so the shared max-hit formula lands within ~2 of the app's
+// maxHit (Hex Hanna casts Fire Strike at Magic 20 for max ~15;
+// Bolt Bram shoots iron arrows at Ranged 20 for max ~17).
+const PKER_DEFS = [
+  { id: 'rex', name: 'Rusher Rex', cbt: 45, hp: 52, style: 'melee', weapon: 'bronze_sword', atk: 50, str: 1, def: 40, food: 3, x: 565, y: 621, greet: 'Sit.' },
+  { id: 'wanda', name: 'Wild Wanda', cbt: 58, hp: 66, style: 'melee', weapon: 'bronze_sword', atk: 58, str: 1, def: 48, food: 4, x: 1082, y: 518, greet: 'Nice stuff. Hand it over.' },
+  { id: 'hanna', name: 'Hex Hanna', cbt: 71, hp: 74, style: 'magic', weapon: 'mystic_staff', spell: 'fire_strike', atk: 20, str: 1, def: 55, food: 4, x: 424, y: 311, greet: 'No teleports past me, sweetie.', teleblock: true },
+  { id: 'bram', name: 'Bolt Bram', cbt: 84, hp: 84, style: 'ranged', weapon: 'magic_shortbow', atk: 20, str: 1, def: 62, food: 5, x: 1224, y: 233, greet: "Run and I'll still hit you." },
+  { id: 'stabs', name: 'Sir Stabsalot', cbt: 97, hp: 92, style: 'melee', weapon: 'mithril_sword', atk: 80, str: 4, def: 70, food: 5, x: 612, y: 129, greet: 'Your stuff or your life. Both, actually.' },
+  { id: 'venom', name: 'Queen Venom', cbt: 112, hp: 99, style: 'melee', weapon: 'rune_sword', atk: 86, str: 1, def: 78, food: 6, x: 1035, y: 52, greet: 'Deep wild is mine. Pay the toll.' },
+];
+function pkerProfile(def) {
+  const xp = defaultXp();
+  const setLv = (skill, lv) => { xp[skill] = XP_TABLE[Math.max(1, Math.min(99, lv))] || 0; };
+  setLv('attack', def.atk);
+  setLv('strength', def.str);
+  setLv('defence', def.def);
+  setLv('hitpoints', Math.min(99, def.hp));
+  if (def.style === 'ranged') setLv('ranged', def.atk);
+  if (def.style === 'magic') setLv('magic', def.atk);
+  const backpack = [];
+  if (def.style === 'ranged') backpack.push({ item: 'iron_arrow', qty: 99999 });
+  if (def.style === 'magic') backpack.push({ item: 'fire_rune', qty: 99999 });
+  return {
+    username: def.name, style: 'aggressive', worn: { ...emptyWorn(), weapon: def.weapon },
+    xp, backpack, spell: def.spell || 'air_strike', activePrayer: null,
+    prayerPoints: 99, prayerMax: 99, specialEnergy: 0,
+  };
+}
+const pkers = new Map(); // '<area>:<defId>' -> instance; each wild variant gets its own roster
+for (const area of WILD_AREAS) {
+  for (const def of PKER_DEFS) {
+    const id = area + ':' + def.id;
+    pkers.set(id, {
+      id, defId: def.id, def, area, name: def.name, cbt: def.cbt, style: def.style,
+      x: def.x, y: def.y, homeX: def.x, homeY: def.y,
+      hp: def.hp, maxHp: def.hp, alive: true, respawnAt: 0,
+      food: area === 'purewild' ? 0 : def.food, foodMax: def.food, eatNextTick: 0,
+      targetKey: null, lastTargetName: null, fleeing: false,
+      aggroPlayers: new Set(), pairIds: new Set(), frozenUntil: 0,
+      wanderX: def.x, wanderY: def.y, wanderNextTick: 0,
+      profile: pkerProfile(def),
+    });
+  }
+}
+function wildStateMsg(area, sess) {
+  const now = Date.now();
+  return {
+    type: 'wild_state', area,
+    pkers: [...pkers.values()].filter((p) => p.area === area && p.alive).map((p) => ({
+      id: p.id, name: p.name, cbt: p.cbt, style: p.style,
+      x: Math.round(p.x), y: Math.round(p.y), hp: Math.max(0, p.hp), maxHp: p.maxHp,
+      frozenUntil: (p.frozenUntil && p.frozenUntil > now) ? p.frozenUntil : 0,
+    })),
+    you: sess ? {
+      level: wildLevelAt(sess.y), skulled: !!sess.skulled,
+      teleblockLeft: Math.max(0, Math.ceil(((sess.teleblockUntil || 0) - now) / 1000)),
+      hp: sess.wildHp, maxHp: sess.wildMaxHp || 0, pure: area === 'purewild',
+    } : null,
+  };
+}
+function broadcastWildState(area) {
+  for (const p of online.values()) if (p.area === area) send(p.ws, wildStateMsg(area, p));
+}
+function pkerDeath(pk, killerKey) {
+  if (!pk.alive) return; // already gone (fled) — no double loot
+  const pkRef = wildRefPker(pk.id);
+  pk.alive = false;
+  pk.hp = 0;
+  pk.respawnAt = Date.now() + PKER_RESPAWN_MS;
+  pk.targetKey = null;
+  pk.fleeing = false;
+  for (const pair of wildPairsOf(pkRef)) {
+    endWildPair(pair, { [pkRef]: 'gone', [pairOtherRef(pair, pkRef)]: 'kill' });
+  }
+  pk.pairIds.clear();
+  // The app's kill loot, as piles where he fell.
+  const jit = () => (Math.random() * 24 - 12);
+  const coins = randiRange(pk.cbt * 2, pk.cbt * 6);
+  spawnPile(pk.area, 'gold', coins, pk.x + jit(), pk.y + jit(), pk.name);
+  const loot = [`${coins} coins`];
+  if (Math.random() < 0.40) { const q = randiRange(1, 2); spawnPile(pk.area, 'restore_potion', q, pk.x + jit(), pk.y + jit(), pk.name); loot.push('restore potion'); }
+  if (Math.random() < 0.35) { const q = randiRange(1, 2); spawnPile(pk.area, 'ration', q, pk.x + jit(), pk.y + jit(), pk.name); loot.push('food'); }
+  if (Math.random() < 0.25) { spawnPile(pk.area, 'prayer_potion', 1, pk.x + jit(), pk.y + jit(), pk.name); loot.push('prayer potion'); }
+  if (Math.random() < 0.15) { const g = GOODS[randiRange(0, GOODS.length - 1)]; spawnPile(pk.area, g.id, 1, pk.x + jit(), pk.y + jit(), pk.name); loot.push(g.name); }
+  broadcastPiles(pk.area);
+  if (killerKey) {
+    const ks = online.get(killerKey);
+    if (ks) send(ks.ws, { type: 'chat', from: 'Game', text: `💀 You killed ${pk.name} (combat ${pk.cbt})! Loot where he fell: ${loot.join(', ')} — grab the piles.` });
+  }
+  broadcast({ type: 'chat', from: 'Game', text: `💀 ${pk.name} was killed in the Wilderness!` });
+  broadcastWildState(pk.area);
+}
+// One wild swing, resolved on the shared Stage 27 machinery.
+// Returns null (no pair context), { closing } (out of reach — the
+// due swing holds and fires on return to reach, Stage 12's rule),
+// { refused } (no arrows / no runes — timer untouched), or the
+// swing result. PKers never queue specials.
+function wildResolveSwing(pair, attRef) {
+  const defRef = pairOtherRef(pair, attRef);
+  const A = combatant(attRef);
+  const D = combatant(defRef);
+  if (!A || !D) return null;
+  const style = attackStyleOf(A.profile);
+  const dist = Math.hypot(A.x - D.x, A.y - D.y);
+  if (dist > styleRange(style)) return { closing: true, style };
+  const useSpec = A.isPlayer ? !!pair.spec[attRef] : false;
+  const res = rollStyleAttack(A.profile, D.profile, useSpec, null, true);
+  if (res.refused) return { refused: res.refused, style: res.style || style };
+  pair.spec[attRef] = false;
+  if (useSpec) A.profile.specialEnergy = Math.max(0, A.profile.specialEnergy - SPECIAL_COST);
+  pair.next[attRef] = wildTickCount + swingSpeed(res.style);
+  pair.lastAction = wildTickCount;
+  const total = res.dmg + (res.bonusDmg || 0);
+  D.setHp(Math.max(0, D.hp() - total));
+  if (res.deflected) A.setHp(Math.max(0, A.hp() - res.deflected));
+  if (A.isPlayer) {
+    addXp(A.key, swingXpGains(A.profile.style, res.style, total, res.spell));
+    if (total > 0) A.profile.specialEnergy = Math.min(100, A.profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
+  }
+  // Hex Hanna's teleblock: a CONNECTED cast on a player whose
+  // Deflect Magic is off blocks their teleports for 12s.
+  let teleblocked = false;
+  if (!A.isPlayer && A.pker.def.teleblock && D.isPlayer && res.style === 'magic' && res.connected
+      && D.profile.activePrayer !== 'magic' && Date.now() >= (D.sess.teleblockUntil || 0)) {
+    D.sess.teleblockUntil = Date.now() + TELEBLOCK_MS;
+    teleblocked = true;
+  }
+  return { swung: true, style: res.style, dmg: res.dmg, bonus: res.bonusDmg || 0, deflected: res.deflected || 0, outcome: res.outcome, special: useSpec, notes: res.notes || [], teleblocked };
+}
+function sendWildTick(pair) {
+  for (const ref of [pair.a, pair.b]) {
+    const C = combatant(ref);
+    if (!C || !C.isPlayer) continue;
+    const oppRef = pairOtherRef(pair, ref);
+    const O = combatant(oppRef);
+    if (!O) continue;
+    const mine = pair.tickRes[ref];
+    const theirs = pair.tickRes[oppRef];
+    const notes = [...((pair.notes && pair.notes[ref]) || [])];
+    if (mine && mine.notes) notes.push(...mine.notes);
+    if (theirs && theirs.notes && theirs.notes.length) notes.push(`Opponent: ${theirs.notes.join(' ')}`);
+    if (theirs && theirs.teleblocked) notes.push('🌀 Teleblocked! You cannot teleport for 12 seconds.');
+    send(C.sess.ws, {
+      type: 'wild_fight', phase: 'tick',
+      oppKind: O.isPlayer ? 'player' : 'pker', oppId: O.isPlayer ? O.name : O.id, oppName: O.name,
+      hpYou: C.hp(), maxHpYou: C.maxHp(), hpOpp: Math.max(0, O.hp()), maxHpOpp: O.maxHp(),
+      youHit: mine && mine.swung ? mine.dmg : null, oppHit: theirs && theirs.swung ? theirs.dmg : null,
+      youOutcome: mine && mine.swung ? mine.outcome : null, oppOutcome: theirs && theirs.swung ? theirs.outcome : null,
+      youBonus: mine && mine.swung ? mine.bonus : null, oppBonus: theirs && theirs.swung ? theirs.bonus : null,
+      youDeflected: mine && mine.swung ? mine.deflected : null, oppDeflected: theirs && theirs.swung ? theirs.deflected : null,
+      youSpecial: mine && mine.swung ? !!mine.special : false, oppSpecial: theirs && theirs.swung ? !!theirs.special : false,
+      energyYou: C.profile.specialEnergy,
+      closing: mine && mine.closing ? true : undefined,
+      moveTo: mine && mine.closing ? approachPoint(C.x, C.y, O.x, O.y) : undefined,
+      note: notes.length ? notes.join(' ') : undefined,
+      oppFrozenUntil: O.frozenUntil() > Date.now() ? O.frozenUntil() : 0,
+      wildLevel: wildLevelAt(C.y), skulled: !!C.sess.skulled,
+      teleblockLeft: Math.max(0, Math.ceil(((C.sess.teleblockUntil || 0) - Date.now()) / 1000)),
+    });
+  }
+}
+// The wild loop: PKer AI + pair swings + per-area state, on the
+// game's 0.6s tick. PKers move server-side (open field — scenery
+// never blocks, so no stuck states); players move client-side and
+// the pair tick's closing/moveTo walks them in, exactly like duels.
+setInterval(() => {
+  wildTickCount++;
+  const now = Date.now();
+  // --- PKer respawns ---
+  for (const pk of pkers.values()) {
+    if (!pk.alive && pk.respawnAt && now >= pk.respawnAt) {
+      pk.alive = true;
+      pk.hp = pk.maxHp;
+      pk.x = pk.homeX + randiRange(-30, 30);
+      pk.y = pk.homeY + randiRange(-30, 30);
+      pk.food = pk.area === 'purewild' ? 0 : pk.foodMax;
+      pk.fleeing = false;
+      pk.targetKey = null;
+      pk.aggroPlayers.clear();
+      pk.profile.activePrayer = null;
+      broadcastWildState(pk.area);
+    }
+  }
+  // --- PKer AI ---
+  for (const pk of pkers.values()) {
+    if (!pk.alive) continue;
+    const pkRef = wildRefPker(pk.id);
+    // Fleeing: no food and nearly dead — run for the ditch. Its
+    // fights end (the quarry escaped) and crossing out despawns it
+    // until the respawn timer, keeping its loot and life (the app).
+    if (pk.fleeing) {
+      if ((pk.frozenUntil || 0) <= now) stepToward(pk, pk.x, 895, APPROACH_STEP);
+      if (pk.y >= WILD_DITCH_Y - 2) {
+        pk.alive = false;
+        pk.respawnAt = now + PKER_RESPAWN_MS;
+        pk.fleeing = false;
+        for (const pr of wildPairsOf(pkRef)) endWildPair(pr, { [pkRef]: 'gone', [pairOtherRef(pr, pkRef)]: 'escaped' });
+        const tSess = pk.targetKey ? online.get(pk.targetKey) : null;
+        if (tSess) send(tSess.ws, { type: 'chat', from: 'Game', text: `🏃 ${pk.name} fled across the ditch and escaped — no loot this time.` });
+        pk.targetKey = null;
+        broadcastWildState(pk.area);
+      }
+      continue;
+    }
+    if (pk.hp <= Math.max(1, Math.floor(pk.maxHp * 0.22)) && pk.food <= 0 && wildPairsOf(pkRef).length) { pk.fleeing = true; for (const pair of wildPairsOf(pkRef)) endWildPair(pair, { [pkRef]: 'gone', [pairOtherRef(pair, pkRef)]: 'escaped' }); continue; }
+    // Target validation.
+    let tgt = pk.targetKey ? online.get(pk.targetKey) : null;
+    if (tgt && (tgt.area !== pk.area || !isWildArea(tgt.area))) { pk.targetKey = null; tgt = null; }
+    if (!tgt) {
+      // Acquire: nearest in-bracket player in this area. Shallow
+      // wild protects a player already in a fight from being piled.
+      let best = null, bestD = 820;
+      for (const [k, s] of online.entries()) {
+        if (s.area !== pk.area) continue;
+        if (Math.abs(pk.cbt - combatLevelOf(levelsOf(s.profile))) > wildLevelAt(pk.y)) continue;
+        if (wildLevelAt(s.y) < 20 && s.wildPairs && s.wildPairs.size) continue;
+        const d = Math.hypot(s.x - pk.x, s.y - pk.y);
+        if (d < bestD) { best = { key: k, sess: s }; bestD = d; }
+      }
+      if (best) {
+        pk.targetKey = best.key;
+        pk.lastTargetName = best.sess.profile.username;
+        pk.aggroPlayers.add(best.key);
+        const pair = createWildPair(pk.area, pkRef, wildRefPlayer(best.key), pkRef);
+        engageWild(pair, pkRef);
+        send(best.sess.ws, { type: 'chat', from: pk.name, text: pk.def.greet });
+        tgt = best.sess;
+      }
+    }
+    if (tgt) {
+      // Eat at <= 45% HP (never in Pure Wild — food is 0 there).
+      if (pk.area !== 'purewild' && pk.food > 0 && pk.hp <= Math.floor(pk.maxHp * 0.45) && wildTickCount >= pk.eatNextTick) {
+        pk.food--;
+        pk.hp = Math.min(pk.maxHp, pk.hp + 8);
+        pk.eatNextTick = wildTickCount + 4;
+        const pair = wildPairBetween(pkRef, wildRefPlayer(pk.targetKey));
+        if (pair) { pair.notes = pair.notes || {}; (pair.notes[wildRefPlayer(pk.targetKey)] = pair.notes[wildRefPlayer(pk.targetKey)] || []).push(`${pk.name} eats a ration (+8 HP).`); }
+      }
+      // Prayer flick: counter the target's attack style with the
+      // matching Deflect (PvP rule) — never in Pure Wild.
+      pk.profile.activePrayer = pk.area === 'purewild' ? null : (PRAYER_FOR_ATTACK_STYLE[attackStyleOf(tgt.profile)] || null);
+      // A pair the PLAYER opened (attack order or cast) with this
+      // PKer as its target: the PKer answers by engaging it.
+      const answerPair = wildPairBetween(pkRef, wildRefPlayer(pk.targetKey));
+      if (answerPair && !answerPair.eng[pkRef]) engageWild(answerPair, pkRef);
+      // Chase: face + close until inside weapon reach (swings are
+      // resolved in the pair pass; a due swing holds out of reach).
+      if ((pk.frozenUntil || 0) <= now) {
+        const range = styleRange(attackStyleOf(pk.profile));
+        if (Math.hypot(tgt.x - pk.x, tgt.y - pk.y) > range * 0.85) stepToward(pk, tgt.x, tgt.y, APPROACH_STEP);
+      }
+      if (Math.hypot(tgt.x - pk.x, tgt.y - pk.y) > 900) pk.targetKey = null; // gave up the chase
+    } else {
+      // Wander near home.
+      if (wildTickCount >= pk.wanderNextTick) {
+        pk.wanderNextTick = wildTickCount + randiRange(3, 7);
+        pk.wanderX = clamp(pk.homeX + randiRange(-140, 140), 30, 1570);
+        pk.wanderY = clamp(pk.homeY + randiRange(-90, 90), 30, 860);
+      }
+      if ((pk.frozenUntil || 0) <= now && Math.hypot(pk.wanderX - pk.x, pk.wanderY - pk.y) > 12) stepToward(pk, pk.wanderX, pk.wanderY, 20);
+    }
+  }
+  // --- pair swings ---
+  for (const pair of [...wildFights.values()]) {
+    if (pair.done) continue;
+    // A PKer that left the world (fled across the ditch) takes its
+    // fights with it — nobody keeps swinging at a ghost.
+    const aPk = pair.a[0] === 'n' ? pkers.get(pair.a.slice(2)) : null;
+    const bPk = pair.b[0] === 'n' ? pkers.get(pair.b.slice(2)) : null;
+    if ((aPk && !aPk.alive) || (bPk && !bPk.alive)) { endWildPair(pair, { [pair.a]: 'escaped', [pair.b]: 'escaped' }); continue; }
+    pair.tickRes = {};
+    pair.notes = pair.notes || {};
+    let anySwing = false;
+    for (const ref of [pair.a, pair.b]) {
+      if (!pair.eng[ref] || wildTickCount < (pair.next[ref] || 0)) continue;
+      const C = combatant(ref);
+      const O = combatant(pairOtherRef(pair, ref));
+      if (!C || !O) continue;
+      // Target lock (Stage 12's rule, extended): a combatant
+      // swings only in the pair matching its current target.
+      if (C.isPlayer && C.sess.wildTarget && C.sess.wildTarget !== pairOtherRef(pair, ref)) continue;
+      if (!C.isPlayer && C.pker.targetKey && wildRefPlayer(C.pker.targetKey) !== pairOtherRef(pair, ref)) continue;
+      const res = wildResolveSwing(pair, ref);
+      if (!res) continue;
+      if (res.refused) {
+        if (wildTickCount - (pair.lastRefuse[ref] || -99) >= 8) {
+          pair.lastRefuse[ref] = wildTickCount;
+          pair.notes[ref] = pair.notes[ref] || [];
+          pair.notes[ref].push(res.refused);
+        }
+        continue;
+      }
+      pair.tickRes[ref] = res;
+      if (res.swung) anySwing = true;
+    }
+    // Deaths (a double kill on one tick drops both, like the app's
+    // mutual-kill edge; deflect bounces can kill the attacker).
+    const aC = combatant(pair.a);
+    const bC = combatant(pair.b);
+    const deadA = aC && aC.hp() <= 0;
+    const deadB = bC && bC.hp() <= 0;
+    if (deadA || deadB) {
+      if (deadA && deadB) {
+        endWildPair(pair, { [pair.a]: 'death', [pair.b]: 'death' });
+        if (aC.isPlayer) wildDeath(aC.key, bC.name, { skipPairEnd: true }); else pkerDeath(aC.pker, bC.isPlayer ? bC.key : null);
+        if (bC.isPlayer) wildDeath(bC.key, aC.name, { skipPairEnd: true }); else pkerDeath(bC.pker, aC.isPlayer ? aC.key : null);
+      } else {
+        const dead = deadA ? aC : bC;
+        const killer = deadA ? bC : aC;
+        if (dead.isPlayer) wildDeath(dead.key, killer ? killer.name : null);
+        else pkerDeath(dead.pker, killer && killer.isPlayer ? killer.key : null);
+      }
+      continue;
+    }
+    sendWildTick(pair);
+    pair.notes = {}; // consumed by the tick send (eat notes, refusal notes)
+    // Idle break-off: 60s with no swing attempt while out of
+    // reach of each other ends the fight (nobody is trapped).
+    if (!anySwing && wildTickCount - pair.lastAction > WILD_PAIR_IDLE_TICKS) {
+      const aC2 = combatant(pair.a);
+      const bC2 = combatant(pair.b);
+      if (aC2 && bC2 && Math.hypot(aC2.x - bC2.x, aC2.y - bC2.y) > NPC_RANGE) {
+        endWildPair(pair, { [pair.a]: 'gone', [pair.b]: 'gone' });
+        for (const C of [aC2, bC2]) if (C.isPlayer) send(C.sess.ws, { type: 'chat', from: 'Game', text: 'The fight broke off — you lost each other in the Wilderness.' });
+      }
+    }
+  }
+  // --- per-area wild state (levels, skulls, teleblock timers, PKer positions) ---
+  for (const area of WILD_AREAS) {
+    let any = false;
+    for (const p of online.values()) if (p.area === area) { any = true; break; }
+    if (any) broadcastWildState(area);
+  }
+}, TICK_MS);
+
 // ---------- Tree Guardians (Stage 6) ----------
 // Derek's Stage 6 ask: a button that attacks the nearest tree and the
 // tree becomes an NPC ally — it teams with you, follows you and
@@ -4729,6 +5407,7 @@ setInterval(() => {
     const sess = online.get(ownerKey);
     if (!sess) { allies.delete(ownerKey); touched.add(ally.area); continue; }
     if (sess.duelId) continue; // duelling: the guardian waits outside the arena
+    if (isWildArea(sess.area)) continue; // Stage 30: guardians never follow into the Wilderness — they wait (and resume when the owner returns)
     if (ally.area !== sess.area) {
       touched.add(ally.area);
       ally.area = sess.area;
@@ -4845,6 +5524,12 @@ function cleanupDisconnect(key) {
   if (!user) return;
   const profile = user.profile;
   const me = online.get(key);
+  // Stage 30: disconnecting (or being replaced by a fresher
+  // session) while in a wild fight is a DEATH in the wild, drops
+  // and all — the online reading of the app's combat-logout
+  // danger. In the wild but not fighting: nothing to settle (the
+  // skull was never saved, so it simply never existed).
+  if (me && me.wildPairs && me.wildPairs.size) wildDeath(key, null, { disconnect: true });
   if (me && me.duelId) {
     const duel = duels.get(me.duelId);
     if (duel) endDuel(duel, duel.a === key ? duel.b : duel.a, 'forfeit — left mid-duel');
@@ -4947,7 +5632,7 @@ wss.on('connection', (ws, req) => {
   ensureV2(profile);
   // Everyone logs into the plaza (area is session-only, never saved).
   // Stage 13: the login scatter is the old 100..600 x 100..350 box x2.
-  online.set(key, { ws, profile, x: 200 + Math.random() * 1000, y: 200 + Math.random() * 500, area: 'plaza', duelId: null, modDuelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsCrypt: null, barrowsHp: null, barrowsDoorRolled: false, accDrain: 0, strDrain: 0, runDrainedUntil: 0, actSkill: null, actAt: 0, castReadyAt: 0, frozenUntil: 0 }); // Stage 24: castReadyAt = placed-button cast cooldown; frozenUntil = Freeze root expiry. Stage 28: barrowsCrypt = which brother's crypt the player is in; barrowsHp = the tunnel HP pool; accDrain/strDrain/runDrainedUntil = the app's brother drains
+  online.set(key, { ws, profile, x: 200 + Math.random() * 1000, y: 200 + Math.random() * 500, area: 'plaza', duelId: null, modDuelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsCrypt: null, barrowsHp: null, barrowsDoorRolled: false, accDrain: 0, strDrain: 0, runDrainedUntil: 0, actSkill: null, actAt: 0, castReadyAt: 0, frozenUntil: 0, wildPairs: null, wildTarget: null, skulled: false, teleblockUntil: 0, wildHp: null, wildMaxHp: 0 }); // Stage 30: wild* = Wilderness session state (skull, teleblock, wild HP pool) — session-only, never saved // Stage 24: castReadyAt = placed-button cast cooldown; frozenUntil = Freeze root expiry. Stage 28: barrowsCrypt = which brother's crypt the player is in; barrowsHp = the tunnel HP pool; accDrain/strDrain/runDrainedUntil = the app's brother drains
   send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot('plaza'), area: 'plaza' });
   send(ws, modNpcsMsg()); // Stage 22: the three plaza moderators + their busy flags
   send(ws, modLadderMsg(profile)); // Stage 22: stake-ladder progress
@@ -5059,6 +5744,29 @@ wss.on('connection', (ws, req) => {
       // (they are either about to ready up or standing in the
       // Waiting Area) — cancel the match first.
       if (stakeMatchForKey(key)) return send(ws, { type: 'error', message: 'You have a stake match waiting — ready up or cancel it at the Stake Board.' });
+      // Stage 30: Wilderness travel rules. HOW you leave the wild
+      // matters: the client sends via:'gate' for ditch crossings
+      // (which only count beside the ditch, heading to the plaza)
+      // and via:'teleport' for the teleport panel — teleporting
+      // out is refused above Wilderness level 20 or teleblocked.
+      // The two wild variants connect only through PK Noob, and
+      // Pure Wild is only reachable through him. Actually leaving
+      // ends my wild fights and clears skull/teleblock/HP pool.
+      const fromWild = isWildArea(me.area);
+      const toWild = isWildArea(to);
+      if (fromWild && to === me.area) return send(ws, { type: 'error', message: 'You are already here.' });
+      if (fromWild && toWild) return send(ws, { type: 'error', message: 'PK Noob runs the switch between the Wilderness and Pure Wild — talk to him by the ditch.' });
+      if (!fromWild && to === 'purewild') return send(ws, { type: 'error', message: 'Pure Wild is reached through PK Noob — he stands by the plaza\'s north gate.' });
+      if (fromWild && !toWild) {
+        const viaGate = m.via === 'gate' && to === 'plaza' && me.y >= WILD_EXIT_MIN_Y;
+        if (!viaGate) {
+          const lvl = wildLevelAt(me.y);
+          if (lvl > 20) return send(ws, { type: 'error', message: `A magical force stops you — no teleporting out above Wilderness level 20 (you are at level ${lvl}). Walk south to the ditch.` });
+          if (Date.now() < (me.teleblockUntil || 0)) return send(ws, { type: 'error', message: `🌀 You are teleblocked — no teleporting for ${Math.ceil((me.teleblockUntil - Date.now()) / 1000)} more seconds.` });
+        }
+        exitWildCleanup(key);
+      }
+      if (!fromWild && toWild) cancelWildPendings(key);
       if (me.npcFightId) { const f = npcFights.get(me.npcFightId); if (f) finishNpcFight(f, 'travel'); }
       // Stage 5: travelling abandons a Barrows crypt fight (kills kept).
       if (me.barrowsFightId) { const f = barrowsFights.get(me.barrowsFightId); if (f) finishBarrowsFight(f, 'travel'); }
@@ -5087,6 +5795,7 @@ wss.on('connection', (ws, req) => {
       send(ws, alliesMsg(to)); // Stage 6: guardians already standing there
       send(ws, objectsMsg(to)); // Stage 7D: placed objects in the new area
       if (to === 'barrows' || to === 'barrows_tunnels' || to === 'barrows_crypt') send(ws, barrowsStateMsg(me));
+      if (toWild) enterWildState(key, to); // Stage 30: fresh skull/teleblock/HP pool + the wild state push
       // Stage 3: an unfinished smithing piece (session-only) is still
       // on the anvil when you come back to the mine — remind the client.
       if (to === 'mine' && me.smithing) {
@@ -5709,6 +6418,7 @@ wss.on('connection', (ws, req) => {
 
     // ----- Shops (one catalog; the shop name is display metadata only) -----
     if (m.type === 'shop_buy') {
+      if (isWildArea(me.area)) return send(ws, { type: 'error', message: '💀 There are no shops in the Wilderness.' }); // Stage 30
       const item = String(m.item || '');
       const def = itemDef(item);
       const qty = Math.max(1, Math.min(999, Math.floor(+m.qty || 1)));
@@ -5724,6 +6434,7 @@ wss.on('connection', (ws, req) => {
       return sendProfile(key);
     }
     if (m.type === 'shop_sell') {
+      if (isWildArea(me.area)) return send(ws, { type: 'error', message: '💀 There are no shops in the Wilderness.' }); // Stage 30
       const item = String(m.item || '');
       const def = itemDef(item);
       const qty = Math.max(1, Math.min(999, Math.floor(+m.qty || 1)));
@@ -5827,6 +6538,10 @@ wss.on('connection', (ws, req) => {
       const item = String(m.item || '');
       const def = itemDef(item);
       if (!def || (def.kind !== 'food' && def.kind !== 'potion')) return send(ws, { type: 'error', message: 'That can\'t be used.' });
+      // Stage 30: Pure Wild hard-blocks ALL food and potions
+      // (healing potions count as food — the app's reading),
+      // before anything is consumed or any pool is checked.
+      if (me.area === 'purewild') return send(ws, { type: 'error', message: '🚫 Pure Wild — no food, no potions.' });
       if (stackQty(profile.backpack, item) < 1) return send(ws, { type: 'error', message: `No ${def.name} in your backpack.` });
       // Stage 14: duel rules gate consumables for BOTH duelists,
       // before anything is consumed (prayer potions included — they
@@ -5887,7 +6602,20 @@ wss.on('connection', (ws, req) => {
           }
           // Fight Caves (Stage 4): food / restore potions heal the run pool.
           const run = me.fcRunId ? fcRuns.get(me.fcRunId) : null;
-          if (!run) return send(ws, { type: 'error', message: 'Healing only works during a duel.' });
+          if (!run) {
+            // Stage 30: in the Wilderness, food / potions heal the
+            // wild HP pool (Pure Wild never reaches here — it is
+            // refused at the top of this handler).
+            if (isWildArea(me.area) && me.wildHp != null) {
+              if (me.wildHp >= me.wildMaxHp) return send(ws, { type: 'error', message: 'Already at full health.' });
+              removeStacks(profile.backpack, item, 1);
+              me.wildHp = Math.min(me.wildMaxHp, me.wildHp + def.heal);
+              save(key);
+              send(ws, { type: 'wild_hp', hp: me.wildHp, maxHp: me.wildMaxHp });
+              return sendProfile(key);
+            }
+            return send(ws, { type: 'error', message: 'Healing only works during a duel.' });
+          }
           if (run.hpYou >= run.maxHpYou) return send(ws, { type: 'error', message: 'Already at full health.' });
           removeStacks(profile.backpack, item, 1);
           run.hpYou = Math.min(run.maxHpYou, run.hpYou + def.heal);
@@ -5936,6 +6664,7 @@ wss.on('connection', (ws, req) => {
 
     // ----- Bank of Gielinor (Stage 16: coin stacks bank here too) -----
     if (m.type === 'bank_deposit' || m.type === 'bank_withdraw') {
+      if (isWildArea(me.area)) return send(ws, { type: 'error', message: '💀 There is no bank in the Wilderness.' }); // Stage 30
       const item = String(m.item || '');
       const def = itemDef(item);
       const qty = Math.max(1, Math.min(9999, Math.floor(+m.qty || 1)));
@@ -5955,6 +6684,7 @@ wss.on('connection', (ws, req) => {
 
     // ----- Gold Exchange -----
     if (m.type === 'exchange_buy' || m.type === 'exchange_sell') {
+      if (isWildArea(me.area)) return send(ws, { type: 'error', message: '💀 The Gold Exchange is in the plaza — not in the Wilderness.' }); // Stage 30
       // Stage 7A: tokens are never Exchange goods — a sell attempt
       // gets the token error, not the generic unknown-good one.
       // Stage 16: the gold item gets the same refusal — it IS money.
@@ -5993,6 +6723,11 @@ wss.on('connection', (ws, req) => {
       const prayerDuel = me.duelId ? duels.get(me.duelId) : null;
       if (prayerDuel && prayerDuel.rules && prayerDuel.rules.noPrayer && want !== null && want !== profile.activePrayer) {
         return send(ws, { type: 'error', message: '🚫 No Prayer in this duel.' });
+      }
+      // Stage 30: Pure Wild hard-blocks prayer activation (turning
+      // one off is always allowed; entering Pure clears it anyway).
+      if (me.area === 'purewild' && want !== null && want !== profile.activePrayer) {
+        return send(ws, { type: 'error', message: '🚫 Pure Wild — no prayer.' });
       }
       // Tapping the active prayer turns it off; a different one replaces it
       // (the previous switches off automatically — only one is ever active).
@@ -6255,7 +6990,152 @@ wss.on('connection', (ws, req) => {
         return;
       }
 
+      if (kind === 'wild') {
+        // Stage 30: button casts in the Wilderness / Pure Wild —
+        // at another player or a PKer. A cast skulls like a first
+        // strike and creates the fight context (the victim can
+        // fight back clean; a PKer target answers by engaging),
+        // but it does NOT engage the caster's weapon swings —
+        // that stays the attack order's job (Stage 24's split).
+        if (!isWildArea(me.area)) return castFail('You can only cast at players in the Wilderness.');
+        if (me.duelId || me.modDuelId || me.npcFightId || me.barrowsFightId || me.fcRunId) return castFail('You are busy fighting something else.');
+        let tRef = null;
+        let tC = null;
+        const pkTarget = pkers.get(targetId);
+        if (pkTarget && pkTarget.area === me.area) {
+          if (!pkTarget.alive) return castFail('That PKer is not here.');
+          tRef = wildRefPker(pkTarget.id);
+          tC = combatant(tRef);
+        } else {
+          const tKey = userKeyFor(targetId);
+          const tSess = tKey ? online.get(tKey) : null;
+          if (!tSess || tKey === key || tSess.area !== me.area) return castFail('That player is not here.');
+          tRef = wildRefPlayer(tKey);
+          tC = combatant(tRef);
+        }
+        if (!tC) return castFail('That target is gone.');
+        if (Math.hypot(me.x - tC.x, me.y - tC.y) > NPC_RANGE) return castFail('Too far away — walk closer.');
+        if (spell.id === 'freeze' && alreadyFrozen(tC.frozenUntil(), tC.name)) return;
+        const myCbtW = combatLevelOf(levelsOf(profile));
+        const tgtCbtW = tC.isPlayer ? combatLevelOf(levelsOf(tC.profile)) : tC.pker.cbt;
+        const lvlW = wildLevelAt(me.y);
+        if (Math.abs(myCbtW - tgtCbtW) > lvlW) return castFail(`You can't attack ${tC.name} at Wilderness level ${lvlW} — the bracket here is ±${lvlW} of your combat level. Push deeper north.`);
+        const existingW = wildPairBetween(wildRefPlayer(key), tRef);
+        if (!existingW && Math.min(lvlW, wildLevelAt(tC.y)) < 20) {
+          if (wildPairsOf(tRef).length) return castFail(`${tC.name} is already in a fight.`);
+          if (wildPairsOf(wildRefPlayer(key)).length) return castFail('You are already in a fight.');
+        }
+        const mLvlW = levelForXp((profile.xp && profile.xp.magic) || 0);
+        if (mLvlW < spell.level) return castFail(`You need Magic level ${spell.level} to cast ${spell.name}.`);
+        if (stackQty(profile.backpack, `${spell.element}_rune`) < spell.runes) return castFail(`You don't have the runes for ${spell.name}.`);
+        wildSkullCheck(key, tRef);
+        // Stage 27: the PvP Deflect rule, same as a duel cast.
+        const res = rollMagicCast(profile, tC.profile, spell, false, null, true);
+        if (res.refused) return castFail(res.refused);
+        finishCast(res);
+        if (!existingW) {
+          const pair = createWildPair(me.area, wildRefPlayer(key), tRef, wildRefPlayer(key));
+          if (!tC.isPlayer) { tC.pker.targetKey = key; engageWild(pair, tRef); }
+        }
+        tC.setHp(Math.max(0, tC.hp() - res.dmg));
+        if (res.deflected) me.wildHp = Math.max(0, (me.wildHp == null ? me.wildMaxHp || 1 : me.wildHp) - res.deflected);
+        let frozenUntil = 0;
+        if (res.froze) {
+          frozenUntil = Date.now() + FREEZE_MS;
+          if (tC.isPlayer) { tC.sess.frozenUntil = frozenUntil; broadcastState(); }
+          else tC.pker.frozenUntil = frozenUntil;
+        }
+        const result = { type: 'cast_result', context: 'wild', spell: spell.id, targetId: tC.isPlayer ? tC.name : tC.id, targetName: tC.name, outcome: res.outcome, dmg: res.dmg, deflected: res.deflected || 0, froze: !!res.froze, frozenUntil, hpYou: me.wildHp, hpTarget: Math.max(0, tC.hp()), maxHpTarget: tC.maxHp() };
+        send(ws, result);
+        if (tC.isPlayer) send(tC.sess.ws, { ...result, incoming: true, by: profile.username });
+        if (tC.hp() <= 0) {
+          if (tC.isPlayer) wildDeath(tC.key, profile.username);
+          else pkerDeath(tC.pker, key);
+        }
+        if ((me.wildHp == null ? 1 : me.wildHp) <= 0 && isWildArea(me.area)) wildDeath(key, tC.name); // killed by my own cast's Deflect bounce
+        return;
+      }
+
       return castFail('There is nothing to cast at here.');
+    }
+
+    // ----- Stage 30: Wilderness attack orders, Leave, PK Noob -----
+    if (m.type === 'wild_attack') {
+      if (!isWildArea(me.area)) return send(ws, { type: 'error', message: 'You can only attack players in the Wilderness.' });
+      if (me.duelId || me.modDuelId) return send(ws, { type: 'error', message: 'You are in a duel.' });
+      if (me.npcFightId) return send(ws, { type: 'error', message: 'You are already fighting something.' });
+      if (me.barrowsFightId) return send(ws, { type: 'error', message: 'You are already fighting a Barrows brother.' });
+      if (me.fcRunId) return send(ws, { type: 'error', message: 'You are in the Fight Caves.' });
+      let tRef = null;
+      let tC = null;
+      if (m.pker) {
+        const pk = pkers.get(String(m.pker));
+        if (!pk || pk.area !== me.area || !pk.alive) return send(ws, { type: 'error', message: 'That PKer is not here.' });
+        tRef = wildRefPker(pk.id);
+        tC = combatant(tRef);
+      } else {
+        const tKey = userKeyFor(m.target);
+        const tSess = tKey ? online.get(tKey) : null;
+        if (!tSess || tKey === key) return send(ws, { type: 'error', message: 'Pick another player in the Wilderness.' });
+        if (tSess.area !== me.area) return send(ws, { type: 'error', message: 'That player is not here.' });
+        tRef = wildRefPlayer(tKey);
+        tC = combatant(tRef);
+      }
+      if (!tC) return send(ws, { type: 'error', message: 'That target is gone.' });
+      const myRef = wildRefPlayer(key);
+      const existing = wildPairBetween(myRef, tRef);
+      // The bracket: combat levels within ±(my Wilderness level).
+      const myCbt = combatLevelOf(levelsOf(profile));
+      const tgtCbt = tC.isPlayer ? combatLevelOf(levelsOf(tC.profile)) : tC.pker.cbt;
+      const lvl = wildLevelAt(me.y);
+      if (Math.abs(myCbt - tgtCbt) > lvl) return send(ws, { type: 'error', message: `You can't attack ${tC.name} (combat ${Math.floor(tgtCbt)}) at Wilderness level ${lvl} — the bracket here is ±${lvl} of your combat ${Math.floor(myCbt)}. Push deeper north to widen it.` });
+      // Shallow wild is single-way: no piling, no second fight.
+      if (!existing && Math.min(lvl, wildLevelAt(tC.y)) < 20) {
+        if (wildPairsOf(tRef).length) return send(ws, { type: 'error', message: `${tC.name} is already in a fight.` });
+        if (wildPairsOf(myRef).length) return send(ws, { type: 'error', message: 'You are already in a fight.' });
+      }
+      wildSkullCheck(key, tRef); // striking first skulls — order given, skull taken
+      const pair = existing || createWildPair(me.area, myRef, tRef, myRef);
+      if (!tC.isPlayer) tC.pker.targetKey = key; // the PKer turns and answers (its AI engages the pair)
+      engageWild(pair, myRef); // face + chase is the client's closing machinery (Stage 26 pattern)
+      return;
+    }
+    if (m.type === 'wild_leave') {
+      // Informational only (Derek's rule): Leave WALKS you out.
+      // The client walks the knight to the ditch; the gate
+      // crossing does the actual leaving. Nothing changes here —
+      // you are attackable until you cross.
+      if (isWildArea(me.area)) send(ws, { type: 'chat', from: 'Game', text: '🚪 Walking back to the ditch — you are still in the Wilderness (and attackable) until you cross it.' });
+      return;
+    }
+    if (m.type === 'pk_noob_hop') {
+      const target = m.pure ? 'purewild' : 'wilderness';
+      if (me.duelId || me.modDuelId) return send(ws, { type: 'error', message: 'You are in a duel.' });
+      if (me.npcFightId || me.barrowsFightId || me.fcRunId) return send(ws, { type: 'error', message: 'You are busy fighting.' });
+      if (stakeMatchForKey(key)) return send(ws, { type: 'error', message: 'You have a stake match waiting — cancel it first.' });
+      if (me.wildPairs && me.wildPairs.size) return send(ws, { type: 'error', message: 'You can\'t hop mid-fight — walk out across the ditch or finish it.' });
+      if (me.area === target) return send(ws, { type: 'error', message: m.pure ? 'You are already in Pure Wild.' : 'You are already in the Wilderness.' });
+      if (isWildArea(me.area) && me.y < 700) return send(ws, { type: 'error', message: 'PK Noob waits by the ditch — walk south to him first.' });
+      if (isWildArea(me.area)) exitWildCleanup(key);
+      else cancelWildPendings(key);
+      me.area = target;
+      me.x = AREAS[target].spawn.x; me.y = AREAS[target].spawn.y;
+      send(ws, { type: 'area', area: target });
+      send(ws, nodesMsg(target));
+      send(ws, firesMsg(target));
+      send(ws, pilesMsg(target));
+      send(ws, seaweedMsg(target));
+      send(ws, alliesMsg(target));
+      send(ws, objectsMsg(target));
+      enterWildState(key, target);
+      send(ws, {
+        type: 'chat', from: 'PK Noob',
+        text: target === 'purewild'
+          ? '💀 Welcome to PURE WILD — no prayer, no food, no potions for anyone. Same skulls, same drops. Walk back across the ditch to leave, or find me by the ditch to hop back.'
+          : 'Back to the normal Wilderness — prayer and food work here. Skulls and drops are the same.',
+      });
+      broadcastState();
+      return;
     }
 
     if (m.type === 'special') {
@@ -6264,7 +7144,8 @@ wss.on('connection', (ws, req) => {
       const fc = !duel && !nf && me.fcRunId ? fcRuns.get(me.fcRunId) : null; // Stage 4: specials work in the caves too
       const bf = !duel && !nf && !fc && me.barrowsFightId ? barrowsFights.get(me.barrowsFightId) : null; // Stage 5: and in Barrows crypts
       const md = !duel && !nf && !fc && !bf && me.modDuelId ? modDuels.get(me.modDuelId) : null; // Stage 22: and in mod duels
-      if (!duel && !nf && !fc && !bf && !md) return send(ws, { type: 'error', message: 'You are not in a duel.' });
+      const wpair = !duel && !nf && !fc && !bf && !md && me.wildTarget ? wildPairBetween(wildRefPlayer(key), me.wildTarget) : null; // Stage 30: and in wild fights (queued on my current wild pair)
+      if (!duel && !nf && !fc && !bf && !md && !wpair) return send(ws, { type: 'error', message: 'You are not in a duel.' });
       // Stage 14: a No Special Attacks duel rejects queueing
       // outright — the special can never fire. (NPC / Barrows /
       // Fight Caves specials are not duels and never see this.)
@@ -6282,6 +7163,9 @@ wss.on('connection', (ws, req) => {
       } else if (md) {
         if (md.specialQueued) return send(ws, { type: 'error', message: 'Special already queued for the next tick.' });
         md.specialQueued = true;
+      } else if (wpair) {
+        if (wpair.spec[wildRefPlayer(key)]) return send(ws, { type: 'error', message: 'Special already queued for the next tick.' });
+        wpair.spec[wildRefPlayer(key)] = true;
       } else {
         if (nf.specialQueued) return send(ws, { type: 'error', message: 'Special already queued for the next tick.' });
         nf.specialQueued = true;
@@ -6414,6 +7298,7 @@ wss.on('connection', (ws, req) => {
       if (!sessA || !sessB) return send(ws, { type: 'error', message: 'Both fighters must be online.' });
       // Mirror the challenge busy-checks for the runner and both fighters.
       for (const sess of [me, sessA, sessB]) {
+        if (isWildArea(sess.area)) return send(ws, { type: 'error', message: '💀 One of you is in the Wilderness — no official fights there.' }); // Stage 30
         if (sess.duelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
         if (sess.modDuelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
         if (sess.npcFightId) return send(ws, { type: 'error', message: 'One of you is fighting a monster.' });
@@ -6819,6 +7704,7 @@ wss.on('connection', (ws, req) => {
       const target = online.get(targetKey);
       if (!target) return send(ws, { type: 'error', message: `${targetName} is not online.` });
       if (targetKey === key) return send(ws, { type: 'error', message: 'You cannot invite yourself.' });
+      if (isWildArea(me.area) || isWildArea(target.area)) return send(ws, { type: 'error', message: '💀 No party invites in the Wilderness.' }); // Stage 30
       const myPartyId = partyOf.get(key);
       if (myPartyId && parties.get(myPartyId) && parties.get(myPartyId).has(targetKey)) {
         return send(ws, { type: 'error', message: `${target.profile.username} is already in your party.` });
@@ -6894,6 +7780,7 @@ wss.on('connection', (ws, req) => {
       const targetKey = userKeyFor(m.target);
       const target = online.get(targetKey);
       if (!target || targetKey === key) return send(ws, { type: 'error', message: 'Pick another online player.' });
+      if (isWildArea(me.area) || isWildArea(target.area)) return send(ws, { type: 'error', message: '💀 No trading in the Wilderness — cross the ditch to safety first.' }); // Stage 30
       if (me.duelId || target.duelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
       if (me.modDuelId || target.modDuelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
       if (me.npcFightId || target.npcFightId) return send(ws, { type: 'error', message: 'One of you is fighting a monster.' });
@@ -6997,6 +7884,7 @@ wss.on('connection', (ws, req) => {
       if (Array.isArray(m.items) && m.items.some((e) => e && e.item === 'gold')) return send(ws, { type: 'error', message: GOLD_STAKE_MSG }); // Stage 16: coins stake via the amount
       const target = online.get(targetKey);
       if (!target || targetKey === key) return send(ws, { type: 'error', message: 'Pick another online player.' });
+      if (isWildArea(me.area) || isWildArea(target.area)) return send(ws, { type: 'error', message: '💀 No duels in the Wilderness — cross the ditch to safety first.' }); // Stage 30
       if (me.duelId || target.duelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
       if (me.modDuelId || target.modDuelId) return send(ws, { type: 'error', message: 'One of you is already in a duel.' });
       if (me.npcFightId || target.npcFightId) return send(ws, { type: 'error', message: 'One of you is fighting a monster.' });
@@ -7020,6 +7908,7 @@ wss.on('connection', (ws, req) => {
     if (m.type === 'challenge_response') {
       const ch = challenges.get(m.challengeId);
       if (!ch || ch.to !== key || ch.expires < Date.now()) { if (ch) broadcastChallengeClear(ch.from); challenges.delete(m.challengeId); return send(ws, { type: 'error', message: 'That challenge is gone.' }); }
+      if (isWildArea(me.area)) { challenges.delete(m.challengeId); broadcastChallengeClear(ch.from); return send(ws, { type: 'error', message: '💀 No duels in the Wilderness.' }); } // Stage 30
       if (!m.accept) {
         // Decline: exactly the old path — nothing is taken, the '!' comes down.
         challenges.delete(m.challengeId);
@@ -7112,6 +8001,7 @@ wss.on('connection', (ws, req) => {
       send(ws, stakeBoardMsg());
     }
     if (m.type === 'stake_offer_create') {
+      if (isWildArea(me.area)) return send(ws, { type: 'error', message: '💀 The Stake Board is in the plaza — there is no staking in the Wilderness.' }); // Stage 30
       const stake = Math.floor(+m.stake || 0);
       if (stakeMatchForKey(key)) return send(ws, { type: 'error', message: 'You already have a stake match — ready up or cancel it first.' });
       if (stakeBusy(me)) return send(ws, { type: 'error', message: 'You are in a fight right now.' });
@@ -7142,6 +8032,7 @@ wss.on('connection', (ws, req) => {
       if (stakeMatchForKey(offer.fromKey)) return send(ws, { type: 'error', message: 'That player already has a stake match.' });
       const poster = online.get(offer.fromKey);
       if (!poster) { stakeOffers.delete(offer.id); broadcastStakeBoard(); return send(ws, { type: 'error', message: 'That offer is gone — the player left.' }); }
+      if (isWildArea(me.area) || isWildArea(poster.area)) return send(ws, { type: 'error', message: '💀 No stake matches with a player in the Wilderness.' }); // Stage 30
       if (stakeBusy(me) || stakeBusy(poster)) return send(ws, { type: 'error', message: 'One of you is in a fight right now.' });
       if (goldTotal(profile) < offer.stake) return send(ws, { type: 'error', message: 'You don\'t have enough gold to match that bid.' });
       if (goldTotal(poster.profile) < offer.stake) { stakeOffers.delete(offer.id); broadcastStakeBoard(); return send(ws, { type: 'error', message: 'The poster no longer has the gold — the offer is gone.' }); }
