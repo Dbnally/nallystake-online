@@ -3397,6 +3397,14 @@ function npcTick(fight) {
     youBonus, npcDeflected,
     note: tickNotes.length ? tickNotes.join(' ') : undefined,
     npcFrozenUntil: (npc.frozenUntil && npc.frozenUntil > Date.now()) ? npc.frozenUntil : 0, // Stage 24
+    // Stage 31: per-fighter closing, mirroring the mod-duel tick —
+    // when only the PLAYER is out of their weapon's reach (the
+    // melee-vs-wizard/ranger case: the creature can act at range,
+    // the player cannot yet), the fighting tick still tells the
+    // client where to walk, so the player closes in and lands the
+    // connected swing that unlocks the creature — instead of the
+    // fight stalling at range forever with neither side swinging.
+    ...(playerOut ? { closing: true, moveTo: approachPoint(sess.x, sess.y, npc.x, npc.y) } : {}),
   });
   broadcastNpcState(npc.area);
   if (npc.hp <= 0) {
@@ -5513,6 +5521,53 @@ setInterval(() => {
 }, 1000);
 
 
+// ---------- Stage 31: reconnect restore ----------
+// Playtest finding: the connection still drops occasionally, and
+// every auto-reconnect used to respawn the player in the PLAZA,
+// breaking whatever they were doing (a Barrows trip, gathering at
+// the cove, an open route). So when a session ends, its spot is
+// remembered here (in-memory, like the sessions themselves — a
+// server restart already resets every session) and a return within
+// RESTORE_TTL_MS lands back in that area at that position. The
+// game has no deliberate-logout signal (no logout message exists),
+// so the restore applies to any return inside the TTL — with hard
+// exclusions for states the disconnect itself settled:
+//   - a duel / mod duel the disconnect FORFEITED (arena is never
+//     restored; the loser wakes in the plaza, as the forfeit says);
+//   - a Fight Caves run the disconnect ENDED (the run is gone —
+//     restoring "into the run" would be a lie; plaza instead);
+//   - the Wilderness / Pure Wild (a wild-fight disconnect is a
+//     death with drops, and even a peaceful wild session carries
+//     session-only skull / teleblock / HP-pool state that is never
+//     saved — the plaza is the only honest landing);
+//   - the Waiting Area (its stake match was cancelled on the way
+//     out) and the duel arena.
+// Barrows crypts and tunnels DO restore: the run state lives on
+// the profile (kills, tunnel, solved puzzle), and the session
+// scratch that matters (which crypt, the tunnel HP pool, the
+// puzzle-door ambush roll, the brothers' stat drains) is carried
+// in the spot. An NPC fight interrupted by the drop does not
+// restore the FIGHT (cleanup ends it, the creature keeps its HP)
+// — just the player's place in the area.
+const RESTORE_TTL_MS = 10 * 60 * 1000;
+const savedSpots = new Map(); // account key -> { area, x, y, barrowsCrypt, barrowsHp, barrowsDoorRolled, accDrain, strDrain, runDrainedUntil, at }
+function rememberSpot(key, me) {
+  savedSpots.delete(key);
+  if (!me || !AREAS[me.area]) return;
+  if (me.duelId || me.modDuelId) return; // forfeited by the disconnect
+  if (me.fcRunId) return; // the run ended with the disconnect
+  if (isWildArea(me.area)) return; // wild state is session-only
+  if (me.area === 'arena' || me.area === 'waiting') return; // duel / stake-match ground
+  savedSpots.set(key, {
+    area: me.area, x: me.x, y: me.y,
+    barrowsCrypt: me.barrowsCrypt || null,
+    barrowsHp: (typeof me.barrowsHp === 'number') ? me.barrowsHp : null,
+    barrowsDoorRolled: !!me.barrowsDoorRolled,
+    accDrain: me.accDrain || 0, strDrain: me.strDrain || 0, runDrainedUntil: me.runDrainedUntil || 0,
+    at: Date.now(),
+  });
+}
+
 // Full disconnect cleanup for one account: settles any duel/fight
 // the session was in (forfeit rules), cancels its challenges,
 // stake offers/matches, fight offers, cert/note requests, party
@@ -5524,6 +5579,7 @@ function cleanupDisconnect(key) {
   if (!user) return;
   const profile = user.profile;
   const me = online.get(key);
+  if (me) rememberSpot(key, me); // Stage 31: capture the spot BEFORE any settlement moves the player
   // Stage 30: disconnecting (or being replaced by a fresher
   // session) while in a wild fight is a DEATH in the wild, drops
   // and all — the online reading of the app's combat-logout
@@ -5630,21 +5686,43 @@ wss.on('connection', (ws, req) => {
   }
   const profile = db.users[key].profile;
   ensureV2(profile);
+  // Stage 31: reconnect restore — a spot remembered by
+  // cleanupDisconnect (possibly by the takeover cleanup a few lines
+  // above) puts the player back in their area at their position
+  // instead of the plaza, when it's fresh. Everything else about
+  // login is unchanged: a first login, a stale spot, and every
+  // excluded state still land in the plaza scatter.
+  const spot = savedSpots.get(key); savedSpots.delete(key);
+  const restore = (spot && Date.now() - spot.at <= RESTORE_TTL_MS) ? spot : null;
   // Everyone logs into the plaza (area is session-only, never saved).
   // Stage 13: the login scatter is the old 100..600 x 100..350 box x2.
-  online.set(key, { ws, profile, x: 200 + Math.random() * 1000, y: 200 + Math.random() * 500, area: 'plaza', duelId: null, modDuelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsCrypt: null, barrowsHp: null, barrowsDoorRolled: false, accDrain: 0, strDrain: 0, runDrainedUntil: 0, actSkill: null, actAt: 0, castReadyAt: 0, frozenUntil: 0, wildPairs: null, wildTarget: null, skulled: false, teleblockUntil: 0, wildHp: null, wildMaxHp: 0 }); // Stage 30: wild* = Wilderness session state (skull, teleblock, wild HP pool) — session-only, never saved // Stage 24: castReadyAt = placed-button cast cooldown; frozenUntil = Freeze root expiry. Stage 28: barrowsCrypt = which brother's crypt the player is in; barrowsHp = the tunnel HP pool; accDrain/strDrain/runDrainedUntil = the app's brother drains
-  send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot('plaza'), area: 'plaza' });
-  send(ws, modNpcsMsg()); // Stage 22: the three plaza moderators + their busy flags
-  send(ws, modLadderMsg(profile)); // Stage 22: stake-ladder progress
-  send(ws, pilesMsg('plaza')); // Stage 5: any drop piles waiting in the plaza
-  send(ws, alliesMsg('plaza')); // Stage 6: any Tree Guardians standing in the plaza
-  send(ws, objectsMsg('plaza')); // Stage 7D: any placed objects in the plaza
+  online.set(key, { ws, profile, x: restore ? Math.max(0, Math.min(WORLD_W, restore.x)) : 200 + Math.random() * 1000, y: restore ? Math.max(0, Math.min(WORLD_H, restore.y)) : 200 + Math.random() * 500, area: restore ? restore.area : 'plaza', duelId: null, modDuelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsCrypt: restore ? restore.barrowsCrypt : null, barrowsHp: restore ? restore.barrowsHp : null, barrowsDoorRolled: restore ? restore.barrowsDoorRolled : false, accDrain: restore ? restore.accDrain : 0, strDrain: restore ? restore.strDrain : 0, runDrainedUntil: restore ? restore.runDrainedUntil : 0, actSkill: null, actAt: 0, castReadyAt: 0, frozenUntil: 0, wildPairs: null, wildTarget: null, skulled: false, teleblockUntil: 0, wildHp: null, wildMaxHp: 0 }); // Stage 30: wild* = Wilderness session state (skull, teleblock, wild HP pool) — session-only, never saved // Stage 24: castReadyAt = placed-button cast cooldown; frozenUntil = Freeze root expiry. Stage 28: barrowsCrypt = which brother's crypt the player is in; barrowsHp = the tunnel HP pool; accDrain/strDrain/runDrainedUntil = the app's brother drains
+  const sess = online.get(key);
+  send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot(sess.area), area: sess.area });
+  if (sess.area === 'plaza') {
+    send(ws, modNpcsMsg()); // Stage 22: the three plaza moderators + their busy flags
+    send(ws, modLadderMsg(profile)); // Stage 22: stake-ladder progress
+  }
+  // Stage 31: a restored session gets the same per-area state push
+  // a travel would send (NPC roster, nodes, fires, seaweed, the
+  // saved Barrows run) so the area is fully live on arrival.
+  if (restore) {
+    if (NPC_AREAS.includes(sess.area)) send(ws, npcStateMsg(sess.area));
+    send(ws, nodesMsg(sess.area));
+    send(ws, firesMsg(sess.area));
+    send(ws, seaweedMsg(sess.area)); // Stage 29: cove clumps
+    if (sess.area === 'barrows' || sess.area === 'barrows_tunnels' || sess.area === 'barrows_crypt') send(ws, barrowsStateMsg(sess));
+    send(ws, { type: 'chat', from: 'Game', text: `🔄 Reconnected — you're back where you left off: ${AREAS[sess.area].name}.` });
+  }
+  send(ws, pilesMsg(sess.area)); // Stage 5: any drop piles waiting in the area
+  send(ws, alliesMsg(sess.area)); // Stage 6: any Tree Guardians standing in the area
+  send(ws, objectsMsg(sess.area)); // Stage 7D: any placed objects in the area
   send(ws, { type: 'catalog', items: catalogList(), shops: SHOPS, spells: SPELLS });
   send(ws, starterMsg(profile)); // Stage 20: starter-goal state
   send(ws, clogMsg(profile)); // Stage 20: collection-log state
   send(ws, { type: 'exchange_prices', goods: goodsList() });
   send(ws, stakeBoardMsg()); // Stage 17: the current Stake Board offers
-  broadcast({ type: 'chat', from: 'Game', text: `${profile.username} entered the plaza.` }, key);
+  broadcast({ type: 'chat', from: 'Game', text: restore ? `${profile.username} reconnected.` : `${profile.username} entered the plaza.` }, key);
   broadcastState();
 
   ws.on('message', (raw) => {
