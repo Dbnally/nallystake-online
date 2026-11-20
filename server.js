@@ -3840,10 +3840,23 @@ function npcTick(fight) {
 
 // NPC respawns: after their def's respawnMs, back at full HP on
 // their spawn point (goblins 10s, wizards/rangers 12s — Stage 19).
+// Playtest fix: the respawn now really does restore the spawn
+// point (it used to restore only HP/alive, so a creature killed
+// while dragged across the area came back where it died), and a
+// living creature left away from home by a broken-off fight
+// ambles back to its spawn point on this same sweep — otherwise
+// the camp's goblins migrate over a day's play (every fight steps
+// a melee creature toward its opponent) and the camp stands
+// empty at its spawns. HP is untouched on the walk home: a
+// fled-from goblin keeps its remaining HP, as always.
 setInterval(() => {
   const touched = new Set();
+  const now = Date.now();
   for (const npc of npcs.values()) {
-    if (!npc.alive && Date.now() >= npc.respawnAt) { npc.alive = true; npc.hp = npc.maxHp; touched.add(npc.area); }
+    if (!npc.alive && now >= npc.respawnAt) { npc.alive = true; npc.hp = npc.maxHp; npc.x = npc.spawnX; npc.y = npc.spawnY; touched.add(npc.area); continue; }
+    if (npc.alive && !npc.fightId && !((npc.frozenUntil || 0) > now) && (npc.x !== npc.spawnX || npc.y !== npc.spawnY)) {
+      if (stepToward(npc, npc.spawnX, npc.spawnY, APPROACH_STEP)) touched.add(npc.area);
+    }
   }
   for (const a of touched) broadcastNpcState(a);
 }, 1000);
@@ -4928,12 +4941,19 @@ defNode('oak_g', 'gathering', 'tree', 'Oak tree', 'woodcutting', 15, 'oak_logs',
 // edge. Cove trout are Fishing 1 on purpose: the cove is the starter
 // fishing spot (Derek's cove spec names no level); the cave trout spot
 // above is the level-20 one.
+// Playtest fix: the spots sit at x=1180 — just off the waterline
+// (the lake covers x > ~1060, and the client now stops walkers at
+// the shore) so a fisher standing on the beach is 120 away, inside
+// GATHER_RANGE. At the old x=1320 they were 260 from the shore and
+// could only be fished by walking out onto the lake. The middle
+// spot moved off y=450 so its ripple ring isn't hidden under the
+// dock deck (dock spans x 1060-1240, y 438-462).
 defNode('tree_c1', 'cove', 'tree', 'Tree', 'woodcutting', 1, 'logs', 25, 3, 10000, 240, 200);
 defNode('tree_c2', 'cove', 'tree', 'Tree', 'woodcutting', 1, 'logs', 25, 3, 10000, 240, 460);
 defNode('tree_c3', 'cove', 'tree', 'Tree', 'woodcutting', 1, 'logs', 25, 3, 10000, 240, 720);
-defNode('trout_spot_c1', 'cove', 'fish', 'Trout spot', 'fishing', 1, 'raw_trout', 30, 3, 12000, 1320, 200);
-defNode('trout_spot_c2', 'cove', 'fish', 'Trout spot', 'fishing', 1, 'raw_trout', 30, 3, 12000, 1320, 450);
-defNode('trout_spot_c3', 'cove', 'fish', 'Trout spot', 'fishing', 1, 'raw_trout', 30, 3, 12000, 1320, 700);
+defNode('trout_spot_c1', 'cove', 'fish', 'Trout spot', 'fishing', 1, 'raw_trout', 30, 3, 12000, 1180, 200);
+defNode('trout_spot_c2', 'cove', 'fish', 'Trout spot', 'fishing', 1, 'raw_trout', 30, 3, 12000, 1180, 380);
+defNode('trout_spot_c3', 'cove', 'fish', 'Trout spot', 'fishing', 1, 'raw_trout', 30, 3, 12000, 1180, 700);
 // Training Cave — one station per combat skill, in a row. XP only.
 defNode('attack_dummy', 'training', 'station', 'Attack dummy', 'attack', 1, null, 12, Infinity, 0, 280, 450);
 defNode('strength_dummy', 'training', 'station', 'Strength dummy', 'strength', 1, null, 12, Infinity, 0, 480, 450);
@@ -7040,11 +7060,17 @@ wss.on('connection', (ws, req) => {
       // Shops buy anything with a sell price: their own stock at 60%
       // back, and Stage 2 gathered resources at their fixed sellOnly.
       if (!sellPrice(item)) return send(ws, { type: 'error', message: 'The shops don\'t buy that — try the Gold Exchange.' });
-      if (!removeStacks(profile.backpack, item, qty)) return send(ws, { type: 'error', message: `You don't have ${qty} x ${def.name}.` });
-      const total = sellPrice(item) * qty;
+      // Playtest fix: a sell asks for UP TO the requested amount —
+      // "Sell 5" with only 3 in the pack sells the 3, and the sold
+      // message reports the amount that really moved. It refuses
+      // only when none are held at all.
+      const sellQty = Math.min(qty, stackQty(profile.backpack, item));
+      if (sellQty < 1) return send(ws, { type: 'error', message: `You don't have any ${def.name} to sell.` });
+      removeStacks(profile.backpack, item, sellQty);
+      const total = sellPrice(item) * sellQty;
       addGold(profile, total); // Stage 16: the payment lands on the coin stack
       save(key);
-      send(ws, { type: 'shop', action: 'sell', shop: def.shop, item, qty, total });
+      send(ws, { type: 'shop', action: 'sell', shop: def.shop, item, qty: sellQty, total });
       return sendProfile(key);
     }
 
