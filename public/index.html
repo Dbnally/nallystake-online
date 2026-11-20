@@ -539,7 +539,7 @@ const ICONS={restore_potion:'🍷',prayer_potion:'🌟',ration:'🍗',bronze_swo
  dharoks_greataxe:'🪓',guthans_warspear:'🔱',torags_hammers:'🔨',veracs_flail:'⛓️',ahrims_staff:'🪄',karils_crossbow:'🏹',
  nc:'🪙',certificate:'📜',note:'📝',gold:'🪙'};
 const KIND_ICON={potion:'🧪',food:'🍗',weapon:'⚔️',armour:'🛡️',good:'📦',tool:'⛏️',trophy:'🏆',token:'🪙',currency:'🪙'};
-function iconOf(id){ if(ICONS[id])return ICONS[id]; const d=catalog[id]; if(d&&d.icon) return d.icon; return d? (KIND_ICON[d.kind]||'📦') : '📦'; }
+function iconOf(id){ const d=catalog[id]; if(d&&d.look&&d.icon) return d.icon; if(ICONS[id])return ICONS[id]; if(d&&d.icon) return d.icon; return d? (KIND_ICON[d.kind]||'📦') : '📦'; } // Stage 37: a live look override (catalog look flag) beats the built-in ICONS map; everything else keeps the old order
 /* Stage 16: the gold stack's face — a coin pile that GROWS with
    the amount (Derek's design): 1 coin, 2, 3, 4, then bigger and
    bigger piles. Coins are 🪙 spans layered in a square box; the
@@ -616,6 +616,7 @@ const SETTINGS_KEY='nallystake_settings_v1';
    the high end. One clamp shared by the camera stick, drag-tilt and
    the saved setting. */
 const CAM_PITCH_MIN=0.25, CAM_PITCH_MAX=1.35;
+const CAM_PITCH_LEVEL=0.92; // Stage 37: the pitch that means a level gaze in first person (the saved default)
 let settings={camSpeed:1.5,camPitch:0.92,groundTap:'walk',tapMode:'normal',camPov:'third',uiAlpha:0.78,run:true,hidden:{}};
 try{ const s=JSON.parse(localStorage.getItem(SETTINGS_KEY)||'null'); if(s&&typeof s==='object') settings=Object.assign(settings,s); }catch(e){}
 if(typeof settings.camSpeed!=='number') settings.camSpeed=1.5;
@@ -679,6 +680,31 @@ window.setCamPov=function(v){ settings.camPov=(v==='first')?'first':'third'; sav
 window.toggleCamPov=function(){ setCamPov(settings.camPov==='first'?'third':'first'); };
 function renderMenuTapChip(){ const b=$('railmenutap'); if(!b) return; const on=settings.tapMode==='menu'; b.textContent=on?'🖱️ Menu tap: On':'🖱️ Menu tap: Off'; b.classList.toggle('on',on); }
 function renderCamChip(){ const b=$('railcam'); if(!b) return; const fp=settings.camPov==='first'; b.textContent=fp?'🎥 1st':'🎥 3rd'; b.classList.toggle('on',fp); b.title=fp?'Camera: first person — tap for third person':'Camera: third person — tap for first person'; }
+/* Stage 37: camera quick sets — three slots in the settings
+   store, each holding a whole camera bundle {pov, pitch, speed}.
+   (The ⭐ Quick 1/2 buttons are ITEM shortcuts — unrelated, and
+   untouched.) Save writes the camera exactly as it is right now;
+   Use applies the whole bundle at once, POV included, through
+   the same setters the Settings controls use, so the 🎥 chip,
+   the speed slider and this panel all land in sync. */
+function camSetsArr(){ if(!Array.isArray(settings.camSets)) settings.camSets=[null,null,null]; while(settings.camSets.length<3) settings.camSets.push(null); return settings.camSets; }
+window.saveCamSet=function(n){
+ const s=camSetsArr();
+ s[n]={pov:settings.camPov, pitch:Math.round(camPitch*100)/100, speed:settings.camSpeed};
+ saveSettings();
+ toast(`📸 Camera set ${n+1} saved: ${settings.camPov==='first'?'👀 First person':'🎥 Third person'} · tilt ${s[n].pitch.toFixed(2)} · speed ${settings.camSpeed}×`);
+ if(drawerPanel==='settings') renderDrawer();
+};
+window.useCamSet=function(n){
+ const s=camSetsArr()[n];
+ if(!s){ toast(`Camera set ${n+1} is empty — set the camera how you like, then tap Save on the slot.`); return; }
+ settings.camSpeed=clamp(+s.speed||1.5,0.25,3);
+ camPitch=clamp(typeof s.pitch==='number'? s.pitch : CAM_PITCH_LEVEL,CAM_PITCH_MIN,CAM_PITCH_MAX);
+ settings.camPitch=camPitch;
+ setCamPov(s.pov==='first'?'first':'third'); // saves settings + refreshes the 🎥 chip and this panel
+ saveSettings();
+ toast(`📸 Camera set ${n+1}: ${settings.camPov==='first'?'👀 First person':'🎥 Third person'} · tilt ${camPitch.toFixed(2)} · speed ${settings.camSpeed}×`);
+};
 window.setUiAlpha=function(v){ settings.uiAlpha=clamp(parseFloat(v)||0.78,0.3,1); saveSettings(); };
 window.setBtnVisible=function(p,vis){ settings.hidden[p]=!vis; saveSettings(); };
 
@@ -2765,14 +2791,32 @@ function syncPartyHat(a,p){
    where it carries one (Barrows pieces, party hats, customs) and
    otherwise from Derek's metal palette by tier — the same tints as
    the party hats. Rebuilt only when the worn signature changes. */
-const TIER_COLORS={bronze:0x8a5a2b,iron:0x7f7f7f,steel:0xb9bfc7,mithril:0x6a5fd8,adamant:0x3a9e4f,rune:0x4a90d9,dragon:0xc22f2f,torva:0xa8bfb2,necro:0x4a2470};
+const TIER_COLORS={bronze:0x8a5a2b,iron:0x939ba3,steel:0xb9bfc7,mithril:0x6a5fd8,adamant:0x3a9e4f,rune:0x4a90d9,dragon:0xc22f2f,torva:0xc7dbe2,necro:0x6528b0};
+// Stage 37 (Addition #6): readability pass values — Derek's palette
+// (the party-hat tints), with three values strengthened so the tier
+// survives gameplay distance and Lambert light: iron lifted off the
+// trim grey (0x7f7f7f -> 0x939ba3), torva paler ice-steel
+// (0xa8bfb2 -> 0xc7dbe2), necro lifted out of near-black
+// (0x4a2470 -> 0x6528b0, still dark purple). Torva's signature is
+// its cyan ice crystal, added as accent gems in syncGear /
+// buildWeaponInto:
+const TORVA_CRYSTAL=0x46f2dd;
 const BOW_COLORS={shortbow:0x8a6b4a,oak_shortbow:0x6e4f2a,willow_shortbow:0x9a7d4f,maple_shortbow:0x7a4a26,yew_shortbow:0x5d7a3a,magic_shortbow:0x3a6ea8};
 const STAFF_ORBS={staff:0xd9dee6,magic_staff:0x4a90d9,mystic_staff:0x9a5ff0,ahrims_staff:0xc22f2f};
+// Stage 37: a darker shade of a gear colour, for trim bands and
+// edging that make a piece's silhouette read at distance.
+function shadeOf(hex){ const r=(hex>>16)&255,g=(hex>>8)&255,b=hex&255; return (Math.round(r*0.52)<<16)|(Math.round(g*0.52)<<8)|Math.round(b*0.52); }
 function gearColorFor(id){
  if(!id) return 0xb9bfc7;
  const d=catalog[id];
+ let m=/^(bronze|iron|steel|mithril|adamant|rune|dragon|torva|necro)_(.+)$/.exec(id);
+ // Stage 37 (Addition #6): plate-line pieces and tier weapons
+ // render in the ONE bold worn palette above, so a tier reads the
+ // same on every piece at a glance. The robe line is exempt — its
+ // pieces carry their OWN per-tier catalog colours (cyan mithril
+ // robes, tan bronze robes) and keep them.
+ if(m && !/^(wizard_hat|robe_top|robe_skirt|wizard_boots)$/.test(m[2])) return TIER_COLORS[m[1]];
  if(d&&d.color) return parseInt(d.color.slice(1),16);
- let m=/^(bronze|iron|steel|mithril|adamant|rune|dragon|torva|necro)_/.exec(id); if(m) return TIER_COLORS[m[1]];
  m=/^smith_(bronze|iron|steel|mithril|adamant|rune)_/.exec(id); if(m) return TIER_COLORS[m[1]];
  if(BOW_COLORS[id]) return BOW_COLORS[id];
  return 0xb9bfc7;
@@ -2795,6 +2839,8 @@ function weaponShape(id){
  const d=catalog[id];
  if(d&&d.style==='ranged') return 'bow';
  if(d&&d.style==='magic') return 'staff';
+ if(/scimitar/.test(id)) return 'scimitar'; // Stage 37: a curved blade, visibly not a straight sword
+ if(id==='necro_blade') return 'blade'; // Stage 37: the short broad blade — the ladder's dagger-like one-hander
  if(/staff/.test(id)) return 'staff';
  if(/bow/.test(id)) return 'bow';
  return 'sword';
@@ -2810,9 +2856,18 @@ function buildWeaponInto(a,id){
  const d0=catalog[id];
  if(d0&&d0.twoHanded){ wg.scale.set(1.18,1.18,1.18); wg.rotation.z=-0.30; wg.rotation.x=0.10; }
  if(shape==='sword'){
-   box(0.07,0.85,0.14,c,0,0.32,0,wg); // blade in the tier's colour
-   box(0.3,0.08,0.2,gold,0,-0.12,0,wg); // crossguard
+   box(0.11,0.95,0.18,c,0,0.36,0,wg); // blade in the tier's colour (Stage 37: wider + longer, so it reads at distance)
+   box(0.34,0.08,0.22,gold,0,-0.12,0,wg); // crossguard
    box(0.09,0.24,0.09,grip,0,-0.28,0,wg); // grip
+ } else if(shape==='scimitar'){
+   const curve=new THREE.Mesh(new THREE.TorusGeometry(0.46,0.055,8,20,1.8),new THREE.MeshLambertMaterial({color:c}));
+   curve.position.set(-0.18,0.30,0); curve.rotation.z=2.25; wg.add(curve); // the swept curved blade
+   box(0.26,0.07,0.18,gold,0,-0.10,0,wg); // small guard
+   box(0.09,0.22,0.09,grip,0,-0.24,0,wg); // grip
+ } else if(shape==='blade'){
+   box(0.14,0.52,0.2,c,0,0.16,0,wg); // short, broad blade — reads as a dagger/blade, not a sword
+   box(0.22,0.06,0.16,gold,0,-0.12,0,wg); // small guard
+   box(0.08,0.2,0.08,grip,0,-0.24,0,wg); // grip
  } else if(shape==='greataxe'){
    box(0.08,1.3,0.08,grip,0,0.3,0,wg); // long haft
    box(0.52,0.36,0.06,c,0,0.78,0,wg); // broad double head
@@ -2838,7 +2893,7 @@ function buildWeaponInto(a,id){
    box(0.1,0.34,0.1,grip,0,-0.38,0,wg); // two-hand grip
  } else if(shape==='axe'){
    box(0.07,1.0,0.07,grip,0,0.26,0,wg); // haft
-   box(0.36,0.3,0.05,c,0.14,0.68,0,wg); // crescent head
+   box(0.46,0.38,0.06,c,0.18,0.68,0,wg); // crescent head (Stage 37: bigger, so the axe reads as an axe)
    box(0.1,0.12,0.06,c,0,0.78,0,wg); // top spike base
  } else if(shape==='hammer2h'){
    box(0.08,1.05,0.08,grip,0,0.28,0,wg); // long haft
@@ -2849,18 +2904,21 @@ function buildWeaponInto(a,id){
    blade.position.set(0.3,1.06,0); blade.rotation.z=-0.5; wg.add(blade); // curved moon blade
  } else if(shape==='wand'){
    box(0.05,0.55,0.05,0x6e4f2a,0,0.1,0,wg); // short rod
-   const orb=new THREE.Mesh(new THREE.SphereGeometry(0.085,10,8),new THREE.MeshLambertMaterial({color:c})); orb.position.y=0.46; wg.add(orb); // tier-coloured tip
+   const orb=new THREE.Mesh(new THREE.SphereGeometry(0.105,10,8),new THREE.MeshLambertMaterial({color:c})); orb.position.y=0.46; wg.add(orb); // tier-coloured tip
  } else if(shape==='staff'){
    box(0.06,1.2,0.06,0x6e4f2a,0,0.32,0,wg); // wooden rod
-   const orb=new THREE.Mesh(new THREE.SphereGeometry(0.11,10,8),new THREE.MeshLambertMaterial({color:STAFF_ORBS[id]||c})); orb.position.y=1.0; wg.add(orb);
+   const orb=new THREE.Mesh(new THREE.SphereGeometry(0.135,10,8),new THREE.MeshLambertMaterial({color:STAFF_ORBS[id]||c})); orb.position.y=1.0; wg.add(orb);
  } else if(shape==='crossbow'){
    box(0.09,0.1,0.62,grip,0,0.26,0.04,wg); // stock
-   box(0.56,0.06,0.06,c,0,0.34,0.28,wg); // prod
+   box(0.66,0.06,0.06,c,0,0.34,0.28,wg); // prod (Stage 37: wider, so the crossbow reads across the plaza)
  } else { // bow
-   const arc=new THREE.Mesh(new THREE.TorusGeometry(0.45,0.04,8,22,2.4),new THREE.MeshLambertMaterial({color:c}));
+   const arc=new THREE.Mesh(new THREE.TorusGeometry(0.54,0.05,8,22,2.4),new THREE.MeshLambertMaterial({color:c}));
    arc.position.set(0,0.28,0); arc.rotation.z=Math.PI/2-1.2; wg.add(arc);
-   box(0.015,0.8,0.015,0xe8e2d2,0.3,0.28,0,wg); // string (approximation at the chord)
+   box(0.015,0.92,0.015,0xe8e2d2,0.3,0.28,0,wg); // string (approximation at the chord)
  }
+ // Stage 37: a Torva weapon carries a cyan ice-crystal stud at
+ // the grip, matching its armour's trim.
+ if(/^torva_/.test(id)) box(0.09,0.09,0.09,TORVA_CRYSTAL,0,-0.02,0,wg);
 }
 function syncGear(a,p){
  if(!a.gearAnchors) return;
@@ -2880,20 +2938,24 @@ function syncGear(a,p){
    if(/wizard/.test(headId)){
      // Stage 34: a wizard's POINTED hat — wide brim + tall cone,
      // the magic line's silhouette (distinct from helm and coif).
-     const brim=new THREE.Mesh(new THREE.CylinderGeometry(0.43,0.45,0.05,14),m); brim.position.y=2.24; A.head.add(brim);
-     const cone=new THREE.Mesh(new THREE.ConeGeometry(0.33,0.66,12),m); cone.position.y=2.58; cone.rotation.z=0.07; A.head.add(cone);
+     const brim=new THREE.Mesh(new THREE.CylinderGeometry(0.47,0.49,0.05,14),m); brim.position.y=2.24; A.head.add(brim);
+     const cone=new THREE.Mesh(new THREE.ConeGeometry(0.36,0.7,12),m); cone.position.y=2.58; cone.rotation.z=0.07; A.head.add(cone);
    } else if(/hood|coif/.test(headId)){
-     const dome=new THREE.Mesh(new THREE.SphereGeometry(0.305,14,10,0,Math.PI*2,0,Math.PI*0.62),m); dome.position.y=2.20; A.head.add(dome);
+     const dome=new THREE.Mesh(new THREE.SphereGeometry(0.33,14,10,0,Math.PI*2,0,Math.PI*0.62),m); dome.position.y=2.20; A.head.add(dome);
      box(0.44,0.52,0.08,c,0,1.97,-0.23,A.head); // the hood's fall down the back
    } else {
-     const dome=new THREE.Mesh(new THREE.SphereGeometry(0.305,14,10,0,Math.PI*2,0,Math.PI/2),m); dome.position.y=2.22; A.head.add(dome);
-     const band=new THREE.Mesh(new THREE.CylinderGeometry(0.315,0.315,0.07,14),mat(0x3a3a3a)); band.position.y=2.23; A.head.add(band);
-     box(0.07,0.22,0.05,c,0,2.09,0.26,A.head); // nasal guard
+     // Stage 37: the dome is sized clearly OVER the head (0.305 ->
+     // 0.34) with a wider dark band, so a helm reads as a helm and
+     // not as a change of hair colour.
+     const dome=new THREE.Mesh(new THREE.SphereGeometry(0.34,14,10,0,Math.PI*2,0,Math.PI/2),m); dome.position.y=2.22; A.head.add(dome);
+     const band=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,0.09,14),mat(0x3a3a3a)); band.position.y=2.23; A.head.add(band);
+     box(0.09,0.26,0.06,c,0,2.09,0.29,A.head); // nasal guard
      if(/dragon|necro|torva/.test(headId)){ // horned crest on the top tiers
        const hornG=new THREE.ConeGeometry(0.05,0.24,8);
        const h1=new THREE.Mesh(hornG,m); h1.position.set(-0.19,2.45,0); h1.rotation.z=0.5; A.head.add(h1);
        const h2=new THREE.Mesh(hornG,m); h2.position.set(0.19,2.45,0); h2.rotation.z=-0.5; A.head.add(h2);
      }
+     if(/^torva_/.test(headId)) box(0.09,0.12,0.05,TORVA_CRYSTAL,0,2.34,0.30,A.head); // Stage 37: Torva's cyan crystal, set in the helm front
    }
  }
  // --- body: plate over the torso (tabard hides underneath), pauldrons, belt
@@ -2904,12 +2966,26 @@ function syncGear(a,p){
    // broad cylinder with pauldrons; a robe top flares to a skirt
    // hem with no pauldrons; a d'hide body is slimmer, no pauldrons.
    const fam=/_robe_top$/.test(w.body)? 'robe' : (/_body$|karils_top/.test(w.body)? 'hide' : 'plate');
-   const plate=new THREE.Mesh(new THREE.CylinderGeometry(fam==='hide'?0.29:0.315,fam==='robe'?0.47:(fam==='hide'?0.37:0.40),0.87,12),m); plate.position.y=1.45; A.body.add(plate);
+   const topR=fam==='hide'?0.305:0.335, botR=fam==='robe'?0.49:(fam==='hide'?0.385:0.415); // Stage 37: a touch broader than the torso beneath
+   const plate=new THREE.Mesh(new THREE.CylinderGeometry(topR,botR,0.87,12),m); plate.position.y=1.45; A.body.add(plate);
+   // Stage 37: a darker shade band at the chest piece's lower
+   // rim — the outline cue that separates the piece from the
+   // legs below it at gameplay distance.
+   const rim=new THREE.Mesh(new THREE.CylinderGeometry(botR-0.008,botR+0.012,0.07,12),mat(shadeOf(c))); rim.position.y=1.13; A.body.add(rim);
    const belt2=new THREE.Mesh(new THREE.CylinderGeometry(0.41,0.42,0.09,12),mat(0xc9a227)); belt2.position.y=1.05; A.body.add(belt2);
+   if(/^torva_/.test(w.body)) box(0.10,0.14,0.05,TORVA_CRYSTAL,0,1.62,0.36,A.body); // Stage 37: Torva's cyan chest crystal
    if(fam==='plate'){
-     const pauG=new THREE.SphereGeometry(0.16,10,8);
-     const pl=new THREE.Mesh(pauG,m); pl.position.set(-0.44,1.84,0); A.body.add(pl);
-     const pr=new THREE.Mesh(pauG,m); pr.position.set(0.44,1.84,0); A.body.add(pr);
+     const pauG=new THREE.SphereGeometry(0.185,10,8);
+     const pl=new THREE.Mesh(pauG,m); pl.position.set(-0.46,1.84,0); A.body.add(pl);
+     const pr=new THREE.Mesh(pauG,m); pr.position.set(0.46,1.84,0); A.body.add(pr);
+     const trimG=new THREE.CylinderGeometry(0.175,0.195,0.05,10), trimM=mat(shadeOf(c));
+     const tl=new THREE.Mesh(trimG,trimM); tl.position.set(-0.46,1.75,0); A.body.add(tl); // shade trim under each pauldron
+     const tr=new THREE.Mesh(trimG,trimM); tr.position.set(0.46,1.75,0); A.body.add(tr);
+     if(/dragon|necro/.test(w.body)){ // Stage 37: shoulder spikes on the two fiercest tiers (the Necro set is "cruelly spiked")
+       const spikeG=new THREE.ConeGeometry(0.05,0.2,8);
+       const s1=new THREE.Mesh(spikeG,m); s1.position.set(-0.46,2.02,0); A.body.add(s1);
+       const s2=new THREE.Mesh(spikeG,m); s2.position.set(0.46,2.02,0); A.body.add(s2);
+     }
    }
  }
  // --- legs: guards that swing with the legs, or a chainskirt from the waist
@@ -2917,26 +2993,34 @@ function syncGear(a,p){
    const c=gearColorFor(w.legs), m=mat(c);
    if(/skirt/.test(w.legs)){
      const skirt=new THREE.Mesh(new THREE.CylinderGeometry(0.33,0.50,0.52,12,1,true),m); skirt.position.y=0.78; A.body.add(skirt);
+     const hem=new THREE.Mesh(new THREE.CylinderGeometry(0.505,0.515,0.06,12,1,true),mat(shadeOf(c))); hem.position.y=0.56; A.body.add(hem); // Stage 37: shade hem band
    } else {
      // Stage 34: chaps are slimmer than platelegs — same guards,
      // narrower cut, so the ranged line reads differently.
+     // Stage 37: guards a size up, with a shade knee band on each.
      const chap=/_chaps$/.test(w.legs);
      for(const anchor of [A.legL,A.legR]){
-       const guard=new THREE.Mesh(new THREE.CylinderGeometry(chap?0.125:0.15,chap?0.11:0.135,0.66,10),m); guard.position.y=-0.40; anchor.add(guard);
+       const guard=new THREE.Mesh(new THREE.CylinderGeometry(chap?0.14:0.165,chap?0.125:0.15,0.66,10),m); guard.position.y=-0.40; anchor.add(guard);
+       const knee=new THREE.Mesh(new THREE.CylinderGeometry((chap?0.145:0.17),((chap?0.145:0.17)),0.06,10),mat(shadeOf(c))); knee.position.y=-0.22; anchor.add(knee);
      }
    }
  }
- // --- feet: boots over the foot spheres
- if(w&&w.feet){ const c=gearColorFor(w.feet); box(0.19,0.16,0.34,c,0,-0.90,0.04,A.footL); box(0.19,0.16,0.34,c,0,-0.90,0.04,A.footR); }
+ // --- feet: boots over the foot spheres (Stage 37: longer, with a shade toe cap)
+ if(w&&w.feet){ const c=gearColorFor(w.feet), sh=shadeOf(c); for(const f of [A.footL,A.footR]){ box(0.21,0.17,0.38,c,0,-0.90,0.05,f); box(0.21,0.10,0.10,sh,0,-0.93,0.20,f); } }
  // --- weapon in the right hand (+ Torag's twin in the left)
  if(w&&w.weapon) buildWeaponInto(a,w.weapon);
  // --- shield on the left arm
  if(w&&w.shield){
    const c=gearColorFor(w.shield);
    const sg=new THREE.Group(); sg.position.set(0,-0.66,0.16); sg.rotation.x=0.12; A.armL.add(sg);
-   box(0.52,0.74,0.07,c,0,0,0,sg);
-   box(0.38,0.58,0.03,0x3a3a3a,0,0,0.05,sg); // darker inset face
-   const boss=new THREE.Mesh(new THREE.SphereGeometry(0.09,10,8),mat(0xd9dee6)); boss.position.set(0,0,0.08); sg.add(boss);
+   box(0.58,0.82,0.07,c,0,0,0,sg); // Stage 37: a bigger board
+   box(0.42,0.64,0.03,0x3a3a3a,0,0,0.05,sg); // darker inset face
+   const shM=mat(shadeOf(c)); // Stage 37: shade border frame around the face
+   const fr1=new THREE.Mesh(new THREE.BoxGeometry(0.58,0.05,0.02),shM); fr1.position.set(0,0.385,0.055); sg.add(fr1);
+   const fr2=new THREE.Mesh(new THREE.BoxGeometry(0.58,0.05,0.02),shM); fr2.position.set(0,-0.385,0.055); sg.add(fr2);
+   const fr3=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.82,0.02),shM); fr3.position.set(-0.265,0,0.055); sg.add(fr3);
+   const fr4=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.82,0.02),shM); fr4.position.set(0.265,0,0.055); sg.add(fr4);
+   const boss=new THREE.Mesh(new THREE.SphereGeometry(0.09,10,8),mat(/^torva_/.test(w.shield)? TORVA_CRYSTAL : 0xd9dee6)); boss.position.set(0,0,0.08); sg.add(boss);
  }
  // --- cape on the back
  if(w&&w.cape){
@@ -2945,7 +3029,7 @@ function syncGear(a,p){
  }
  // --- gauntlets + amulet
  if(w&&w.hands){ const c=gearColorFor(w.hands); box(0.16,0.2,0.16,c,0,-0.70,0,A.armL); box(0.16,0.2,0.16,c,0,-0.70,0,A.armR); }
- if(w&&w.amulet){ const d=catalog[w.amulet]; box(0.1,0.12,0.05,(d&&d.color)? parseInt(d.color.slice(1),16) : 0xc9a227,0,1.67,0.35,A.body); }
+ if(w&&w.amulet){ const d=catalog[w.amulet]; box(0.13,0.15,0.06,(d&&d.color)? parseInt(d.color.slice(1),16) : 0xc9a227,0,1.67,0.35,A.body); }
  for(const k of Object.keys(A)) shadowify(A[k]);
 }
 
@@ -4419,14 +4503,21 @@ addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
    if(Math.hypot(e.clientX-downX,e.clientY-downY)>9){ dragged=true; clearHold(); } // camera drag cancels a pending hold
    if(dragged && (e.pointerType==='mouse' ? e.buttons===1 : true)){
      lastCamInputAt=performance.now(); // Stage 31: manual camera control — the behind-facing ease pauses
-     camYaw-=dx*0.006*settings.camSpeed;
+     // Stage 37 fix: in first person the gaze follows my knight's
+     // facing, so horizontal drag leaves camYaw alone — it keeps
+     // exactly the angle third person left it at, instead of
+     // silently rotating an invisible value that then surprises
+     // me when I switch back to third person.
+     if(settings.camPov!=='first') camYaw-=dx*0.006*settings.camSpeed;
      // Stage 25: vertical drag TILTS the camera too — the view can
-     // now move up and down, not just around. Same convention as the
-     // camera stick: drag down = the camera climbs toward top-down,
-     // drag up = it sinks toward ground level. Third person only:
-     // first person is unchanged (Stage 18 v1 — drag has no effect
-     // on the first-person view, and the pitch stays put there).
-     if(dy&&settings.camPov!=='first'){
+     // now move up and down, not just around. Same convention as
+     // the camera stick: drag down = the camera climbs toward
+     // top-down, drag up = it sinks toward ground level.
+     // Stage 37 fix: the tilt applies in BOTH views — in first
+     // person it pitches the gaze up/down. The Stage 18 v1 build
+     // gated it off here while the camera stick still worked, so
+     // drag users in first person could not tilt at all.
+     if(dy){
        const np=clamp(camPitch+dy*0.005*settings.camSpeed,CAM_PITCH_MIN,CAM_PITCH_MAX);
        if(np!==camPitch){ camPitch=np; saveCamPitch(); }
      }
@@ -4981,8 +5072,8 @@ function animate(){
  // right stick drives the camera continuously (scaled by the speed setting)
  if(camVec.x||camVec.y){
    lastCamInputAt=now; // Stage 31: the camera stick is manual control too
-   camYaw-=camVec.x*2.4*dt*settings.camSpeed;
-   camPitch=clamp(camPitch+camVec.y*1.6*dt*settings.camSpeed,CAM_PITCH_MIN,CAM_PITCH_MAX); // Stage 25: shared pitch clamp
+   if(settings.camPov!=='first') camYaw-=camVec.x*2.4*dt*settings.camSpeed; // Stage 37: same rule as drag — no invisible yaw turns in first person
+   camPitch=clamp(camPitch+camVec.y*1.6*dt*settings.camSpeed,CAM_PITCH_MIN,CAM_PITCH_MAX); // Stage 25: shared pitch clamp (both views)
    saveCamPitch(); // Stage 25: stick-set pitch persists too (debounced)
  }
  if(now-lastMapDraw>150){ lastMapDraw=now; drawMinimap(); }
@@ -5206,12 +5297,19 @@ function animate(){
    // (head sphere rides at y≈1.94 on the group) and looks along his
    // rendered facing (rotation.y; facing dir = (sin, cos) in xz).
    // My own mesh is hidden so it can't block the view. Movement and
-   // the joystick are untouched; drag-rotate is ignored in this
-   // view (v1) — camYaw simply has no effect here.
+   // the joystick are untouched; camYaw has no effect here (the
+   // gaze follows his facing).
+   // Stage 37 fix: the saved pitch DOES apply here — it tilts the
+   // gaze up/down around the level point (CAM_PITCH_LEVEL), the
+   // same one setting third person uses: a higher pitch looks
+   // down, a lower one looks up. Before this fix the look target
+   // sat at eye height forever, so the pitch setting silently did
+   // nothing at all in first person.
    a.group.visible=false;
    const rot=a.group.rotation.y, hy=a.group.position.y+2.8; // Stage 32: eye height follows the scaled rig (head centre ≈ 2.17 × 1.32 ≈ 2.86)
+   const lp=camPitch-CAM_PITCH_LEVEL, clp=Math.cos(lp);
    camera.position.set(fx+Math.sin(rot)*0.35,hy,fz+Math.cos(rot)*0.35);
-   camera.lookAt(fx+Math.sin(rot)*10,hy,fz+Math.cos(rot)*10);
+   camera.lookAt(fx+Math.sin(rot)*clp*10,hy-Math.sin(lp)*10,fz+Math.cos(rot)*clp*10);
  } else {
    if(a) a.group.visible=true;
    const cx=fx+Math.sin(camYaw)*Math.cos(camPitch)*camDist;
@@ -5622,6 +5720,7 @@ window.refreshAdminLists=function(){
 window.adminSetRole=function(target,role){ send({type:'set_role',target,role}); setTimeout(refreshAdminLists,400); };
 window.adminCertify=function(target){ send({type:'certify',target}); setTimeout(refreshAdminLists,400); };
 window.adminSetStyle=function(target,style){ if(!style) return; send({type:'set_style_admin',target,style}); setTimeout(refreshAdminLists,400); };
+window.adminGoto=function(name){ send({type:'admin_goto',to:name}); };
 window.adminRunFight=function(){
  const a=($('fighta')||{}).value||fightSelA, b=($('fightb')||{}).value||fightSelB;
  if(!a||!b){ toast('Pick two fighters first.'); return; }
@@ -5648,6 +5747,14 @@ function pAdmin(){
    h+=`<button class="act" style="width:100%;margin:4px 0" onclick="send({type:'exchange_cert'})">📜 Exchange Certificate → 250g</button>`;
    h+=`<p class="note">An admin must be online to approve the exchange.</p>`;
  }
+ // Stage 37 (Addition #3): the online-players list, fed by the
+ // same online_list data as the fight picker below. The 🧭 Go to
+ // button renders ONLY for admin/owner viewers — and the server
+ // enforces the same rule on admin_goto regardless.
+ h+=`<h4 style="margin:12px 0 5px;color:#e3c766">🌐 Online now</h4>`;
+ if(lastOnlineList===null) h+=`<p class="note">Loading online players…</p>`;
+ else if(!lastOnlineList.length) h+=`<p class="note">Nobody is online.</p>`;
+ else h+=lastOnlineList.map(p=>`<div class="rowline"><span class="grow"><b>${rolePrefix(p.role)}${esc(p.username)}</b><br><span class="sub">${esc(AREA_LABELS[p.area]||p.area)}</span></span>${(role==='admin'||role==='owner')&&(!me||p.username!==me.username)?`<button class="act" onclick="adminGoto('${esc(p.username)}')">🧭 Go to</button>`:''}</div>`).join('');
  if(isAdminOrOwner()){
    h+=`<h4 style="margin:12px 0 5px;color:#e3c766">📝 Signed notes</h4>`;
    if(lastAdminNotes===null) h+=`<p class="note">Loading signed notes…</p>`;
@@ -5700,6 +5807,7 @@ let lastRefLists=null; // last {type:'ref_lists'} reply {items, npcs, objects}
 const CUSTOM_ICONS_CLIENT=['🗡️','⚔️','🔪','🏹','🪄','🛡️','⛑️','🦺','👑','💎','🔥','⭐'];
 // Editor field state, preserved across re-renders like the 7A spawn fields.
 let toolBase='', toolName='', toolIcon='🗡️', toolAcc='', toolMax='', toolRed='';
+let lookItemId='', lookIcon='', lookColor='', lookColorOn=false; // Stage 37 (Addition #4): Item Looks editor state
 let toolEditId='', toolEditName='', toolEditIcon='🗡️', toolEditAcc='', toolEditMax='', toolEditRed='';
 let toolPropKind='tree';
 /* Stage 8: tint + drawn art state. The tint is an on/off flag + a hex
@@ -5833,6 +5941,30 @@ window.adminEditCustom=function(){
  if(toolArtDirty){ const art=currentArtPayload(); if(art) o.art=art; } // absent art field = keep the old drawing
  send(o);
 };
+/* Stage 37 (Addition #4): base-item look overrides — the editor
+   below sends icon/tint only; the server stores just those two
+   fields and applies them over the catalog's icon/color. */
+window.lookPick=function(id){
+ lookItemId=id;
+ const d=catalog[id];
+ lookIcon=(d&&d.look&&d.icon)? d.icon : ''; // the override's icon when one is live, else "item's own"
+ lookColor=(d&&d.color)? d.color : '';
+ lookColorOn=!!(d&&d.color);
+ renderDrawer();
+};
+window.lookField=function(){ const i=$('lookicon'); if(i) lookIcon=i.value; };
+window.lookColorInput=function(v){ lookColor=v; lookColorOn=true; const t=$('lookcolortxt'); if(t) t.textContent=v; };
+window.lookColorClear=function(){ lookColor=''; lookColorOn=false; renderDrawer(); };
+window.adminSetLook=function(){
+ if(!lookItemId){ toast('Pick a base item first.'); return; }
+ // Both fields always ride, so the save means exactly what the
+ // form shows: '' icon = no icon override; '' color = no tint.
+ send({type:'set_item_look', item:lookItemId, icon:lookIcon||'', color:lookColorOn? lookColor : ''});
+};
+window.adminResetLook=function(){
+ if(!lookItemId){ toast('Pick a base item first.'); return; }
+ send({type:'set_item_look', item:lookItemId, reset:true});
+};
 window.refAddItem=function(id){ send({type:'spawn_item', item:id, qty:1}); };
 window.adminPlaceObject=function(){
  if(!myPos){ toast('You are not in the world yet.'); return; }
@@ -5878,6 +6010,20 @@ function pTools(){
    h+=`<div class="rowline"><span class="grow">Damage reduction % (0–45)</span><input type="number" id="tooleditred" min="0" max="45" step="1" value="${esc(toolEditRed)}" oninput="toolsEditField()"></div>`;
    h+=`<p class="note">Editing changes every copy of that item in the game at once.</p>`;
    h+=`<div style="display:flex;gap:6px"><button class="act" style="flex:1" onclick="adminEditCustom()">💾 Save changes</button><button class="ghost" onclick="adminRemoveArt()">🎨 Remove drawing</button></div>`;
+ }
+ // (b3) Stage 37 (Addition #4): restyle a STANDARD item's look —
+ // a new icon and/or tint over the catalog default. Looks only:
+ // the item's name, stats and prices never change.
+ const baseItems=catalogArr.filter(it=>!it.custom);
+ h+=`<h4 style="margin:12px 0 5px;color:#e3c766">🎨 Item looks — restyle a standard item</h4>`;
+ h+=`<div class="rowline"><span class="grow">Base item</span><select id="looksel" onchange="lookPick(this.value)"><option value="">— pick —</option>${baseItems.map(it=>`<option value="${esc(it.id)}" ${it.id===lookItemId?'selected':''}>${iconOf(it.id)} ${esc(it.name)}</option>`).join('')}</select></div>`;
+ if(lookItemId&&catalog[lookItemId]){
+   const curL=catalog[lookItemId];
+   h+=`<p class="note" style="margin:-2px 0 4px">Look now: ${itemIconHTML(lookItemId,22)} ${curL.look?'✨ override live':'standard look'}${curL.color?` · tint <b>${esc(curL.color)}</b>`:''}</p>`;
+   h+=`<div class="rowline"><span class="grow">New icon</span><select id="lookicon" onchange="lookField()"><option value="" ${!lookIcon?'selected':''}>— item's own —</option>${CUSTOM_ICONS_CLIENT.map(ic=>`<option value="${ic}" ${ic===lookIcon?'selected':''}>${ic}</option>`).join('')}</select></div>`;
+   h+=`<div class="rowline"><span class="grow">Tint colour</span><input type="color" id="lookcolor" value="${esc(lookColor||'#c9a227')}" oninput="lookColorInput(this.value)"><button class="ghost" onclick="lookColorClear()">No tint</button></div>`;
+   h+=`<p class="note" style="margin:-2px 0 4px">Tint now: <b id="lookcolortxt">${lookColorOn?esc(lookColor):'none'}</b> — either field can be set on its own; Reset restores the standard look.</p>`;
+   h+=`<div style="display:flex;gap:6px"><button class="act" style="flex:1" onclick="adminSetLook()">💾 Save look</button><button class="ghost" onclick="adminResetLook()">↩️ Reset look</button></div>`;
  }
  // (b2) Stage 8: the shared drawing canvas — one canvas serves both
  // Create (draw on the base item's picture) and Edit (draw on the
@@ -6047,6 +6193,10 @@ function pSettings(){
  h+=`<p class="note" style="margin:2px 0 8px">Menu: tapping a player, monster, gathering spot or dropped pile opens its menu — the same one a long-press opens — and tapping a backpack item opens its sheet. Normal: taps act straight away. Ground taps walk in both modes. The 🖱️ chip under the 🎛️ button toggles this too.</p>`;
  h+=`<div class="setrow"><span class="grow">🎥 Camera view</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.camPov==='third'?'on':''}" onclick="setCamPov('third')">🎥 Third person</button><button class="${settings.camPov==='first'?'on':''}" onclick="setCamPov('first')">👀 First person</button></div>`;
  h+=`<p class="note" style="margin:2px 0 8px">First person puts the camera at your knight's head, looking the way he faces — a different feel for fights. The 🎥 chip under the 🎛️ button switches it too.</p>`;
+ h+=`<div class="setrow"><span class="grow">📸 Camera sets<br><span class="note">Save the camera as it is now — view, tilt &amp; speed — and flip back in one tap, even mid-fight</span></span></div>`;
+ camSetsArr().forEach((s,i)=>{
+   h+=`<div class="setrow"><span class="grow">Set ${i+1}${s?`<br><span class="note">${s.pov==='first'?'👀 First person':'🎥 Third person'} · tilt ${(+s.pitch).toFixed(2)} · speed ${s.speed}×</span>`:`<br><span class="note">Empty</span>`}</span>${s?`<button class="act" onclick="useCamSet(${i})">📸 Use</button>`:''}<button class="ghost" onclick="saveCamSet(${i})">💾 Save</button></div>`;
+ });
  h+=`<div class="setrow"><span class="grow">🔅 Interface transparency<br><span class="note">Sticks, panels &amp; buttons</span></span><input type="range" min="0.3" max="1" step="0.02" value="${settings.uiAlpha}" oninput="setUiAlpha(this.value)"></div>`;
  h+=`<h4 style="margin:10px 0 5px;color:#e3c766">Menu buttons (⚙)</h4>`;
  for(const [p,label] of PANEL_LIST){
