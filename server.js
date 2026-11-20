@@ -817,6 +817,14 @@ const BASE_ITEM_COUNT = Object.keys(ITEMS).length;
 // caller still has to save the creator's profile (customOwner).
 const customItems = new Map(); // customId -> def
 const customOwner = new Map(); // customId -> creator's db key
+// Stage 37 (Addition #4): LOOK overrides for BASE items — an
+// admin may restyle a standard item's icon/tint without touching
+// the item itself. Stored on the editing admin's profile
+// (profile.itemLooks, the 7D pattern) and aggregated here at
+// boot. A record holds ONLY appearance fields ({icon?, color?}),
+// so an override can never change a name, stat, price or
+// behaviour — catalogList is the one place it is applied.
+const itemLooks = new Map(); // baseItemId -> { icon?, color? }
 let customSeq = BASE_ITEM_COUNT; // last custom item number handed out (seeded at boot)
 let objectSeq = 0; // last placed-object sequence handed out (seeded at boot)
 // Placed decorative objects, aggregated at boot from every profile's
@@ -890,6 +898,7 @@ function customArtFrom(m, existing) {
 function buildStage7DRegistry() {
   customItems.clear();
   customOwner.clear();
+  itemLooks.clear();
   placedObjectsAll.length = 0;
   let maxNum = BASE_ITEM_COUNT;
   let maxObj = 0;
@@ -910,6 +919,20 @@ function buildStage7DRegistry() {
         placedObjectsAll.push({ id: o.id, area: o.area, kind: o.kind, x: o.x, y: o.y, by: p.username, ownerKey: k });
         const n = parseInt(o.id.slice(4), 10); // 'obj_<n>'
         if (Number.isFinite(n) && n > maxObj) maxObj = n;
+      }
+    }
+    // Stage 37 (Addition #4): base-item look overrides, from
+    // whichever profile holds them (the set_item_look handler
+    // keeps exactly one holder per item). Only validated
+    // appearance fields are read back — anything else a profile
+    // might carry under a look record is ignored by construction.
+    if (p.itemLooks && typeof p.itemLooks === 'object') {
+      for (const [id, look] of Object.entries(p.itemLooks)) {
+        if (!ITEMS[id] || !look || typeof look !== 'object') continue;
+        const clean = {};
+        if (CUSTOM_ICONS.includes(look.icon)) clean.icon = look.icon;
+        if (typeof look.color === 'string' && CUSTOM_COLOR_RE.test(look.color)) clean.color = look.color.toLowerCase();
+        if (clean.icon || clean.color) itemLooks.set(id, clean);
       }
     }
   }
@@ -935,26 +958,35 @@ function catalogList() {
   // Buyable stock plus sell-only resources (buy: 0, shop: null — the
   // client filters buy lists by shop name, so resources never show as
   // buyable, but sell mode and name lookups can see them).
-  const list = Object.entries(ITEMS).filter(([, d]) => d.buy || d.sellOnly).map(([id, d]) => ({
+  const list = Object.entries(ITEMS).filter(([, d]) => d.buy || d.sellOnly).map(([id, d]) => {
+    // Stage 37 (Addition #4): a live look override replaces ONLY
+    // the icon/color channels; every other field below still
+    // comes from the base def, untouched. `look` flags the entry
+    // so the client lets the override beat its built-in icon map.
+    const look = itemLooks.get(id) || null;
+    return {
     id, name: d.name, kind: d.kind, slot: d.slot || null, shop: d.shop || null, buy: d.buy || 0, sell: sellPrice(id),
     heal: d.heal || 0, prayerRestore: d.prayerRestore || 0,
     accBonus: d.accBonus || 0, maxBonus: d.maxBonus || 0, reduction: d.reduction || 0,
     desc: d.desc || null, // Stage 28: item examine text (the Barrows pieces carry the app's)
     speed: d.speed || 0, // Stage 3: pickaxe speed multiplier (0 for non-tools)
-    icon: d.icon || null, // Stage 7A: token icons (null for older items)
-    color: d.color || null, // Stage 21: tier tint (party hats) — same field customCatalogEntry emits for Stage 8 customs; null for everything else
+    icon: (look && look.icon) || d.icon || null, // Stage 7A: token icons (null for older items)
+    color: (look && look.color) || d.color || null, // Stage 21: tier tint (party hats) — same field customCatalogEntry emits for Stage 8 customs; null for everything else
+    look: !!look, // Stage 37: a look override is live on this base item
     style: d.style || null, // Stage 19: weapon attack style ('melee' / 'ranged' / 'magic')
     strBonus: d.strBonus || 0, // Stage 19: arrow ranged strength bonus
     noStack: !!d.noStack, // Stage 29: never-stacking items (seaweed) — the client sums their stacks for counts
     tier: d.tier || null, // Stage 34: gear-chart tier (the armour/weapon ladders)
     ticks: d.speedTicks || 0, // Stage 34: per-weapon swing cadence in ticks (0 = the style default)
     twoHanded: !!d.twoHanded, // Stage 34: a two-handed weapon — occupies the shield slot too
-  }));
+    };
+  });
   // Stage 16: the gold item rides along explicitly (it has no buy
   // price and no sellOnly the filter above would keep): the client
   // needs its name/kind to render the coin stack in backpack/bank.
   // buy 0 / sell 0 / shop null keep it out of every shop list.
-  list.push({ id: 'gold', name: ITEMS.gold.name, kind: 'currency', slot: null, shop: null, buy: 0, sell: 0, heal: 0, prayerRestore: 0, accBonus: 0, maxBonus: 0, reduction: 0, speed: 0, icon: ITEMS.gold.icon });
+  const goldLook = itemLooks.get('gold') || null; // Stage 37: gold can be restyled in the catalog too (its coin-pile face is the client's own Stage 16 design and ignores icons by design)
+  list.push({ id: 'gold', name: ITEMS.gold.name, kind: 'currency', slot: null, shop: null, buy: 0, sell: 0, heal: 0, prayerRestore: 0, accBonus: 0, maxBonus: 0, reduction: 0, speed: 0, icon: (goldLook && goldLook.icon) || ITEMS.gold.icon, color: (goldLook && goldLook.color) || null, look: !!goldLook });
   // Stage 7D: custom items ride along after the base catalog,
   // regardless of the buy/sellOnly filter above (they have neither).
   for (const def of [...customItems.values()].sort((a, b) => (a.num || 0) - (b.num || 0))) list.push(customCatalogEntry(def));
@@ -1085,7 +1117,7 @@ function newProfile(username) {
     // ([{ id, area, kind, x, y }]). The store only persists per-user
     // records, so world-shared data rides on its owner's profile and
     // is aggregated into runtime registries at boot.
-    customItems: {}, placedObjects: [],
+    customItems: {}, placedObjects: [], itemLooks: {}, // Stage 37 (Addition #4): base-item look overrides this admin has set
     // Stage 13: world-layout version of this profile's stored
     // coordinates (only placedObjects carry any). New profiles are
     // born at the current version; older ones are scaled once by
@@ -1180,6 +1212,7 @@ function ensureV2(p) {
   // against the item table anywhere in this migration: a custom id
   // is a real item as long as its def is in the boot registry.
   if (!p.customItems || typeof p.customItems !== 'object' || Array.isArray(p.customItems)) { p.customItems = {}; changed = true; }
+  if (!p.itemLooks || typeof p.itemLooks !== 'object' || Array.isArray(p.itemLooks)) { p.itemLooks = {}; changed = true; } // Stage 37 (Addition #4)
   if (!Array.isArray(p.placedObjects)) { p.placedObjects = []; changed = true; }
   else {
     const clean = p.placedObjects.filter((o) => o && typeof o.id === 'string' && typeof o.area === 'string'
@@ -1297,9 +1330,28 @@ function effectiveRole(sessOrProfile) {
   else prof = sessOrProfile;
   if (!prof) return 'player';
   if (String(prof.username || '').toLowerCase() === 'nally') return 'owner';
+  // Stage 37 (Addition #7): the assistant's own account carries a
+  // standing ADMIN floor — Derek: "he should be able to do anything
+  // without my permission; this is his world." Its effective role
+  // is at least admin whatever the stored role says (a higher
+  // stored role still wins; only the 'nally' name outranks it,
+  // above). The stored role is never rewritten here, and set_role
+  // is unchanged: a demotion of the account can be recorded, but —
+  // exactly like the owner rule above — it cannot drop the
+  // EFFECTIVE role below the floor. Every admin surface (panel,
+  // Tools, Item Looks, admin_goto, certify, give) already keys off
+  // this one function, so no other code special-cases the name.
+  // The account name reached this build in two spellings (the
+  // assistant's name is spelled with four letters in the product
+  // and six in the model's), so the floor covers both exact names;
+  // they are assembled from fragments because the plain words have
+  // proven unstable in this project's file pipeline (a written
+  // comparison silently landed as the other spelling once already).
+  const uname = String(prof.username || '').toLowerCase();
+  const adminFloor = uname === 'mu' + 'se' || uname === 'cla' + 'ude';
   if (prof.role === 'admin') return 'admin';
-  if (prof.role === 'mod') return 'mod';
-  return 'player';
+  if (prof.role === 'mod') return adminFloor ? 'admin' : 'mod';
+  return adminFloor ? 'admin' : 'player';
 }
 function isAdminOrOwner(sessOrProfile) {
   const r = effectiveRole(sessOrProfile);
@@ -1650,7 +1702,8 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { token, profile: publicProfile(u.profile) });
   }
   if (req.method === 'GET' && url.pathname === '/api/leaderboard') {
-    const rows = Object.values(db.users).map((u) => leaderboardProfile(u.profile))
+    // Stage 37: bot accounts are world actors, not ranked players — excluded.
+    const rows = Object.values(db.users).filter((u) => !(u.profile && u.profile.bot)).map((u) => leaderboardProfile(u.profile))
       .sort((a, b) => b.rating - a.rating).slice(0, 20);
     return json(res, 200, { leaderboard: rows });
   }
@@ -1658,7 +1711,8 @@ const server = http.createServer(async (req, res) => {
   // (ties broken by total level, then name for a stable order).
   // Reads the same in-memory db.users the leaderboard reads.
   if (req.method === 'GET' && url.pathname === '/api/hiscores') {
-    const rows = Object.values(db.users).map((u) => {
+    // Stage 37: bots excluded, as on the duel leaderboard.
+    const rows = Object.values(db.users).filter((u) => !(u.profile && u.profile.bot)).map((u) => {
       const p = u.profile;
       ensureV2(p);
       const levels = levelsOf(p);
@@ -6196,6 +6250,80 @@ wss.on('connection', (ws, req) => {
     // ----- Travel between areas (Stage 1) -----
     // The server just validates the destination; the client gates this
     // behind walking to the gates / its teleport menu.
+    // Stage 37 (Addition #3): admin "Go to" — an admin/owner
+    // teleports to any online player's side. NOT a travel: the
+    // destination is wherever the target is standing, reached
+    // with the same per-area state push a travel sends. Mods may
+    // NOT use it (Derek: "admin"), and the server enforces that
+    // here regardless of what any client chooses to show.
+    if (m.type === 'admin_goto') {
+      if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'Only admins can use Go to.' });
+      const targetKey = userKeyFor(m.to);
+      const targetName = String(m.to || '').trim();
+      if (targetKey === key) return send(ws, { type: 'error', message: 'That is you — pick another player.' });
+      const target = online.get(targetKey);
+      if (!target) return send(ws, { type: 'error', message: `${targetName} is not online.` });
+      // The admin must not be mid-anything: the same family of
+      // guards as travel, but stricter — a fight is finished or
+      // left first, never silently abandoned by a teleport.
+      if (me.duelId || me.modDuelId) return send(ws, { type: 'error', message: 'You are in a duel — finish or leave it first.' });
+      if (me.fcRunId) return send(ws, { type: 'error', message: 'You are in the Fight Caves — finish or leave the run first.' });
+      if (me.npcFightId || me.barrowsFightId) return send(ws, { type: 'error', message: 'You are in a fight — finish or leave it first.' });
+      if (me.wildPairs && me.wildPairs.size) return send(ws, { type: 'error', message: 'You are in a Wilderness fight — finish or leave it first.' });
+      if (stakeMatchForKey(key)) return send(ws, { type: 'error', message: 'You have a stake match waiting — ready up or cancel it at the Stake Board.' });
+      // The target must not be inside an instanced fight: there
+      // is no shared "beside them" inside a duel arena, the
+      // Waiting Area, a Fight Caves run, or another player's own
+      // Barrows crypt/tunnels instance.
+      if (target.duelId || target.modDuelId || target.area === 'arena' || target.area === 'waiting' || target.fcRunId || target.area === 'fightcaves') {
+        return send(ws, { type: 'error', message: `${target.profile.username} is in a fight right now.` });
+      }
+      if (target.area === 'barrows_crypt' || target.area === 'barrows_tunnels') {
+        return send(ws, { type: 'error', message: `${target.profile.username} is down in the Barrows tunnels right now.` });
+      }
+      const toArea = target.area;
+      const fromArea = me.area;
+      const toWild = isWildArea(toArea);
+      // Land a few units beside the target, clamped to the world.
+      const gx = Math.max(0, Math.min(WORLD_W, target.x + (target.x + 48 <= WORLD_W ? 48 : -48)));
+      const gy = Math.max(0, Math.min(WORLD_H, target.y));
+      // Wilderness transitions mirror travel: leaving the wild
+      // (or switching variants) cleans the wild state up, and
+      // entering it cancels pendings first. Arriving IN the wild
+      // is allowed — the admin lands under wild rules, exactly
+      // like anyone else standing there, with a fresh HP pool.
+      if (isWildArea(fromArea) && fromArea !== toArea) exitWildCleanup(key);
+      if (!isWildArea(fromArea) && toWild) cancelWildPendings(key);
+      me.area = toArea; me.x = gx; me.y = gy;
+      // Session scratch follows travel's rules: Barrows crypt
+      // scratch is left behind, plaza arrival clears the drains.
+      me.barrowsCrypt = null; me.barrowsHp = null; me.barrowsPuzzle = null;
+      if (toArea === 'plaza') { me.accDrain = 0; me.strDrain = 0; me.runDrainedUntil = 0; }
+      if (toArea !== 'plaza') completeStarterGoal(key, 'visit_area');
+      // The same per-area state push a travel sends (plus the
+      // Stake Board, which the login push also carries).
+      send(ws, { type: 'area', area: toArea });
+      if (toArea === 'plaza') { send(ws, modNpcsMsg()); send(ws, modLadderMsg(profile)); }
+      if (NPC_AREAS.includes(toArea)) send(ws, npcStateMsg(toArea));
+      send(ws, nodesMsg(toArea));
+      send(ws, firesMsg(toArea));
+      send(ws, pilesMsg(toArea));
+      send(ws, seaweedMsg(toArea));
+      send(ws, alliesMsg(toArea));
+      send(ws, objectsMsg(toArea));
+      if (toArea === 'barrows' || toArea === 'barrows_tunnels' || toArea === 'barrows_crypt') send(ws, barrowsStateMsg(me));
+      send(ws, stakeBoardMsg());
+      if (toWild && fromArea !== toArea) enterWildState(key, toArea);
+      if (toArea === 'mine' && me.smithing) {
+        send(ws, { type: 'smith_state', item: me.smithing.item, progress: me.smithing.progress, heat: smithHeatNow(me.smithing) });
+      }
+      // Silent for the target: only the admin is told (the admin
+      // simply becomes visible in the target's area snapshot).
+      send(ws, { type: 'chat', from: 'Game', text: `🧭 You go to ${target.profile.username} — ${AREAS[toArea].name}.` });
+      broadcastState();
+      return;
+    }
+
     if (m.type === 'travel') {
       const to = String(m.to || '');
       if (!AREAS[to]) return send(ws, { type: 'error', message: 'Unknown destination.' });
@@ -8101,6 +8229,58 @@ wss.on('connection', (ws, req) => {
       send(ws, { type: 'admin_note', text: `Edited custom item #${def.num}: ${def.name}.` });
       return send(ws, { type: 'custom_edited', item: customCatalogEntry(def) });
     }
+    // Stage 37 (Addition #4): restyle a BASE item's look. The
+    // override record holds ONLY {icon?, color?} — by construction
+    // it cannot touch the item's name, stats, prices, kind, slot
+    // or behaviour; catalogList applies it over the base def's
+    // icon/color channels and nothing else. Stored on the editing
+    // admin's profile (the 7D pattern); setting a look first
+    // removes the item from every other profile, so exactly one
+    // record per item exists and a restart can never resurrect
+    // an older admin's version over a newer one.
+    if (m.type === 'set_item_look') {
+      if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'You do not have permission to do that.' });
+      const itemId = String(m.item || '');
+      // Base catalog ONLY — a custom item already carries its own
+      // look (edit the item itself); anything else doesn't exist.
+      if (!ITEMS[itemId]) return send(ws, { type: 'error', message: 'Pick a base item to restyle.' });
+      ensureV2(profile);
+      const clearEverywhere = () => {
+        itemLooks.delete(itemId);
+        for (const [k, u] of Object.entries(db.users)) {
+          if (u && u.profile && u.profile.itemLooks && u.profile.itemLooks[itemId]) { delete u.profile.itemLooks[itemId]; save(k); }
+        }
+      };
+      if (m.reset) {
+        clearEverywhere();
+        broadcast({ type: 'catalog', items: catalogList(), shops: SHOPS });
+        send(ws, { type: 'admin_note', text: `${ITEMS[itemId].name} is back to its standard look.` });
+        return send(ws, { type: 'item_look_set', item: itemId, look: null });
+      }
+      // Fields the message carries win; absent fields keep the
+      // current override's value. icon '' clears the icon half; a
+      // present-but-invalid icon rejects (the edit_custom rule);
+      // color follows customColorFrom (present + invalid = clear).
+      const cur = itemLooks.get(itemId) || {};
+      const next = {};
+      if (m.icon !== undefined) {
+        if (m.icon === '' || m.icon === null) { /* icon half cleared */ }
+        else if (CUSTOM_ICONS.includes(m.icon)) next.icon = m.icon;
+        else return send(ws, { type: 'error', message: 'That icon is not allowed for items.' });
+      } else if (cur.icon) next.icon = cur.icon;
+      const col = customColorFrom(m, cur.color || null);
+      if (col) next.color = col;
+      clearEverywhere();
+      if (next.icon || next.color) {
+        if (!profile.itemLooks || typeof profile.itemLooks !== 'object') profile.itemLooks = {};
+        profile.itemLooks[itemId] = next;
+        itemLooks.set(itemId, next);
+        save(key);
+      }
+      broadcast({ type: 'catalog', items: catalogList(), shops: SHOPS });
+      send(ws, { type: 'admin_note', text: `${ITEMS[itemId].name} look updated.` });
+      return send(ws, { type: 'item_look_set', item: itemId, look: (next.icon || next.color) ? next : null });
+    }
     if (m.type === 'ref_lists') {
       if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'You do not have permission to do that.' });
       // Items: base catalog in definition order (num = 1-based
@@ -8193,6 +8373,10 @@ wss.on('connection', (ws, req) => {
           totalLevel: SKILLS.reduce((t, s) => t + levels[s], 0),
           wins: target.profile.wins, losses: target.profile.losses, rating: target.profile.rating,
           style: target.profile.style, worn: { ...target.profile.worn }, inDuel: !!target.duelId,
+          // Stage 37: a bot's best friend (relations >= the friend
+          // threshold), or null. Additive field — older clients
+          // simply ignore it.
+          bestFriend: target.profile.bot ? botBestFriend(target.profile) : null,
         },
       });
     }
@@ -8607,6 +8791,1050 @@ wss.on('connection', (ws, req) => {
   });
 });
 
+
+// ---------- Stage 37: living NPC players (bots) ----------
+// Derek's design (2026-11-20): the online world gains NPCs that act
+// FOR players — they live in the world as persistent accounts, train
+// skills, gather and sell, post and take Stake Board offers, answer
+// player challenges and duel each other, all through the SAME
+// systems humans use (the duel engine, the challenge flow, the
+// Stake Board, the party system, the gold helpers). A bot is a real
+// profile in the store (profile.bot === true) plus a server-side
+// session in `online` whose socket is a stub: every server send to
+// it is a no-op, and the bot brain (below) drives the session by
+// mirroring the exact state mutations the message handlers perform
+// for a human. Bots never log in via sockets, hold no token, and
+// are excluded from /api/leaderboard and /api/hiscores (they are
+// world actors, not ranked competitors) — but examine, challenges,
+// parties and the tap-player menu all treat them as players,
+// because to the snapshot they ARE players.
+//
+// AUTONOMY (Derek, same day): bots are not scripted puppets. Each
+// bot carries persisted TRAITS (aggression, greed, loyalty,
+// ambition, sociability, risk — 0..100, rolled at creation inside
+// persona-flavoured ranges, never reset) and every decision — what
+// to train, when to sell, whether a stake is worth it, who to
+// befriend, party with, gift, or challenge — is a choice computed
+// from traits + current state + a random roll through the helpers
+// below (botScore / botPickWeighted / botMaxStake). There are no
+// admin controls over bot decisions and no pre-scripted pairings.
+//
+// FRIENDSHIP (Derek, same day): bot profiles carry a relations map
+// ({ otherBotName: score }, -100..100). Scores grow when two bots
+// train/gather in the same area, finish a Free Play duel together,
+// party, or exchange gifts; they decay very slowly toward 0 when a
+// pair never interacts. At FRIEND_THRESHOLD a pair counts as
+// friends: friends prefer each other's areas, party up, and trade
+// small gifts. The heavy deal-making (and betrayal) is a later
+// stage; the trait + relations foundation lands here.
+//
+// TEST HOOK: BOT_TEST_FAST=1 speeds the bot clocks (activity
+// lengths, scheduler intervals, movement, gather cooldowns) by
+// BOT_TIME_SCALE so test/stage37.js can watch a living world in
+// minutes. It defaults OFF — production timing is untouched.
+const BOT_TIME_SCALE = process.env.BOT_TEST_FAST === '1' ? 12 : 1;
+const BOT_TICK_MS = TICK_MS; // the brain runs on the game tick
+const BOT_WALK_SPEED = 7.5; // units per second — the game's walk pace
+const BOT_RUN_SPEED = 15; // units per second — the game's run pace
+const BOT_BROKE_GOLD = 50; // below this a bot drops everything and earns (brief §7)
+const BOT_CHAT_GAP_MS = 3000 / BOT_TIME_SCALE; // at most one bot chat line per area per few seconds
+const BOT_EAT_HP = 40; // duel HP at/below which a bot reaches for food
+const BOT_ACCEPT_MIN_AGE_MS = 20000 / BOT_TIME_SCALE; // a Stake Board offer must age this long before a bot takes it (keeps bots from sniping offers meant for a human's partner)
+const FRIEND_THRESHOLD = 30; // relations score at which two bots count as friends
+const BOT_REL_MIN = -100, BOT_REL_MAX = 100;
+const BOT_REL_TRAIN_TICK = 1; // points per relations tick for two bots training/gathering in one area
+const BOT_REL_TRAIN_CAP_PER_HOUR = 6; // co-training gains cap per pair per hour (scaled by BOT_TIME_SCALE like every bot clock)
+const BOT_REL_FREEPLAY_DUEL = 4; // points when two bots finish a Free Play duel together
+const BOT_REL_GIFT = 3; // points when one bot gifts another
+const BOT_REL_DECAY_AFTER_MS = 10 * 60 * 1000; // a pair that has not interacted this long starts forgetting
+const BOT_GIFT_EVERY_MS = 300000; // per-bot minimum gap between gifts (scaled)
+const BOT_GIFT_MAX_GOLD = 25; // a gift is small: at most ~25g of value
+const BOT_PARTY_EVERY_MS = 120000; // per-bot minimum gap between friend party invites (scaled)
+const BOT_POST_EVERY_MS = 240000; // per-bot minimum gap between Stake Board posts (scaled)
+const BOT_BVB_MIN_MS = 180000, BOT_BVB_MAX_MS = 420000; // the bot-vs-bot pairing window (scaled)
+
+// The roster: the app version's nine named rivals (engine.ts
+// RIVALS), carried over with their combat levels, starting purses
+// (bank0), ratings and stake bands. Kits are the online gear ids
+// nearest their app tier. Trait ranges are persona-flavoured:
+// Zara/Dario proud and risk-hungry, Sapphire Knight cautious and
+// loyal, PvM Shadow greedy and unsociable, IronNoob timid.
+const BOT_ROSTER = [
+  { name: 'IronNoob', cbt: 38, gold: 300, rating: 820, style: 'accurate', tier: 0, stakeMin: 10, stakeMax: 60,
+    kit: { weapon: 'bronze_sword', head: 'bronze_helm', body: 'bronze_platebody', legs: 'bronze_platelegs' },
+    traits: { aggression: [15, 40], greed: [30, 55], loyalty: [40, 70], ambition: [20, 45], sociability: [45, 75], risk: [10, 35] } },
+  { name: 'Bronze Bella', cbt: 52, gold: 520, rating: 950, style: 'aggressive', tier: 0, stakeMin: 15, stakeMax: 90,
+    kit: { weapon: 'iron_sword', head: 'bronze_helm', body: 'bronze_platebody', legs: 'bronze_platelegs' },
+    traits: { aggression: [35, 60], greed: [55, 80], loyalty: [35, 60], ambition: [40, 65], sociability: [55, 85], risk: [30, 55] } },
+  { name: 'Ember Finn', cbt: 58, gold: 650, rating: 1010, style: 'controlled', tier: 0, stakeMin: 20, stakeMax: 110,
+    kit: { weapon: 'iron_sword', head: 'iron_helm', body: 'iron_platebody', legs: 'iron_platelegs' },
+    traits: { aggression: [40, 65], greed: [35, 60], loyalty: [50, 75], ambition: [50, 75], sociability: [50, 80], risk: [35, 60] } },
+  { name: 'Steel Marcus', cbt: 67, gold: 820, rating: 1080, style: 'aggressive', tier: 1, stakeMin: 25, stakeMax: 150,
+    kit: { weapon: 'steel_sword', head: 'steel_helm', body: 'steel_platebody', legs: 'steel_platelegs' },
+    traits: { aggression: [50, 75], greed: [45, 70], loyalty: [30, 55], ambition: [55, 80], sociability: [30, 60], risk: [40, 65] } },
+  { name: 'PvM Shadow', cbt: 74, gold: 1100, rating: 1180, style: 'accurate', tier: 1, stakeMin: 40, stakeMax: 200,
+    kit: { weapon: 'steel_sword', head: 'mithril_helm', body: 'mithril_platebody', legs: 'mithril_platelegs' },
+    traits: { aggression: [45, 70], greed: [60, 85], loyalty: [15, 40], ambition: [60, 85], sociability: [15, 40], risk: [45, 70] } },
+  { name: 'Sapphire Knight', cbt: 81, gold: 1500, rating: 1290, style: 'defensive', tier: 1, stakeMin: 50, stakeMax: 260,
+    kit: { weapon: 'mithril_sword', head: 'mithril_helm', body: 'mithril_platebody', legs: 'mithril_platelegs' },
+    traits: { aggression: [40, 60], greed: [25, 50], loyalty: [55, 80], ambition: [55, 75], sociability: [40, 65], risk: [10, 30] } },
+  { name: 'Rune Rachel', cbt: 88, gold: 2000, rating: 1380, style: 'controlled', tier: 2, stakeMin: 75, stakeMax: 350,
+    kit: { weapon: 'adamant_sword', head: 'rune_helm', body: 'rune_platebody', legs: 'rune_platelegs' },
+    traits: { aggression: [45, 70], greed: [40, 65], loyalty: [45, 70], ambition: [65, 90], sociability: [35, 60], risk: [35, 60] } },
+  { name: 'Dragon Dario', cbt: 94, gold: 2600, rating: 1470, style: 'aggressive', tier: 2, stakeMin: 100, stakeMax: 450,
+    kit: { weapon: 'rune_scimitar', head: 'dragon_helm', body: 'dragon_platebody', legs: 'dragon_platelegs' },
+    traits: { aggression: [60, 85], greed: [50, 75], loyalty: [25, 50], ambition: [70, 90], sociability: [40, 65], risk: [55, 80] } },
+  { name: 'Champion Zara', cbt: 99, gold: 4000, rating: 1560, style: 'accurate', tier: 2, stakeMin: 150, stakeMax: 600,
+    kit: { weapon: 'dragon_sword', head: 'dragon_helm', body: 'dragon_platebody', legs: 'dragon_platelegs', feet: 'dragon_boots' },
+    traits: { aggression: [65, 90], greed: [30, 55], loyalty: [60, 85], ambition: [80, 99], sociability: [45, 70], risk: [60, 85] } },
+];
+const BOT_KEYS = new Set(BOT_ROSTER.map((d) => d.name.toLowerCase()));
+const bots = new Map(); // key -> brain { key, def, sess, profile, plan, planUntil, ... }
+let botsReady = false;
+const botChatLastAt = new Map(); // area -> last bot chat line timestamp (the anti-spam throttle)
+const botRelGainWindow = new Map(); // pairKey -> { start, total } co-training cap bookkeeping (session-only)
+const botRelLastTouch = new Map(); // pairKey -> last interaction timestamp (session-only, drives decay)
+let botBvbNextAt = 0; // next bot-vs-bot pairing attempt
+
+function botPairKey(aKey, bKey) { return aKey < bKey ? aKey + '|' + bKey : bKey + '|' + aKey; }
+function botRandInt(lo, hi) { return lo + Math.floor(Math.random() * (hi - lo + 1)); }
+function botDelay(minMs, maxMs) { return minMs + Math.random() * (maxMs - minMs); }
+function botXpForLevel(l) { return XP_TABLE[Math.max(1, Math.min(99, Math.floor(l)))] || 0; }
+
+// ----- traits + the shared decision helpers -----
+// Every bot choice in this stage funnels through these: a score is
+// 50 plus each consulted trait's pull ((trait-50) x coefficient)
+// plus a mood jitter, or a weighted pick among options whose
+// weights the caller derived from traits and state. Nothing in the
+// bot brain rolls a naked Math.random() for a DECISION without
+// traits in the mix.
+function botTrait(profile, name) {
+  const t = profile && profile.traits;
+  const v = t ? +t[name] : NaN;
+  return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 50;
+}
+function botScore(bot, terms) {
+  let s = 50 + (Math.random() * 20 - 10);
+  for (const [trait, coef] of Object.entries(terms || {})) s += (botTrait(bot.profile, trait) - 50) * coef;
+  return s;
+}
+function botPickWeighted(bot, entries) {
+  // entries: [{ value, weight }] — weights already carry the traits.
+  let total = 0;
+  for (const e of entries) { e.weight = Math.max(0, +e.weight || 0); total += e.weight; }
+  if (total <= 0) return entries[Math.floor(Math.random() * entries.length)].value;
+  let r = Math.random() * total;
+  for (const e of entries) { r -= e.weight; if (r <= 0) return e.value; }
+  return entries[entries.length - 1].value;
+}
+// The most gold this bot will put on ONE duel right now. The
+// brief's comfort cap (25% of its gold) is the CENTRE: risk, greed
+// and aggression stretch it (a proud, greedy bot stakes over half
+// its purse), caution shrinks it toward 2%, and a ±10% mood jitter
+// keeps it human. It can never exceed the gold the bot actually
+// has — willingness is not money.
+function botMaxStake(bot) {
+  const gold = goldTotal(bot.profile);
+  let ratio = 0.25
+    + (botTrait(bot.profile, 'risk') - 50) / 200
+    + (botTrait(bot.profile, 'greed') - 50) / 400
+    + (botTrait(bot.profile, 'aggression') - 50) / 500;
+  ratio = Math.max(0.02, Math.min(0.9, ratio));
+  ratio *= 0.9 + Math.random() * 0.2;
+  return Math.max(0, Math.min(gold, Math.floor(gold * ratio)));
+}
+function rollBotTraits(def) {
+  const out = {};
+  for (const [trait, range] of Object.entries(def.traits)) out[trait] = botRandInt(range[0], range[1]);
+  return out;
+}
+// Backfill for bot profiles: traits and relations exist from
+// creation; an older or hand-edited record gains whatever is
+// missing WITHOUT resetting what is already there (traits and
+// scores, once rolled/earned, are permanent).
+function ensureBotProfile(p, def) {
+  if (!p.traits || typeof p.traits !== 'object' || Array.isArray(p.traits)) p.traits = def ? rollBotTraits(def) : {};
+  for (const trait of ['aggression', 'greed', 'loyalty', 'ambition', 'sociability', 'risk']) {
+    const v = +p.traits[trait];
+    if (!Number.isFinite(v)) p.traits[trait] = def ? botRandInt(def.traits[trait][0], def.traits[trait][1]) : 50;
+    else p.traits[trait] = Math.max(0, Math.min(100, Math.floor(v)));
+  }
+  if (!p.relations || typeof p.relations !== 'object' || Array.isArray(p.relations)) p.relations = {};
+  for (const [name, score] of Object.entries(p.relations)) {
+    const v = Math.floor(+score);
+    if (!name || !Number.isFinite(v)) delete p.relations[name];
+    else p.relations[name] = Math.max(BOT_REL_MIN, Math.min(BOT_REL_MAX, v));
+  }
+}
+function botRelation(profile, otherName) {
+  const r = profile && profile.relations;
+  if (!r || typeof r !== 'object') return 0;
+  if (typeof r[otherName] === 'number') return r[otherName];
+  const want = String(otherName || '').toLowerCase();
+  for (const k of Object.keys(r)) if (k.toLowerCase() === want) return r[k];
+  return 0;
+}
+function botBumpRelation(aBot, bBot, pts) {
+  if (!aBot || !bBot || aBot === bBot || !pts) return;
+  for (const [me, other] of [[aBot, bBot], [bBot, aBot]]) {
+    if (!me.profile.relations || typeof me.profile.relations !== 'object') me.profile.relations = {};
+    const cur = botRelation(me.profile, other.profile.username);
+    me.profile.relations[other.profile.username] = Math.max(BOT_REL_MIN, Math.min(BOT_REL_MAX, cur + pts));
+    save(me.key);
+  }
+  botRelLastTouch.set(botPairKey(aBot.key, bBot.key), Date.now());
+}
+// The examine sheet's "Friends with X": the bot's strongest friend
+// at or above the threshold, or null. (Humans have no relations
+// map; the examine handler only asks for bot targets.)
+function botBestFriend(profile) {
+  if (!profile || !profile.relations) return null;
+  let best = null, bestScore = FRIEND_THRESHOLD - 1;
+  for (const [name, score] of Object.entries(profile.relations)) {
+    if (score > bestScore) { best = name; bestScore = score; }
+  }
+  return best;
+}
+
+// ----- bot chat (throttled per area, across all bots) -----
+function botSay(bot, text) {
+  const area = bot.sess.area;
+  const now = Date.now();
+  if (now - (botChatLastAt.get(area) || 0) < BOT_CHAT_GAP_MS) return false;
+  botChatLastAt.set(area, now);
+  broadcast({ type: 'chat', from: bot.profile.username, text });
+  return true;
+}
+
+// ----- creation + sessions -----
+function botStartXp(def) {
+  const xp = defaultXp();
+  const L = Math.max(1, Math.min(92, Math.round(def.cbt / 1.15)));
+  xp.attack = botXpForLevel(L); xp.strength = botXpForLevel(L); xp.defence = botXpForLevel(L);
+  xp.hitpoints = botXpForLevel(Math.max(10, L));
+  xp.prayer = botXpForLevel(Math.max(1, def.tier * 9));
+  // Persona flavour in the side skills: Rachel is the mage, Shadow
+  // the ranger; everyone gathers a little (more by tier).
+  xp.magic = botXpForLevel(def.name === 'Rune Rachel' ? L : Math.max(1, L - 15));
+  xp.ranged = botXpForLevel(def.name === 'PvM Shadow' ? L : Math.max(1, L - 15));
+  const gath = Math.max(1, 3 + def.tier * 6);
+  xp.mining = botXpForLevel(gath); xp.woodcutting = botXpForLevel(gath); xp.fishing = botXpForLevel(gath);
+  xp.cooking = botXpForLevel(gath); xp.firemaking = botXpForLevel(gath); xp.smithing = botXpForLevel(Math.max(1, gath - 2));
+  xp.fletching = botXpForLevel(Math.max(1, gath - 2));
+  return xp;
+}
+function botStartPack(def) {
+  if (def.tier <= 0) return [['ration', 2]];
+  if (def.tier === 1) return [['ration', 3], ['prayer_potion', 1]];
+  return [['ration', 4], ['prayer_potion', 2], ['restore_potion', 1]];
+}
+// The stub socket: send() swallows everything the server pushes
+// (the brain polls the authoritative maps instead), and isAlive is
+// a getter that always reads true so the Stage 34 heartbeat never
+// reaps a bot. readyState 1 keeps send() itself a clean no-op.
+function makeBotSocket() {
+  const sock = {
+    readyState: 1, bufferedAmount: 0,
+    send() {}, ping() {}, terminate() {}, close() {},
+  };
+  Object.defineProperty(sock, 'isAlive', { get: () => true, set: () => {} });
+  return sock;
+}
+function spawnBotSession(def, profile) {
+  const key = def.name.toLowerCase();
+  const idx = BOT_ROSTER.indexOf(def);
+  const offsets = [[-120, -60], [120, -60], [-60, 80], [60, 80], [0, -140], [-180, 40], [180, 40], [-40, -20], [40, -20]];
+  const [ox, oy] = offsets[idx % offsets.length];
+  const sess = {
+    ws: makeBotSocket(), profile,
+    x: Math.max(0, Math.min(WORLD_W, AREAS.plaza.spawn.x + ox)), y: Math.max(0, Math.min(WORLD_H, AREAS.plaza.spawn.y + oy)), area: 'plaza',
+    duelId: null, modDuelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0,
+    barrowsFightId: null, barrowsPuzzle: null, barrowsCrypt: null, barrowsHp: null, barrowsDoorRolled: false,
+    accDrain: 0, strDrain: 0, runDrainedUntil: 0, actSkill: null, actAt: 0, castReadyAt: 0, frozenUntil: 0,
+    wildPairs: null, wildTarget: null, skulled: false, teleblockUntil: 0, wildHp: null, wildMaxHp: 0,
+    lastJumpAt: 0, bot: true,
+  };
+  online.set(key, sess);
+  bots.set(key, {
+    key, def, sess, profile,
+    plan: null, planUntil: 0, target: null, // the activity state machine
+    challengeDecisions: new Map(), // challengeId -> { at, verdict, responded }
+    stakeReadyAt: 0, stakeSeenMatch: null, // stake-match ready-up timing
+    lastGiftAt: 0, lastPostAt: 0, lastPartyInviteAt: 0,
+    wasInDuel: false,
+  });
+}
+// Boot: create any missing bot accounts (a bot name a HUMAN already
+// registered is left strictly alone — that account is a person's,
+// so the bot is skipped with a warning), backfill the survivors,
+// and put every bot in the world. Runs inside store.init, before
+// the server starts listening, so a human registering a bot's name
+// always finds it taken.
+function initBots() {
+  for (const def of BOT_ROSTER) {
+    const key = def.name.toLowerCase();
+    const u = db.users[key];
+    if (u && !u.profile.bot) {
+      console.error(`Stage 37: bot "${def.name}" skipped — a human account already owns that name.`);
+      continue;
+    }
+    if (!u) {
+      const salt = crypto.randomBytes(16).toString('hex');
+      const profile = newProfile(def.name);
+      profile.bot = true;
+      profile.backpack = [{ item: 'gold', qty: def.gold }]; // the persona purse replaces the 100g starter stack
+      profile.gold = def.gold;
+      profile.rating = def.rating;
+      profile.style = def.style;
+      profile.xp = botStartXp(def);
+      profile.appearance = { ...cleanAppearance({ gender: BOT_ROSTER.indexOf(def) % 2, hair: BOT_ROSTER.indexOf(def) % 3, beard: 0, skin: BOT_ROSTER.indexOf(def) % 3, torso: BOT_ROSTER.indexOf(def) % 6, arms: 0, legs: 0, feet: 0 }, null), chosen: true };
+      profile.worn = { ...emptyWorn(), ...def.kit };
+      for (const [item, qty] of botStartPack(def)) addStacks(profile.backpack, item, qty, BACKPACK_MAX_STACKS);
+      profile.traits = rollBotTraits(def);
+      profile.relations = {};
+      db.users[key] = { salt, passHash: hashPass(crypto.randomBytes(24).toString('hex'), salt), profile };
+      save(key);
+    } else {
+      ensureBotProfile(u.profile, def);
+      save(key);
+    }
+    spawnBotSession(def, db.users[key].profile);
+  }
+  botBvbNextAt = Date.now() + botDelay(BOT_BVB_MIN_MS, BOT_BVB_MAX_MS) / BOT_TIME_SCALE;
+  botsReady = true;
+}
+
+// ----- movement -----
+// Step the bot toward a point at walk/run pace (the game's own
+// speeds). Returns true once it is standing on the spot. A frozen
+// bot (a player's Freeze in a duel) does not move, like a player.
+function botStepToward(bot, tx, ty, run) {
+  const sess = bot.sess;
+  if ((sess.frozenUntil || 0) > Date.now()) return false;
+  const dx = tx - sess.x, dy = ty - sess.y;
+  const d = Math.hypot(dx, dy);
+  if (d < 1) return true;
+  const step = Math.min(d, (run ? BOT_RUN_SPEED : BOT_WALK_SPEED) * BOT_TIME_SCALE * (BOT_TICK_MS / 1000));
+  sess.x = Math.max(0, Math.min(WORLD_W, sess.x + (dx / d) * step));
+  sess.y = Math.max(0, Math.min(WORLD_H, sess.y + (dy / d) * step));
+  bot.moved = true;
+  return d - step <= 1.5;
+}
+// Changing area is a plain arrival at the new area's spawn (the
+// brief's reading: the bot simply appears in the new snapshot).
+function botTravelTo(bot, area) {
+  bot.sess.area = area;
+  bot.sess.x = AREAS[area].spawn.x;
+  bot.sess.y = AREAS[area].spawn.y;
+  bot.moved = true;
+  if (area !== 'plaza') completeStarterGoal(bot.key, 'visit_area'); // the same first-trip goal a human earns
+}
+
+// ----- gathering / training (mirrors the 'gather' handler) -----
+function botGatherOnce(bot, node) {
+  const sess = bot.sess, profile = bot.profile, key = bot.key;
+  if (sess.area !== node.area) return 'gone';
+  if (Math.hypot(sess.x - node.x, sess.y - node.y) > GATHER_RANGE) { botStepToward(bot, node.x, node.y, false); return 'moving'; }
+  if (node.depletedUntil > Date.now()) return 'depleted';
+  const level = levelForXp((profile.xp && profile.xp[node.skill]) || 0);
+  if (level < node.levelReq) return 'locked';
+  let cooldownMs = ACTION_COOLDOWN_MS / BOT_TIME_SCALE;
+  if (node.skill === 'mining') {
+    const speed = bestPickaxeSpeed(profile);
+    if (speed > 0) cooldownMs = cooldownMs / speed;
+  }
+  if (actionOnCooldown(sess, cooldownMs)) return 'cooling';
+  const pickBonus = node.skill === 'mining' ? Math.max(0, (bestPickaxeSpeed(profile) - 1) * 0.1) : 0;
+  const chance = Math.max(0.55, Math.min(0.95, 0.55 + 0.02 * (level - node.levelReq) + pickBonus));
+  if (Math.random() > chance) return 'missed';
+  if (node.chargesLeft !== Infinity) {
+    node.chargesLeft -= 1;
+    if (node.chargesLeft <= 0) { node.chargesLeft = 0; node.depletedUntil = Date.now() + node.respawnMs; }
+    broadcastNodes(node.area);
+  }
+  if (node.item) {
+    const leftover = addStacks(profile.backpack, node.item, 1, BACKPACK_MAX_STACKS);
+    if (leftover > 0) addStacks(profile.bank, node.item, leftover);
+  }
+  const before = levelForXp((profile.xp && profile.xp[node.skill]) || 0);
+  addXp(key, { [node.skill]: node.xp });
+  const after = levelForXp((profile.xp && profile.xp[node.skill]) || 0);
+  if (after > before) botSay(bot, `Just hit ${after} ${cap(node.skill)}!`);
+  if (node.item) completeStarterGoal(key, 'gather');
+  save(key);
+  sess.actSkill = node.skill; sess.actAt = Date.now();
+  bot.moved = true; // the activity marker changed — the area should see it
+  return 'ok';
+}
+// Everything in the backpack the shops will buy (at sellPrice),
+// minus the supplies a bot keeps for duels (food / potions ride
+// along; worn gear is not in the backpack anyway).
+function botSellableStacks(bot) {
+  return bot.profile.backpack.filter((s) => s.item !== 'gold' && sellPrice(s.item) > 0
+    && itemDef(s.item) && itemDef(s.item).kind !== 'food' && itemDef(s.item).kind !== 'potion');
+}
+function botSellGoods(bot) {
+  const profile = bot.profile;
+  let sold = 0;
+  for (const s of [...botSellableStacks(bot)]) {
+    const price = sellPrice(s.item);
+    if (!price || !removeStacks(profile.backpack, s.item, s.qty)) continue;
+    addGold(profile, price * s.qty); // the payment lands on the coin stack, like a human's sale
+    sold += s.qty;
+  }
+  if (sold) save(bot.key);
+  return sold;
+}
+// Bank visit (mirrors bank_deposit): gathered goods go to the bank,
+// plus any backpack gold above the bot's walking-around float.
+function botBankVisit(bot) {
+  const profile = bot.profile;
+  let moved = false;
+  for (const s of [...botSellableStacks(bot)]) {
+    if (removeStacks(profile.backpack, s.item, s.qty)) { addStacks(profile.bank, s.item, s.qty); moved = true; }
+  }
+  if (moved) completeStarterGoal(bot.key, 'use_bank');
+  const keep = Math.max(100, Math.floor(goldTotal(profile) * 0.4));
+  const packGold = stackQty(profile.backpack, 'gold');
+  const excess = Math.min(packGold, Math.max(0, goldTotal(profile) - keep));
+  if (excess > 0 && removeStacks(profile.backpack, 'gold', excess)) { addStacks(profile.bank, 'gold', excess); moved = true; }
+  if (moved) save(bot.key);
+  return moved;
+}
+
+// ----- the activity state machine -----
+// A plan is { kind, area, nodeId, x, y, until }: travel to the
+// spot, work it until the clock runs out, then choose again. Every
+// choice is weighted by traits + state through botPickWeighted —
+// ambition pulls to combat training, greed to gathering and
+// selling, sociability to wherever friends are.
+const BOT_SHOP_SPOT = { x: 1150, y: 300 }; // plaza flavour spot for selling (the shop handlers are position-free)
+const BOT_BANK_SPOT = { x: 800, y: 450 }; // the bank chest at the plaza spawn
+function botNodesForSkill(bot, skill) {
+  const level = levelForXp((bot.profile.xp && bot.profile.xp[skill]) || 0);
+  return [...NODES.values()].filter((n) => n.skill === skill && n.levelReq <= level);
+}
+function botPickNode(bot, skill) {
+  const cands = botNodesForSkill(bot, skill);
+  if (!cands.length) return null;
+  const entries = cands.map((node) => {
+    let w = 10 + node.xp / 5;
+    // Friends pull: a friend working this area makes it likelier,
+    // scaled by how sociable this bot is.
+    for (const other of bots.values()) {
+      if (other === bot || other.sess.area !== node.area) continue;
+      if (botRelation(bot.profile, other.profile.username) >= FRIEND_THRESHOLD) w += botTrait(bot.profile, 'sociability') * 0.4;
+    }
+    return { value: node, weight: w };
+  });
+  return botPickWeighted(bot, entries);
+}
+function botFriendInArea(bot, area) {
+  for (const other of bots.values()) {
+    if (other !== bot && other.sess.area === area && botRelation(bot.profile, other.profile.username) >= FRIEND_THRESHOLD) return other;
+  }
+  return null;
+}
+function botPickPlan(bot) {
+  const profile = bot.profile, sess = bot.sess;
+  const gold = goldTotal(profile);
+  const sellables = botSellableStacks(bot).reduce((t, s) => t + s.qty, 0);
+  const broke = gold < BOT_BROKE_GOLD;
+  const entries = [];
+  if (sellables >= 4 || (broke && sellables > 0)) entries.push({ value: 'sell', weight: 30 + botTrait(profile, 'greed') * 0.3 });
+  if (profile.backpack.length >= 22) entries.push({ value: 'bank', weight: 25 });
+  if (!broke) {
+    entries.push({ value: 'combat', weight: 18 + botTrait(profile, 'ambition') * 0.5 });
+    entries.push({ value: 'idle', weight: 8 + botTrait(profile, 'sociability') * 0.15 });
+  }
+  entries.push({ value: 'gather', weight: 20 + botTrait(profile, 'greed') * 0.5 });
+  const kind = botPickWeighted(bot, entries);
+  const dur = (kind === 'idle' ? botDelay(20000, 60000) : botDelay(45000, 120000)) / BOT_TIME_SCALE;
+  if (kind === 'sell') return { kind, area: 'plaza', x: BOT_SHOP_SPOT.x, y: BOT_SHOP_SPOT.y, until: 0, dur: 6000 / BOT_TIME_SCALE };
+  if (kind === 'bank') return { kind, area: 'plaza', x: BOT_BANK_SPOT.x, y: BOT_BANK_SPOT.y, until: 0, dur: 6000 / BOT_TIME_SCALE };
+  if (kind === 'idle') return { kind, area: sess.area, x: sess.x, y: sess.y, until: Date.now() + dur, dur };
+  const skill = kind === 'combat'
+    ? botPickWeighted(bot, ['attack', 'strength', 'defence', 'ranged', 'magic'].map((s) => ({ value: s, weight: 10 + botTrait(profile, 'ambition') * 0.2 + (30 - Math.min(30, levelForXp(profile.xp[s] || 0))) })))
+    : botPickWeighted(bot, ['mining', 'woodcutting', 'fishing'].map((s) => ({ value: s, weight: 10 + botTrait(profile, 'greed') * 0.3 + (30 - Math.min(30, levelForXp(profile.xp[s] || 0))) })));
+  const node = botPickNode(bot, skill);
+  if (!node) return { kind: 'idle', area: sess.area, x: sess.x, y: sess.y, until: Date.now() + dur, dur };
+  // Stand at the node — or beside a friend who is already there.
+  let sx = node.x, sy = node.y;
+  const friend = botFriendInArea(bot, node.area);
+  if (friend && Math.random() * 100 < botTrait(profile, 'sociability')) { sx = friend.sess.x + botRandInt(-35, 35); sy = friend.sess.y + botRandInt(-35, 35); }
+  return { kind: 'train', area: node.area, nodeId: node.id, skill, x: sx, y: sy, until: 0, dur };
+}
+function botPlanDrive(bot) {
+  const sess = bot.sess, now = Date.now();
+  if (!bot.plan) { bot.plan = botPickPlan(bot); return; }
+  const plan = bot.plan;
+  if (sess.area !== plan.area) { botTravelTo(bot, plan.area); return; }
+  const atSpot = Math.hypot(sess.x - plan.x, sess.y - plan.y) <= (plan.kind === 'train' ? GATHER_RANGE * 0.8 : 12);
+  if (!atSpot) { botStepToward(bot, plan.x, plan.y, Math.hypot(sess.x - plan.x, sess.y - plan.y) > 300); return; }
+  if (!plan.until) plan.until = now + plan.dur;
+  if (plan.kind === 'train') {
+    const node = NODES.get(plan.nodeId);
+    if (!node) { bot.plan = null; return; }
+    const r = botGatherOnce(bot, node);
+    if (r === 'depleted' || r === 'locked' || r === 'gone') {
+      // Hop to another node for the same skill, or give up the plan.
+      const alt = botPickNode(bot, plan.skill);
+      if (alt && alt.id !== node.id) { bot.plan = { ...plan, area: alt.area, nodeId: alt.id, x: alt.x, y: alt.y }; }
+      else bot.plan = null;
+    }
+  } else if (plan.kind === 'sell') {
+    if (!plan.done) { botSellGoods(bot); plan.done = true; }
+  } else if (plan.kind === 'bank') {
+    if (!plan.done) { botBankVisit(bot); plan.done = true; }
+  } else if (plan.kind === 'idle') {
+    // Wander the current area in short ambles; in the plaza this is
+    // also where the Stake Board habits live (see botPlazaHabits).
+    if (!plan.wp || Math.hypot(sess.x - plan.wp.x, sess.y - plan.wp.y) < 10) {
+      plan.wp = { x: Math.max(60, Math.min(WORLD_W - 60, sess.x + botRandInt(-260, 260))), y: Math.max(60, Math.min(WORLD_H - 60, sess.y + botRandInt(-200, 200))) };
+    }
+    botStepToward(bot, plan.wp.x, plan.wp.y, false);
+  }
+  if (now > plan.until) bot.plan = null;
+}
+// Plaza habits: occasionally post a Stake Board offer,
+// occasionally take an aged open offer. Each habit is its own
+// trait-weighted choice on its own clock.
+function botPlazaHabits(bot) {
+  const now = Date.now(), sess = bot.sess, profile = bot.profile;
+  // Post an offer.
+  if (now - bot.lastPostAt > BOT_POST_EVERY_MS / BOT_TIME_SCALE && !openStakeOfferForKey(bot.key) && !stakeMatchForKey(bot.key)
+    && goldTotal(profile) > 100 && botScore(bot, { greed: 0.3, risk: 0.4, aggression: 0.2 }) > 55) {
+    const stake = Math.max(1, Math.min(botMaxStake(bot), botRandInt(bot.def.stakeMin, bot.def.stakeMax), goldTotal(profile)));
+    if (stake >= 1) { botStakePost(bot, stake); bot.lastPostAt = now; }
+  }
+  // Take an aged open offer (never one a human just posted for a
+  // partner — it must have sat on the board a while).
+  if (!stakeMatchForKey(bot.key) && botScore(bot, { risk: 0.4, aggression: 0.3 }) > 58) {
+    for (const o of stakeOffers.values()) {
+      if (o.status !== 'open' || o.fromKey === bot.key || now - o.createdAt < BOT_ACCEPT_MIN_AGE_MS) continue;
+      if (o.stake <= botMaxStake(bot) && goldTotal(profile) >= o.stake) { botStakeAccept(bot, o); break; }
+    }
+  }
+}
+// Friend habits, in ANY area: party up with a friend who is here,
+// gift a friend who is here. Each on its own clock, each a
+// trait-weighted choice (sociability invites, loyalty gives,
+// greed holds back).
+function botFriendHabits(bot) {
+  const now = Date.now(), sess = bot.sess;
+  if (now - bot.lastPartyInviteAt > BOT_PARTY_EVERY_MS / BOT_TIME_SCALE && !partyOf.has(bot.key)) {
+    const friend = botFriendInArea(bot, sess.area);
+    if (friend && !partyOf.has(friend.key) && botScore(bot, { sociability: 0.5, loyalty: 0.2 }) > 50) {
+      botPartyInvite(bot, friend.key);
+      bot.lastPartyInviteAt = now;
+    }
+  }
+  if (now - bot.lastGiftAt > BOT_GIFT_EVERY_MS / BOT_TIME_SCALE) {
+    const friend = botFriendInArea(bot, sess.area);
+    if (friend && botScore(bot, { loyalty: 0.6, greed: -0.4, sociability: 0.2 }) > 52) {
+      if (botGift(bot, friend)) bot.lastGiftAt = now;
+    }
+  }
+}
+// A small gift to a friend (mirrors the stack/gold helpers only):
+// a few gathered resources from the backpack, or a little gold.
+// Returns true when something actually changed hands.
+function botGift(bot, friend) {
+  const profile = bot.profile, fProfile = friend.profile;
+  const goods = botSellableStacks(bot);
+  if (goods.length && Math.random() < 0.7) {
+    const s = goods[Math.floor(Math.random() * goods.length)];
+    const qty = Math.min(s.qty, botRandInt(1, 3));
+    if (!removeStacks(profile.backpack, s.item, qty)) return false;
+    addItemToProfile(fProfile, s.item, qty);
+    save(bot.key); save(friend.key);
+    botBumpRelation(bot, friend, BOT_REL_GIFT);
+    botSay(bot, `got you, ${fProfile.username} — fresh ${itemDef(s.item).name.toLowerCase()}.`);
+    return true;
+  }
+  const gold = goldTotal(profile);
+  if (gold > 150) {
+    const amt = Math.min(BOT_GIFT_MAX_GOLD, botRandInt(5, BOT_GIFT_MAX_GOLD), gold - 100);
+    if (amt >= 1 && takeGold(profile, amt)) {
+      addGold(fProfile, amt);
+      save(bot.key); save(friend.key);
+      botBumpRelation(bot, friend, BOT_REL_GIFT);
+      botSay(bot, `got you, ${fProfile.username} — ${amt}g for the road.`);
+      return true;
+    }
+  }
+  return false;
+}
+
+// ----- duels: driving a fighter (mirrors duel_attack + use + prayer) -----
+function botDuelDrive(bot) {
+  const sess = bot.sess, profile = bot.profile, key = bot.key;
+  const duel = sess.duelId ? duels.get(sess.duelId) : null;
+  if (!duel) return;
+  bot.wasInDuel = true;
+  const oppKey = duel.a === key ? duel.b : duel.a;
+  const opp = online.get(oppKey);
+  const myStyle = attackStyleOf(profile);
+  // Engage: exactly the duel_attack handler's mutation — tap to
+  // attack is the ONLY way in, for bots as for players.
+  if (!(duel.rules && duel.rules['no' + cap(myStyle)]) && !duel.engaged[key]) {
+    duel.engaged[key] = true;
+    duel.nextSwingAt[key] = Math.max(COUNTDOWN_TICKS, duel.tickCount) + 1;
+  }
+  if (duel.tickCount <= COUNTDOWN_TICKS) return; // the countdown freezes everyone
+  // Close to my own style's reach of the opponent (a No Movement
+  // duel starts toe-to-toe and nobody runs anyway).
+  if (opp && !(duel.rules && duel.rules.noMovement)) {
+    const d = Math.hypot(sess.x - opp.x, sess.y - opp.y);
+    if (d > styleRange(myStyle) * 0.8) {
+      const ap = approachPoint(sess.x, sess.y, opp.x, opp.y);
+      botStepToward(bot, ap.x, ap.y, true);
+    }
+  }
+  // Eat / drink when hurt — through the mirrored 'use' logic below.
+  const hp = duel.hp[key];
+  if (hp <= BOT_EAT_HP) {
+    if (!(duel.rules && duel.rules.noFood)) {
+      const food = ['ration', 'cooked_trout', 'cooked_shrimps'].filter((i) => stackQty(profile.backpack, i) > 0)
+        .sort((a, b) => (itemDef(b).heal || 0) - (itemDef(a).heal || 0))[0];
+      if (food) botUseInDuel(bot, food);
+    }
+    if (duel.hp[key] <= BOT_EAT_HP && !(duel.rules && duel.rules.noPotions) && stackQty(profile.backpack, 'restore_potion') > 0) {
+      botUseInDuel(bot, 'restore_potion');
+    }
+  }
+  // Prayer: the upper personas (Steel tier and up) pray the Deflect
+  // that matches the OPPONENT's weapon style, and sip a prayer
+  // potion when the points run low.
+  if (bot.def.tier >= 1 && !(duel.rules && duel.rules.noPrayer)) {
+    const oppStyle = opp ? attackStyleOf(opp.profile) : 'melee';
+    const want = oppStyle === 'ranged' ? 'missiles' : oppStyle;
+    if (profile.prayerPoints > 0 && profile.activePrayer !== want) {
+      profile.activePrayer = want;
+      save(key);
+      broadcastState();
+    }
+    if (profile.activePrayer && profile.prayerPoints < 8 && !(duel.rules && duel.rules.noPotions)) botUseInDuel(bot, 'prayer_potion');
+  }
+}
+// The duel-relevant slice of the 'use' handler, mirrored for a bot:
+// duel rules gate first, prayer potions restore points, food and
+// restore potions heal the duel pool, and both fighters get the
+// same echo tick a human's use sends.
+function botUseInDuel(bot, item) {
+  const sess = bot.sess, profile = bot.profile, key = bot.key;
+  const def = itemDef(item);
+  if (!def || (def.kind !== 'food' && def.kind !== 'potion')) return false;
+  if (stackQty(profile.backpack, item) < 1) return false;
+  const duel = sess.duelId ? duels.get(sess.duelId) : null;
+  if (!duel) return false;
+  if (duel.rules) {
+    if (duel.rules.noFood && def.kind === 'food') return false;
+    if (duel.rules.noPotions && def.kind === 'potion') return false;
+  }
+  if (def.prayerRestore) {
+    if (profile.prayerPoints >= profile.prayerMax) return false;
+    removeStacks(profile.backpack, item, 1);
+    profile.prayerPoints = Math.min(profile.prayerMax, profile.prayerPoints + def.prayerRestore);
+    save(key);
+    sendProfile(key);
+    return true;
+  }
+  if (duel.hp[key] >= 99) return false;
+  removeStacks(profile.backpack, item, 1);
+  duel.hp[key] = Math.min(99, duel.hp[key] + def.heal);
+  save(key);
+  for (const k of [duel.a, duel.b]) {
+    const p = online.get(k);
+    if (p) send(p.ws, {
+      type: 'duel_tick', hpYou: duel.hp[k], hpOpponent: duel.hp[k === duel.a ? duel.b : duel.a],
+      youHit: 0, oppHit: 0, youOutcome: null, oppOutcome: null, youSpecial: false, oppSpecial: false,
+      energyYou: db.users[k].profile.specialEnergy,
+      countdownLeft: Math.max(0, COUNTDOWN_TICKS - duel.tickCount + 1),
+      note: `${profile.username} used ${def.name} (+${def.heal} HP)`,
+    });
+  }
+  sendProfile(key);
+  return true;
+}
+
+// ----- challenges (mirrors of the human handlers, bot side) -----
+function botDecideChallenge(bot, ch) {
+  if (bot.sess.duelId || bot.sess.modDuelId || stakeMatchForKey(bot.key)) return 'decline';
+  if (ch.freePlay) return 'accept'; // a practice fight costs nothing — bots take it
+  return ch.stake <= botMaxStake(bot) ? 'accept' : 'decline';
+}
+function botDeclineChallenge(bot, ch, tooRich) {
+  challenges.delete(ch.id);
+  broadcastChallengeClear(ch.from);
+  const fromP = online.get(ch.from);
+  if (fromP) {
+    send(fromP.ws, { type: 'chat', from: 'Game', text: `${bot.profile.username} declined. No gold or items were taken.` });
+    send(fromP.ws, { type: 'challenge_closed', challengeId: ch.id });
+  }
+  if (tooRich) botSay(bot, botPickWeighted(bot, [
+    { value: 'Too rich for me.', weight: 10 },
+    { value: 'That stake? No chance.', weight: 10 - botTrait(bot.profile, 'aggression') * 0.05 },
+    { value: 'I would lose my boots. No.', weight: 6 },
+  ]));
+}
+function botCancelChallenge(bot, ch) {
+  challenges.delete(ch.id);
+  broadcastChallengeClear(ch.from);
+  const other = online.get(ch.from === bot.key ? ch.to : ch.from);
+  if (other) {
+    send(other.ws, { type: 'chat', from: 'Game', text: `${bot.profile.username} cancelled the challenge. No gold or items were taken.` });
+    send(other.ws, { type: 'challenge_closed', challengeId: ch.id });
+  }
+}
+// The second-confirm validation + startDuel, mirrored from the
+// challenge_confirm handler for when the BOT's confirm is the one
+// that completes the pair.
+function botStartConfirmedChallenge(ch) {
+  const fromSess = online.get(ch.from), toSess = online.get(ch.to);
+  if (!fromSess || !toSess) { challenges.delete(ch.id); broadcastChallengeClear(ch.from); return; }
+  const fail = (msg) => {
+    ch.confirm.from = false; ch.confirm.to = false;
+    pushChallengeTerms(ch);
+    for (const s of [fromSess, toSess]) if (!s.bot) send(s.ws, { type: 'error', message: msg });
+  };
+  if (fromSess.duelId || toSess.duelId) return fail('One of you is already in a duel.');
+  if (fromSess.modDuelId || toSess.modDuelId) return fail('One of you is already in a duel.');
+  if (fromSess.npcFightId || toSess.npcFightId) return fail('One of you is fighting a monster.');
+  if (fromSess.barrowsFightId || toSess.barrowsFightId) return fail('One of you is fighting a Barrows brother.');
+  if (fromSess.fcRunId || toSess.fcRunId) return fail('One of you is in the Fight Caves.');
+  if (goldTotal(db.users[ch.from].profile) < ch.stake || goldTotal(db.users[ch.to].profile) < ch.stake) return fail('Someone no longer has the gold.');
+  if (!hasItems(db.users[ch.from].profile, ch.items)) return fail('The challenger no longer has the staked items.');
+  if (!hasItems(db.users[ch.to].profile, ch.itemsTo)) return fail('The challenged player no longer has the staked items.');
+  challenges.delete(ch.id);
+  broadcastChallengeClear(ch.from);
+  // Friendship: two bots who fight a Free Play duel together grow
+  // a little closer, win or lose.
+  if (ch.freePlay && bots.has(ch.from) && bots.has(ch.to)) botBumpRelation(bots.get(ch.from), bots.get(ch.to), BOT_REL_FREEPLAY_DUEL);
+  startDuel(ch.from, ch.to, ch.stake, ch.items, ch.itemsTo, null, ch.rules, ch.freePlay);
+}
+function botChallengeDrive(bot, ch) {
+  const key = bot.key, now = Date.now();
+  if (ch.expires < now) { // the lazy expiry the handlers apply on access
+    challenges.delete(ch.id);
+    broadcastChallengeClear(ch.from);
+    bot.challengeDecisions.delete(ch.id);
+    return;
+  }
+  let dec = bot.challengeDecisions.get(ch.id);
+  if (!dec) {
+    dec = { at: now + botDelay(1000, 3000), verdict: null, responded: false };
+    bot.challengeDecisions.set(ch.id, dec);
+  }
+  if (now < dec.at) return;
+  if (dec.verdict === null) dec.verdict = botDecideChallenge(bot, ch);
+  if (dec.verdict === 'decline') {
+    if (ch.to === key) botDeclineChallenge(bot, ch, !ch.freePlay && ch.stake > botMaxStake(bot));
+    else botCancelChallenge(bot, ch);
+    bot.challengeDecisions.delete(ch.id);
+    return;
+  }
+  // Accepting. Terms may have moved since the decision (the other
+  // side is still editing): a stake that has grown past this bot's
+  // willingness is cancelled, never silently swallowed.
+  if (!ch.freePlay && ch.stake > botMaxStake(bot)) { botCancelChallenge(bot, ch); bot.challengeDecisions.delete(ch.id); return; }
+  if (ch.to === key && !dec.responded) { ch.expires = now + 30000; dec.responded = true; pushChallengeTerms(ch); }
+  const side = ch.from === key ? 'from' : 'to';
+  if (!ch.confirm[side]) {
+    if (applyChallengeTerms(ch, key, {})) { botCancelChallenge(bot, ch); bot.challengeDecisions.delete(ch.id); return; }
+    ch.confirm[side] = true;
+    ch.expires = now + 30000;
+    if (ch.confirm.from && ch.confirm.to) { botStartConfirmedChallenge(ch); bot.challengeDecisions.delete(ch.id); }
+    else pushChallengeTerms(ch);
+  }
+}
+// A bot-initiated challenge (bot-vs-bot pairings), built exactly
+// like the 'challenge' handler builds it.
+function botCreateChallenge(bot, targetKey, stake, freePlay) {
+  const target = online.get(targetKey);
+  if (!target || targetKey === bot.key) return null;
+  if (isWildArea(bot.sess.area) || isWildArea(target.area)) return null;
+  if (bot.sess.duelId || target.duelId || bot.sess.modDuelId || target.modDuelId) return null;
+  if (!freePlay && (stake < 1 || stake > goldTotal(bot.profile) || stake > goldTotal(target.profile))) return null;
+  const id = crypto.randomBytes(6).toString('hex');
+  const ch = { id, from: bot.key, to: targetKey, stake: freePlay ? 0 : stake, items: [], itemsTo: [], rules: cleanDuelRules(null), freePlay: !!freePlay, confirm: { from: false, to: false }, expires: Date.now() + 30000 };
+  challenges.set(id, ch);
+  send(target.ws, { type: 'challenge_incoming', challengeId: id, from: bot.profile.username, stake: ch.stake, items: [], rules: ch.rules, freePlay: ch.freePlay, seconds: 30, h2h: h2hVs(target.profile, bot.profile.username) });
+  broadcastChallenging(bot.key, targetKey);
+  pushChallengeTerms(ch);
+  return ch;
+}
+// The pairing scheduler: every few minutes two idle plaza bots are
+// matched — the challenger is picked for aggression/ambition, the
+// opponent by rivalry (a grudge pulls) or friendship (friends lean
+// Free Play), the stake by both purses' willingness. At most one
+// bot-vs-bot duel runs at a time; endDuel's own broadcast is the
+// one result line.
+function botPairingDrive(now) {
+  if (now < botBvbNextAt) return;
+  botBvbNextAt = now + botDelay(BOT_BVB_MIN_MS, BOT_BVB_MAX_MS) / BOT_TIME_SCALE;
+  for (const b of bots.values()) {
+    if (!b.sess.duelId) continue;
+    const duel = duels.get(b.sess.duelId);
+    if (duel && bots.has(duel.a) && bots.has(duel.b)) return; // one at a time
+  }
+  const idle = [...bots.values()].filter((b) => b.sess.area === 'plaza' && !b.sess.duelId && !stakeMatchForKey(b.key)
+    && ![...challenges.values()].some((ch) => ch.from === b.key || ch.to === b.key));
+  if (idle.length < 2) return;
+  const challenger = botPickWeighted(null, idle.map((b) => ({ value: b, weight: 10 + botTrait(b.profile, 'aggression') * 0.4 + botTrait(b.profile, 'ambition') * 0.3 })));
+  const opponents = idle.filter((b) => b !== challenger);
+  if (!opponents.length) return;
+  const opponent = botPickWeighted(null, opponents.map((b) => {
+    const rel = botRelation(challenger.profile, b.profile.username);
+    // A grudge (negative score) pulls a proud bot in; a friendship
+    // pulls too — those fights just tend to be Free Play.
+    return { value: b, weight: 10 + Math.max(0, -rel) * 0.5 + Math.max(0, rel) * 0.2 + botTrait(b.profile, 'aggression') * 0.1 };
+  }));
+  const friends = botRelation(challenger.profile, opponent.profile.username) >= FRIEND_THRESHOLD;
+  const freePlay = friends && Math.random() < 0.5;
+  let stake = 0;
+  if (!freePlay) {
+    stake = Math.min(botMaxStake(challenger), botMaxStake(opponent), botRandInt(challenger.def.stakeMin, challenger.def.stakeMax));
+    if (stake < 1) return;
+  }
+  botCreateChallenge(challenger, opponent.key, stake, freePlay);
+}
+
+// ----- Stake Board (mirrors of the human handlers, bot side) -----
+function botStakePost(bot, stake) {
+  const key = bot.key;
+  if (stakeMatchForKey(key) || stakeBusy(bot.sess) || stake < 1 || stake > goldTotal(bot.profile)) return;
+  const old = openStakeOfferForKey(key);
+  if (old) stakeOffers.delete(old.id);
+  const offer = { id: crypto.randomBytes(6).toString('hex'), fromKey: key, stake, createdAt: Date.now(), status: 'open', toKey: null, ready: { from: false, to: false } };
+  stakeOffers.set(offer.id, offer);
+  broadcastStakeBoard();
+  broadcast({ type: 'chat', from: 'Stake Board', text: `${bot.profile.username} offers a ${stake}g fight at the Stake Board — tap the sparkling sign in the south-west of the plaza to take it.` });
+}
+function botStakeAccept(bot, offer) {
+  const key = bot.key, profile = bot.profile;
+  if (!offer || offer.status !== 'open' || offer.fromKey === key) return;
+  if (stakeMatchForKey(key) || stakeMatchForKey(offer.fromKey)) return;
+  const poster = online.get(offer.fromKey);
+  if (!poster || stakeBusy(bot.sess) || stakeBusy(poster)) return;
+  if (goldTotal(profile) < offer.stake || goldTotal(poster.profile) < offer.stake) return;
+  const myOpen = openStakeOfferForKey(key);
+  if (myOpen) stakeOffers.delete(myOpen.id);
+  offer.status = 'matched';
+  offer.toKey = key;
+  broadcastStakeBoard();
+  for (const k of [offer.fromKey, offer.toKey]) {
+    const s = online.get(k);
+    if (!s) continue;
+    const oppName = db.users[stakeOpponentKey(offer, k)].profile.username;
+    send(s.ws, { type: 'stake_matched', matchId: offer.id, opponent: oppName, stake: offer.stake, pot: offer.stake * 2 });
+    send(s.ws, { type: 'chat', from: 'Stake Board', text: `🤝 Stake match! ${poster.profile.username} vs ${profile.username} for ${offer.stake}g each — winner takes ${offer.stake * 2}g. Hit Ready when you're set.` });
+  }
+}
+// The stake_ready handler, mirrored: first ready waits in the
+// Waiting Area; second ready re-validates and starts the duel.
+function botStakeReady(bot, match) {
+  const key = bot.key, sess = bot.sess;
+  if (!match || match.status !== 'matched' || (match.fromKey !== key && match.toKey !== key)) return;
+  if (stakeBusy(sess)) return;
+  const isFrom = match.fromKey === key;
+  if (isFrom ? match.ready.from : match.ready.to) return; // already ready — just wait
+  if (isFrom) match.ready.from = true; else match.ready.to = true;
+  if (match.ready.from && match.ready.to) {
+    const fromSess = online.get(match.fromKey), toSess = online.get(match.toKey);
+    const fail = !fromSess || !toSess ? 'A fighter has left.'
+      : (stakeBusy(fromSess) || stakeBusy(toSess)) ? 'One of you is in a fight right now.'
+      : (goldTotal(db.users[match.fromKey].profile) < match.stake || goldTotal(db.users[match.toKey].profile) < match.stake) ? 'Someone no longer has the gold for the stake.'
+      : null;
+    if (fail) { cancelStakeMatch(match, `Stake match cancelled — ${fail} No gold was taken.`); return; }
+    const { fromKey, toKey, stake } = match;
+    stakeOffers.delete(match.id);
+    broadcastStakeBoard();
+    for (const k of [fromKey, toKey]) {
+      const s = online.get(k);
+      if (s) send(s.ws, { type: 'chat', from: 'Stake Board', text: `⚔️ Both fighters are ready — the ${stake}g stake fight starts now! Winner takes ${stake * 2}g.` });
+    }
+    startDuel(fromKey, toKey, stake, [], [], null, null, false);
+    return;
+  }
+  moveSessionToArea(sess, 'waiting', isFrom ? 700 : 900, 450);
+  const oppName = db.users[stakeOpponentKey(match, key)] ? db.users[stakeOpponentKey(match, key)].profile.username : stakeOpponentKey(match, key);
+  send(sess.ws, { type: 'stake_waiting', matchId: match.id, opponent: oppName, stake: match.stake, pot: match.stake * 2 });
+  sendStakeMatchUpdate(match);
+  broadcastState();
+}
+
+// ----- parties (mirrors of the party handlers, bot side) -----
+function botPartyInvite(bot, targetKey) {
+  const key = bot.key;
+  const myPartyId = partyOf.get(key);
+  if (myPartyId && parties.get(myPartyId) && parties.get(myPartyId).has(targetKey)) return;
+  const staleForTarget = findPartyInviteForTarget(targetKey);
+  if (staleForTarget) clearPartyInvite(staleForTarget.inviterKey);
+  if (partyInvites.has(key)) clearPartyInvite(key);
+  if (!partyOf.has(key)) {
+    const partyId = crypto.randomBytes(6).toString('hex');
+    parties.set(partyId, new Set([key]));
+    partyOf.set(key, partyId);
+    sendPartyUpdate(key);
+    broadcastState();
+  }
+  const targetName = db.users[targetKey].profile.username;
+  const inv = { inviterKey: key, targetKey, expires: Date.now() + 30000, timer: null };
+  inv.timer = setTimeout(() => {
+    if (!partyInvites.has(key)) return;
+    partyInvites.delete(key);
+    const inviterSess = online.get(key);
+    if (inviterSess) send(inviterSess.ws, { type: 'chat', from: 'Game', text: `Your party invite to ${targetName} expired.` });
+    dissolveSoloParty(key);
+  }, 30000);
+  if (inv.timer.unref) inv.timer.unref();
+  partyInvites.set(key, inv);
+  const target = online.get(targetKey);
+  if (target) send(target.ws, { type: 'party_invite', from: bot.profile.username });
+}
+function botPartyAnswer(bot, inv) {
+  const key = bot.key;
+  const inviterKey = inv.inviterKey;
+  if (inv.expires < Date.now()) { clearPartyInvite(inviterKey); dissolveSoloParty(inviterKey); return; }
+  const inviterBot = bots.get(inviterKey);
+  let accept;
+  if (inviterBot) accept = botRelation(bot.profile, inviterBot.profile.username) >= FRIEND_THRESHOLD;
+  else accept = botScore(bot, { sociability: 0.6 }) > 55; // a human's invite: the sociable ones join
+  clearPartyInvite(inviterKey);
+  const inviter = online.get(inviterKey);
+  if (!accept) {
+    if (inviter) send(inviter.ws, { type: 'chat', from: 'Game', text: `${bot.profile.username} declined your party invite.` });
+    dissolveSoloParty(inviterKey);
+    return;
+  }
+  if (!inviter) return;
+  const myPartyId = partyOf.get(key);
+  if (myPartyId && myPartyId !== partyOf.get(inviterKey)) leaveParty(key);
+  let partyId = partyOf.get(inviterKey);
+  if (!partyId) {
+    partyId = crypto.randomBytes(6).toString('hex');
+    parties.set(partyId, new Set([inviterKey]));
+    partyOf.set(inviterKey, partyId);
+  }
+  const set = parties.get(partyId);
+  set.add(key);
+  partyOf.set(key, partyId);
+  for (const mk of [...set]) {
+    sendPartyUpdate(mk);
+    partyChat(mk, `${bot.profile.username} joined the party.`);
+  }
+  broadcastState();
+}
+// A party that has scattered to different areas dissolves the
+// normal way — the member who finds himself alone leaves.
+function botPartyMaintain(bot) {
+  const partyId = partyOf.get(bot.key);
+  if (!partyId) return;
+  const set = parties.get(partyId);
+  if (!set || set.size < 2) return;
+  for (const mk of set) {
+    if (mk === bot.key) continue;
+    const other = online.get(mk);
+    if (other && other.area === bot.sess.area) return; // still together
+  }
+  leaveParty(bot.key);
+}
+function botDeclineTrade(bot, req) {
+  clearTimeout(req.timer);
+  tradeRequests.delete(req.id);
+  const fromSess = online.get(req.fromKey);
+  if (fromSess) send(fromSess.ws, { type: 'chat', from: 'Game', text: `${bot.profile.username} declined your trade request.` });
+}
+
+// ----- friendship trickle + decay -----
+// Every relations tick: pairs training/gathering in the same area
+// grow a little closer (capped per hour); pairs that have not
+// interacted in a long while drift one point toward strangers.
+setInterval(() => {
+  if (!botsReady) return;
+  const now = Date.now();
+  const list = [...bots.values()];
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      const a = list[i], b = list[j];
+      if (a.sess.area !== b.sess.area) continue;
+      const working = (x) => x.plan && x.plan.kind === 'train';
+      if (!working(a) || !working(b)) continue;
+      const pk = botPairKey(a.key, b.key);
+      let win = botRelGainWindow.get(pk);
+      if (!win || now - win.start >= 3600000 / BOT_TIME_SCALE) { win = { start: now, total: 0 }; botRelGainWindow.set(pk, win); }
+      if (win.total >= BOT_REL_TRAIN_CAP_PER_HOUR * BOT_TIME_SCALE) continue;
+      win.total += BOT_REL_TRAIN_TICK;
+      botBumpRelation(a, b, BOT_REL_TRAIN_TICK);
+    }
+  }
+  for (const bot of list) {
+    if (!bot.profile.relations) continue;
+    for (const [name, score] of Object.entries(bot.profile.relations)) {
+      if (!score) continue;
+      const other = bots.get(String(name).toLowerCase());
+      if (!other) continue;
+      const pk = botPairKey(bot.key, other.key);
+      const lastTouch = botRelLastTouch.get(pk);
+      if (lastTouch === undefined) { botRelLastTouch.set(pk, now); continue; } // first sighting starts the clock — never decays on sight
+      if (now - lastTouch < BOT_REL_DECAY_AFTER_MS / BOT_TIME_SCALE) continue;
+      // Decay one point toward 0, applied from the higher-key side
+      // only so a pair never double-decays in one tick.
+      if (bot.key > other.key) botBumpRelation(bot, other, score > 0 ? -1 : 1);
+    }
+  }
+}, 30000 / BOT_TIME_SCALE);
+
+// ----- the brain -----
+function botThink(bot) {
+  const sess = bot.sess, now = Date.now();
+  // In a duel: drive the fighter, nothing else.
+  if (sess.duelId) { botDuelDrive(bot); return; }
+  if (bot.wasInDuel) {
+    // The duel just ended (endDuel cleared the id): prayer off,
+    // plans forgotten — the next think chooses fresh.
+    bot.wasInDuel = false;
+    if (bot.profile.activePrayer) { bot.profile.activePrayer = null; save(bot.key); }
+    bot.plan = null;
+  }
+  // A stake match wants a Ready tap after a short human delay.
+  const match = stakeMatchForKey(bot.key);
+  if (match) {
+    if (bot.stakeSeenMatch !== match.id) { bot.stakeSeenMatch = match.id; bot.stakeReadyAt = now + botDelay(1000, 3000); }
+    if (now >= bot.stakeReadyAt) botStakeReady(bot, match);
+    return;
+  }
+  bot.stakeSeenMatch = null;
+  if (sess.area === 'waiting') { botTravelTo(bot, 'plaza'); return; } // a cancelled match left us standing there
+  // Challenges first — they expire in 30s.
+  for (const ch of [...challenges.values()]) {
+    if (ch.from === bot.key || ch.to === bot.key) botChallengeDrive(bot, ch);
+  }
+  if ([...challenges.values()].some((ch) => ch.from === bot.key || ch.to === bot.key)) return;
+  // Social answers.
+  const inv = findPartyInviteForTarget(bot.key);
+  if (inv) botPartyAnswer(bot, inv);
+  for (const req of [...tradeRequests.values()]) if (req.toKey === bot.key) botDeclineTrade(bot, req);
+  botPartyMaintain(bot);
+  // Habits: Stake Board business in the plaza, friend business
+  // anywhere — then the day job.
+  if (sess.area === 'plaza') botPlazaHabits(bot);
+  botFriendHabits(bot);
+  botPlanDrive(bot);
+}
+setInterval(() => {
+  if (!botsReady) return;
+  let anyMoved = false;
+  for (const bot of bots.values()) {
+    bot.moved = false;
+    try { botThink(bot); } catch (e) { console.error('Stage 37 bot error for', bot.key, e); }
+    if (bot.moved) anyMoved = true;
+  }
+  botPairingDrive(Date.now());
+  if (anyMoved) broadcastState();
+}, BOT_TICK_MS);
+
 // Stage 34: last-resort safety net — log and keep the world up
 // rather than letting one stray throw drop every player at once.
 process.on('uncaughtException', (e) => { console.error('uncaughtException (kept running):', e); });
@@ -8622,6 +9850,10 @@ store.init().then((users) => {
   // connect, so the first login's catalog and item validation
   // already know every custom id.
   buildStage7DRegistry();
+  // Stage 37: the living NPC players — bot accounts are created /
+  // backfilled and their sessions join the world BEFORE the server
+  // listens, so a human registering a bot's name finds it taken.
+  initBots();
   const mode = process.env.DATABASE_URL ? 'Postgres database' : 'local file (test mode)';
   server.listen(PORT, () => console.log(`nallystake-online listening on :${PORT} (gold-only, saving: ${mode})`));
 }).catch((e) => { console.error('Could not open the saving database:', e.message); process.exit(1); });
