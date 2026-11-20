@@ -3582,6 +3582,11 @@ function openModSheet(id){
  // sheet closed, the server's refusal scrolled by in a toast).
  // The sheet itself now says so, in place of the button.
  else if((me?me.gold:0)<n.stake) action=`<p>🪙 <b>You need ${n.stake}g for this stake duel — you have ${me?me.gold:0}g.</b></p><p class="note" style="color:#4a3826">Win gold in duels, on the Stake Board, or by selling loot — then come back.</p>`;
+ // Week 2 A2: the honest mirror of the Stage 31 note — when the
+ // stake is affordable but is more than half of everything the
+ // player has, the sheet says so before they commit. Warning
+ // only: the fight is never blocked.
+ else if(n.stake>(me?me.gold:0)/2) action=`<p style="color:#b3261e">⚠️ <b>This stake is most of your gold — lose and you're nearly broke.</b></p><div class="btns"><button class="act" onclick="modDuelStart('${n.id}')">⚔️ Stake duel — ${n.stake}g</button></div>`;
  else action=`<div class="btns"><button class="act" onclick="modDuelStart('${n.id}')">⚔️ Stake duel — ${n.stake}g</button></div>`;
  $('modnpcsheet').innerHTML=`<h3>⭐ ${esc(n.name)} · Tier ${n.tier} moderator</h3>
  <p class="note" style="color:#4a3826">Stake duel: <b>${n.stake}g</b> each — winner takes <b>${n.stake*2}g</b>. Equal stats (40) like a player duel; your gear, style and Dragon Slash count. Tap ${esc(n.name)} to attack — there's no auto-retaliate. Walking away forfeits your stake, and mod fights never touch your duel record or rating.</p>
