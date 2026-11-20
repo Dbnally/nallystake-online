@@ -638,6 +638,15 @@ function saveSettings(){ try{ localStorage.setItem(SETTINGS_KEY,JSON.stringify(s
    never closes an open panel, and the choice persists on this device. */
 let railOpen=true;
 try{ railOpen=localStorage.getItem('nallystake_rail_open')!=='0'; }catch(e){}
+/* Stage 36 fix: grabMode MUST be declared up here, before initThree()
+   runs. animate() reads it (Stage 31 camera-behind block) and
+   initThree() calls animate() synchronously during script load —
+   when the declaration sat at the end of the script (Stage 25 rail
+   block), that first call hit the let TDZ, the ReferenceError
+   aborted the rest of top-level initialisation (panel wiring, chat
+   bindings, the declaration itself), and every later frame threw
+   before renderer.render: black scene, dead panels. */
+let grabMode=false;
 function applyRailVisibility(){
  const rs=$('railset'); if(rs) rs.classList.toggle('open',railOpen);
  const gb=$('gearbtn'); if(gb) gb.textContent=railOpen?'✕':'🎛️';
@@ -8076,7 +8085,8 @@ function applyBtnPositions(){
  });
  syncRailCopies(); // Stage 25: a placed button's loop copies leave the scroll flow
 }
-let grabMode=false;
+// grabMode is declared near the top of the script (Stage 36 fix —
+// animate() reads it during initThree(), before this block runs).
 function setGrabMode(on){
  grabMode=!!on;
  if(grabMode){
