@@ -3612,7 +3612,7 @@ function respawnPlayer(key, note) {
   // session scratch goes with them. The RUN itself (kills, tunnel,
   // solved puzzle) is saved on the profile and is NOT touched here.
   sess.accDrain = 0; sess.strDrain = 0; sess.runDrainedUntil = 0;
-  sess.barrowsCrypt = null; sess.barrowsHp = null; sess.barrowsPuzzle = null;
+  sess.barrowsCrypt = null; sess.barrowsHp = null; sess.barrowsPuzzle = null; sess.barrowsPuzzleShown = false;
   send(sess.ws, { type: 'area', area: 'plaza' });
   send(sess.ws, pilesMsg('plaza'));
   send(sess.ws, alliesMsg('plaza')); // Stage 6: guardians standing in the plaza (yours follows you here)
@@ -6133,7 +6133,7 @@ wss.on('connection', (ws, req) => {
   const restore = (spot && Date.now() - spot.at <= RESTORE_TTL_MS) ? spot : null;
   // Everyone logs into the plaza (area is session-only, never saved).
   // Stage 13: the login scatter is the old 100..600 x 100..350 box x2.
-  online.set(key, { ws, profile, x: restore ? Math.max(0, Math.min(WORLD_W, restore.x)) : 200 + Math.random() * 1000, y: restore ? Math.max(0, Math.min(WORLD_H, restore.y)) : 200 + Math.random() * 500, area: restore ? restore.area : 'plaza', duelId: null, modDuelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsCrypt: restore ? restore.barrowsCrypt : null, barrowsHp: restore ? restore.barrowsHp : null, barrowsDoorRolled: restore ? restore.barrowsDoorRolled : false, accDrain: restore ? restore.accDrain : 0, strDrain: restore ? restore.strDrain : 0, runDrainedUntil: restore ? restore.runDrainedUntil : 0, actSkill: null, actAt: 0, castReadyAt: 0, frozenUntil: 0, wildPairs: null, wildTarget: null, skulled: false, teleblockUntil: 0, wildHp: null, wildMaxHp: 0 }); // Stage 30: wild* = Wilderness session state (skull, teleblock, wild HP pool) — session-only, never saved // Stage 24: castReadyAt = placed-button cast cooldown; frozenUntil = Freeze root expiry. Stage 28: barrowsCrypt = which brother's crypt the player is in; barrowsHp = the tunnel HP pool; accDrain/strDrain/runDrainedUntil = the app's brother drains
+  online.set(key, { ws, profile, x: restore ? Math.max(0, Math.min(WORLD_W, restore.x)) : 200 + Math.random() * 1000, y: restore ? Math.max(0, Math.min(WORLD_H, restore.y)) : 200 + Math.random() * 500, area: restore ? restore.area : 'plaza', duelId: null, modDuelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsPuzzleShown: false, barrowsCrypt: restore ? restore.barrowsCrypt : null, barrowsHp: restore ? restore.barrowsHp : null, barrowsDoorRolled: restore ? restore.barrowsDoorRolled : false, accDrain: restore ? restore.accDrain : 0, strDrain: restore ? restore.strDrain : 0, runDrainedUntil: restore ? restore.runDrainedUntil : 0, actSkill: null, actAt: 0, castReadyAt: 0, frozenUntil: 0, wildPairs: null, wildTarget: null, skulled: false, teleblockUntil: 0, wildHp: null, wildMaxHp: 0 }); // Stage 30: wild* = Wilderness session state (skull, teleblock, wild HP pool) — session-only, never saved // Stage 24: castReadyAt = placed-button cast cooldown; frozenUntil = Freeze root expiry. Stage 28: barrowsCrypt = which brother's crypt the player is in; barrowsHp = the tunnel HP pool; accDrain/strDrain/runDrainedUntil = the app's brother drains
   const sess = online.get(key);
   send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot(sess.area), area: sess.area });
   if (sess.area === 'plaza') {
@@ -6218,6 +6218,27 @@ wss.on('connection', (ws, req) => {
       if (!frozen && !noMove && !mdFrozen && !selfFrozen) {
         me.x = Math.max(0, Math.min(WORLD_W, +m.x || 0));
         me.y = Math.max(0, Math.min(WORLD_H, +m.y || 0));
+      }
+      // Week 2 (B5): the puzzle door PRESENTS its puzzle. The app
+      // opens the puzzle automatically when the player walks up to
+      // the door; the online port never wired that trigger — the
+      // puzzle only appeared if the player found the Barrows bar's
+      // 🧩 button or tapped the door's exact 3D spot, so live
+      // players reached the (client-collision) door with no UI and
+      // no way through. Now: standing in corridor B on the door's
+      // south side with the run's puzzle unsolved pushes the dealt
+      // puzzle (the client opens its modal on this message). The
+      // flag re-arms when the player walks away, so closing the
+      // modal and stepping back re-presents the SAME puzzle.
+      if (me.area === 'barrows_tunnels' && !profile.barrows.puzzleSolved) {
+        const nearDoor = me.x > TUNNEL_DOOR.x0 && me.x < TUNNEL_DOOR.x1 && me.y > TUNNEL_DOOR.y1 && me.y < TUNNEL_DOOR.y1 + 110;
+        if (nearDoor && !me.barrowsPuzzleShown) {
+          me.barrowsPuzzleShown = true;
+          if (!me.barrowsPuzzle) newBarrowsPuzzle(me);
+          send(ws, { type: 'barrows_puzzle', shown: [...me.barrowsPuzzle.shown, '❓'], options: me.barrowsPuzzle.options });
+        } else if (!nearDoor) {
+          me.barrowsPuzzleShown = false;
+        }
       }
       // Stage 28: the tunnel brother's ambush. Entering the chest
       // room GUARANTEES it while he lives (the app's rule); the
@@ -6537,6 +6558,14 @@ wss.on('connection', (ws, req) => {
       me.barrowsHp = Math.max(1, levelForXp(profile.xp.hitpoints));
       me.barrowsDoorRolled = false;
       me.barrowsPuzzle = null;
+      me.barrowsPuzzleShown = false;
+      // Week 2 (B5): the run's puzzle is DEALT on descent, so it
+      // exists for the whole descent (re-asking the door re-shows
+      // the SAME puzzle). It is presented when the player reaches
+      // the door — see the move handler. A run whose puzzle was
+      // already solved (kept through death/leaving, Derek's rule)
+      // deals nothing.
+      if (!profile.barrows.puzzleSolved) newBarrowsPuzzle(me);
       send(ws, { type: 'area', area: 'barrows_tunnels' });
       send(ws, nodesMsg('barrows_tunnels'));
       send(ws, firesMsg('barrows_tunnels'));
@@ -9075,7 +9104,7 @@ function spawnBotSession(def, profile) {
     ws: makeBotSocket(), profile,
     x: Math.max(0, Math.min(WORLD_W, AREAS.plaza.spawn.x + ox)), y: Math.max(0, Math.min(WORLD_H, AREAS.plaza.spawn.y + oy)), area: 'plaza',
     duelId: null, modDuelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0,
-    barrowsFightId: null, barrowsPuzzle: null, barrowsCrypt: null, barrowsHp: null, barrowsDoorRolled: false,
+    barrowsFightId: null, barrowsPuzzle: null, barrowsPuzzleShown: false, barrowsCrypt: null, barrowsHp: null, barrowsDoorRolled: false,
     accDrain: 0, strDrain: 0, runDrainedUntil: 0, actSkill: null, actAt: 0, castReadyAt: 0, frozenUntil: 0,
     wildPairs: null, wildTarget: null, skulled: false, teleblockUntil: 0, wildHp: null, wildMaxHp: 0,
     lastJumpAt: 0, bot: true,
