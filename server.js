@@ -9356,18 +9356,51 @@ function botPlanDrive(bot) {
 // trait-weighted choice on its own clock.
 function botPlazaHabits(bot) {
   const now = Date.now(), sess = bot.sess, profile = bot.profile;
-  // Post an offer.
+  const purse = goldTotal(profile);
+  // Post an offer. Week 2 A2: the SIZE is the bot's own choice,
+  // scaled to the purse it holds right now — a trait-weighted
+  // fraction of its gold (cautious bots live in the pocket band,
+  // proud/greedy ones reach for the bold band), rounded to a
+  // human-looking 5g step and capped by the comfort cap
+  // (botMaxStake) and by the gold it actually has. Low-purse bots
+  // therefore post genuine pocket-change offers (10–50g) a fresh
+  // player can afford, instead of a fixed per-name band. The
+  // nerve to post scales with the share on the line: a pocket
+  // stake is an easy yes even for a timid bot, a bold one still
+  // takes real nerve. (A bot at/below the broke line does not
+  // post at all — it is off earning, per botPickPlan.)
   if (now - bot.lastPostAt > BOT_POST_EVERY_MS / BOT_TIME_SCALE && !openStakeOfferForKey(bot.key) && !stakeMatchForKey(bot.key)
-    && goldTotal(profile) > 100 && botScore(bot, { greed: 0.3, risk: 0.4, aggression: 0.2 }) > 55) {
-    const stake = Math.max(1, Math.min(botMaxStake(bot), botRandInt(bot.def.stakeMin, bot.def.stakeMax), goldTotal(profile)));
-    if (stake >= 1) { botStakePost(bot, stake); bot.lastPostAt = now; }
+    && purse > BOT_BROKE_GOLD) {
+    const risk = botTrait(profile, 'risk'), greed = botTrait(profile, 'greed'),
+      aggression = botTrait(profile, 'aggression'), ambition = botTrait(profile, 'ambition');
+    const frac = botPickWeighted(bot, [
+      { value: 0.02 + Math.random() * 0.04, weight: 30 + (50 - risk) * 0.4 + (50 - aggression) * 0.2 }, // pocket: 2–6% of purse
+      { value: 0.06 + Math.random() * 0.07, weight: 26 }, // small: 6–13%
+      { value: 0.13 + Math.random() * 0.12, weight: 14 + greed * 0.2 + ambition * 0.15 }, // standard: 13–25%
+      { value: 0.25 + Math.random() * 0.15, weight: 4 + risk * 0.25 + greed * 0.15 }, // bold: 25–40%
+    ]);
+    const stake = Math.min(botMaxStake(bot), Math.round(purse * frac / 5) * 5, purse);
+    if (stake >= 5) {
+      const share = stake / purse;
+      const nerve = 62 - Math.round((1 - Math.min(1, share * 4)) * 30); // pocket share -> ~38, share >= 25% -> 62
+      if (botScore(bot, { greed: 0.3, risk: 0.4, aggression: 0.2 }) > nerve) { botStakePost(bot, stake); bot.lastPostAt = now; }
+    }
   }
   // Take an aged open offer (never one a human just posted for a
-  // partner — it must have sat on the board a while).
-  if (!stakeMatchForKey(bot.key) && botScore(bot, { risk: 0.4, aggression: 0.3 }) > 58) {
+  // partner — it must have sat on the board a while). Week 2 A2:
+  // a SMALL stake is an easy yes — the nerve a bot needs falls as
+  // the offer shrinks relative to its purse, so a fresh player's
+  // 25g offer reads as pocket change the low-purse bots happily
+  // fight for, not just bait for the rich and reckless. The
+  // comfort cap and the gold check still bind first: willingness
+  // is not money, and no bot stakes gold it does not have.
+  if (!stakeMatchForKey(bot.key)) {
     for (const o of stakeOffers.values()) {
       if (o.status !== 'open' || o.fromKey === bot.key || now - o.createdAt < BOT_ACCEPT_MIN_AGE_MS) continue;
-      if (o.stake <= botMaxStake(bot) && goldTotal(profile) >= o.stake) { botStakeAccept(bot, o); break; }
+      if (o.stake > botMaxStake(bot) || purse < o.stake) continue;
+      const share = purse > 0 ? o.stake / purse : 1;
+      const nerve = 58 - Math.round((1 - Math.min(1, share * 3)) * 26); // pocket share -> ~32, share >= 33% -> 58
+      if (botScore(bot, { risk: 0.4, aggression: 0.3 }) > nerve) { botStakeAccept(bot, o); break; }
     }
   }
 }
