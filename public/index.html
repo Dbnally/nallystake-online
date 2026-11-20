@@ -340,7 +340,7 @@
 <div id="labels"></div>
 <div id="splats"></div>
 
-<div id="topbar"><b>⚔️ nallystake 🏰</b><span id="hudname">—</span><span>⭐ <b id="hudrating">1000</b></span><span id="hudwl">0W/0L</span><span id="hudcombat">⚔️ Combat lvl 3</span><span class="grow"></span><span class="note">gold only · no real money</span></div>
+<div id="topbar"><b>⚔️ nallystake 🏰</b><span id="hudname">—</span><span>⭐ Rating <b id="hudrating">1000</b></span><span id="hudwl">0W/0L</span><span id="hudcombat">⚔️ Combat lvl 3</span><span class="grow"></span><span class="note">gold only · no real money</span></div>
 
 <div id="mapwrap">
  <canvas id="minimap" width="128" height="72"></canvas>
@@ -584,7 +584,12 @@ function stackQtyOf(stacks,id){ // Stage 29: no-stack items (seaweed) count as t
 function myQty(id){ return me? stackQtyOf(me.backpack,id):0; }
 // Returns false when the socket is not open, so callers (chat above
 // all) can tell the player instead of silently swallowing the action.
-function send(o){ if(ws&&ws.readyState===1){ ws.send(JSON.stringify(o)); return true; } return false; }
+// Playtest fix: shop sends are time-stamped so the error handler can
+// pin a shop refusal inside the shop drawer (see shopNotice below) —
+// a 2.6s toast alone was easy to miss while shopping.
+let lastShopSendAt=0;
+let shopNotice=''; // last shop refusal, shown persistently inside the shop drawer until a shop action succeeds
+function send(o){ if(o&&(o.type==='shop_buy'||o.type==='shop_sell')) lastShopSendAt=Date.now(); if(ws&&ws.readyState===1){ ws.send(JSON.stringify(o)); return true; } return false; }
 let toastTimer=null;
 function toast(t){ const el=$('toast'); el.textContent=t; el.style.display='block'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.style.display='none',2600); }
 /* Stage 29: the chat keeps its last ~100 lines and only follows
@@ -998,6 +1003,10 @@ function onMsg(m){
  if(m.type==='admin_notes'){ lastAdminNotes=m.notes||[]; if(drawerPanel==='admin') renderDrawer(); }
  if(m.type==='chat'){ logLine(`${m.from}: ${m.text}`); showBubble(m.from,m.text); if(!me||m.from!==me.username) bumpUnread(); }
  if(m.type==='error'){ toast('⚠️ '+m.message); logLine('⚠️ '+m.message);
+   // Playtest fix: a refusal to a shop action also pins itself in
+   // the shop drawer, where the player's eyes already are — the
+   // toast + chat line above still happen.
+   if(lastShopSendAt && Date.now()-lastShopSendAt<2000){ shopNotice=m.message; lastShopSendAt=0; if(drawerPanel==='shop') renderDrawer(); }
    if(pendingGiveAfterSign){ pendingGiveAfterSign=null; } // the sign failed — the error above says why
    if(/chest is locked behind the puzzle door/.test(m.message||'')){ puzzleSolved=false; renderBarrowsBar(); openPuzzle(); }
    if(activeNode && /level|used up|not here|No such spot/.test(m.message||'')) stopGather();
@@ -1005,7 +1014,7 @@ function onMsg(m){
      const n=npcList.find(x=>x.id===lastAttackTry.id);
      if(n){ pendingAttack={id:n.id}; tapTarget={x:n.x,y:n.y}; }
    } }
- if(m.type==='shop'){ const d=catalog[m.item]; toast(`${m.action==='buy'?'Bought':'Sold'} ${nameOf(m.item)} x${m.qty} for ${m.total}g (${m.shop})`); }
+ if(m.type==='shop'){ shopNotice=''; toast(`${m.action==='buy'?'Bought':'Sold'} ${nameOf(m.item)} x${m.qty} for ${m.total}g${m.shop?` (${m.shop})`:''}`); }
  if(m.type==='exchange'){ toast(`${m.action==='buy'?'Bought':'Sold'} ${nameOf(m.good)} x${m.qty} @ ${m.price}g = ${m.total}g`); }
  if(m.type==='fc_state'){ onFcState(m); }
  if(m.type==='fc_wave'){ onFcWave(m); }
@@ -2058,8 +2067,14 @@ function buildBarrows(root){
  for(const id of BARROWS_ORDER){
    const b=BARROWS_CLIENT[id], wx=sx2w(b.x), wz=sy2w(b.y);
    const g=new THREE.Group(); g.position.set(wx,0,wz); S.add(g);
-   const dome=new THREE.Mesh(new THREE.SphereGeometry(2.3,12,8),new THREE.MeshLambertMaterial({color:0x4a4436}));
-   dome.scale.y=0.42; dome.position.y=0.1; g.add(dome);
+   // Playtest fix: the dome used to be a dark olive squashed
+   // sphere that read as one of the scattered rocks. It is now a
+   // taller, lighter earthen mound with a pale stone rim around
+   // its base — unmistakably a built burial mound.
+   const dome=new THREE.Mesh(new THREE.SphereGeometry(2.6,12,8),new THREE.MeshLambertMaterial({color:0x8a7350}));
+   dome.scale.y=0.5; dome.position.y=0.1; g.add(dome);
+   const rim=new THREE.Mesh(new THREE.RingGeometry(2.8,3.4,24),new THREE.MeshLambertMaterial({color:0xa39a86}));
+   rim.rotation.x=-Math.PI/2; rim.position.y=0.06; g.add(rim);
    box(1.7,0.5,0.9,0x6e6a60,0,1.05,0,g); // sarcophagus slab
    box(0.5,0.28,0.5,b.tint,0,1.42,0,g); // brother-coloured capstone
    const ring=new THREE.Mesh(new THREE.TorusGeometry(2.7,0.12,8,28),new THREE.MeshBasicMaterial({color:0xb26bff}));
@@ -2079,7 +2094,7 @@ function refreshBarrowsMounds(){
    let sub='';
    if(slain) sub+='<div class="bsub">✓ slain</div>';
    if(isTun) sub+='<div class="bsub">🕳️ Tunnel entrance</div>';
-   mp.labelEl.innerHTML=`<div class="nname bname">${esc(b.name)} · lvl ${b.lvl}</div>${sub}`;
+   mp.labelEl.innerHTML=`<div class="nname bname">⚰️ ${esc(b.name)} · lvl ${b.lvl}</div>${sub}`;
    const mg=moundGroups[id];
    if(mg){
      mg.ring.visible=isTun;
@@ -3770,6 +3785,12 @@ function stopGather(){
  if(gatherTimer){ clearInterval(gatherTimer); gatherTimer=null; }
  activeNode=null; pendingNode=null;
 }
+/* Playtest fix: a fishing spot's visible prop is a flat ripple
+   ring ON the water (y≈0.1), so its tap test projects at water
+   level — projecting at the standing height (1.4) put the tap
+   window well above the ring, taps fell through to a ground walk,
+   and the player ended up standing in the lake with no fishing. */
+function nodeTapY(p){ return p.node.kind==='fish' ? 0.15 : 1.4; }
 function tapNode(n){
  if(!myPos) return;
  if(n.depleted){ toast(`${n.name} is used up — it will grow back shortly.`); return; }
@@ -4700,7 +4721,7 @@ function handleTap(cx,cy){
  if(Object.keys(nodeProps).length){
    let nb=null,nbD=1e9;
    for(const p of Object.values(nodeProps)){
-     const s=projectTo(p.x,1.4,p.z);
+     const s=projectTo(p.x,nodeTapY(p),p.z);
      if(!s) continue;
      const d=Math.hypot(s.x-cx,s.y-cy);
      if(d<52 && d<nbD){ nb=p.node; nbD=d; }
@@ -4906,9 +4927,21 @@ function applyBarrowsCollision(from){
    const p=pushOutBoxC(myPos.x,myPos.y,TUNNEL_CHEST_C); myPos.x=p[0]; myPos.y=p[1];
  }
 }
+/* Playtest fix: the Fishing Cove lake is not walkable. The lake
+   plane covers server x > ~1060 (buildFishingCove / the minimap
+   agree), so a walker in the cove stops at the waterline and
+   fishes from the shore — the trout spots sit just off it, inside
+   gather range. Same client-side per-area collision pattern as
+   the Barrows rooms above. Seaweed clumps all sit west of the
+   line, so shore pickup is untouched. */
+const COVE_WATER_X=1060;
+function applyCoveCollision(){
+ if(curArea!=='cove') return;
+ if(myPos.x>COVE_WATER_X) myPos.x=COVE_WATER_X;
+}
 function finishStep(moved){
  const a=avatars[me.username]; if(!a) return;
- if(moved&&stepFrom) applyBarrowsCollision(stepFrom); // Stage 28
+ if(moved&&stepFrom){ applyBarrowsCollision(stepFrom); applyCoveCollision(); } // Stage 28 + playtest fix
  a.x=sx2w(myPos.x); a.z=sy2w(myPos.y);
  if(moved){ a.bob+=0.35; }
  const now=performance.now();
@@ -5372,7 +5405,7 @@ initThree();
 let drawerPanel=null, shopTab='Potion', shopMode='buy', bankQty='1', selStack=null, selIdx=-1, packSorted=false; // Stage 29: selIdx = the backpack slot selStack was tapped in (exact-spot equip swaps)
 const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',spellbook:'📖 Spellbook',players:'👥 Players online',admin:'👑 Admin',tools:'🛠️ Admin Tools',skills:'📊 Skills',goals:'📋 Goals & Log',smithy:'🔥 Emberfall Smithy',teleport:'🌀 Teleport',settings:'🎛️ Settings'};
 function togglePanel(name){ drawerPanel===(name)? closeDrawer() : openPanel(name); }
-function openPanel(name){ drawerPanel=name; selStack=null; selIdx=-1; if(name==='backpack') packSorted=false; $('drawer').classList.add('open'); renderDrawer();
+function openPanel(name){ drawerPanel=name; selStack=null; selIdx=-1; if(name!=='shop') shopNotice=''; if(name==='backpack') packSorted=false; $('drawer').classList.add('open'); renderDrawer();
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.toggle('on',b.dataset.panel===name));
  if(name==='admin') refreshAdminLists();
  if(name==='players'&&boardRows===null) fetchBoards(); // Stage 20: boards load on open
@@ -5597,6 +5630,7 @@ function pShop(){
  let h=`<div class="tabs">${shopNames.map(s=>`<button class="${s===shopTab?'on':''}" onclick="setShopTab('${s}')">${esc(s)}</button>`).join('')}</div>`;
  h+=`<div class="seg"><button class="${shopMode==='buy'?'on':''}" onclick="setShopMode('buy')">Buy</button><button class="${shopMode==='sell'?'on':''}" onclick="setShopMode('sell')">Sell (60% back)</button></div>`;
  h+=`<div class="note" style="margin-bottom:6px">Your gold: <b style="color:#e3c766">${me.gold}g</b></div>`;
+ if(shopNotice) h+=`<div class="note" style="margin-bottom:6px;color:#ff9d8a;font-weight:700">⚠️ ${esc(shopNotice)}</div>`;
  if(shopMode==='buy'){
    const items=catalogArr.filter(i=>i.shop===shopTab);
    if(!items.length) h+=`<p class="note">Nothing here yet.</p>`;
@@ -7500,7 +7534,7 @@ function detectWorldTap(cx,cy){
  }
  if(Object.keys(nodeProps).length){
    for(const p of Object.values(nodeProps)){
-     const s=projectTo(p.x,1.4,p.z);
+     const s=projectTo(p.x,nodeTapY(p),p.z);
      if(s&&Math.hypot(s.x-cx,s.y-cy)<52) return {kind:'node',node:p.node};
    }
  }
