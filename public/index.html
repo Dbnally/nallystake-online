@@ -156,6 +156,19 @@
  #duelquick{display:contents}
  #duelprayers{display:contents}
  #specbtn.ready{box-shadow:0 0 12px 3px #c9a227;background:#8e2f32}
+ /* Stage 37b: the fight strips' ⚔️ Attack chip — the app fight
+    screen's big attack button, shrunk into the slim strip. It
+    pulses while you are NOT engaged (tap it — or tap your
+    opponent — to start swinging) and burns steady once engaged. */
+ .fchip.atk{background:linear-gradient(135deg,#8e2f32,#5d1a1c);color:#ffe9c9;border-color:#c9a227;font-weight:900}
+ .fchip.atk:not(.engaged){animation:atkPulse 1s ease-in-out infinite}
+ .fchip.atk.engaged{background:linear-gradient(135deg,#c9a227,#8e2f32);color:#fff;box-shadow:0 0 10px 2px rgba(201,162,39,.55)}
+ @keyframes atkPulse{0%,100%{box-shadow:0 0 0 0 rgba(201,162,39,0)}50%{box-shadow:0 0 12px 3px rgba(201,162,39,.8)}}
+ /* Stage 37b: at a quarter health or less my strip HP fill pulses
+    red — the app's "You are badly hurt — drink a potion!" moment,
+    as a look instead of a chat line. */
+ #hpyou.lowhp,#fchpyou.lowhp{animation:lowHpPulse .7s ease-in-out infinite}
+ @keyframes lowHpPulse{0%,100%{filter:brightness(1)}50%{filter:brightness(1.9)}}
  /* modals */
  .modal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:14px}
  .modal.open{display:flex}
@@ -402,6 +415,7 @@
  <div id="duellast" class="note fightinfo" style="text-align:center"></div>
  <span class="fchip ctx" id="duelctx">⚔️ Duel</span>
  <div id="duelhint" style="display:none">⚔️ Tap your opponent to attack!</div>
+ <button class="fchip atk" id="atkchip" style="display:none" title="Attack — the same tap as tapping your opponent">⚔️ Attack</button>
  <div id="duelnomove" style="display:none">🚫 No Movement</div>
  <div id="duelprayers">
   <button class="fchip pray" id="duelpray-melee">🛡️ Deflect Melee</button>
@@ -417,6 +431,7 @@
  <div class="hprow fightinfo"><span class="nm">You</span><div class="hpbar"><div id="fchpyou" style="width:100%"></div></div><span id="fchpyouv">0</span></div>
  <div class="hprow fightinfo"><span class="nm" id="fctargetname">Target</span><div class="hpbar"><div id="fchptarget" style="width:100%"></div></div><span id="fchptargetv"></span></div>
  <div id="fclast" class="note fightinfo" style="text-align:center"></div>
+ <button class="fchip atk" id="fcatkchip" style="display:none" title="Attack your current cave target">⚔️ Attack</button>
  <div id="fcprayers">
   <button class="fcpray" id="fcpray-melee">🛡️ Deflect Melee</button>
   <button class="fcpray" id="fcpray-missiles">🏹 Deflect Missiles</button>
@@ -589,7 +604,7 @@ function myQty(id){ return me? stackQtyOf(me.backpack,id):0; }
 // a 2.6s toast alone was easy to miss while shopping.
 let lastShopSendAt=0;
 let shopNotice=''; // last shop refusal, shown persistently inside the shop drawer until a shop action succeeds
-function send(o){ if(o&&(o.type==='shop_buy'||o.type==='shop_sell')) lastShopSendAt=Date.now(); if(ws&&ws.readyState===1){ ws.send(JSON.stringify(o)); return true; } return false; }
+function send(o){ if(o&&(o.type==='shop_buy'||o.type==='shop_sell')) lastShopSendAt=Date.now(); if(o&&o.type==='use') sfxDrink(); if(ws&&ws.readyState===1){ ws.send(JSON.stringify(o)); return true; } return false; }
 let toastTimer=null;
 function toast(t){ const el=$('toast'); el.textContent=t; el.style.display='block'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.style.display='none',2600); }
 /* Stage 29: the chat keeps its last ~100 lines and only follows
@@ -622,9 +637,11 @@ const SETTINGS_KEY='nallystake_settings_v1';
    the saved setting. */
 const CAM_PITCH_MIN=0.25, CAM_PITCH_MAX=1.35;
 const CAM_PITCH_LEVEL=0.92; // Stage 37: the pitch that means a level gaze in first person (the saved default)
-let settings={camSpeed:1.5,camPitch:0.92,groundTap:'walk',tapMode:'normal',camPov:'third',uiAlpha:0.78,run:true,hidden:{}};
+let settings={camSpeed:1.5,camPitch:0.92,groundTap:'walk',tapMode:'normal',camPov:'third',uiAlpha:0.78,run:true,hidden:{},soundOn:true,shakeOn:true};
 try{ const s=JSON.parse(localStorage.getItem(SETTINGS_KEY)||'null'); if(s&&typeof s==='object') settings=Object.assign(settings,s); }catch(e){}
 if(typeof settings.camSpeed!=='number') settings.camSpeed=1.5;
+if(typeof settings.soundOn!=='boolean') settings.soundOn=true; // Stage 37b: fight sounds (app parity), on unless turned off
+if(typeof settings.shakeOn!=='boolean') settings.shakeOn=true; // Stage 37b: camera shake on a heavy hit taken, on unless turned off
 /* Stage 18 migration: tapMode used to hold the GROUND tap mode
    ('walk' / 'face'). That preference now lives in groundTap, and
    tapMode is the menu-tap mode ('normal' / 'menu', default
@@ -682,6 +699,10 @@ window.setGroundTap=function(m){ settings.groundTap=(m==='face')?'face':'walk'; 
    Both persist in the settings store and refresh their rail chips. */
 window.setTapMode=function(m){ settings.tapMode=(m==='menu')?'menu':'normal'; saveSettings(); renderMenuTapChip(); if(drawerPanel==='settings') renderDrawer(); };
 window.setCamPov=function(v){ settings.camPov=(v==='first')?'first':'third'; saveSettings(); renderCamChip(); if(drawerPanel==='settings') renderDrawer(); };
+/* Stage 37b: fight-feel toggles, same setter shape as the camera
+   ones — persisted in the settings store, panel re-renders in sync. */
+window.setSoundOn=function(v){ settings.soundOn=!!v; saveSettings(); if(settings.soundOn) sfxClick(); if(drawerPanel==='settings') renderDrawer(); };
+window.setShakeOn=function(v){ settings.shakeOn=!!v; saveSettings(); if(drawerPanel==='settings') renderDrawer(); };
 window.toggleCamPov=function(){ setCamPov(settings.camPov==='first'?'third':'first'); };
 function renderMenuTapChip(){ const b=$('railmenutap'); if(!b) return; const on=settings.tapMode==='menu'; b.textContent=on?'🖱️ Menu tap: On':'🖱️ Menu tap: Off'; b.classList.toggle('on',on); }
 function renderCamChip(){ const b=$('railcam'); if(!b) return; const fp=settings.camPov==='first'; b.textContent=fp?'🎥 1st':'🎥 3rd'; b.classList.toggle('on',fp); b.title=fp?'Camera: first person — tap for third person':'Camera: third person — tap for first person'; }
@@ -3413,6 +3434,7 @@ function renderWildBar(){
  const nmW=$('duelnomove'); if(nmW) nmW.style.display='none'; // the No Movement chip is player-duel only
  const joyW=$('joy'); if(joyW) joyW.style.opacity='';
  $('hpyou').style.width=clamp(wildFight.hpYou/Math.max(1,wildFight.maxHpYou)*100,0,100)+'%'; $('hpyouv').textContent=wildFight.hpYou;
+ setLowHp($('hpyou'),wildFight.hpYou/Math.max(1,wildFight.maxHpYou)); // Stage 37b
  $('hpopp').style.width=clamp(wildFight.hpOpp/Math.max(1,wildFight.maxHpOpp)*100,0,100)+'%'; $('hpoppv').textContent=wildFight.hpOpp;
  $('duelctx').textContent=`💀 ${curArea==='purewild'?'Pure Wild':'Wilderness'} — ${wildFight.oppName}`;
  $('fleebtn').textContent='🚪 Leave (walk out)';
@@ -3424,6 +3446,7 @@ function renderWildBar(){
  const sb=$('specbtn');
  sb.classList.toggle('ready',wildFight.energyYou>=50);
  sb.onclick=()=>send({type:'special'});
+ syncAtkChip(); // Stage 37b
 }
 function wildFightUI(m){
  if(m.phase==='start'){
@@ -3432,6 +3455,7 @@ function wildFightUI(m){
    stopFollow();
    cancelUse(true);
    wildFight={oppKind:m.oppKind,oppId:m.oppId,oppName:m.oppName,hpYou:m.hpYou,maxHpYou:m.maxHpYou,hpOpp:m.hpOpp,maxHpOpp:m.maxHpOpp,energyYou:Math.floor(m.energyYou||0)};
+   wildAtkClicked=false; syncAtkChip(); // Stage 37b: a fresh wild fight starts un-engaged on the chip
    $('duelbar').classList.add('open');
    $('duelflee').style.display='block';
    $('dueloppname').textContent=m.oppName;
@@ -3483,8 +3507,8 @@ function wildFightUI(m){
    $('duelbar').classList.remove('open');
    $('duelflee').style.display='none';
    $('fleebtn').textContent='🏃 Flee';
-   if(m.reason==='kill'){ toast(`💀 You killed ${name}! Their loot is on the ground — grab the piles.`); logLine(`💀 You killed ${name} in the Wilderness.`); }
-   else if(m.reason==='death'){ toast(`💀 ${name} killed you in the Wilderness.`); }
+   if(m.reason==='kill'){ sfxWin(); toast(`💀 You killed ${name}! Their loot is on the ground — grab the piles.`); logLine(`💀 You killed ${name} in the Wilderness.`); }
+   else if(m.reason==='death'){ sfxDie(); toast(`💀 ${name} killed you in the Wilderness.`); }
    else if(m.reason==='escaped'){ toast(`🏃 ${name} crossed the ditch and escaped.`); }
    else if(m.reason==='left'){ toast('🚪 You crossed the ditch — out of the Wilderness.'); }
    else { toast('The fight broke off.'); }
@@ -4023,6 +4047,7 @@ function pushSplat(a,tex,sc){
 function spawnSplatOn(a,dmg,special){
  if(!a||!a.group||!scene) return;
  if(dmg===null||dmg===undefined) return; // closing tick: nobody swung — no splat
+ if(special) sfxSpec(); // Stage 37b: a special swing sounds like one (this is the one splat path every special rides)
  dmg=Math.max(0,Math.round(dmg));
  const kind=special?'spec':(dmg===0?'zero':'hit');
  pushSplat(a,splatTexture(kind,dmg),special?2.15:1.45);
@@ -4041,8 +4066,8 @@ function pushSplatOffset(a,tex,sc,dy){
  scene.add(sp);
  liveSplats.push({sp,av:a,born:performance.now(),baseY:sp.position.y});
 }
-function spawnBonusSplatOn(a,dmg){ if(!a||!a.group||!scene||!(dmg>0)) return; pushSplatOffset(a,splatTexture('hit',Math.round(dmg)),1.25,0.95); }
-function spawnDeflectSplatOn(a,dmg){ if(!a||!a.group||!scene||!(dmg>0)) return; pushSplatOffset(a,splatTextTexture('zero','↩'+Math.round(dmg)),1.3,0.95); }
+function spawnBonusSplatOn(a,dmg){ if(!a||!a.group||!scene||!(dmg>0)) return; sfxHit(false); pushSplatOffset(a,splatTexture('hit',Math.round(dmg)),1.25,0.95); }
+function spawnDeflectSplatOn(a,dmg){ if(!a||!a.group||!scene||!(dmg>0)) return; sfxBlock(); pushSplatOffset(a,splatTextTexture('zero','↩'+Math.round(dmg)),1.3,0.95); }
 /* Stage 12 clarity: the server tags every swing with an outcome —
    'hit' | 'blocked' | 'miss'. 'hit' keeps the red damage splat,
    'blocked' is a blue shield burst with the 0 showing, 'miss' is a
@@ -4092,6 +4117,7 @@ function startSwingAt(attacker,target,force){
  // swinging at each other, hit, blocked or miss.
  if(!force&&Math.hypot(dx,dz)*W2S>SWING_SHOW_RANGE) return; // too far apart on screen — no fake swing
  startSwing(attacker);
+ if(force&&!sfxSwingMute) sfxSwing(); // Stage 37b: my fights are audible — every swing that animates in them whooshes
  faceTarget(attacker,dx,dz);
  attacker.lunge={dx,dz,t0:performance.now()};
 }
@@ -4139,6 +4165,7 @@ function clearLungeOff(a){
 const FLINCH_MS=260, FLINCH_GUARD_MS=170, FLINCH_DIST=4.5, FLINCH_GUARD_DIST=2;
 function startFlinch(victim,attacker,guard){
  if(!victim||!victim.group) return;
+ if(!guard) startFlash(victim); // Stage 37b: a hit that lands burns the defender red for a beat (a blocked hit doesn't — the guard ate it)
  if(guard) startGuardRaise(victim); // Stage 32: a blocked hit also raises the guard (shield/weapon arm up) — see applyFightStance
  let dx=0, dz=0;
  if(attacker&&attacker.group){ dx=victim.group.position.x-attacker.group.position.x; dz=victim.group.position.z-attacker.group.position.z; }
@@ -4171,6 +4198,7 @@ function clearFlinchOff(a){
    never flinches — the target is locked in ice. */
 function flinchForOutcome(victim,attacker,outcome,dmg){
  if(!victim) return;
+ fightOutcomeSfx(victim,outcome,dmg); // Stage 37b: every outcome SOUNDS like what it was (and a heavy hit on me shakes the camera)
  // Stage 32: a miss is still no FLINCH (the Stage 26 rule below
  // stands) — but the defender now visibly dodges: a quick lean/step
  // aside, so a whiff reads as a dodge instead of nothing happening.
@@ -4180,6 +4208,172 @@ function flinchForOutcome(victim,attacker,outcome,dmg){
  if(typeof dmg==='number'&&dmg>0){ startFlinch(victim,attacker,false); return; }
  startFlinch(victim,attacker,true);
 }
+/* ---- Stage 37b: fight feel — the app fight screen's weight ----
+   Derek's reference was the app version's fight screen: what makes
+   it feel hands-on there is not different math (Stage 27 already
+   ported the rules) but PRESENTATION the online client never had:
+   a sound for every swing / hit / block / miss, the defender
+   flashing red as the blow lands, the camera knocking when a heavy
+   hit lands on YOU, a big always-there ATTACK button whose state
+   shows whether you're engaged, and a camera that frames the PAIR
+   in a fight instead of only you. All of it lives here + small
+   hooks in the shared fight helpers, so every fight kind the
+   client renders (player duels, mod duels, NPC / Barrows, Fight
+   Caves, Wilderness pairs, casts) gets it from the same code.
+   NOT ported, deliberately: the app's auto-engage at "Fight!" and
+   its auto-swinging — online duels stay tap-to-engage with no
+   auto-retaliate (Stage 12, Derek's explicit rule); the app's
+   tap-a-frozen-foe bonus swing — swings here are server-tick
+   authoritative, a client tap cannot mint one. */
+/* -- sound: the app's voices, synthesised (WebAudio, no files) -- */
+let AC=null;
+function audioCtx(){
+ if(settings.soundOn===false) return null;
+ try{
+   if(!AC){ const Ctor=window.AudioContext||window.webkitAudioContext; if(!Ctor) return null; AC=new Ctor(); }
+   if(AC.state==='suspended') AC.resume();
+   return AC;
+ }catch(e){ return null; }
+}
+if(typeof document!=='undefined'&&document.addEventListener) document.addEventListener('pointerdown',()=>{ if(AC&&AC.state==='suspended'){ try{ AC.resume(); }catch(e){} } },true);
+function tone(f0,f1,dur,type,vol,delay){
+ const ac=audioCtx(); if(!ac) return;
+ try{
+   const t=ac.currentTime+(delay||0);
+   const o=ac.createOscillator(), g=ac.createGain();
+   o.type=type||'square';
+   o.frequency.setValueAtTime(Math.max(30,f0),t);
+   o.frequency.exponentialRampToValueAtTime(Math.max(30,f1),t+dur);
+   g.gain.setValueAtTime(vol||0.1,t);
+   g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+   o.connect(g); g.connect(ac.destination);
+   o.start(t); o.stop(t+dur+0.03);
+ }catch(e){}
+}
+function noiseBurst(dur,freq,vol,delay){
+ const ac=audioCtx(); if(!ac) return;
+ try{
+   const t=ac.currentTime+(delay||0);
+   const len=Math.max(1,Math.floor(ac.sampleRate*dur));
+   const buf=ac.createBuffer(1,len,ac.sampleRate);
+   const d=buf.getChannelData(0);
+   for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*(1-i/len);
+   const src=ac.createBufferSource(); src.buffer=buf;
+   const f=ac.createBiquadFilter(); f.type='lowpass'; f.frequency.value=freq||1200;
+   const g=ac.createGain(); g.gain.value=vol||0.1;
+   src.connect(f); f.connect(g); g.connect(ac.destination);
+   src.start(t);
+ }catch(e){}
+}
+function sfxSwing(){ noiseBurst(0.14,1800,0.16); }
+function sfxHit(big){ tone(big?160:220,60,0.13,'square',0.2); noiseBurst(0.08,700,0.15); }
+function sfxMiss(){ noiseBurst(0.12,2600,0.08); }
+function sfxBlock(){ tone(900,700,0.09,'square',0.12); noiseBurst(0.07,3200,0.14); }
+function sfxSpec(){ tone(300,1200,0.25,'sawtooth',0.14); noiseBurst(0.2,900,0.2); }
+function sfxCast(){ tone(420,980,0.22,'sine',0.13); tone(640,1420,0.2,'sine',0.09,0.07,0.07); noiseBurst(0.14,3400,0.05); }
+function sfxFreeze(){ tone(1180,320,0.34,'sine',0.13); tone(1560,520,0.3,'triangle',0.08,0.05); noiseBurst(0.2,4200,0.06); }
+function sfxDrink(){ tone(300,520,0.12,'sine',0.15); tone(340,640,0.12,'sine',0.15,0.11); }
+function sfxClick(){ tone(700,500,0.05,'square',0.07); }
+function sfxCount(){ tone(440,440,0.09,'square',0.1); }
+function sfxGo(){ tone(880,880,0.22,'square',0.14); }
+function sfxWin(){ [523,659,784,1046].forEach((n,i)=>tone(n,n,0.22,'square',0.13,i*0.13)); }
+function sfxLose(){ [392,330,262,196].forEach((n,i)=>tone(n,n,0.25,'triangle',0.15,i*0.15)); }
+function sfxDie(){ tone(320,50,0.7,'sawtooth',0.16); }
+let sfxSwingMute=false; // a cast gesture reuses the swing animation — the cast sound replaces the whoosh for that one call
+/* -- hit flash: the defender's materials burn red for ~160ms --
+   Materials are collected once per avatar (traverse, originals
+   remembered) and restored by updateFlashes() in animate(). */
+const flashSet=new Set();
+function startFlash(a){
+ if(!a||!a.group) return;
+ try{
+   if(!a.flashMats){
+     a.flashMats=[];
+     a.group.traverse(o=>{
+       const ms=Array.isArray(o.material)? o.material : (o.material? [o.material] : []);
+       for(const m of ms){ if(m&&m.emissive&&typeof m.emissive.getHex==='function'&&!a.flashMats.some(x=>x.m===m)) a.flashMats.push({m:m,e:m.emissive.getHex()}); }
+     });
+   }
+   for(const f of a.flashMats) f.m.emissive.setHex(0xaa2222);
+   a.flashUntil=performance.now()+160;
+   flashSet.add(a);
+ }catch(e){}
+}
+function updateFlashes(now){
+ if(!flashSet.size) return;
+ for(const a of Array.from(flashSet)){
+   if(now>=(a.flashUntil||0)){
+     try{ for(const f of (a.flashMats||[])) f.m.emissive.setHex(f.e); }catch(e){}
+     flashSet.delete(a);
+   }
+ }
+}
+/* -- camera shake: a heavy hit ON ME knocks the camera (the app:
+   damage 12+ → shake min(7, dmg × 0.4), decaying fast) -- */
+let shakeMag=0;
+function addShake(dmg){ if(settings.shakeOn===false) return; shakeMag=Math.max(shakeMag,Math.min(7,dmg*0.4)); }
+/* -- the sound half of the shared outcome rule (flinchForOutcome
+   below does the body half): a miss whistles past, a blocked hit
+   clangs, a landed hit thuds — deeper at 10+ — and a heavy hit on
+   me shakes the camera. Casts ride this too (onCastResult calls
+   flinchForOutcome), in both directions. */
+function fightOutcomeSfx(victim,outcome,dmg){
+ if(outcome==='miss'){ sfxMiss(); return; }
+ if(outcome==='blocked'){ sfxBlock(); return; }
+ if(typeof dmg==='number'&&dmg>0){
+   sfxHit(dmg>=10);
+   if(me&&victim===avatars[me.username]&&dmg>=12) addShake(dmg);
+   return;
+ }
+ if(typeof dmg==='number'){ sfxHit(false); return; } // connected, rolled 0
+ sfxBlock();
+}
+/* -- who am I fighting right now (rendered avatar), for the
+   fight camera's pair framing -- */
+function fightOppAvatar(){
+ if(duel) return avatars[duel.opponent]||null;
+ if(modDuel) return modAvatars[modDuel.npcId]||null;
+ if(npcFight) return npcAvatars[npcFight.npcId]||null;
+ if(fcRun&&fcRun.targetId) return fcAvatars[fcRun.targetId]||null;
+ if(wildFight) return wildOppAvatar();
+ return null;
+}
+/* -- the ⚔️ Attack chips: one in each fight strip. The click sends
+   EXACTLY the message the opponent tap sends for that fight kind —
+   it is a second door into the same engage, never a new mechanic.
+   NPC/Barrows fights have no engage step (you're swinging while
+   you're in range), so the duel-strip chip hides for them; the
+   Fight Caves chip re-sends the attack on your current target. */
+let wildAtkClicked=false;
+function syncAtkChip(){
+ const chip=$('atkchip');
+ if(chip){
+   let show=false, eng=false;
+   if(duel){ show=true; eng=duelEngaged; }
+   else if(modDuel){ show=true; eng=modDuelEngaged; }
+   else if(wildFight){ show=true; eng=wildAtkClicked; }
+   chip.style.display=show?'':'none';
+   chip.classList.toggle('engaged',eng);
+ }
+ const fc=$('fcatkchip');
+ if(fc){
+   fc.style.display=fcRun?'':'none';
+   fc.classList.toggle('engaged',!!(fcRun&&fcRun.targetId));
+ }
+}
+function atkChipClick(){
+ if(duel){ send({type:'duel_attack'}); if(!duelEngaged){ duelEngaged=true; renderDuelHint(); } syncAtkChip(); return; }
+ if(modDuel){ send({type:'mod_duel_attack'}); if(!modDuelEngaged) modDuelEngaged=true; syncAtkChip(); return; }
+ if(wildFight){
+   if(wildFight.oppKind==='player') send({type:'wild_attack',target:wildFight.oppName});
+   else send({type:'wild_attack',pker:wildFight.oppId});
+   wildAtkClicked=true; syncAtkChip(); return;
+ }
+}
+function fcAtkChipClick(){ if(fcRun&&fcRun.targetId) send({type:'fc_attack',id:fcRun.targetId}); }
+/* Stage 37b: my strip HP fill pulses at a quarter health or less —
+   called by every fight bar renderer with my current HP fraction. */
+function setLowHp(el,frac){ if(el) el.classList.toggle('lowhp',typeof frac==='number'&&frac<=0.25); }
 /* ---- Stage 32: livelier fights + death falls ----
    Guard raise: a blocked hit (startFlinch with guard=true, from
    flinchForOutcome's blocked branch and the Fight Caves' blocked
@@ -5304,6 +5498,7 @@ function animate(){
    s.mesh.position.y=s.baseY+0.14*Math.sin(now*0.003+s.phase*3);
  }
  updateLiveSplats(now);
+ updateFlashes(now); // Stage 37b: expire hit flashes (~160ms)
  updateBursts(now,dt); // Stage 20: level-up fireworks
  // Stage 20: rare loot beams pulse (tall gold shafts over rare piles)
  for(const b of rareBeams){
@@ -5345,11 +5540,26 @@ function animate(){
    camera.lookAt(fx+Math.sin(rot)*clp*10,hy-Math.sin(lp)*10,fz+Math.cos(rot)*clp*10);
  } else {
    if(a) a.group.visible=true;
-   const cx=fx+Math.sin(camYaw)*Math.cos(camPitch)*camDist;
-   const cz=fz+Math.cos(camYaw)*Math.cos(camPitch)*camDist;
+   // Stage 37b: in a fight the camera frames the PAIR, not just me —
+   // the app's duel camera leans its target 14% toward the foe so
+   // both fighters stay in frame when I back off or kite. Only the
+   // anchor leans; camDist / pitch / the behind-facing ease are
+   // exactly as they were.
+   let cfx=fx, cfz=fz;
+   const foa=fightOppAvatar();
+   if(foa&&foa.group){ cfx=fx*0.86+foa.group.position.x*0.14; cfz=fz*0.86+foa.group.position.z*0.14; }
+   const cx=cfx+Math.sin(camYaw)*Math.cos(camPitch)*camDist;
+   const cz=cfz+Math.cos(camYaw)*Math.cos(camPitch)*camDist;
    const cy=Math.sin(camPitch)*camDist;
    camera.position.set(cx,cy,cz);
-   camera.lookAt(fx,1.1,fz);
+   camera.lookAt(cfx,1.1,cfz);
+ }
+ // Stage 37b: camera shake — a heavy hit on me (addShake, from the
+ // outcome hooks) knocks the camera for a few frames, then decays.
+ if(shakeMag>0){
+   camera.position.x+=(Math.random()*2-1)*shakeMag*0.05;
+   camera.position.y+=(Math.random()*2-1)*shakeMag*0.04;
+   shakeMag=Math.max(0,shakeMag-dt*14);
  }
  // Stage 13: the shadow camera follows the local player (its box is
  // roughly the old 80x45 footprint), keeping the same sun angle.
@@ -6227,6 +6437,8 @@ function pSettings(){
  h+=`<p class="note" style="margin:2px 0 8px">Menu: tapping a player, monster, gathering spot or dropped pile opens its menu — the same one a long-press opens — and tapping a backpack item opens its sheet. Normal: taps act straight away. Ground taps walk in both modes. The 🖱️ chip under the 🎛️ button toggles this too.</p>`;
  h+=`<div class="setrow"><span class="grow">🎥 Camera view</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.camPov==='third'?'on':''}" onclick="setCamPov('third')">🎥 Third person</button><button class="${settings.camPov==='first'?'on':''}" onclick="setCamPov('first')">👀 First person</button></div>`;
  h+=`<p class="note" style="margin:2px 0 8px">First person puts the camera at your knight's head, looking the way he faces — a different feel for fights. The 🎥 chip under the 🎛️ button switches it too.</p>`;
+ h+=`<div class="setrow"><span class="grow">🔊 Fight sounds<br><span class="note">Swings, hits, blocks, spells, countdown beeps — the app's fight sounds, made on the spot (no files)</span></span></div><div class="seg" style="margin-top:-2px"><button class="${settings.soundOn?'on':''}" onclick="setSoundOn(true)">🔊 On</button><button class="${settings.soundOn?'':'on'}" onclick="setSoundOn(false)">🔇 Off</button></div>`;
+ h+=`<div class="setrow"><span class="grow">📳 Camera shake<br><span class="note">The camera knocks when a heavy hit (12+) lands on you in a fight</span></span></div><div class="seg" style="margin-top:-2px"><button class="${settings.shakeOn?'on':''}" onclick="setShakeOn(true)">📳 On</button><button class="${settings.shakeOn?'':'on'}" onclick="setShakeOn(false)">Off</button></div>`;
  h+=`<div class="setrow"><span class="grow">📸 Camera sets<br><span class="note">Save the camera as it is now — view, tilt &amp; speed — and flip back in one tap, even mid-fight</span></span></div>`;
  camSetsArr().forEach((s,i)=>{
    h+=`<div class="setrow"><span class="grow">Set ${i+1}${s?`<br><span class="note">${s.pov==='first'?'👀 First person':'🎥 Third person'} · tilt ${(+s.pitch).toFixed(2)} · speed ${s.speed}×</span>`:`<br><span class="note">Empty</span>`}</span>${s?`<button class="act" onclick="useCamSet(${i})">📸 Use</button>`:''}<button class="ghost" onclick="saveCamSet(${i})">💾 Save</button></div>`;
@@ -6770,7 +6982,7 @@ let npcFight=null;
    (duel_attack) or the server's auto-retaliate kicks in. The hint shows
    until I'm engaged — tapped, or one of my swings shows in a tick. */
 let duelEngaged=false;
-function renderDuelHint(){ const h=$('duelhint'); if(h) h.style.display=(duel&&!duelEngaged)?'block':'none'; }
+function renderDuelHint(){ const h=$('duelhint'); if(h) h.style.display=(duel&&!duelEngaged)?'block':'none'; syncAtkChip(); }
 /* ================= Stage 12: combat clarity =================
    Overhead HP bars (green → yellow → red as they drop) on my duel
    opponent and on my current NPC-fight target, driven by the fight
@@ -6799,20 +7011,23 @@ function cdShow(txt,fight){
  el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); // restart the pop
 }
 function cdHide(){ const el=$('countdown'); if(el) el.style.display='none'; if(cdTimer){ clearTimeout(cdTimer); cdTimer=null; } cdFlashUntil=0; }
+let lastCdTxt=''; // Stage 37b: beep once per shown number, not once per tick
 function setDuelCountdown(v){
  if(typeof v!=='number') return; // field absent (NPC fight / old flow) — no overlay
  if(v>0){
    if(cdTimer){ clearTimeout(cdTimer); cdTimer=null; }
    duelCountdownLeft=v;
    cdShow(v>=4?'3':v>=2?'2':'1',false);
+   const cdTxt=v>=4?'3':v>=2?'2':'1';
+   if(cdTxt!==lastCdTxt){ lastCdTxt=cdTxt; sfxCount(); } // Stage 37b: the app beeps each count
  } else {
    const wasCounting=duelCountdownLeft>0;
    duelCountdownLeft=0;
-   if(wasCounting){ cdFlashUntil=performance.now()+600; cdShow('⚔️ FIGHT!',true); cdTimer=setTimeout(cdHide,600); }
+   if(wasCounting){ cdFlashUntil=performance.now()+600; cdShow('⚔️ FIGHT!',true); sfxGo(); lastCdTxt=''; cdTimer=setTimeout(cdHide,600); } // Stage 37b: …and the go tone on FIGHT!
    else if(performance.now()>cdFlashUntil) cdHide();
  }
 }
-function clearDuelCountdown(){ duelCountdownLeft=null; cdHide(); }
+function clearDuelCountdown(){ duelCountdownLeft=null; lastCdTxt=''; cdHide(); }
 /* ================= Stage 17: Stake Board UI ================= */
 function openStakeBoard(){
  send({type:'stake_board_get'});
@@ -6925,6 +7140,7 @@ function syncBarPrayers(noPray){
 function renderDuelBar(){
  if(!duel) return;
  $('hpyou').style.width=clamp(duel.hpYou/99*100,0,100)+'%'; $('hpyouv').textContent=duel.hpYou;
+ setLowHp($('hpyou'),duel.hpYou/99); // Stage 37b
  $('hpopp').style.width=clamp(duel.hpOpponent/99*100,0,100)+'%'; $('hpoppv').textContent=duel.hpOpponent;
  $('duelctx').textContent=`⚔️ ${duel.opponent}`;
  const consum=(me?me.backpack:[]).filter(s=>catalog[s.item]&&(catalog[s.item].kind==='food'||catalog[s.item].kind==='potion'));
@@ -6942,6 +7158,7 @@ function renderDuelBar(){
  const sb=$('specbtn');
  sb.classList.toggle('ready',duel.energyYou>=50);
  sb.onclick=()=>send({type:'special'});
+ syncAtkChip(); // Stage 37b
 }
 function duelTickUI(m){
  if(!duel) return;
@@ -7024,6 +7241,7 @@ function endDuelUI(m){
  const joyEnd=$('joy'); if(joyEnd) joyEnd.style.opacity='';
  me=m.profile;
  const won=m.winner===me.username;
+ if(won) sfxWin(); else sfxLose(); // Stage 37b: the app closes a duel with a jingle — victory or defeat
  const itemsTxt=(m.itemsWon&&m.itemsWon.length)? `<br>Items in the pot: ${m.itemsWon.map(s=>`${iconOf(s.item)} ${esc(nameOf(s.item))} x${s.qty}`).join(', ')}`:'';
  // Stage 33: the UPDATED head-to-head record vs this opponent,
  // this fight included (duel_end carries each fighter their own
@@ -7049,11 +7267,14 @@ function endDuelUI(m){
 }
 /* ================= NPC fight UI (shares the duel bar) ================= */
 $('fleebtn').onclick=()=>{ if(wildFight) wildLeave(); else send({type:'flee'}); }; // Stage 30: in the wild, the chip WALKS you out to the ditch
+$('atkchip').onclick=atkChipClick; // Stage 37b: the duel strip's ⚔️ Attack chip — same engage as tapping the opponent
+$('fcatkchip').onclick=fcAtkChipClick; // Stage 37b: the caves strip's ⚔️ Attack chip — re-attack the current target
 function renderNpcBar(){
  if(!npcFight) return;
  const nmNpc=$('duelnomove'); if(nmNpc) nmNpc.style.display='none'; // Stage 18: the No Movement chip is duel-only
  const joyNpc=$('joy'); if(joyNpc) joyNpc.style.opacity='';
  $('hpyou').style.width=clamp(npcFight.hpYou/Math.max(1,npcFight.maxHpYou)*100,0,100)+'%'; $('hpyouv').textContent=npcFight.hpYou;
+ setLowHp($('hpyou'),npcFight.hpYou/Math.max(1,npcFight.maxHpYou)); // Stage 37b
  $('hpopp').style.width=clamp(npcFight.hpNpc/Math.max(1,npcFight.maxHpNpc)*100,0,100)+'%'; $('hpoppv').textContent=npcFight.hpNpc;
  const kindIcon=npcFight.kind==='barrows'?'💀':npcFight.kind==='wizard'?'🧙':npcFight.kind==='ranger'?'🏹':'🥊';
  $('duelctx').textContent=`${kindIcon} ${npcFight.name}`;
@@ -7065,6 +7286,7 @@ function renderNpcBar(){
  const sb=$('specbtn');
  sb.classList.toggle('ready',npcFight.energyYou>=50);
  sb.onclick=()=>send({type:'special'});
+ syncAtkChip(); // Stage 37b: an NPC/Barrows fight has no engage step — the chip hides
 }
 function npcFightUI(m){
  if(m.phase==='start'){
@@ -7153,7 +7375,7 @@ function npcFightUI(m){
      const ba=npcAvatars[m.npcId];
      if(ba&&ba.isBrother){ scene.remove(ba.group); ba.label.remove(); delete npcAvatars[m.npcId]; }
      if(m.reason==='kill'){ toast(`💀 ${bName} slain! (${barrowsState.kills.length}/6)`); logLine(`💀 ${bName} slain! (${barrowsState.kills.length}/6)`); }
-     else if(m.reason==='death'){ toast(`💀 ${bName} got you! You wake up in the plaza — your Barrows kills are kept.`); }
+     else if(m.reason==='death'){ sfxDie(); toast(`💀 ${bName} got you! You wake up in the plaza — your Barrows kills are kept.`); }
      else if(m.reason==='fled'){ toast('🏃 You fled the crypt.'); }
      else if(m.reason==='range'){ toast('The fight broke off — you moved too far away.'); }
      else if(m.reason==='travel'){ toast('You left the fight behind.'); }
@@ -7169,7 +7391,7 @@ function npcFightUI(m){
        logLine(`💀 ${endName} down! Drops: ${parts.join(', ')}`);
      } else toast(`💀 ${endName} down!`);
    }
-   else if(m.reason==='death'){ toast(`💀 The ${endName.toLowerCase()} got you! You wake up in the plaza at full health — nothing lost.`); }
+   else if(m.reason==='death'){ sfxDie(); toast(`💀 The ${endName.toLowerCase()} got you! You wake up in the plaza at full health — nothing lost.`); }
    else if(m.reason==='fled'){ toast('🏃 You fled the fight.'); }
    else if(m.reason==='range'){ toast(`The fight broke off — you moved too far from the ${endName.toLowerCase()}.`); }
    else if(m.reason==='travel'){ toast('You left the fight behind.'); }
@@ -7182,6 +7404,7 @@ function renderModDuelBar(){
  const nmEl=$('duelnomove'); if(nmEl) nmEl.style.display='none'; // the No Movement chip is player-duel only
  const joyEl=$('joy'); if(joyEl) joyEl.style.opacity='';
  $('hpyou').style.width=clamp(modDuel.hpYou/99*100,0,100)+'%'; $('hpyouv').textContent=modDuel.hpYou;
+ setLowHp($('hpyou'),modDuel.hpYou/99); // Stage 37b
  $('hpopp').style.width=clamp(modDuel.hpNpc/99*100,0,100)+'%'; $('hpoppv').textContent=modDuel.hpNpc;
  $('duelctx').textContent=`⭐ ${modDuel.name} · Tier ${modDuel.tier}`;
  syncBarPrayers(false);
@@ -7192,6 +7415,7 @@ function renderModDuelBar(){
  const sb=$('specbtn');
  sb.classList.toggle('ready',modDuel.energyYou>=50);
  sb.onclick=()=>send({type:'special'});
+ syncAtkChip(); // Stage 37b
 }
 function modDuelUI(m){
  if(m.phase==='start'){
@@ -7275,6 +7499,7 @@ function modDuelUI(m){
    $('duelbar').classList.remove('open');
    if(m.profile) me=m.profile;
    let head, body;
+   if(m.result==='win') sfxWin(); else if(m.result==='loss') sfxDie(); // Stage 37b
    if(m.result==='win'){
      head='🏆 You win!';
      body=`<p>You beat <b>${esc(m.name)}</b> (Tier ${m.tier}) and won the <b style="color:#e3c766">${m.payout}g</b> pot!</p>
@@ -7304,6 +7529,7 @@ function renderFcBar(){
  if(!fcRun) return;
  $('fctitle').textContent=`🌋 Wave ${fcRun.wave} / 63`;
  $('fchpyou').style.width=clamp(fcRun.hpYou/Math.max(1,fcRun.maxHpYou)*100,0,100)+'%';
+ setLowHp($('fchpyou'),fcRun.hpYou/Math.max(1,fcRun.maxHpYou)); // Stage 37b
  $('fchpyouv').textContent=`${fcRun.hpYou}/${fcRun.maxHpYou}`;
  const tgt=(fcRun.targetId&&fcMonsters[fcRun.targetId])||Object.values(fcMonsters)[0];
  if(tgt){
@@ -7323,6 +7549,7 @@ function renderFcBar(){
  const sb=$('fcspecbtn');
  sb.classList.toggle('ready',(fcRun.energyYou||0)>=50);
  sb.onclick=()=>send({type:'special'});
+ syncAtkChip(); // Stage 37b: the caves chip tracks whether I have a target
 }
 function onFcState(m){
  stopFollow();
@@ -7361,11 +7588,13 @@ function onFcTick(m){
  // knight when it's my target; my HP drop splats on me. A monster that
  // vanished from the list died: its last HP is the killing splat.
  const aliveIds=new Set();
+ let fcSfxHit=false; // Stage 37b: at most one monster-hit sound per tick, however many dropped
  for(const u of (m.monsters||[])){
    aliveIds.add(u.id);
    const prev=prevFcHp[u.id];
    if(typeof prev==='number'&&u.hp<prev){
      spawnSplatOn(fcAvatars[u.id],prev-u.hp,false);
+     if(!fcSfxHit){ fcSfxHit=true; sfxHit(false); } // Stage 37b: cave hits land with a thud (my swing itself whooshes via startSwingAt below)
      if(u.id===m.targetId) startSwingAt(me?avatars[me.username]:null,fcAvatars[u.id],true);
      startFlinch(fcAvatars[u.id],me?avatars[me.username]:null,false); // Stage 26: a real HP drop recoils the monster
    }
@@ -7379,6 +7608,7 @@ function onFcTick(m){
    }
  }
  if(typeof prevFcMyHp==='number'&&m.hpYou<prevFcMyHp){ spawnSplat(me.username,prevFcMyHp-m.hpYou,false);
+   sfxHit(prevFcMyHp-m.hpYou>=10); if(prevFcMyHp-m.hpYou>=12) addShake(prevFcMyHp-m.hpYou); // Stage 37b: a cave hit on me thuds — and a heavy one (Jad!) knocks the camera
    startFlinch(me?avatars[me.username]:null,m.targetId?fcAvatars[m.targetId]:null,false); } // Stage 26: a landed cave hit recoils me (away from my target)
  prevFcMyHp=m.hpYou;
  for(const id of Object.keys(fcMonsters)){ if(!aliveIds.has(id)) delete fcMonsters[id]; }
@@ -7389,7 +7619,7 @@ function onFcTick(m){
  // splats up top); the strip text names the total bounced.
  let taken=0, blockedN=0, jadDmg=0, defl=0;
  for(const h of (m.hitsTaken||[])){
-   if(h.blocked){ blockedN++; spawnSplat(me.username,0,false); startFlinch(me?avatars[me.username]:null,m.targetId?fcAvatars[m.targetId]:null,true); if(h.deflected>0) defl+=h.deflected; } // Stage 26: blocked = guard flinch
+   if(h.blocked){ blockedN++; if(blockedN===1) sfxBlock(); spawnSplat(me.username,0,false); startFlinch(me?avatars[me.username]:null,m.targetId?fcAvatars[m.targetId]:null,true); if(h.deflected>0) defl+=h.deflected; } // Stage 26: blocked = guard flinch · Stage 37b: one clang per tick
    else if(h.dmg>0){ taken+=h.dmg; if(h.kind==='jad') jadDmg+=h.dmg; }
  }
  let last;
@@ -7428,6 +7658,7 @@ function onFcEnd(m){
  const f=(me&&me.fc)||{bestWave:0,attempts:0,kills:0,completions:0,bestTimeMs:0};
  const rec=`Your records — best wave ${f.bestWave} / 63 · attempts ${f.attempts} · total kills ${f.kills} · completions ${f.completions}${f.bestTimeMs?` · best clear ${fmtMs(f.bestTimeMs)}`:''}`;
  let h='';
+ if(m.reason==='complete') sfxWin(); else if(m.reason==='death') sfxDie(); // Stage 37b
  if(m.reason==='complete'){
    const rw=m.reward;
    h=`<h3>🏆 FIRE CAPE! You beat TzTok-Jad!</h3>
@@ -8192,6 +8423,7 @@ function onCastResult(m){
    else spawnOutcomeSplatOn(targetAv,m.outcome,m.dmg,false);
  };
  if(m.incoming){
+   sfxCast(); if(m.froze) sfxFreeze(); // Stage 37b: an incoming cast is heard arriving (and a Freeze crackles)
    showSplat(av);
    if(!m.froze) flinchForOutcome(myAv,m.by?avatars[m.by]:null,m.outcome,m.dmg); // Stage 26: a landed cast recoils me (Freeze roots instead)
    if(m.froze){ meFrozenUntil=m.frozenUntil||0; toast(`❄️ You're frozen by ${m.by||'a spell'} — you can't move for 5 seconds!`); }
@@ -8206,7 +8438,8 @@ function onCastResult(m){
    logLine(`🪄 ${m.by||'Someone'} cast ${spName} on you${m.froze?' — ❄️ FROZEN!':''}`);
    return;
  }
- if(av){ startSwingAt(myAv,av,true); showSplat(av); if(!m.froze) flinchForOutcome(av,myAv,m.outcome,m.dmg); } // Stage 26
+ sfxCast(); if(m.froze) sfxFreeze(); // Stage 37b: my cast sounds like a cast, not a sword swing
+ if(av){ sfxSwingMute=true; startSwingAt(myAv,av,true); sfxSwingMute=false; showSplat(av); if(!m.froze) flinchForOutcome(av,myAv,m.outcome,m.dmg); } // Stage 26
  if(m.context==='duel'&&duel&&typeof m.hpTarget==='number'){ duel.hpOpponent=m.hpTarget; renderDuelBar(); const oav=avatars[duel.opponent]; if(oav) setHpBar(oav,m.hpTarget/99,m.hpTarget,99); }
  // Stage 27: my own cast bounced back off THEIR Deflect prayer —
  // my pool dropped (hpYou), burst the bounce on me, flinch me.
