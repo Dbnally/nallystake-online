@@ -1050,6 +1050,7 @@ function onMsg(m){
  if(m.type==='admin_note'){ toast(m.text); logLine(`👑 Admin: ${m.text}`); }
  if(m.type==='admin_list'){ lastAdminList=m.players||[]; if(drawerPanel==='admin') renderDrawer(); }
  if(m.type==='online_list'){ lastOnlineList=m.players||[]; if(drawerPanel==='admin') renderDrawer(); }
+ if(m.type==='city_ideas'){ lastCityIdeas=m.ideas||[]; if(Array.isArray(m.areas)&&m.areas.length) cityIdeaAreas=m.areas; if(drawerPanel==='admin') renderDrawer(); }
  if(m.type==='objects'){ objectsByArea[m.area]=m.objects||[]; if(m.area===curArea) rebuildObjects(); if(drawerPanel==='tools') renderDrawer(); }
  if(m.type==='ref_lists'){ lastRefLists=m; if(drawerPanel==='tools') renderDrawer(); }
  if(m.type==='custom_created'){ toolArtDirty=false; if(drawerPanel==='tools') renderDrawer(); }
@@ -5959,11 +5960,21 @@ function pPlayers(){
 }
 /* ---- Admin (Stage 7A) ---- */
 let lastAdminList=null, lastOnlineList=null;
+let lastCityIdeas=null, cityIdeaAreas=[]; // Stage 40: City Ideas panel state (list + area options come from the server)
+let cityIdeaText='', cityIdeaAreaKey='plaza'; // Stage 40: post-form state, preserved across re-renders like the spawn fields
+window.cityIdeaField=function(){ const t=$('cityideatext'),a=$('cityideaarea'); if(t) cityIdeaText=t.value; if(a) cityIdeaAreaKey=a.value; };
+window.adminPostIdea=function(){
+ const text=((($('cityideatext')||{}).value)||cityIdeaText||'').trim();
+ if(text.length<3){ toast('Give the idea a few words first.'); return; }
+ send({type:'city_idea_post',text,area:(($('cityideaarea')||{}).value)||cityIdeaAreaKey});
+ cityIdeaText=''; setTimeout(refreshAdminLists,400);
+};
+window.adminCancelIdea=function(id){ send({type:'city_idea_cancel',id}); setTimeout(refreshAdminLists,400); };
 let lastAdminNotes=null; // Stage 9+10 §3: pending signed notes (admin_notes reply)
 let fightSelA='', fightSelB='';
 let spawnItemSel='', spawnQtyVal=1, spawnTargetVal='';
 window.refreshAdminLists=function(){
- if(isAdminOrOwner()){ send({type:'admin_list'}); send({type:'admin_notes'}); }
+ if(isAdminOrOwner()){ send({type:'admin_list'}); send({type:'admin_notes'}); send({type:'city_ideas'}); }
  const r=myRole(); if(r==='mod'||r==='admin'||r==='owner') send({type:'online_list'});
 };
 window.adminSetRole=function(target,role){ send({type:'set_role',target,role}); setTimeout(refreshAdminLists,400); };
@@ -6048,6 +6059,22 @@ function pAdmin(){
    h+=`<div class="rowline"><span class="grow">Quantity (1–99)</span><input type="number" id="spawnqty" min="1" max="99" value="${spawnQtyVal}" onchange="spawnField()"></div>`;
    h+=`<div class="rowline"><span class="grow">Give to</span><input id="spawntarget" list="onlinenames" placeholder="Your name (or leave blank for yourself)" value="${esc(spawnTargetVal)}" onchange="spawnField()" oninput="spawnField()"></div><datalist id="onlinenames">${dl}</datalist>`;
    h+=`<button class="act" style="width:100%" onclick="adminSpawn()">✨ Create</button>`;
+   // Stage 40: City Idea commissions. The admin posts an idea and a
+   // rough area; joining and building are the bots' own choices,
+   // paid from their own gold. Progress + contributors come back in
+   // the city_ideas list; open ideas can be cancelled here.
+   h+=`<h4 style="margin:12px 0 5px;color:#e3c766">🏗️ City Ideas — commissions for the bots</h4>`;
+   h+=`<p class="note">Post an idea and a rough area. Whether the bots build it — and how — is their choice; they pay from their own gold.</p>`;
+   h+=`<div class="rowline"><span class="grow">Idea</span><input id="cityideatext" placeholder="e.g. A garden by the bank" value="${esc(cityIdeaText)}" onchange="cityIdeaField()" oninput="cityIdeaField()"></div>`;
+   h+=`<div class="rowline"><span class="grow">Rough area</span><select id="cityideaarea" onchange="cityIdeaField()">${(cityIdeaAreas.length?cityIdeaAreas:[{key:'plaza',label:'Plaza — whole plaza'}]).map(a=>`<option value="${esc(a.key)}" ${a.key===cityIdeaAreaKey?'selected':''}>${esc(a.label)}</option>`).join('')}</select></div>`;
+   h+=`<button class="act" style="width:100%" onclick="adminPostIdea()">🏗️ Post idea</button>`;
+   if(lastCityIdeas===null) h+=`<p class="note">Loading City Ideas…</p>`;
+   else if(!lastCityIdeas.length) h+=`<p class="note">No City Ideas yet.</p>`;
+   else h+=lastCityIdeas.map(i=>{
+     const contrib=Object.entries(i.contributors||{}).map(([n,c])=>`${esc(n)} ×${c}`).join(', ');
+     const status=i.status==='open'?`🏗️ Open — ${i.placed}/${i.target} built`:(i.status==='done'?'✅ Complete':'🚫 Cancelled');
+     return `<div class="rowline"><span class="grow"><b>${esc(i.text)}</b><br><span class="sub">${esc(i.areaLabel)} · by ${esc(i.by)} · ${status}${contrib?`<br>Built by: ${contrib}`:''}</span></span>${i.status==='open'?`<button class="ghost" onclick="adminCancelIdea('${esc(i.id)}')">Cancel</button>`:''}</div>`;
+   }).join('');
  }
  return h;
 }
