@@ -2874,7 +2874,7 @@ function syncAvatars(){
 }
 function showBubble(name,text){
  const a=avatars[name]; if(!a) return;
- a.bubbleEl.textContent=text; a.bubbleEl.style.display='block'; a.bubbleUntil=Date.now()+5000; // overhead speech shows for exactly 5s (Derek, 2026-11-21); the line itself stays in the chat reel
+ a.bubbleEl.textContent=text; a.bubbleEl.style.display='block'; a.bubbleUntil=performance.now()+5000; // overhead speech shows for exactly 5s (Derek, 2026-11-21); the line itself stays in the chat reel. NOTE: updateLabels() compares against animate()'s performance.now() clock — this must stay performance.now(), NOT Date.now(), or the expiry never fires (hotfix 2026-11-21)
 }
 /* Stage 21: a worn party hat shows on the knight's head in the hat's
    tier colour, read from the catalog def's `color` (the same tint
