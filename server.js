@@ -9122,6 +9122,7 @@ function spawnBotSession(def, profile) {
     wildTrip: null, wildEatAt: 0, // Stage 38: the current Wilderness trip, if any
     stakeReadyAt: 0, stakeSeenMatch: null, // stake-match ready-up timing
     lastGiftAt: 0, lastPostAt: 0, lastPartyInviteAt: 0,
+    lastPvmAt: Date.now(), pvm: null, fcJadSeen: null, pvmEatAt: 0, // Stage 39: the current Barrows / Fight Caves attempt, if any
     wasInDuel: false,
   });
 }
@@ -9679,6 +9680,7 @@ function botPairingDrive(now) {
     if (duel && bots.has(duel.a) && bots.has(duel.b)) return; // one at a time
   }
   const idle = [...bots.values()].filter((b) => b.sess.area === 'plaza' && !b.sess.duelId && !stakeMatchForKey(b.key)
+    && !b.pvm // Stage 39: a bot committed to a Barrows / Fight Caves attempt is not pairing fodder
     && !(b.wildTrip && b.wildTrip.state === 'enter') // Stage 38: committed to a Wilderness trip — not pairing fodder
     && !activeTradeForKey(b.key) && !pendingTradeForKey(b.key) // Stage 38: a bot working a trade is not idle — a duel would cancel it
     && ![...challenges.values()].some((ch) => ch.from === b.key || ch.to === b.key));
@@ -10311,6 +10313,7 @@ function botDealDrive(bot) {
   if (isWildArea(sess.area) || sess.area === 'waiting' || sess.area === 'arena') return;
   if (sess.duelId || sess.modDuelId || sess.npcFightId || sess.barrowsFightId || sess.fcRunId) return;
   if (activeTradeForKey(bot.key) || pendingTradeForKey(bot.key)) return;
+  if (bot.pvm) return; // Stage 39: a bot on a Barrows / Fight Caves attempt makes no deals
   const goals = [];
   for (const w of botWants(bot)) {
     for (const other of bots.values()) {
@@ -10521,6 +10524,7 @@ function botWildPickTarget(bot) {
 function botWildHabits(bot) {
   const now = Date.now(), sess = bot.sess, profile = bot.profile;
   if (bot.wildTrip) return;
+  if (bot.pvm) return; // Stage 39: a bot on a Barrows / Fight Caves attempt plans no Wilderness trip
   if (now - bot.lastWildAt < BOT_WILD_EVERY_MS / BOT_TIME_SCALE) return;
   if (sess.duelId || sess.modDuelId || sess.npcFightId || sess.barrowsFightId || sess.fcRunId) return;
   if (stakeMatchForKey(bot.key) || activeTradeForKey(bot.key) || pendingTradeForKey(bot.key)) return;
@@ -10679,6 +10683,506 @@ function botWildDrive(bot) {
   botStepToward(bot, trip.wp.x, trip.wp.y, false);
 }
 
+// ---------- Stage 39: NPC Barrows and Fight Caves runs ----------
+// Derek's Stage 37 vision, continued: the NPC players take on the
+// two big PvM runs. Both engines are per-player and fully
+// server-side, and the bots drive them EXACTLY as they stand —
+// the brain mirrors the barrows_* / fc_* handlers' own state
+// mutations (the Stage 37/38 pattern) and calls the same engine
+// functions a player's messages reach (startBarrowsFight,
+// startBarrowsAmbush, rollBarrowsLoot, startFcRun, endFcRun,
+// respawnPlayer). There is no bot combat math, no bot drop table,
+// no survival favour: brothers hit a bot as hard as they hit a
+// player, the puzzle door bites a bot's tunnel pool for the same
+// 5 HP, kills persist on a dead bot's run until the chest is
+// looted (Derek's rule), and Jad is the same unproven wall for
+// bots as for everyone.
+//
+// WHO ATTEMPTS: a slow per-bot clock (botPvmHabits), gated by
+// traits through botScore / botPickWeighted like every bot
+// decision. Barrows also has a hard combat gate (70) under the
+// trait roll — a combat-38 IronNoob never attempts it no matter
+// how ambitious his roll, while the Fight Caves gate softens at
+// low combat so the little bots dabble in the early waves and
+// die there, as they should. At most BOT_PVM_MAX_PER_ACTIVITY
+// bots run one activity at once. Preparation is the real economy:
+// botRestock (Stage 38) tops up food / prayer potions at the
+// shops before an attempt, and loot lands in real profiles —
+// gold through the helpers, pieces as piles on the Barrows field
+// with their collection-log entries and game-wide announcements,
+// fire capes through endFcRun's own settlement.
+const BOT_PVM_EVERY_MS = 270000; // per-bot gap between PvM attempt decisions (scaled like every bot clock)
+const BOT_PVM_MAX_PER_ACTIVITY = 2; // at most two bots in Barrows, two in the Fight Caves, at once
+const BOT_BARROWS_MIN_CBT = 70; // Barrows is endgame: a hard combat gate under the trait roll
+const BOT_PVM_EAT_FRAC = 0.45; // eat at/below this fraction of the fight pool (the Wilderness threshold)
+
+function botPvmCount(kind) {
+  let n = 0;
+  for (const b of bots.values()) if (b.pvm && b.pvm.kind === kind) n += 1;
+  return n;
+}
+// Ending an attempt, for whatever reason: prayer off (the drain
+// would only waste the points), the attempt forgotten, plans
+// forgotten — the next think chooses fresh, like after a duel.
+function botPvmEnd(bot) {
+  if (bot.profile.activePrayer) { bot.profile.activePrayer = null; save(bot.key); }
+  bot.pvm = null;
+  bot.plan = null;
+}
+// The 'use' handler's Barrows / Fight Caves branches, mirrored:
+// a prayer potion tops the points up (that branch runs before
+// any fight check for a player too); food and restore potions
+// heal whichever pool the bot is fighting from.
+function botUseInPvm(bot, item) {
+  const sess = bot.sess, profile = bot.profile, key = bot.key;
+  const def = itemDef(item);
+  if (!def || (def.kind !== 'food' && def.kind !== 'potion')) return false;
+  if (stackQty(profile.backpack, item) < 1) return false;
+  if (def.prayerRestore) {
+    if (profile.prayerPoints >= profile.prayerMax) return false;
+    removeStacks(profile.backpack, item, 1);
+    profile.prayerPoints = Math.min(profile.prayerMax, profile.prayerPoints + def.prayerRestore);
+    save(key);
+    sendProfile(key);
+    return true;
+  }
+  const bf = sess.barrowsFightId ? barrowsFights.get(sess.barrowsFightId) : null;
+  if (bf) {
+    if (bf.hpYou >= bf.maxHpYou) return false;
+    removeStacks(profile.backpack, item, 1);
+    bf.hpYou = Math.min(bf.maxHpYou, bf.hpYou + def.heal);
+    save(key);
+    sendProfile(key);
+    return true;
+  }
+  const run = sess.fcRunId ? fcRuns.get(sess.fcRunId) : null;
+  if (run) {
+    if (run.hpYou >= run.maxHpYou) return false;
+    removeStacks(profile.backpack, item, 1);
+    run.hpYou = Math.min(run.maxHpYou, run.hpYou + def.heal);
+    save(key);
+    sendProfile(key);
+    return true;
+  }
+  return false;
+}
+// Fight upkeep shared by the Barrows and Fight Caves drives:
+// raise the wanted Deflect (the praying tiers only, as in their
+// duels), eat at the shared threshold, sip a prayer potion when
+// a running Deflect runs dry. wantPrayer is a prayer NAME
+// ('melee' / 'missiles' / 'magic') or null to leave prayer alone.
+function botPvmUpkeep(bot, hpYou, maxHpYou, wantPrayer) {
+  const profile = bot.profile, key = bot.key, now = Date.now();
+  if (wantPrayer && bot.def.tier >= 1 && profile.prayerPoints > 0 && profile.activePrayer !== wantPrayer) {
+    profile.activePrayer = wantPrayer;
+    save(key);
+  }
+  if (now < (bot.pvmEatAt || 0)) return;
+  const frac = maxHpYou > 0 ? hpYou / maxHpYou : 1;
+  if (frac <= BOT_PVM_EAT_FRAC) {
+    const food = ['ration', 'cooked_trout', 'cooked_shrimps'].filter((i) => stackQty(profile.backpack, i) > 0)
+      .sort((a, b) => (itemDef(b).heal || 0) - (itemDef(a).heal || 0))[0];
+    if (food && botUseInPvm(bot, food)) { bot.pvmEatAt = now + 1200; return; }
+    if (botUseInPvm(bot, 'restore_potion')) { bot.pvmEatAt = now + 1200; return; }
+  }
+  if (profile.activePrayer && profile.prayerPoints < 8 && botUseInPvm(bot, 'prayer_potion')) bot.pvmEatAt = now + 1200;
+}
+// Attempt decisions, on a slow clock wherever the bot is
+// standing: restock first (a bot that cannot field food does not
+// start), then the weighted pick between the runs it qualifies
+// for, then the nerve gate for the one it picked.
+function botPvmHabits(bot) {
+  const now = Date.now(), sess = bot.sess, profile = bot.profile;
+  if (process.env.BOT_PVM_OFF) return; // test hook (same pattern as BOT_TEST_FAST): the Stage 37/38 and gold-gap suites pin bot availability while they verify the challenge / trade / Stake Board flows
+  if (bot.pvm) return;
+  if (now - bot.lastPvmAt < BOT_PVM_EVERY_MS / BOT_TIME_SCALE) return;
+  if (sess.duelId || sess.modDuelId || sess.npcFightId || sess.barrowsFightId || sess.fcRunId) return;
+  if (bot.wildTrip || isWildArea(sess.area) || sess.area === 'waiting' || sess.area === 'arena'
+    || sess.area === 'barrows' || sess.area === 'barrows_crypt' || sess.area === 'barrows_tunnels' || sess.area === 'fightcaves') return;
+  if (stakeMatchForKey(bot.key) || activeTradeForKey(bot.key) || pendingTradeForKey(bot.key)) return;
+  if ([...challenges.values()].some((ch) => ch.from === bot.key || ch.to === bot.key)) return;
+  bot.lastPvmAt = now;
+  botRestock(bot); // preparation through the real economy (mirrors shop_buy)
+  const cbt = combatLevelOf(levelsOf(profile));
+  const entries = [];
+  if (cbt >= BOT_BARROWS_MIN_CBT && botPvmCount('barrows') < BOT_PVM_MAX_PER_ACTIVITY && botFoodCount(bot) >= 2) {
+    entries.push({ value: 'barrows', weight: 10 + botTrait(profile, 'ambition') * 0.5 + botTrait(profile, 'risk') * 0.3 });
+  }
+  if (botPvmCount('fc') < BOT_PVM_MAX_PER_ACTIVITY && botFoodCount(bot) >= 1) {
+    entries.push({ value: 'fc', weight: 8 + botTrait(profile, 'ambition') * 0.4 + botTrait(profile, 'risk') * 0.35 });
+  }
+  if (!entries.length) return;
+  const kind = botPickWeighted(bot, entries);
+  // The nerve gate. Barrows is a flat ambition+risk bar. The
+  // caves' bar SOFTENS at low combat (the early waves are a
+  // dabble, not a death sentence) down to a floor of 40 — which
+  // a timid low-level bot's score still rarely clears, and a
+  // maxed-ambition one clears easily: dabbling stays a choice.
+  const gate = kind === 'barrows'
+    ? botScore(bot, { ambition: 0.5, risk: 0.4 }) > 58
+    : botScore(bot, { ambition: 0.45, risk: 0.35 }) > Math.max(40, 56 - Math.max(0, 60 - cbt) * 0.5);
+  if (!gate) return;
+  bot.pvm = { kind, started: false, plazaSeen: false, travel: false, dead: 0, mistake: false };
+  bot.plan = null;
+  botSay(bot, kind === 'barrows' ? 'Barrows run. Wish me luck.' : 'Fight Caves — going in.');
+}
+function botPvmDrive(bot) {
+  if (!bot.pvm) return false;
+  if (bot.pvm.kind === 'barrows') return botBarrowsDrive(bot);
+  if (bot.pvm.kind === 'fc') return botFcDrive(bot);
+  botPvmEnd(bot);
+  return false;
+}
+
+// ----- Barrows: the handler mirrors -----
+// barrows_enter, mirrored: the run's tunnel crypt is picked on
+// first entry (ensureBarrowsRun, the real function), a slain
+// non-tunnel brother's crypt stays shut, and the bot lands on
+// the crypt spawn exactly where a player lands.
+function botBarrowsEnter(bot, def) {
+  const sess = bot.sess, profile = bot.profile, key = bot.key;
+  if (sess.area !== 'barrows') return false;
+  if (sess.duelId || sess.modDuelId || sess.npcFightId || sess.fcRunId || sess.barrowsFightId) return false;
+  if (Math.hypot(sess.x - def.mound.x, sess.y - def.mound.y) > NPC_RANGE) return false;
+  ensureBarrowsRun(key);
+  if (profile.barrows.kills.includes(def.id) && def.id !== profile.barrows.tunnel) return false;
+  sess.area = 'barrows_crypt';
+  sess.x = CRYPT_SPAWN.x; sess.y = CRYPT_SPAWN.y;
+  sess.barrowsCrypt = def.id;
+  bot.moved = true;
+  broadcastState();
+  return true;
+}
+// barrows_search, mirrored: the sarcophagus wakes the brother
+// through the real startBarrowsFight (he spawns beside the bot
+// and the real tick engine takes over).
+function botBarrowsSearch(bot) {
+  const sess = bot.sess, profile = bot.profile, key = bot.key;
+  if (sess.area !== 'barrows_crypt' || !sess.barrowsCrypt) return false;
+  const def = BARROWS_BROTHERS[sess.barrowsCrypt];
+  if (!def) return false;
+  if (sess.duelId || sess.modDuelId || sess.npcFightId || sess.fcRunId || sess.barrowsFightId) return false;
+  ensureBarrowsRun(key);
+  if (def.id === profile.barrows.tunnel) return false; // the tunnel sarcophagus is the way down, never a fight
+  if (profile.barrows.kills.includes(def.id)) return false;
+  if (Math.hypot(sess.x - CRYPT_SARCO.x, sess.y - CRYPT_SARCO.y) > NPC_RANGE) return false;
+  startBarrowsFight(key, def, 'barrows_crypt', CRYPT_SARCO.x, CRYPT_SARCO.y);
+  return true;
+}
+// barrows_leave_crypt, mirrored: back onto the field at the mound.
+function botBarrowsLeaveCrypt(bot) {
+  const sess = bot.sess;
+  if (sess.area !== 'barrows_crypt') return false;
+  if (sess.barrowsFightId) { const f = barrowsFights.get(sess.barrowsFightId); if (f) finishBarrowsFight(f, 'fled'); }
+  const def = sess.barrowsCrypt ? BARROWS_BROTHERS[sess.barrowsCrypt] : null;
+  sess.barrowsCrypt = null;
+  sess.area = 'barrows';
+  sess.x = def ? def.mound.x : AREAS.barrows.spawn.x;
+  sess.y = def ? def.mound.y : AREAS.barrows.spawn.y;
+  bot.moved = true;
+  broadcastState();
+  return true;
+}
+// barrows_descend, mirrored: the tunnel HP pool is dealt fresh,
+// the door puzzle is dealt with it (Week 2 B5), a solved run
+// deals nothing.
+function botBarrowsDescend(bot) {
+  const sess = bot.sess, profile = bot.profile, key = bot.key;
+  if (sess.area !== 'barrows_crypt' || !sess.barrowsCrypt) return false;
+  if (sess.barrowsFightId) return false;
+  ensureBarrowsRun(key);
+  if (sess.barrowsCrypt !== profile.barrows.tunnel) return false;
+  sess.area = 'barrows_tunnels';
+  sess.x = AREAS.barrows_tunnels.spawn.x; sess.y = AREAS.barrows_tunnels.spawn.y;
+  sess.barrowsCrypt = null;
+  sess.barrowsHp = Math.max(1, levelForXp(profile.xp.hitpoints));
+  sess.barrowsDoorRolled = false;
+  sess.barrowsPuzzle = null;
+  sess.barrowsPuzzleShown = false;
+  if (!profile.barrows.puzzleSolved) newBarrowsPuzzle(sess);
+  if (bot.pvm) bot.pvm.mistake = false; // a fresh descent gets a fresh chance to be careless
+  bot.moved = true;
+  broadcastState();
+  return true;
+}
+// The move handler's tunnel triggers, mirrored: bots set their
+// position directly (botStepToward), so the drive re-checks the
+// same conditions after every tunnel step — entering the chest
+// room guarantees the ambush while the tunnel brother lives,
+// and the first post-solve crossing of the door line rolls it.
+function botBarrowsTunnelTriggers(bot) {
+  const sess = bot.sess, profile = bot.profile, key = bot.key;
+  if (sess.area !== 'barrows_tunnels' || sess.barrowsFightId) return;
+  ensureV2(profile);
+  const b = profile.barrows;
+  if (!b.tunnel || b.kills.includes(b.tunnel)) return;
+  const chestRoom = TUNNEL_ROOMS[4];
+  const inChestRoom = sess.x > chestRoom.x0 && sess.x < chestRoom.x1 && sess.y >= chestRoom.y0 && sess.y < chestRoom.y1;
+  if (inChestRoom) startBarrowsAmbush(key);
+  else if (b.puzzleSolved && !sess.barrowsDoorRolled && sess.y < TUNNEL_DOOR.y0) {
+    sess.barrowsDoorRolled = true;
+    if (Math.random() < 0.5) startBarrowsAmbush(key);
+  }
+}
+// barrows_puzzle_answer, mirrored. The bot reads the dealt
+// puzzle from its own session (the brain polls authoritative
+// state — a player reads the same puzzle off their screen) and
+// answers through the handler's exact mutations: a right answer
+// solves the run's door; a wrong one bites exactly 5 HP off the
+// tunnel pool, death included. Persona-flavoured care: a
+// careless bot's first answer of a descent may be a guess.
+function botBarrowsAnswerPuzzle(bot) {
+  const sess = bot.sess, profile = bot.profile, key = bot.key, pvm = bot.pvm;
+  if (sess.area !== 'barrows_tunnels') return false;
+  if (!sess.barrowsPuzzle) {
+    if (profile.barrows.puzzleSolved) return false;
+    newBarrowsPuzzle(sess); // the barrows_puzzle request, mirrored (re-asking re-shows the same dealt puzzle)
+  }
+  const pz = sess.barrowsPuzzle;
+  const rightIdx = pz.options.indexOf(pz.answer);
+  if (rightIdx < 0) { sess.barrowsPuzzle = null; return false; }
+  let idx = rightIdx;
+  if (pvm && !pvm.mistake && pz.options.length > 1 && botScore(bot, { risk: 0.4, ambition: -0.2 }) > 62) {
+    pvm.mistake = true;
+    idx = pz.options.findIndex((o) => o !== pz.answer);
+  }
+  const chosen = pz.options[idx];
+  if (chosen !== undefined && chosen === pz.answer) {
+    sess.barrowsPuzzle = null;
+    profile.barrows.puzzleSolved = true;
+    save(key);
+    sendBarrowsState(key);
+    return true;
+  }
+  if (sess.barrowsHp == null) sess.barrowsHp = Math.max(1, levelForXp(profile.xp.hitpoints));
+  sess.barrowsHp -= 5;
+  if (sess.barrowsHp <= 0) {
+    sess.barrowsPuzzle = null;
+    respawnPlayer(key, 'The puzzle door\'s bite finishes you — you wake up in the plaza. Your Barrows kills, tunnel and solved puzzle are kept.');
+  }
+  return true;
+}
+// barrows_loot, mirrored: the same preconditions, the same
+// ambush backstop, the real rollBarrowsLoot, the runs counter,
+// the run reset, and every rare landing as its own loot-beam
+// pile with its collection-log entry and announcement — the
+// whole game hears about a bot's Barrows luck too.
+function botBarrowsLoot(bot) {
+  const sess = bot.sess, profile = bot.profile, key = bot.key;
+  if (sess.area !== 'barrows_tunnels') return false;
+  if (sess.duelId || sess.npcFightId || sess.fcRunId || sess.barrowsFightId) return false;
+  if (Math.hypot(sess.x - BARROWS_CHEST.x, sess.y - BARROWS_CHEST.y) > NPC_RANGE) return false;
+  ensureV2(profile);
+  if (!profile.barrows.puzzleSolved) return false;
+  const b = profile.barrows;
+  if (b.tunnel && !b.kills.includes(b.tunnel)) { startBarrowsAmbush(key); return true; }
+  const killCount = b.kills.length;
+  const loot = rollBarrowsLoot(profile, killCount);
+  profile.barrowsRuns = (profile.barrowsRuns || 0) + 1;
+  profile.barrows = { kills: [], tunnel: null, looted: false, puzzleSolved: false };
+  save(key);
+  sess.barrowsPuzzle = null; sess.barrowsHp = null;
+  sess.area = 'barrows';
+  sess.x = AREAS.barrows.spawn.x; sess.y = AREAS.barrows.spawn.y;
+  loot.rares.forEach((piece, i) => {
+    const pileId = crypto.randomBytes(6).toString('hex');
+    piles.set(pileId, { id: pileId, item: piece, qty: 1, x: sess.x + i * 15, y: sess.y, area: 'barrows', owner: profile.username, bornAt: Date.now(), rare: true });
+    recordClog(key, piece);
+    announce(`⚰️ ${profile.username} just looted ${itemDef(piece).name} from Barrows!`);
+  });
+  bot.moved = true;
+  broadcastState();
+  botSay(bot, 'Chest looted — Barrows pays out again.');
+  botPvmEnd(bot);
+  return true;
+}
+// A Barrows fight in progress (crypt or tunnel ambush): close
+// to my style's reach of the brother — he walks toward me too —
+// and run the shared upkeep against his attack type.
+function botBarrowsFightDrive(bot, fight) {
+  const sess = bot.sess, profile = bot.profile;
+  const def = BARROWS_BROTHERS[fight.brother];
+  const style = attackStyleOf(profile);
+  const d = Math.hypot(sess.x - fight.bx, sess.y - fight.by);
+  if (d > styleRange(style) * 0.85) {
+    const ap = approachPoint(sess.x, sess.y, fight.bx, fight.by);
+    botStepToward(bot, ap.x, ap.y, true);
+  }
+  botPvmUpkeep(bot, fight.hpYou, fight.maxHpYou, def ? def.attackType : null);
+  return true;
+}
+// The Barrows drive: one think of a run. State lives where the
+// game keeps it — kills/tunnel/puzzle on the profile, the crypt
+// and the tunnel pool on the session — so the drive is mostly
+// "where am I, and what does a player do here next".
+function botBarrowsDrive(bot) {
+  const sess = bot.sess, profile = bot.profile, key = bot.key, pvm = bot.pvm;
+  const fight = sess.barrowsFightId ? barrowsFights.get(sess.barrowsFightId) : null;
+  if (fight) { botBarrowsFightDrive(bot, fight); return true; }
+  if (!['plaza', 'barrows', 'barrows_crypt', 'barrows_tunnels'].includes(sess.area)) {
+    botTravelTo(bot, 'barrows'); // decided from somewhere else in the world: go
+    pvm.started = true;
+    return true;
+  }
+  if (sess.area === 'plaza') {
+    if (!pvm.plazaSeen) {
+      pvm.plazaSeen = true;
+      if (!pvm.started) { pvm.started = true; pvm.travel = true; }
+      else {
+        // I woke here: a death put me back (respawnPlayer) and
+        // the run on my profile is exactly where it fell
+        // (Derek's rule). Resume or abandon by nerve — every
+        // death cools the ambition a little more.
+        pvm.dead = (pvm.dead || 0) + 1;
+        if (botScore(bot, { ambition: 0.5, risk: 0.3 }) > 52 + pvm.dead * 8) pvm.travel = true;
+        else {
+          botSay(bot, 'Barrows can keep its chest. For now.');
+          botPvmEnd(bot);
+          return false;
+        }
+      }
+    }
+    if (pvm.travel) { pvm.travel = false; botTravelTo(bot, 'barrows'); }
+    return true;
+  }
+  pvm.plazaSeen = false;
+  if (sess.area === 'barrows') {
+    ensureBarrowsRun(key);
+    const b = profile.barrows;
+    // Non-tunnel brothers first; the tunnel brother is met in
+    // his crypt (to descend) and finished in the tunnels. If he
+    // is the only one left — or already dead, with the chest
+    // unlooted — his crypt is still the way down.
+    const next = Object.values(BARROWS_BROTHERS).find((d) => d.id !== b.tunnel && !b.kills.includes(d.id))
+      || (b.tunnel ? BARROWS_BROTHERS[b.tunnel] : null);
+    if (!next) { botPvmEnd(bot); return false; } // no run state to work — let go
+    if (Math.hypot(sess.x - next.mound.x, sess.y - next.mound.y) > 12) { botStepToward(bot, next.mound.x, next.mound.y, true); return true; }
+    botBarrowsEnter(bot, next);
+    return true;
+  }
+  if (sess.area === 'barrows_crypt') {
+    const def = sess.barrowsCrypt ? BARROWS_BROTHERS[sess.barrowsCrypt] : null;
+    if (!def) { botBarrowsLeaveCrypt(bot); return true; }
+    if (def.id === profile.barrows.tunnel) { botBarrowsDescend(bot); return true; }
+    if (profile.barrows.kills.includes(def.id)) { botBarrowsLeaveCrypt(bot); return true; }
+    const stand = { x: CRYPT_SARCO.x, y: CRYPT_SARCO.y + CRYPT_SARCO.hy + 30 }; // just south of the coffin, well inside search range
+    if (Math.hypot(sess.x - stand.x, sess.y - stand.y) > 12) { botStepToward(bot, stand.x, stand.y, false); return true; }
+    botBarrowsSearch(bot);
+    return true;
+  }
+  // barrows_tunnels
+  const b = profile.barrows;
+  if (!b.puzzleSolved) {
+    const doorSpot = { x: 800, y: TUNNEL_DOOR.y1 + 40 }; // the door's south side, where a player's puzzle is presented
+    if (Math.hypot(sess.x - doorSpot.x, sess.y - doorSpot.y) > 12) {
+      botStepToward(bot, doorSpot.x, doorSpot.y, false);
+      botBarrowsTunnelTriggers(bot);
+      return true;
+    }
+    botBarrowsAnswerPuzzle(bot);
+    return true;
+  }
+  const chestStand = { x: BARROWS_CHEST.x, y: BARROWS_CHEST.y + 60 };
+  if (Math.hypot(sess.x - chestStand.x, sess.y - chestStand.y) > 12) {
+    botStepToward(bot, chestStand.x, chestStand.y, false);
+    botBarrowsTunnelTriggers(bot); // crossing into the chest room springs the ambush, as it does for a player
+    return true;
+  }
+  if (b.tunnel && !b.kills.includes(b.tunnel)) { startBarrowsAmbush(key); return true; } // the loot backstop, reached early
+  botBarrowsLoot(bot);
+  return true;
+}
+
+// ----- Fight Caves: the drive -----
+// Target choice, re-made when the current target dies (the
+// fc_attack handler's only mutation is run.targetId): Jad's
+// healers first while he stands, Jad himself next, otherwise
+// the nearest living monster.
+function botFcPickTarget(bot, run) {
+  const alive = [...run.monsters.values()].filter((m) => m.alive);
+  if (!alive.length) return null;
+  const jad = alive.find((m) => m.kind === 'jad');
+  let pool = alive;
+  if (jad) {
+    const healers = alive.filter((m) => m.kind === 'hurkot');
+    pool = healers.length ? healers : [jad];
+  }
+  const sess = bot.sess;
+  return pool.sort((a, b2) => Math.hypot(sess.x - a.x, sess.y - a.y) - Math.hypot(sess.x - b2.x, sess.y - b2.y))[0];
+}
+function botFcDrive(bot) {
+  const sess = bot.sess, profile = bot.profile, key = bot.key, pvm = bot.pvm;
+  const run = sess.fcRunId ? fcRuns.get(sess.fcRunId) : null;
+  if (!run) {
+    if (!pvm.started) {
+      if (sess.area !== 'fightcaves') { botTravelTo(bot, 'fightcaves'); return true; }
+      // fc_start, mirrored: the real startFcRun deals wave 1 and
+      // counts the attempt on the profile at once.
+      if (sess.duelId || sess.modDuelId || sess.npcFightId || sess.barrowsFightId) { botPvmEnd(bot); return false; }
+      pvm.started = true;
+      startFcRun(key);
+      return true;
+    }
+    // The run just ended and endFcRun already settled the
+    // records: death woke me in the plaza, leaving or completing
+    // left me standing in the caves (walk out like a player).
+    const doneKind = sess.area;
+    botPvmEnd(bot);
+    if (doneKind === 'fightcaves') botTravelTo(bot, 'plaza');
+    return false;
+  }
+  if (sess.area !== 'fightcaves') { endFcRun(run, 'left'); botPvmEnd(bot); return false; } // defensive: travel ends runs itself
+  // Jad's telegraph: run.jadPending is the authoritative state —
+  // announced last tick, landing at the start of the next fcTick
+  // against the prayer active THEN. The bot answers it like a
+  // player who saw the telegraph, with persona reliability
+  // rolled ONCE per telegraph: experience (tier) and a careful
+  // temperament switch well; a reckless bot misses some.
+  if (run.jadPending && bot.fcJadSeen !== run.jadPending) {
+    bot.fcJadSeen = run.jadPending;
+    const care = Math.max(0.3, Math.min(0.97,
+      0.45 + bot.def.tier * 0.18
+      + (50 - botTrait(profile, 'risk')) * 0.003
+      + (botTrait(profile, 'ambition') - 50) * 0.001));
+    if (Math.random() < care && profile.prayerPoints > 0) {
+      profile.activePrayer = run.jadPending.style; // 'missiles' | 'magic' — the prayer names themselves
+      save(key);
+    }
+  }
+  // Target (fc_attack's mutation) and approach: melee monsters
+  // walk to the bot; the ranged ones and Jad stay put, so the
+  // bot walks to them — to its own style's reach (FC_RANGE for
+  // Jad, the caves' standing exception).
+  let target = run.targetId ? run.monsters.get(run.targetId) : null;
+  if (!target || !target.alive) {
+    target = botFcPickTarget(bot, run);
+    if (target) run.targetId = target.id;
+  }
+  if (target && !run.betweenWaves) {
+    const reach = target.kind === 'jad' ? FC_RANGE : styleRange(attackStyleOf(profile));
+    if (Math.hypot(sess.x - target.x, sess.y - target.y) > reach * 0.9) {
+      const ap = approachPoint(sess.x, sess.y, target.x, target.y);
+      botStepToward(bot, ap.x, ap.y, true);
+    }
+  }
+  // Upkeep: Deflect what is hitting me (Jad's prayer is the
+  // telegraph's business, above — leave it alone while he lives).
+  const jadAlive = [...run.monsters.values()].some((m) => m.alive && m.kind === 'jad');
+  botPvmUpkeep(bot, run.hpYou, run.maxHpYou, (!jadAlive && target) ? target.attackType : null);
+  // Bailing out is a persona choice, not a script: out of food,
+  // badly hurt, and the caution roll says go — the fc_leave
+  // handler's own call, records settled by endFcRun as always.
+  if (botFoodCount(bot) === 0 && stackQty(profile.backpack, 'restore_potion') === 0
+    && run.hpYou <= run.maxHpYou * 0.3
+    && botScore(bot, { risk: -0.4, ambition: -0.2 }) > 50) {
+    endFcRun(run, 'left');
+    botPvmEnd(bot);
+    botTravelTo(bot, 'plaza');
+    return false;
+  }
+  return true;
+}
+
 // ----- friendship trickle + decay -----
 // Every relations tick: pairs training/gathering in the same area
 // grow a little closer (capped per hour); pairs that have not
@@ -10729,6 +11233,14 @@ function botThink(bot) {
     bot.wasInDuel = false;
     if (bot.profile.activePrayer) { bot.profile.activePrayer = null; save(bot.key); }
     bot.plan = null;
+  }
+  // Stage 39: a Barrows / Fight Caves attempt owns the bot while
+  // it runs — the drives work the real engines (crypt fights, the
+  // tunnel puzzle, the chest, the caves' waves) until the run
+  // settles or the bot gives it up.
+  if (bot.pvm || sess.fcRunId || sess.barrowsFightId) {
+    if (!bot.pvm) bot.pvm = sess.fcRunId ? { kind: 'fc', started: true } : { kind: 'barrows', started: true };
+    if (botPvmDrive(bot)) return;
   }
   // Stage 38: the Wilderness owns a bot while it is out there —
   // the wild drive fights, flees, hunts, and brings it home. A
@@ -10806,6 +11318,8 @@ function botThink(bot) {
   // anywhere — then the day job.
   if (sess.area === 'plaza') botPlazaHabits(bot);
   botDealDrive(bot); // Stage 38: skill deals, in any safe area
+  botPvmHabits(bot); // Stage 39: Barrows / Fight Caves attempt decisions, made wherever the bot is standing
+  if (bot.pvm) { botPvmDrive(bot); return; }
   if (!isWildArea(sess.area) && sess.area !== 'waiting' && sess.area !== 'arena') botWildHabits(bot); // Stage 38: Wilderness trip decisions, made wherever the bot is standing
   botFriendHabits(bot);
   botPlanDrive(bot);
