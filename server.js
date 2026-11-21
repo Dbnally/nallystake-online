@@ -1118,6 +1118,11 @@ function newProfile(username) {
     // records, so world-shared data rides on its owner's profile and
     // is aggregated into runtime registries at boot.
     customItems: {}, placedObjects: [], itemLooks: {}, // Stage 37 (Addition #4): base-item look overrides this admin has set
+    // Stage 40: City Ideas this admin has posted ([{ id, text, area,
+    // by, at, placed, target, contributors, status }]). World-shared
+    // state on the same per-user footing as placedObjects: the
+    // runtime registry (cityIdeas) aggregates them at boot.
+    cityIdeas: [],
     // Stage 13: world-layout version of this profile's stored
     // coordinates (only placedObjects carry any). New profiles are
     // born at the current version; older ones are scaled once by
@@ -1218,6 +1223,18 @@ function ensureV2(p) {
     const clean = p.placedObjects.filter((o) => o && typeof o.id === 'string' && typeof o.area === 'string'
       && PROP_KINDS.includes(o.kind) && Number.isFinite(+o.x) && Number.isFinite(+o.y));
     if (clean.length !== p.placedObjects.length) { p.placedObjects = clean; changed = true; }
+  }
+  // Stage 40 migration: City Ideas posted by this admin. Only the
+  // container shapes are enforced here (entries are server-created);
+  // the boot registry additionally drops ideas whose area key is no
+  // longer known.
+  if (!Array.isArray(p.cityIdeas)) { p.cityIdeas = []; changed = true; }
+  else {
+    const clean = p.cityIdeas.filter((i) => i && typeof i.id === 'string' && typeof i.text === 'string'
+      && typeof i.area === 'string' && typeof i.by === 'string'
+      && (i.status === 'open' || i.status === 'done' || i.status === 'cancelled')
+      && Number.isFinite(+i.placed) && i.contributors && typeof i.contributors === 'object' && !Array.isArray(i.contributors));
+    if (clean.length !== p.cityIdeas.length) { p.cityIdeas = clean; changed = true; }
   }
   // Stage 13 migration: the world doubled (800x450 -> 1600x900).
   // placedObjects are the only coordinates a profile stores, so
@@ -1436,6 +1453,7 @@ function addXp(key, gains) {
 // banner + chat line (client renders {type:'announce'}).
 function announce(text) {
   broadcast({ type: 'announce', text });
+  botCongratsHook(text); // Stage 40: a bot may chime in with a congrats (defined with the bot brain; hoisted)
 }
 // What reaching `level` in `skill` unlocks, derived ONLY from the
 // requirement tables that already gate the game — node level
@@ -8395,6 +8413,43 @@ wss.on('connection', (ws, req) => {
       broadcastObjects(obj.area);
       return send(ws, { type: 'admin_note', text: `Removed the placed object ${id}.` });
     }
+    // ----- Stage 40: City Idea commissions -----
+    // An admin posts an idea (short text + a rough area); the bots
+    // decide for themselves whether to build toward it (see the
+    // Stage 40 bot section). Ideas persist on the posting admin's
+    // profile and aggregate into the cityIdeas registry at boot.
+    if (m.type === 'city_ideas') {
+      if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'Only admins can view City Ideas.' });
+      return send(ws, cityIdeasMsg());
+    }
+    if (m.type === 'city_idea_post') {
+      if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'Only admins can post a City Idea.' });
+      const text = String(m.text || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+      if (text.length < 3) return send(ws, { type: 'error', message: 'Give the idea a few words first.' });
+      const zone = CITY_IDEA_AREAS[String(m.area || '')];
+      if (!zone) return send(ws, { type: 'error', message: 'Pick an area for the idea.' });
+      const openCount = [...cityIdeas.values()].filter((e) => e.rec.status === 'open').length;
+      if (openCount >= CITY_IDEA_MAX_OPEN) return send(ws, { type: 'error', message: `There are already ${CITY_IDEA_MAX_OPEN} open City Ideas — let the bots finish one first.` });
+      ensureV2(profile);
+      const rec = {
+        id: `idea_${++ideaSeq}`, text, area: String(m.area), by: profile.username,
+        at: Date.now(), placed: 0, target: CITY_IDEA_TARGET, contributors: {}, status: 'open',
+      };
+      profile.cityIdeas.push(rec);
+      cityIdeas.set(rec.id, { rec, ownerKey: key });
+      save(key);
+      pushCityIdeas();
+      return send(ws, { type: 'admin_note', text: `City Idea posted: "${text}" (${zone.label}). The bots will make of it what they will.` });
+    }
+    if (m.type === 'city_idea_cancel') {
+      if (!isAdminOrOwner(profile)) return send(ws, { type: 'error', message: 'Only admins can cancel a City Idea.' });
+      const entry = cityIdeas.get(String(m.id || ''));
+      if (!entry || entry.rec.status !== 'open') return send(ws, { type: 'error', message: 'No such open City Idea.' });
+      entry.rec.status = 'cancelled';
+      save(entry.ownerKey);
+      pushCityIdeas();
+      return send(ws, { type: 'admin_note', text: `City Idea cancelled: "${entry.rec.text}".` });
+    }
 
     // ----- Stage 7B: Talk (whispers) -----
     if (m.type === 'whisper') {
@@ -9123,6 +9178,7 @@ function spawnBotSession(def, profile) {
     stakeReadyAt: 0, stakeSeenMatch: null, // stake-match ready-up timing
     lastGiftAt: 0, lastPostAt: 0, lastPartyInviteAt: 0,
     lastPvmAt: Date.now(), pvm: null, fcJadSeen: null, pvmEatAt: 0, // Stage 39: the current Barrows / Fight Caves attempt, if any
+    lastBuildAt: 0, lastIdeaAt: 0, lastTalkAt: 0, greetedAt: new Map(), ideaIn: new Set(), // Stage 40: city/social clocks (session-only)
     wasInDuel: false,
   });
 }
@@ -9314,6 +9370,10 @@ function botPickPlan(bot) {
   if (!broke) {
     entries.push({ value: 'combat', weight: 18 + botTrait(profile, 'ambition') * 0.5 });
     entries.push({ value: 'idle', weight: 8 + botTrait(profile, 'sociability') * 0.15 });
+    // Stage 40: hanging out in the plaza is a plan of its own for
+    // sociable bots — a loose cluster near the bank / dais where
+    // the greetings and small talk live (see botSocialDrive).
+    entries.push({ value: 'social', weight: 3 + botTrait(profile, 'sociability') * 0.4 });
   }
   entries.push({ value: 'gather', weight: 20 + botTrait(profile, 'greed') * 0.5 });
   const kind = botPickWeighted(bot, entries);
@@ -9321,6 +9381,11 @@ function botPickPlan(bot) {
   if (kind === 'sell') return { kind, area: 'plaza', x: BOT_SHOP_SPOT.x, y: BOT_SHOP_SPOT.y, until: 0, dur: 6000 / BOT_TIME_SCALE };
   if (kind === 'bank') return { kind, area: 'plaza', x: BOT_BANK_SPOT.x, y: BOT_BANK_SPOT.y, until: 0, dur: 6000 / BOT_TIME_SCALE };
   if (kind === 'idle') return { kind, area: sess.area, x: sess.x, y: sess.y, until: Date.now() + dur, dur };
+  if (kind === 'social') {
+    const spots = [{ x: 800, y: 330 }, { x: 690, y: 520 }, { x: 910, y: 520 }, { x: 770, y: 250 }, { x: 850, y: 610 }, { x: 720, y: 390 }, { x: 880, y: 390 }];
+    const s = spots[Math.floor(Math.random() * spots.length)];
+    return { kind, area: 'plaza', x: s.x + botRandInt(-50, 50), y: s.y + botRandInt(-40, 40), until: 0, dur: botDelay(60000, 150000) / BOT_TIME_SCALE };
+  }
   const skill = kind === 'combat'
     ? botPickWeighted(bot, ['attack', 'strength', 'defence', 'ranged', 'magic'].map((s) => ({ value: s, weight: 10 + botTrait(profile, 'ambition') * 0.2 + (30 - Math.min(30, levelForXp(profile.xp[s] || 0))) })))
     : botPickWeighted(bot, ['mining', 'woodcutting', 'fishing'].map((s) => ({ value: s, weight: 10 + botTrait(profile, 'greed') * 0.3 + (30 - Math.min(30, levelForXp(profile.xp[s] || 0))) })));
@@ -9354,13 +9419,28 @@ function botPlanDrive(bot) {
     if (!plan.done) { botSellGoods(bot); botRestock(bot); plan.done = true; } // Stage 38: restock duel supplies while at the shops
   } else if (plan.kind === 'bank') {
     if (!plan.done) { botBankVisit(bot); botRestock(bot); plan.done = true; } // Stage 38: same on a bank trip (the shops are position-free)
-  } else if (plan.kind === 'idle') {
+  } else if (plan.kind === 'idle' || plan.kind === 'social') {
     // Wander the current area in short ambles; in the plaza this is
     // also where the Stake Board habits live (see botPlazaHabits).
+    // A social plan ambles in a tighter radius — the bot is hanging
+    // around its cluster spot, not roaming the whole area.
+    const ambleX = plan.kind === 'social' ? 130 : 260, ambleY = plan.kind === 'social' ? 100 : 200;
     if (!plan.wp || Math.hypot(sess.x - plan.wp.x, sess.y - plan.wp.y) < 10) {
-      plan.wp = { x: Math.max(60, Math.min(WORLD_W - 60, sess.x + botRandInt(-260, 260))), y: Math.max(60, Math.min(WORLD_H - 60, sess.y + botRandInt(-200, 200))) };
+      plan.wp = { x: Math.max(60, Math.min(WORLD_W - 60, sess.x + botRandInt(-ambleX, ambleX))), y: Math.max(60, Math.min(WORLD_H - 60, sess.y + botRandInt(-ambleY, ambleY))) };
     }
     botStepToward(bot, plan.wp.x, plan.wp.y, false);
+  } else if (plan.kind === 'build') {
+    // Stage 40: walk to the chosen spot and place the object. The
+    // plan carries a deadline (plan.until was set at creation, so
+    // the generic expiry below also applies); placement itself
+    // re-validates gold, caps and clearance on arrival — the world
+    // may have changed on the way over.
+    const ideaEntry = plan.ideaId ? cityIdeas.get(plan.ideaId) : null;
+    if (plan.ideaId && (!ideaEntry || ideaEntry.rec.status !== 'open')) bot.plan = null;
+    else if (atSpot) {
+      botPlaceObject(bot, plan.propKind, plan.area, plan.x, plan.y, ideaEntry);
+      bot.plan = null;
+    }
   }
   if (now > plan.until) bot.plan = null;
 }
@@ -11223,6 +11303,367 @@ setInterval(() => {
 }, 30000 / BOT_TIME_SCALE);
 
 // ----- the brain -----
+// =====================================================================
+// Stage 40 — NPC community, city building, and City Idea commissions.
+//
+// Derek's shape (2026-11-20): the bots build the community and
+// build/design the city, and an admin can hand them an idea — the
+// IDEA is the admin's; whether to join it, and how to build it, is
+// each bot's own choice, made through the same trait helpers as
+// every other bot decision. Nothing here remote-controls a bot.
+//
+// Three behaviours:
+//  1. Plaza social life: sociable bots take 'social' plans (loose
+//     clusters by the bank/dais — see botPickPlan), greet players
+//     who arrive nearby (hard throttled per bot per player), make
+//     small talk drawn ONLY from their real state (runs finished,
+//     grudges held, friends present, objects placed), and chime in
+//     on world announcements via botCongratsHook.
+//  2. City building on their own initiative: a bot with gold to
+//     spare may pay the per-kind price from its OWN gold and place
+//     a real Stage 7D object (persisted on its profile, aggregated
+//     into placedObjectsAll exactly like a player's — and removable
+//     by any admin through the existing remove_object tool).
+//  3. City Idea commissions: an admin posts { text, rough area };
+//     the record persists on the admin's profile and aggregates
+//     into the cityIdeas registry at boot. Bots roll to join (and
+//     re-roll while they stay out — joining is a standing 'in',
+//     staying out is only "not yet"), then place objects of kinds
+//     THEY choose inside the rough area, paid from their own gold,
+//     until the idea's target count completes it and a plaza
+//     announcement names the idea and its contributors.
+//
+// TEST HOOK: BOT_CITY_OFF=1 disables every Stage 40 bot behaviour
+// (social, building, idea work, congrats) — the same pattern as
+// BOT_PVM_OFF, for suites that pin a quieter world.
+// =====================================================================
+const CITY_PROP_PRICES = { flowers: 40, rock: 60, tree: 120, light: 150, chest: 250 }; // gold, paid by the placing bot
+const BOT_OBJ_PER_BOT = 12; // a single bot may have at most this many placed objects in the world
+const BOT_OBJ_WORLD_CAP = 60; // bot-placed objects across the whole world
+const BOT_OBJ_SPACING = 55; // minimum distance between any two placed objects
+const BOT_CITY_KEEP_GOLD = 60; // a bot never builds itself below this much gold in hand
+const BOT_BUILD_EVERY_MS = 480000; // per-bot clock between own-initiative build decisions (scaled)
+const BOT_IDEA_EVERY_MS = 240000; // per-bot clock between City Idea join/contribute decisions (scaled)
+const BOT_GREET_COOLDOWN_MS = 2700000; // per bot per player: at most one greeting per 45 minutes (scaled)
+const BOT_GREET_RANGE = 320; // a bot greets a player it can practically see
+const BOT_TALK_EVERY_MS = 300000; // per-bot clock between plaza small-talk lines (scaled)
+const CITY_IDEA_TARGET = 8; // objects placed toward an idea that complete it
+const CITY_IDEA_MAX_OPEN = 3; // open ideas at once, so the bots' attention stays meaningful
+const CITY_BUILD_AREAS = new Set(['plaza', 'gathering', 'cove', 'mine', 'training', 'magic', 'range', 'goblins']);
+// Rough areas an idea can name: the plaza as a whole or by quadrant,
+// or one whole gathering/training area. { area } is the world area,
+// (x, y) the rough centre, r the radius contributors build inside.
+const CITY_IDEA_AREAS = {
+  plaza: { label: 'Plaza — whole plaza', area: 'plaza', x: 800, y: 450, r: 340 },
+  'plaza-nw': { label: 'Plaza — north-west', area: 'plaza', x: 400, y: 225, r: 300 },
+  'plaza-ne': { label: 'Plaza — north-east', area: 'plaza', x: 1200, y: 225, r: 300 },
+  'plaza-sw': { label: 'Plaza — south-west', area: 'plaza', x: 400, y: 675, r: 300 },
+  'plaza-se': { label: 'Plaza — south-east', area: 'plaza', x: 1200, y: 675, r: 300 },
+  gathering: { label: 'Gathering Cave', area: 'gathering', x: 800, y: 450, r: 380 },
+  cove: { label: 'Fishing Cove', area: 'cove', x: 480, y: 450, r: 380 },
+  mine: { label: 'Emberfall Mine & Smithy', area: 'mine', x: 800, y: 450, r: 380 },
+  training: { label: 'Training Cave', area: 'training', x: 800, y: 450, r: 380 },
+  magic: { label: 'Wizard Grounds', area: 'magic', x: 800, y: 450, r: 380 },
+  range: { label: 'Ranger Camp', area: 'range', x: 800, y: 450, r: 380 },
+  goblins: { label: 'Goblin Camp', area: 'goblins', x: 800, y: 450, r: 380 },
+};
+const cityIdeas = new Map(); // ideaId -> { rec, ownerKey } — rec is the SAME object saved on the poster's profile
+let ideaSeq = 0; // last City Idea number handed out (seeded at boot)
+// Boot aggregation (called from store.init beside
+// buildStage7DRegistry): pull every admin's saved City Ideas into
+// the runtime registry and seed the id counter from the maximum in
+// use. Ideas naming an area key the game no longer knows are left
+// on the profile but never activate.
+function buildCityIdeasRegistry() {
+  cityIdeas.clear();
+  let maxId = 0;
+  for (const [k, u] of Object.entries(db.users)) {
+    if (!u || !u.profile || !Array.isArray(u.profile.cityIdeas)) continue;
+    for (const rec of u.profile.cityIdeas) {
+      if (!rec || typeof rec.id !== 'string' || !CITY_IDEA_AREAS[rec.area]) continue;
+      cityIdeas.set(rec.id, { rec, ownerKey: k });
+      const n = parseInt(rec.id.slice(5), 10); // 'idea_<n>'
+      if (Number.isFinite(n) && n > maxId) maxId = n;
+    }
+  }
+  ideaSeq = maxId;
+}
+function cityIdeasMsg() {
+  return {
+    type: 'city_ideas',
+    ideas: [...cityIdeas.values()].map(({ rec }) => ({
+      id: rec.id, text: rec.text, area: rec.area, areaLabel: (CITY_IDEA_AREAS[rec.area] || {}).label || rec.area,
+      by: rec.by, placed: rec.placed, target: rec.target, status: rec.status, contributors: rec.contributors || {},
+    })),
+    areas: Object.entries(CITY_IDEA_AREAS).map(([key, z]) => ({ key, label: z.label })),
+  };
+}
+// Push the current list to every online admin/owner (the only
+// viewers of the City Ideas panel section).
+function pushCityIdeas() {
+  const msg = cityIdeasMsg();
+  for (const p of online.values()) if (isAdminOrOwner(p.profile)) send(p.ws, msg);
+}
+
+// ----- placement rules: never block gameplay -----
+// Protected spots per area: the area spawn and every resource node
+// always; the plaza adds its fixtures (bank chest / spawn point,
+// the Duel Board, the teleport sign, the Stake Board sign, the
+// dais centre, the three mods, the four shop stalls, PK Noob).
+const CITY_PROTECTED_PLAZA = [
+  { x: 984, y: 450, r: 85 }, // the Duel Board
+  { x: 880, y: 470, r: 75 }, // the teleport sign
+  { x: 180, y: 780, r: 85 }, // the Stake Board sign
+  { x: 800, y: 140, r: 135 }, // the tournament dais centre
+  { x: 680, y: 300, r: 75 }, { x: 800, y: 280, r: 75 }, { x: 920, y: 300, r: 75 }, // Mod Ash / Blair / Vega
+  { x: 340, y: 220, r: 95 }, { x: 1260, y: 220, r: 95 }, { x: 1260, y: 680, r: 95 }, { x: 340, y: 680, r: 95 }, // the four shop stalls
+  { x: 1150, y: 120, r: 75 }, // PK Noob
+];
+function cityProtectedSpots(area) {
+  const spots = [];
+  const a = AREAS[area];
+  if (a) spots.push({ x: a.spawn.x, y: a.spawn.y, r: 95 }); // spawns (the plaza's is also the bank chest)
+  for (const n of NODES.values()) if (n.area === area) spots.push({ x: n.x, y: n.y, r: 85 });
+  if (area === 'plaza') spots.push(...CITY_PROTECTED_PLAZA);
+  return spots;
+}
+function citySpotClear(area, x, y) {
+  if (x < 70 || x > WORLD_W - 70 || y < 70 || y > WORLD_H - 70) return false; // world margins (gates live on the edges)
+  if (area === 'cove' && x > 1030) return false; // the cove lake (the shore stops walkers at x = 1060)
+  for (const o of placedObjectsAll) {
+    if (o.area === area && Math.hypot(o.x - x, o.y - y) < BOT_OBJ_SPACING) return false;
+  }
+  for (const s of cityProtectedSpots(area)) {
+    if (Math.hypot(s.x - x, s.y - y) < s.r) return false;
+  }
+  return true;
+}
+// Pick a buildable spot: inside the idea's rough zone when working
+// an idea; otherwise near an existing object (neighbourhoods grow)
+// or near the bot itself. Returns null when nothing clean turns up.
+function cityPickSpot(bot, area, zone) {
+  for (let i = 0; i < 10; i++) {
+    let cx, cy, cr;
+    if (zone) { cx = zone.x; cy = zone.y; cr = zone.r; }
+    else {
+      const here = placedObjectsAll.filter((o) => o.area === area);
+      if (here.length && Math.random() < 0.55) {
+        const o = here[Math.floor(Math.random() * here.length)];
+        cx = o.x; cy = o.y; cr = 150; // beside the cluster, spacing enforced below
+      } else { cx = bot.sess.x; cy = bot.sess.y; cr = 220; }
+    }
+    const ang = Math.random() * Math.PI * 2, dist = Math.sqrt(Math.random()) * cr;
+    const x = Math.round(cx + Math.cos(ang) * dist), y = Math.round(cy + Math.sin(ang) * dist);
+    if (citySpotClear(area, x, y)) return { x, y };
+  }
+  return null;
+}
+function botWorldObjectCount() {
+  let n = 0;
+  for (const o of placedObjectsAll) if (BOT_KEYS.has(o.ownerKey)) n += 1;
+  return n;
+}
+// Which kinds this bot would consider, weighted by its traits and
+// filtered to what it can pay for while keeping its reserve. The
+// bots design the execution: the KIND is their pick, not the
+// admin's and not a script's.
+function cityKindEntries(bot, maxShare) {
+  const profile = bot.profile, gold = goldTotal(profile);
+  const entries = [];
+  for (const [kind, price] of Object.entries(CITY_PROP_PRICES)) {
+    if (gold - price < BOT_CITY_KEEP_GOLD) continue;
+    if (price > gold * maxShare) continue;
+    let w = 10;
+    if (kind === 'flowers') w += botTrait(profile, 'sociability') * 0.35;
+    if (kind === 'light') w += botTrait(profile, 'sociability') * 0.2 + botTrait(profile, 'ambition') * 0.15;
+    if (kind === 'tree') w += botTrait(profile, 'ambition') * 0.25;
+    if (kind === 'chest') w += botTrait(profile, 'ambition') * 0.3 + botTrait(profile, 'greed') * 0.1;
+    if (kind === 'rock') w += (100 - botTrait(profile, 'sociability')) * 0.15;
+    entries.push({ value: kind, weight: w });
+  }
+  return entries;
+}
+// Place one object for a bot: caps, clearance and gold all
+// re-validated at the moment of placement (the world may have
+// changed since the plan was made). Gold moves only through
+// takeGold; the object persists on the bot's profile and joins the
+// world registry exactly like an admin-placed one.
+function botPlaceObject(bot, kind, area, x, y, ideaEntry) {
+  const profile = bot.profile;
+  if (!PROP_KINDS.includes(kind)) return false;
+  if (!Array.isArray(profile.placedObjects)) profile.placedObjects = [];
+  if (profile.placedObjects.length >= BOT_OBJ_PER_BOT) return false;
+  if (botWorldObjectCount() >= BOT_OBJ_WORLD_CAP) return false;
+  if (!citySpotClear(area, x, y)) return false;
+  const price = CITY_PROP_PRICES[kind];
+  if (!price || !takeGold(profile, price)) return false;
+  const entry = { id: `obj_${++objectSeq}`, area, kind, x: Math.round(x), y: Math.round(y) };
+  profile.placedObjects.push(entry);
+  placedObjectsAll.push({ ...entry, by: profile.username, ownerKey: bot.key });
+  save(bot.key);
+  broadcastObjects(area);
+  const label = (PROP_DEFS.find((p) => p.kind === kind) || {}).label || kind;
+  if (ideaEntry && ideaEntry.rec.status === 'open') {
+    const rec = ideaEntry.rec;
+    rec.placed += 1;
+    rec.contributors[profile.username] = (rec.contributors[profile.username] || 0) + 1;
+    if (rec.placed >= rec.target) {
+      rec.status = 'done';
+      save(ideaEntry.ownerKey);
+      const names = Object.keys(rec.contributors).join(', ');
+      announce(`🏗️ City Idea complete: "${rec.text}" — built by ${names}!`);
+    } else {
+      save(ideaEntry.ownerKey);
+    }
+    pushCityIdeas();
+    botSay(bot, `Built a ${label.toLowerCase()} for the "${rec.text}" idea.`);
+  } else if (Math.random() < 0.5) {
+    botSay(bot, `Put a ${label.toLowerCase()} up in the ${AREAS[area].name}. This place is ours to build.`);
+  }
+  return true;
+}
+// The join decision for one idea: sociability and ambition pull a
+// bot in, greed pulls it out, and a bot that remembers the posting
+// admin kindly (trades dealt, Stage 38) leans in. Staying out is
+// re-rolled on the next idea clock — minds change; joining sticks.
+function botCityJoinRoll(bot, entry) {
+  const cheapest = Math.min(...Object.values(CITY_PROP_PRICES));
+  if (goldTotal(bot.profile) < cheapest + BOT_CITY_KEEP_GOLD) return false; // cannot afford to help at all right now
+  let s = botScore(bot, { sociability: 0.35, ambition: 0.35, greed: -0.45 });
+  s += Math.max(-50, Math.min(50, botRelation(bot.profile, entry.rec.by))) * 0.3;
+  return s > 60;
+}
+// Start a build plan (own initiative when ideaEntry is null, else
+// work toward that idea). Returns false when the bot cannot or
+// will not build right now.
+function botCityStartBuild(bot, ideaEntry) {
+  const profile = bot.profile;
+  if (!Array.isArray(profile.placedObjects)) profile.placedObjects = [];
+  if (profile.placedObjects.length >= BOT_OBJ_PER_BOT) return false;
+  if (botWorldObjectCount() >= BOT_OBJ_WORLD_CAP) return false;
+  const zone = ideaEntry ? CITY_IDEA_AREAS[ideaEntry.rec.area] : null;
+  if (!zone && ideaEntry) return false;
+  const area = ideaEntry ? zone.area : bot.sess.area;
+  if (!CITY_BUILD_AREAS.has(area)) return false;
+  const kinds = cityKindEntries(bot, ideaEntry ? 1 : 0.4);
+  if (!kinds.length) return false;
+  const kind = botPickWeighted(bot, kinds);
+  const spot = cityPickSpot(bot, area, zone);
+  if (!spot) return false;
+  bot.plan = {
+    kind: 'build', area, x: spot.x, y: spot.y, propKind: kind,
+    ideaId: ideaEntry ? ideaEntry.rec.id : null,
+    until: Date.now() + 240000 / BOT_TIME_SCALE, dur: 0,
+  };
+  return true;
+}
+// The Stage 40 build habits, decided wherever the bot is standing
+// (the plan system carries it to the spot). One decision per clock;
+// a bot mid-anything-else is left alone, and a bot working a plan
+// that matters (training, selling, banking) is not interrupted —
+// building happens between jobs.
+function botCityHabits(bot) {
+  if (process.env.BOT_CITY_OFF) return; // test hook (BOT_PVM_OFF pattern)
+  const now = Date.now(), sess = bot.sess;
+  if (bot.pvm || bot.wildTrip || isWildArea(sess.area)) return;
+  if (sess.area === 'waiting' || sess.area === 'arena' || sess.area === 'fightcaves'
+    || sess.area === 'barrows' || sess.area === 'barrows_crypt' || sess.area === 'barrows_tunnels') return;
+  if (sess.duelId || sess.modDuelId || sess.npcFightId || sess.barrowsFightId || sess.fcRunId) return;
+  if (stakeMatchForKey(bot.key) || activeTradeForKey(bot.key) || pendingTradeForKey(bot.key)) return;
+  if ([...challenges.values()].some((ch) => ch.from === bot.key || ch.to === bot.key)) return;
+  if (bot.plan && bot.plan.kind !== 'idle' && bot.plan.kind !== 'social') return;
+  // City Idea work first: it was asked for by name.
+  const open = [...cityIdeas.values()].filter((e) => e.rec.status === 'open');
+  for (const id of [...bot.ideaIn]) if (!open.some((e) => e.rec.id === id)) bot.ideaIn.delete(id);
+  if (open.length && now - bot.lastIdeaAt >= BOT_IDEA_EVERY_MS / BOT_TIME_SCALE) {
+    for (const e of open) if (!bot.ideaIn.has(e.rec.id) && botCityJoinRoll(bot, e)) bot.ideaIn.add(e.rec.id);
+    const joined = open.filter((e) => bot.ideaIn.has(e.rec.id));
+    if (joined.length) {
+      bot.lastIdeaAt = now;
+      const e = joined[Math.floor(Math.random() * joined.length)];
+      botCityStartBuild(bot, e);
+      return;
+    }
+    bot.lastIdeaAt = now; // considered the open ideas and stayed out — reconsider next cycle
+  }
+  // Own initiative.
+  if (now - bot.lastBuildAt < BOT_BUILD_EVERY_MS / BOT_TIME_SCALE) return;
+  if (!CITY_BUILD_AREAS.has(sess.area)) return;
+  bot.lastBuildAt = now;
+  if (botScore(bot, { ambition: 0.4, sociability: 0.25, greed: -0.5 }) <= 58) return;
+  botCityStartBuild(bot, null);
+}
+
+// ----- plaza social life -----
+function botGreetingLine(bot, name) {
+  const profile = bot.profile;
+  return botPickWeighted(bot, [
+    { value: `Hey ${name}.`, weight: 10 + botTrait(profile, 'sociability') * 0.2 },
+    { value: `Hey ${name}! Good to see you.`, weight: 4 + botTrait(profile, 'sociability') * 0.4 },
+    { value: `Oi, ${name}. Watch yourself out there.`, weight: 2 + botTrait(profile, 'aggression') * 0.3 },
+    { value: `${name}. Got anything to trade?`, weight: 2 + botTrait(profile, 'greed') * 0.3 },
+    { value: `Well met, ${name}.`, weight: 6 + botTrait(profile, 'loyalty') * 0.2 },
+  ]);
+}
+// Small talk drawn ONLY from the bot's real state: runs it has
+// actually finished, waves it actually reached, a grudge it
+// actually holds against someone online, a best friend standing
+// nearby, objects it actually placed. Nothing is invented.
+function botSmallTalkLine(bot) {
+  const profile = bot.profile, opts = [];
+  if ((profile.barrowsRuns || 0) > 0) opts.push({ value: 'Barrows has been paying out for me lately.', weight: 10 });
+  if (profile.fc && profile.fc.completions > 0) opts.push({ value: 'Still proud of that fire cape run.', weight: 10 });
+  else if (profile.fc && profile.fc.bestWave > 10) opts.push({ value: `Got to wave ${profile.fc.bestWave} in the caves last time. Still stings.`, weight: 8 });
+  let grudge = null, worst = -40;
+  for (const [name, score] of Object.entries(profile.relations || {})) if (score < worst) { worst = score; grudge = name; }
+  if (grudge && [...bots.values()].some((b) => b.profile.username === grudge)) {
+    opts.push({ value: `Don't talk to me about ${grudge}. We're not done.`, weight: 12 });
+  }
+  const bf = botBestFriend(profile);
+  if (bf && [...online.values()].some((p) => p.profile.username === bf && p.area === 'plaza')) {
+    opts.push({ value: `${bf} and I have been cleaning up lately.`, weight: 9 });
+  }
+  if ((profile.placedObjects || []).length) opts.push({ value: "The city's looking better with my touches in it.", weight: 7 });
+  opts.push({ value: 'Quiet day in the plaza.', weight: 5 });
+  opts.push({ value: 'Training never stops. Neither do I.', weight: 3 + botTrait(profile, 'ambition') * 0.15 });
+  opts.push({ value: 'Everything has a price. Everything.', weight: 3 + botTrait(profile, 'greed') * 0.15 });
+  return botPickWeighted(bot, opts);
+}
+// Greetings + small talk for bots in the plaza. Greetings are
+// gated per bot per player by a long cooldown and by a sociability
+// roll; botSay's per-area gap still bounds the total chat rate.
+function botSocialDrive(bot) {
+  if (process.env.BOT_CITY_OFF) return; // test hook (BOT_PVM_OFF pattern)
+  const sess = bot.sess;
+  if (sess.area !== 'plaza') return;
+  const now = Date.now();
+  for (const [k, p] of online) {
+    if (k === bot.key || p.bot || bots.has(k) || p.area !== 'plaza') continue;
+    if (Math.hypot(p.x - sess.x, p.y - sess.y) > BOT_GREET_RANGE) continue;
+    if (now - (bot.greetedAt.get(k) || 0) < BOT_GREET_COOLDOWN_MS / BOT_TIME_SCALE) continue;
+    if (botScore(bot, { sociability: 0.5 }) <= 55) continue;
+    if (botSay(bot, botGreetingLine(bot, p.profile.username))) bot.greetedAt.set(k, now);
+    break; // one greeting per bot per tick
+  }
+  if (now - bot.lastTalkAt < BOT_TALK_EVERY_MS / BOT_TIME_SCALE) return;
+  if (!bot.plan || (bot.plan.kind !== 'social' && bot.plan.kind !== 'idle')) return;
+  bot.lastTalkAt = now;
+  if (botScore(bot, { sociability: 0.4 }) <= 52) return;
+  botSay(bot, botSmallTalkLine(bot));
+}
+// Announcement reactions: when the game announces something (a 99,
+// a fire cape, rare Barrows loot, a completed City Idea), one bot
+// may chime in a few seconds later. Sociable bots are likelier to
+// be the one; most announcements pass without comment.
+function botCongratsHook(text) {
+  if (process.env.BOT_CITY_OFF || !botsReady) return;
+  const candidates = [...bots.values()].filter((b) => !b.sess.duelId);
+  if (!candidates.length || Math.random() > 0.45) return;
+  const bot = botPickWeighted(candidates[0], candidates.map((b) => ({ value: b, weight: 5 + botTrait(b.profile, 'sociability') })));
+  const line = ['Nice one!', 'Huge — congrats!', 'Well earned.', 'Gz!', 'Big! Congrats.'][Math.floor(Math.random() * 5)];
+  setTimeout(() => { try { botSay(bot, line); } catch (e) { /* the world moved on */ } }, botDelay(2500, 7000) / BOT_TIME_SCALE);
+}
+
 function botThink(bot) {
   const sess = bot.sess, now = Date.now();
   // In a duel: drive the fighter, nothing else.
@@ -11317,8 +11758,10 @@ function botThink(bot) {
   // Habits: Stake Board business in the plaza, friend business
   // anywhere — then the day job.
   if (sess.area === 'plaza') botPlazaHabits(bot);
+  botSocialDrive(bot); // Stage 40: plaza greetings + small talk (self-gates on the plaza)
   botDealDrive(bot); // Stage 38: skill deals, in any safe area
   botPvmHabits(bot); // Stage 39: Barrows / Fight Caves attempt decisions, made wherever the bot is standing
+  botCityHabits(bot); // Stage 40: city building + City Idea work, decided wherever the bot is standing
   if (bot.pvm) { botPvmDrive(bot); return; }
   if (!isWildArea(sess.area) && sess.area !== 'waiting' && sess.area !== 'arena') botWildHabits(bot); // Stage 38: Wilderness trip decisions, made wherever the bot is standing
   botFriendHabits(bot);
@@ -11351,6 +11794,7 @@ store.init().then((users) => {
   // connect, so the first login's catalog and item validation
   // already know every custom id.
   buildStage7DRegistry();
+  buildCityIdeasRegistry(); // Stage 40: aggregate every admin's posted City Ideas the same way
   // Stage 37: the living NPC players — bot accounts are created /
   // backfilled and their sessions join the world BEFORE the server
   // listens, so a human registering a bot's name finds it taken.
