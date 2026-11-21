@@ -2312,6 +2312,11 @@ function broadcastState() {
 function sendProfile(key) {
   const p = online.get(key);
   if (p) send(p.ws, { type: 'profile', profile: publicProfile(p.profile) });
+  // Trade inventories stay live: any profile change on either side
+  // (a shop buy, a gather, a bank move) refreshes BOTH traders'
+  // view of BOTH backpacks, not just on offer changes.
+  const t = activeTradeForKey(key);
+  if (t) sendTradeUpdate(t);
 }
 
 // ---------- Stage 7B helpers: parties ----------
@@ -2411,6 +2416,43 @@ function clearTradeRequestsInvolving(key) {
 function tradeOfferView(offer) {
   return { gold: offer.gold, items: offer.items.map((s) => ({ item: s.item, qty: s.qty })) };
 }
+// Trade inventories (Derek, 2026-11-21): BOTH traders see BOTH full
+// backpacks in the trade window, each with that player's gold as
+// the FIRST slot — the view carries gold separately (slot 1) and
+// the backpack stacks after it; the backpack's own gold stack is
+// excluded from the items because it IS slot 1 (shown as the total
+// purse, backpack + bank, the same total trade gold draws from).
+// Built fresh from the live profile on every update, so the
+// partner's pack stays current as offers and stock change. Seeing
+// is not owning: executeTrade still re-validates at confirm time.
+function tradeInventoryView(profile) {
+  if (!profile) return { gold: 0, items: [] };
+  ensureV2(profile);
+  return {
+    gold: goldTotal(profile),
+    items: (profile.backpack || []).filter((s) => s.item !== 'gold').map((s) => ({ item: s.item, qty: s.qty })),
+  };
+}
+// What one side is ASKING the other side for (tap-to-request on the
+// partner's backpack). A request never moves anything by itself:
+// the owner still has to offer the item and both sides confirm.
+function tradeAsksOf(trade, key) {
+  if (!trade.requests) trade.requests = {};
+  if (!Array.isArray(trade.requests[key])) trade.requests[key] = [];
+  return trade.requests[key];
+}
+// The trade_open payload for one side, with BOTH inventories
+// already in it — the windows open showing both backpacks, and no
+// extra trade_update is spent on the opening (the update stream
+// still starts with the first real offer/confirm change).
+function tradeOpenPayload(trade, forKey, withName) {
+  const other = forKey === trade.aKey ? trade.bKey : trade.aKey;
+  return {
+    type: 'trade_open', tradeId: trade.id, with: withName,
+    youInv: tradeInventoryView(db.users[forKey] && db.users[forKey].profile),
+    themInv: tradeInventoryView(db.users[other] && db.users[other].profile),
+  };
+}
 // One update per side, each seeing their own offer as `you`.
 function sendTradeUpdate(trade) {
   for (const k of [trade.aKey, trade.bKey]) {
@@ -2421,6 +2463,10 @@ function sendTradeUpdate(trade) {
       type: 'trade_update', tradeId: trade.id,
       you: tradeOfferView(trade.offers[k]), them: tradeOfferView(trade.offers[other]),
       youConfirmed: !!trade.confirmed[k], themConfirmed: !!trade.confirmed[other],
+      youInv: tradeInventoryView(db.users[k] && db.users[k].profile),
+      themInv: tradeInventoryView(db.users[other] && db.users[other].profile),
+      youAsked: tradeAsksOf(trade, k).map((s) => ({ item: s.item, qty: s.qty })),
+      themAsked: tradeAsksOf(trade, other).map((s) => ({ item: s.item, qty: s.qty })),
     });
   }
 }
@@ -8730,13 +8776,14 @@ wss.on('connection', (ws, req) => {
         id: req.id, aKey: req.fromKey, bKey: key,
         offers: { [req.fromKey]: { gold: 0, items: [] }, [key]: { gold: 0, items: [] } },
         confirmed: { [req.fromKey]: false, [key]: false },
+        requests: {},
         expires: Date.now() + 120000, timer: null,
       };
       trade.timer = setTimeout(() => { if (trades.has(trade.id)) cancelTrade(trade, 'Trade timed out.'); }, 120000);
       if (trade.timer.unref) trade.timer.unref();
       trades.set(trade.id, trade);
-      send(fromSess.ws, { type: 'trade_open', tradeId: trade.id, with: profile.username });
-      return send(ws, { type: 'trade_open', tradeId: trade.id, with: fromSess.profile.username });
+      send(fromSess.ws, tradeOpenPayload(trade, req.fromKey, profile.username));
+      return send(ws, tradeOpenPayload(trade, key, fromSess.profile.username));
     }
     if (m.type === 'trade_offer') {
       const trade = trades.get(String(m.tradeId || ''));
@@ -8761,6 +8808,48 @@ wss.on('connection', (ws, req) => {
       // Anti-scam: any offer change un-confirms BOTH sides.
       trade.confirmed[trade.aKey] = false;
       trade.confirmed[trade.bKey] = false;
+      return sendTradeUpdate(trade);
+    }
+    // Trade inventories: tapping an item in the PARTNER's backpack
+    // asks them for it (qty is the new total ask; 0 clears it). The
+    // ask is recorded and shown to both sides — it never moves
+    // anything by itself and never touches either confirm. A human
+    // partner answers by offering the item themselves (their tap,
+    // their confirm — the anti-scam rules are untouched). A bot
+    // partner answers through its own offer code: the asked item
+    // goes into the bot's offer, and the bot's usual pricing /
+    // confirm / walk-away logic decides whether the completed
+    // trade is worth it — and a bot with a deal goal of its own
+    // may re-make its side on its next act tick, as it does now.
+    if (m.type === 'trade_request_item') {
+      const trade = trades.get(String(m.tradeId || ''));
+      if (!trade || (trade.aKey !== key && trade.bKey !== key)) return send(ws, { type: 'error', message: 'That trade is gone.' });
+      const partnerKey = trade.aKey === key ? trade.bKey : trade.aKey;
+      const partnerUser = db.users[partnerKey];
+      if (!partnerUser) return send(ws, { type: 'error', message: 'That trade is gone.' });
+      const item = String(m.item || '');
+      const qty = Math.floor(+m.qty || 0);
+      if (qty < 0) return send(ws, { type: 'error', message: 'Invalid quantity.' });
+      if (item === 'gold') {
+        if (qty > goldTotal(partnerUser.profile)) return send(ws, { type: 'error', message: 'They don\'t have that much gold.' });
+      } else {
+        const def = itemDef(item);
+        if (!def) return send(ws, { type: 'error', message: 'Unknown item.' });
+        if (def.kind === 'note') return send(ws, { type: 'error', message: NOTE_PERSONAL_MSG }); // Stage 9: notes are personal
+        if (qty > stackQty(partnerUser.profile.backpack || [], item)) return send(ws, { type: 'error', message: 'They don\'t have that many.' });
+      }
+      const asks = tradeAsksOf(trade, key).filter((s) => s.item !== item);
+      if (qty > 0) asks.push({ item, qty });
+      trade.requests[key] = asks;
+      const bot = bots.get(partnerKey);
+      if (bot && item !== 'gold' && qty > 0) {
+        const cur = trade.offers[partnerKey];
+        const merged = new Map(cur.items.map((s) => [s.item, s.qty]));
+        const held = stackQty(bot.profile.backpack || [], item);
+        merged.set(item, Math.max(merged.get(item) || 0, Math.min(qty, held)));
+        const newItems = [...merged.entries()].filter(([, q]) => q > 0).map(([i, q]) => ({ item: i, qty: q }));
+        if (botSetTradeOffer(bot, trade, { gold: cur.gold, items: newItems })) return; // sends the update itself
+      }
       return sendTradeUpdate(trade);
     }
     if (m.type === 'trade_confirm') {
@@ -10298,13 +10387,14 @@ function botAcceptTradeRequest(bot, req) {
     id: req.id, aKey: req.fromKey, bKey: bot.key,
     offers: { [req.fromKey]: { gold: 0, items: [] }, [bot.key]: { gold: 0, items: [] } },
     confirmed: { [req.fromKey]: false, [bot.key]: false },
+    requests: {},
     expires: Date.now() + 120000, timer: null,
   };
   trade.timer = setTimeout(() => { if (trades.has(trade.id)) cancelTrade(trade, 'Trade timed out.'); }, 120000);
   if (trade.timer.unref) trade.timer.unref();
   trades.set(trade.id, trade);
-  send(fromSess.ws, { type: 'trade_open', tradeId: trade.id, with: bot.profile.username });
-  send(bot.sess.ws, { type: 'trade_open', tradeId: trade.id, with: fromSess.profile.username });
+  send(fromSess.ws, tradeOpenPayload(trade, req.fromKey, bot.profile.username));
+  send(bot.sess.ws, tradeOpenPayload(trade, bot.key, fromSess.profile.username));
 }
 function botTradeRequestsDrive(bot) {
   const now = Date.now();
