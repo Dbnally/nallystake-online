@@ -12,7 +12,7 @@
  #labels{z-index:5}#splats{z-index:6}
  .plabel{position:absolute;transform:translate(-50%,-100%);text-align:center;white-space:nowrap;font-size:12px;font-weight:700;color:#fff;text-shadow:0 1px 3px #000,0 0 6px #000}
  .plabel .badge{font-size:13px}
- .plabel .bubble{display:none;background:#fff;color:#111;border-radius:10px;padding:3px 8px;font-weight:600;font-size:12px;margin-bottom:3px;white-space:normal;max-width:170px;box-shadow:0 2px 6px rgba(0,0,0,.5)}
+ .plabel .bubble{display:none;background:none;color:#ffff00;font-weight:700;font-size:12px;margin-bottom:3px;white-space:normal;max-width:170px;text-shadow:1px 0 0 #000,-1px 0 0 #000,0 1px 0 #000,0 -1px 0 #000,1px 1px 0 #000,-1px 1px 0 #000,1px -1px 0 #000,-1px -1px 0 #000,0 2px 3px rgba(0,0,0,.6)}
  .splat{position:absolute;transform:translate(-50%,-50%);font-weight:900;font-size:19px;color:#ff3b30;text-shadow:0 0 4px #000,0 2px 2px #000;opacity:0}
  .splat.zero{color:#7ec3ff}.splat.spec{color:#e3c766;font-size:23px}
  .splat.love{color:#ffb03a;font-size:27px;text-shadow:0 0 8px #c9a227,0 2px 2px #000}
@@ -1411,6 +1411,23 @@ function roofTexture(){
  }
  const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(2,2); return t;
 }
+/* Stage 42 (graphics parity with the app version's procedural
+   texture pass): a cracked-rock canvas texture and shared
+   materials, so the areas that still used flat-colour fills —
+   cave floors, camp grounds, rocks, tree canopies, the dais —
+   get the same textured treatment the plaza already had. The
+   rock material is built once and shared by every rock mesh. */
+function rockTexture(rx,ry){
+ const c=document.createElement('canvas'); c.width=c.height=128; const g=c.getContext('2d');
+ g.fillStyle='#6e6a60'; g.fillRect(0,0,128,128);
+ for(let i=0;i<900;i++){ g.fillStyle=['#5d594f','#7d786c','#655f55','#8a8578'][i%4]; g.fillRect(Math.random()*128,Math.random()*128,3,3); }
+ g.strokeStyle='rgba(30,28,24,0.5)'; g.lineWidth=1.5;
+ for(let i=0;i<5;i++){ g.beginPath(); let x=Math.random()*128,y=Math.random()*128; g.moveTo(x,y); for(let s2=0;s2<3;s2++){ x+=(Math.random()*30-15); y+=(Math.random()*30-15); g.lineTo(x,y); } g.stroke(); } // cracks
+ const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(rx||2,ry||2); return t;
+}
+let _rockMat=null;
+function rockMat(){ if(!_rockMat) _rockMat=new THREE.MeshLambertMaterial({map:rockTexture(2,2)}); return _rockMat; }
+function foliageMat(base,flecks){ return new THREE.MeshLambertMaterial({map:noiseTexture(base,flecks,3,3)}); }
 /* Stage 25: a flat dirt path strip between two world points (a thin
    box, so it takes shadows like the other ground dressing). Each
    strip sits a hair higher than the last so crossings never
@@ -1482,7 +1499,7 @@ function buildPlaza(root){
  const stone=new THREE.Mesh(new THREE.PlaneGeometry(84,54),new THREE.MeshLambertMaterial({map:stoneTexture(18,12)}));
  stone.rotation.x=-Math.PI/2; stone.position.y=0.02; stone.receiveShadow=true; scene.add(stone);
  // bank chest on a stone dais (centre)
- const dais=new THREE.Mesh(new THREE.CylinderGeometry(3.4,3.8,0.5,8),new THREE.MeshLambertMaterial({color:0x7c7565}));
+ const dais=new THREE.Mesh(new THREE.CylinderGeometry(3.4,3.8,0.5,8),new THREE.MeshLambertMaterial({map:stoneTexture(3,3)}));
  dais.position.set(sx2w(BANK_POS.x),0.25,sy2w(BANK_POS.y)); scene.add(dais);
  const bankG=new THREE.Group(); bankG.position.set(sx2w(BANK_POS.x),0.5,sy2w(BANK_POS.y)); scene.add(bankG);
  box(2.4,1.3,1.6,0x6e4a1f,0,0.65,0,bankG,{type:'bank'});
@@ -1683,21 +1700,21 @@ function buildPlaza(root){
    [-58,-24],[58,24],[-46,38],[46,-38],[74,20],[-74,-20],[24,26],[-24,-26],[64,-40],[-64,40]];
  for(const [tx,tz] of treeSpots){
    box(0.35,1.4,0.35,0x5a4020,tx,0.7,tz,scene);
-   const cone=new THREE.Mesh(new THREE.ConeGeometry(1.7,3.4,7),new THREE.MeshLambertMaterial({color:0x2c5e26}));
+   const cone=new THREE.Mesh(new THREE.ConeGeometry(1.7,3.4,7),foliageMat('#2c5e26',['#24501e','#38702f','#1e4519']));
    cone.position.set(tx,3.1,tz); scene.add(cone);
  }
  // a few rocks / bushes for feel (x2 + extras, as above)
  for(const [rx,rz] of [[-36,16],[36,-18],[48,24],[-48,-24],[12,-36],[-12,34],[-56,-32],[56,34],[30,-28],[-30,28],[70,-4],[-70,6]]){
-   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.7),new THREE.MeshLambertMaterial({color:0x8a8578}));
+   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.7),rockMat());
    rock.position.set(rx,0.4,rz); scene.add(rock);
  }
 }
 function buildGoblinCamp(root){
  const S=root;
  // dirt/grass ground (Stage 13: 160x90 world units, dirt patch x2)
- const grass=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x55702f}));
+ const grass=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:noiseTexture('#3a5230',['#324628','#425c34','#2c4024'],16,10)}));
  grass.rotation.x=-Math.PI/2; S.add(grass);
- const dirt=new THREE.Mesh(new THREE.PlaneGeometry(96,62),new THREE.MeshLambertMaterial({color:0x77683f}));
+ const dirt=new THREE.Mesh(new THREE.PlaneGeometry(96,62),new THREE.MeshLambertMaterial({map:dirtTexture(10,7)}));
  dirt.rotation.x=-Math.PI/2; dirt.position.y=0.02; S.add(dirt);
  // tents (spots x2; the +1.9 doorway offset is the tent's own geometry and stays)
  for(const [tx,tz] of [[-28,-18],[18,22],[42,-24]]){
@@ -1733,11 +1750,11 @@ function buildGoblinCamp(root){
  // trees + rocks (Stage 13: original spots x2 + extras in the new ground)
  for(const [tx,tz] of [[-60,-32],[-42,30],[54,32],[66,-16],[-16,-38],[28,40],[-70,18],[70,22],[-50,-40],[36,-36]]){
    box(0.35,1.4,0.35,0x5a4020,tx,0.7,tz,S);
-   const cone=new THREE.Mesh(new THREE.ConeGeometry(1.7,3.4,7),new THREE.MeshLambertMaterial({color:0x3d5e22}));
+   const cone=new THREE.Mesh(new THREE.ConeGeometry(1.7,3.4,7),foliageMat('#3d5e22',['#33511c','#4a7029','#2c4a18']));
    cone.position.set(tx,3.1,tz); S.add(cone);
  }
  for(const [rx,rz] of [[-32,10],[36,-10],[-54,-16],[22,30],[58,8],[-64,28]]){
-   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.7),new THREE.MeshLambertMaterial({color:0x8a8578}));
+   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.7),rockMat());
    rock.position.set(rx,0.4,rz); S.add(rock);
  }
 }
@@ -1745,13 +1762,13 @@ function buildGoblinCamp(root){
 function buildWizardGrounds(root){
  const S=root;
  // dusky violet ground with a paler mystic circle at the centre
- const grass=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x4a4460}));
+ const grass=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:noiseTexture('#4a4460',['#3e3a54','#564f6e','#342f48'],16,10)}));
  grass.rotation.x=-Math.PI/2; S.add(grass);
- const circ=new THREE.Mesh(new THREE.CircleGeometry(16,28),new THREE.MeshLambertMaterial({color:0x5d5480}));
+ const circ=new THREE.Mesh(new THREE.CircleGeometry(16,28),new THREE.MeshLambertMaterial({map:noiseTexture('#5d5480',['#4e4670','#6e6392','#453d63'],8,8)}));
  circ.rotation.x=-Math.PI/2; circ.position.y=0.02; S.add(circ);
  // the wizard tower, north side: stone cylinder, cone roof, glowing door + windows
  const tower=new THREE.Group(); tower.position.set(0,0,-30); S.add(tower);
- const tBody=new THREE.Mesh(new THREE.CylinderGeometry(4.2,5.0,11,12),new THREE.MeshLambertMaterial({color:0x6e6a7e})); tBody.position.y=5.5; tower.add(tBody);
+ const tBody=new THREE.Mesh(new THREE.CylinderGeometry(4.2,5.0,11,12),new THREE.MeshLambertMaterial({map:stoneTexture(3,4),color:0xb8b2cc})); tBody.position.y=5.5; tower.add(tBody);
  const tRoof=new THREE.Mesh(new THREE.ConeGeometry(5.6,4.6,12),new THREE.MeshLambertMaterial({color:0x3d2a63})); tRoof.position.y=13.3; tower.add(tRoof);
  const tFin=new THREE.Mesh(new THREE.SphereGeometry(0.5,10,8),new THREE.MeshBasicMaterial({color:0xb79cff})); tFin.position.y=16.0; tower.add(tFin);
  box(1.6,2.8,0.2,0x2c2140,0,1.4,4.85,tower); // door
@@ -1784,9 +1801,9 @@ function buildWizardGrounds(root){
 }
 function buildRangerCamp(root){
  const S=root;
- const grass=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x59743a}));
+ const grass=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:noiseTexture('#59743a',['#4c6331','#688549','#415a2a'],16,10)}));
  grass.rotation.x=-Math.PI/2; S.add(grass);
- const dirt=new THREE.Mesh(new THREE.PlaneGeometry(110,60),new THREE.MeshLambertMaterial({color:0x77683f}));
+ const dirt=new THREE.Mesh(new THREE.PlaneGeometry(110,60),new THREE.MeshLambertMaterial({map:dirtTexture(10,7)}));
  dirt.rotation.x=-Math.PI/2; dirt.position.y=0.02; S.add(dirt);
  // archery target butts in a row along the north side: straw
  // cylinder + painted rings facing south (the shooting line)
@@ -1828,7 +1845,7 @@ function buildRangerCamp(root){
  // trees around the edges
  for(const [tx,tz] of [[-66,-34],[66,30],[-70,22],[48,-38],[-40,40],[70,-14]]){
    box(0.35,1.4,0.35,0x5a4020,tx,0.7,tz,S);
-   const cone=new THREE.Mesh(new THREE.ConeGeometry(1.7,3.4,7),new THREE.MeshLambertMaterial({color:0x3d5e22}));
+   const cone=new THREE.Mesh(new THREE.ConeGeometry(1.7,3.4,7),foliageMat('#3d5e22',['#33511c','#4a7029','#2c4a18']));
    cone.position.set(tx,3.1,tz); S.add(cone);
  }
 }
@@ -1860,7 +1877,7 @@ function buildCampfire(parent){
 }
 function buildTrainingCave(root){
  const S=root;
- const floor=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x3a3a40}));
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:stoneTexture(14,8),color:0x8a8a96}));
  floor.rotation.x=-Math.PI/2; S.add(floor);
  const stone=new THREE.Mesh(new THREE.PlaneGeometry(124,28),new THREE.MeshLambertMaterial({map:stoneTexture(12,8),color:0x888888}));
  stone.rotation.x=-Math.PI/2; stone.position.y=0.02; S.add(stone);
@@ -1877,7 +1894,7 @@ function buildTrainingCave(root){
 }
 function buildGatheringCave(root){
  const S=root;
- const floor=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x453f36}));
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:stoneTexture(14,8),color:0x9a8878}));
  floor.rotation.x=-Math.PI/2; S.add(floor);
  // pool on the east side, under the fishing spots (world x +36..+80)
  const pool=new THREE.Mesh(new THREE.PlaneGeometry(44,90),new THREE.MeshLambertMaterial({color:0x2e6db0}));
@@ -1891,7 +1908,7 @@ function buildGatheringCave(root){
  buildTorch(S,-28,40); buildTorch(S,28,40);
  // scattered decor rocks (nodes render separately, from data) — x2 + extras
  for(const [rx,rz] of [[-60,28],[-36,-28],[4,32],[-12,-36],[24,-32],[-66,-8],[40,36],[-44,40]]){
-   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.6),new THREE.MeshLambertMaterial({color:0x6b675e}));
+   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.6),rockMat());
    rock.position.set(rx,0.35,rz); S.add(rock);
  }
  box(0.18,2.2,0.18,0x5a4020,11,1.1,-39,S);
@@ -1903,7 +1920,7 @@ function buildGatheringCave(root){
 }
 function buildFishingCove(root){
  const S=root;
- const grass=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x3a5230}));
+ const grass=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:noiseTexture('#3a5230',['#324628','#425c34','#2c4024'],16,10)}));
  grass.rotation.x=-Math.PI/2; grass.receiveShadow=true; S.add(grass);
  // lake covering the east third (world x +26..+80)
  const lake=new THREE.Mesh(new THREE.PlaneGeometry(54,90),new THREE.MeshLambertMaterial({color:0x2e6db0}));
@@ -1942,14 +1959,14 @@ function buildFishingCove(root){
  // decorative unlit campfire ring, centre-west (real fires come from the fires state)
  const ringC=new THREE.Group(); ringC.position.set(-40,0,10); S.add(ringC);
  for(let i=0;i<8;i++){ const a=i/8*Math.PI*2;
-   const r=new THREE.Mesh(new THREE.DodecahedronGeometry(0.22),new THREE.MeshLambertMaterial({color:0x8a8578}));
+   const r=new THREE.Mesh(new THREE.DodecahedronGeometry(0.22),rockMat());
    r.position.set(Math.cos(a)*1.1,0.12,Math.sin(a)*1.1); ringC.add(r); }
  box(1.4,0.22,0.26,0x5a4020,0,0.12,0,ringC);
  const cl=box(1.4,0.22,0.26,0x5a4020,0,0.12,0,ringC); cl.rotation.y=1.57;
 }
 function buildMine(root){
  const S=root;
- const floor=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x3f3a33}));
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:stoneTexture(14,8),color:0x7a6c5e}));
  floor.rotation.x=-Math.PI/2; S.add(floor);
  // rock walls, gap at the SOUTH gate (walk out to return to the plaza)
  rockWallRun(S,-80,-45,80,-45); // north
@@ -1992,7 +2009,7 @@ function buildMine(root){
  worldLabels.push({el:plabel,x:54,y:3.1,z:14,area:'mine',kind:'static'});
  // scattered decor rocks (nodes render separately, from data) — x2 + extras
  for(const [rx,rz] of [[-68,32],[-16,36],[28,36],[72,8],[-72,-8],[-40,-30],[16,-34],[60,30]]){
-   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.6),new THREE.MeshLambertMaterial({color:0x5d574c}));
+   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.6),rockMat());
    rock.position.set(rx,0.35,rz); S.add(rock);
  }
  // Stage 25: a dirt path from the south entrance up to the smithy
@@ -2006,7 +2023,7 @@ const FC_LAVA=[[300,220],[1300,220],[800,110],[220,660],[1380,660]];
 function buildFightCaves(root){
  const S=root;
  // dark basalt floor (near-black brown)
- const floor=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x241a12}));
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:stoneTexture(14,8),color:0x584a3a}));
  floor.rotation.x=-Math.PI/2; S.add(floor);
  // glowing lava pools (basic material = always bright, reads as emissive)
  for(const [lx,ly] of FC_LAVA){
@@ -2104,7 +2121,7 @@ function buildBarrows(root){
  }
  // scattered rocks (x2 + extras)
  for(const [rx,rz] of [[-40,-12],[32,-24],[48,28],[-20,16],[68,-8],[-62,-28],[10,-40]]){
-   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.6),new THREE.MeshLambertMaterial({color:0x55554e}));
+   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.6),rockMat());
    rock.position.set(rx,0.35,rz); S.add(rock);
  }
  // the six burial mounds at the exact server positions
@@ -2154,7 +2171,7 @@ function refreshBarrowsMounds(){
    crypt only) the dark mouth in the north wall that leads down. */
 function buildBarrowsCrypt(root){
  const S=root;
- const base=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x0d0a12}));
+ const base=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:stoneTexture(16,10),color:0x353145}));
  base.rotation.x=-Math.PI/2; S.add(base);
  const fx0=sx2w(CRYPT_ROOM_C.x0),fx1=sx2w(CRYPT_ROOM_C.x1),fz0=sy2w(CRYPT_ROOM_C.y0),fz1=sy2w(CRYPT_ROOM_C.y1);
  const floor=new THREE.Mesh(new THREE.PlaneGeometry(fx1-fx0,fz1-fz0),new THREE.MeshLambertMaterial({map:stoneTexture(10,10),color:0x8a8578}));
@@ -2199,7 +2216,7 @@ function buildBarrowsCrypt(root){
 const TUNNEL_WALLS_C=[[680,860,920,860],[920,860,920,690],[920,690,836,690],[836,690,836,475],[836,475,1360,475],[1360,475,1360,385],[1360,385,836,385],[836,385,836,215],[836,215,1020,215],[1020,215,1020,60],[1020,60,580,60],[580,60,580,215],[580,215,764,215],[764,215,764,385],[764,385,250,385],[250,385,250,475],[250,475,764,475],[764,475,764,690],[764,690,680,690],[680,690,680,860]];
 function buildBarrowsTunnels(root){
  const S=root;
- const base=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({color:0x0d0a12}));
+ const base=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:stoneTexture(16,10),color:0x353145}));
  base.rotation.x=-Math.PI/2; S.add(base);
  for(const r of TUNNEL_ROOMS_C){
    const fx0=sx2w(r.x0),fx1=sx2w(r.x1),fz0=sy2w(r.y0),fz1=sy2w(r.y1);
@@ -2263,7 +2280,7 @@ function buildArena(root){
  floor.rotation.x=-Math.PI/2; S.add(floor);
  rockWallRun(S,-80,-45,80,-45); rockWallRun(S,-80,45,80,45);
  rockWallRun(S,-80,-45,-80,45); rockWallRun(S,80,-45,80,45);
- for(const [px,pz] of [[-76,-41],[76,-41],[-76,41],[76,41]]) box(0.6,3.2,0.6,0x7c7565,px,1.6,pz,S); // corner posts
+ for(const [px,pz] of [[-76,-41],[76,-41],[-76,41],[76,41]]) boxM(0.6,3.2,0.6,new THREE.MeshLambertMaterial({map:stoneTexture(1,2)}),px,1.6,pz,S); // corner posts
  buildTorch(S,-40,-40); buildTorch(S,40,-40); buildTorch(S,-40,40); buildTorch(S,40,40);
  arenaDecor={ember:[],azure:[],violet:[]};
  // ember: glowing lava cracks (positions x2; crack lengths are sizes and stay)
@@ -2346,7 +2363,7 @@ function buildWilderness(root,pure){
  }
  // rocks + bones scattered
  for(const [rx,ry] of [[450,780],[980,690],[640,380],[1290,520],[260,180],[1100,250],[840,90],[560,60]]){
-   const r=new THREE.Mesh(new THREE.DodecahedronGeometry(0.5),new THREE.MeshLambertMaterial({color:0x5a5348}));
+   const r=new THREE.Mesh(new THREE.DodecahedronGeometry(0.5),rockMat());
    r.position.set(sx2w(rx),0.3,sy2w(ry)); r.rotation.set(rx%3,ry%5,0); S.add(r);
  }
  for(const [bx,by] of [[700,600],[350,420],[1150,540],[950,180],[480,90],[1240,700]]){
@@ -2631,13 +2648,43 @@ const HERALDIC=[
  {main:0x5a5266,trim:0xc9a227}  // plum-grey
 ];
 /* A limb that hangs from a pivot at its top: tapered cylinder + a
-   sphere joint at the pivot, so rotating the pivot swings it. */
+   sphere joint at the pivot, so rotating the pivot swings it.
+   Stage 42 (graphics parity with the app version): the limb is now
+   TWO segments on a mid joint — upper segment, joint sphere, then
+   a lower pivot (grp.userData.lower) carrying the second segment
+   and the hand/foot — so knees and elbows visibly bend: poseWalk
+   flexes them through the stride and applySwing trails the
+   forearm through a chop. Total length is unchanged, and the
+   hand/foot gear anchors are re-based onto the lower pivot in
+   makeKnight with a compensating offset, so every gear offset in
+   syncGear / buildWeaponInto (measured from the shoulder/hip)
+   still lands in the same place while the joint is straight.
+   Segment geometries are cached by dimension and shared by every
+   knight instead of rebuilt per figure. */
+const _limbGeoCache={};
+function _limbGeos(r,len){
+ const key=r.toFixed(3)+':'+len.toFixed(3);
+ if(_limbGeoCache[key]) return _limbGeoCache[key];
+ const up=len*0.52, low=len-up;
+ const geos={
+  upper:new THREE.CylinderGeometry(r*0.86,r*0.94,up,10),
+  lower:new THREE.CylinderGeometry(r*0.70,r*0.82,low,10),
+  joint:new THREE.SphereGeometry(r*1.05,10,8),
+  mid:new THREE.SphereGeometry(r*0.98,10,8),
+  end:new THREE.SphereGeometry(r*0.9,8,8),
+ };
+ _limbGeoCache[key]=geos; return geos;
+}
 function limbPart(r,len,mat,endMat){
+ const geos=_limbGeos(r,len), up=len*0.52, low=len-up;
  const grp=new THREE.Group();
- const m=new THREE.Mesh(new THREE.CylinderGeometry(r*0.8,r,len,10),mat);
- m.position.y=-len/2; grp.add(m);
- const j=new THREE.Mesh(new THREE.SphereGeometry(r*1.05,10,8),mat); grp.add(j);
- const hand=new THREE.Mesh(new THREE.SphereGeometry(r*0.9,8,8),endMat||mat); hand.position.y=-len; grp.add(hand);
+ const m=new THREE.Mesh(geos.upper,mat); m.position.y=-up/2; grp.add(m);
+ const j=new THREE.Mesh(geos.joint,mat); grp.add(j);
+ const lower=new THREE.Group(); lower.position.y=-up; grp.add(lower);
+ const mj=new THREE.Mesh(geos.mid,mat); lower.add(mj);
+ const lm=new THREE.Mesh(geos.lower,mat); lm.position.y=-low/2; lower.add(lm);
+ const hand=new THREE.Mesh(geos.end,endMat||mat); hand.position.y=-low; lower.add(hand);
+ grp.userData={lower:lower,jointAt:up};
  return grp;
 }
 /* Stage 9+10 §9: saved player appearance. Skin for head/hands, hair
@@ -2686,6 +2733,12 @@ function makeKnight(isMe,name,app){
  const torsoMat=hasApp? outMat(app.torso) : steelMat;
  const torso=new THREE.Mesh(new THREE.CylinderGeometry(0.27*(female?0.88:1),0.36*(female?0.88:1),0.86,12),torsoMat); torso.position.y=1.45; pivot.add(torso);
  const tabardMesh=box(0.42*(female?0.88:1),0.68,0.07,hasApp? (OUTFIT_COLORS[app.torso]||OUTFIT_COLORS[0]) : main,0,1.41,0.28,pivot); // tabard (hidden by syncGear while body armour is worn)
+ // Stage 42: an ungeared appearance knight wears a diagonal chest
+ // strap in the trim colour over the tabard, so the bare look
+ // reads as styled clothes instead of a plain painted cylinder.
+ // syncGear hides it under body armour, same as the tabard.
+ const strapMesh=hasApp? box(0.13,0.98,0.075,trim,0,1.45,0.29,pivot) : null;
+ if(strapMesh) strapMesh.rotation.z=0.55;
  const belt=new THREE.Mesh(new THREE.CylinderGeometry(0.37,0.38,0.10,12),trimMat); belt.position.y=1.05; pivot.add(belt);
  // arms on shoulder pivots; the RIGHT arm is the weapon arm; hands are skin
  const armMat=hasApp? outMat(app.arms) : steelMat;
@@ -2703,9 +2756,17 @@ function makeKnight(isMe,name,app){
    armL:new THREE.Group(), armR:new THREE.Group(),
  };
  pivot.add(gearAnchors.head); pivot.add(gearAnchors.body); pivot.add(gearAnchors.cape);
- legL.add(gearAnchors.legL); legL.add(gearAnchors.footL);
- legR.add(gearAnchors.legR); legR.add(gearAnchors.footR);
- armL.add(gearAnchors.armL); armR.add(gearAnchors.armR);
+ legL.add(gearAnchors.legL); legR.add(gearAnchors.legR);
+ // Stage 42: the hand/foot anchors ride each limb's LOWER segment,
+ // re-based by the joint offset (position +jointAt inside the
+ // lower pivot), so the anchor's origin still sits exactly at the
+ // shoulder/hip point while the joint is straight — every gear
+ // offset in syncGear/buildWeaponInto is unchanged — but a bent
+ // knee or elbow now carries its boot, weapon and shield with it.
+ legL.userData.lower.add(gearAnchors.footL); gearAnchors.footL.position.set(0,legL.userData.jointAt,0);
+ legR.userData.lower.add(gearAnchors.footR); gearAnchors.footR.position.set(0,legR.userData.jointAt,0);
+ armL.userData.lower.add(gearAnchors.armL); gearAnchors.armL.position.set(0,armL.userData.jointAt,0);
+ armR.userData.lower.add(gearAnchors.armR); gearAnchors.armR.position.set(0,armR.userData.jointAt,0);
  const hairParts=[]; // hair / classic helm pieces — hidden while a real head item covers them
  // head: skin sphere. Appearance knights wear their HAIR as the cap with
  // a thin steel circlet (still reads armoured); classic knights keep the
@@ -2717,6 +2778,13 @@ function makeKnight(isMe,name,app){
  const eyeMat=new THREE.MeshBasicMaterial({color:0x1c1a18});
  const eyeL=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.07,0.02),eyeMat); eyeL.position.set(-0.09,2.23,0.242); pivot.add(eyeL);
  const eyeR=eyeL.clone(); eyeR.position.x=0.09; pivot.add(eyeR);
+ // Stage 42: brows + a mouth, so the face reads as a face at
+ // gameplay distance, not two dots on a ball. (Beard boxes sit
+ // lower and cover the mouth on bearded knights, as they should.)
+ const browGeo=new THREE.BoxGeometry(0.11,0.025,0.02);
+ const browL=new THREE.Mesh(browGeo,eyeMat); browL.position.set(-0.09,2.315,0.238); browL.rotation.z=0.18; pivot.add(browL);
+ const browR=new THREE.Mesh(browGeo,eyeMat); browR.position.set(0.09,2.315,0.238); browR.rotation.z=-0.18; pivot.add(browR);
+ const mouth=new THREE.Mesh(new THREE.BoxGeometry(0.10,0.022,0.02),eyeMat); mouth.position.set(0,2.055,0.243); pivot.add(mouth);
  if(hasApp){
    const hairMat=new THREE.MeshLambertMaterial({color:HAIR_COLORS[app.hair]||HAIR_COLORS[1]});
    const cap=new THREE.Mesh(new THREE.SphereGeometry(0.285,14,10,0,Math.PI*2,0,Math.PI/2),hairMat); cap.position.y=2.22; pivot.add(cap); hairParts.push(cap);
@@ -2734,7 +2802,7 @@ function makeKnight(isMe,name,app){
  const label=document.createElement('div'); label.className='plabel';
  label.innerHTML=`<div class="bubble"></div><span class="rbadge"></span><span class="badge"></span><span class="abadge"></span><span class="cbadge"></span><span class="fbadge"></span><span class="skbadge"></span> <span class="nm">${esc(name)}</span><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
  $('labels').appendChild(label);
- return {group:g,pivot,legL,legR,armL,armR,gearAnchors,gearSig:null,hairParts,tabardMesh,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),roleEl:label.querySelector('.rbadge'),actEl:label.querySelector('.abadge'),chalEl:label.querySelector('.cbadge'),fzEl:label.querySelector('.fbadge'),skullEl:label.querySelector('.skbadge'),hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
+ return {group:g,pivot,legL,legR,armL,armR,gearAnchors,gearSig:null,hairParts,tabardMesh,strapMesh,label,bubbleEl:label.querySelector('.bubble'),badgeEl:label.querySelector('.badge'),roleEl:label.querySelector('.rbadge'),actEl:label.querySelector('.abadge'),chalEl:label.querySelector('.cbadge'),fzEl:label.querySelector('.fbadge'),skullEl:label.querySelector('.skbadge'),hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
    x:0,z:0,tx:0,tz:0,rot:0,jump:null,prayer:null,bubbleUntil:0,bob:Math.random()*6,isMe,
    swingStart:0,phase:Math.random()*6,moveAmt:0,px:0,pz:0,splatY:3.55}; // Stage 32: splat height follows the scaled rig (2.95 × ~1.2 of headroom over the ~3.2-tall figure)
 }
@@ -2806,7 +2874,7 @@ function syncAvatars(){
 }
 function showBubble(name,text){
  const a=avatars[name]; if(!a) return;
- a.bubbleEl.textContent=text; a.bubbleEl.style.display='block'; a.bubbleUntil=Date.now()+3000;
+ a.bubbleEl.textContent=text; a.bubbleEl.style.display='block'; a.bubbleUntil=Date.now()+5000; // overhead speech shows for exactly 5s (Derek, 2026-11-21); the line itself stays in the chat reel
 }
 /* Stage 21: a worn party hat shows on the knight's head in the hat's
    tier colour, read from the catalog def's `color` (the same tint
@@ -3020,6 +3088,7 @@ function syncGear(a,p){
  }
  // --- body: plate over the torso (tabard hides underneath), pauldrons, belt
  if(a.tabardMesh) a.tabardMesh.visible=!(w&&w.body);
+ if(a.strapMesh) a.strapMesh.visible=!(w&&w.body); // Stage 42: the bare-look chest strap hides under body armour too
  if(w&&w.body){
    const c=gearColorFor(w.body), m=mat(c);
    // Stage 34: body silhouettes by armour family — plate is the
@@ -3086,6 +3155,11 @@ function syncGear(a,p){
  if(w&&w.cape){
    const c=w.cape==='fire_cape'? 0xe25822 : gearColorFor(w.cape);
    const cape=box(0.60,1.16,0.05,c,0,1.33,-0.31,A.cape); cape.rotation.x=0.1;
+   // Stage 42: a flared, darker lower panel and gold clasps at
+   // the shoulders, so the cape hangs like cloth instead of one
+   // flat board.
+   const capeLow=box(0.68,0.52,0.045,shadeOf(c),0,0.60,-0.415,A.cape); capeLow.rotation.x=0.24;
+   box(0.09,0.09,0.06,0xc9a227,-0.24,1.87,0.29,A.cape); box(0.09,0.09,0.06,0xc9a227,0.24,1.87,0.29,A.cape);
  }
  // --- gauntlets + amulet
  if(w&&w.hands){ const c=gearColorFor(w.hands); box(0.16,0.2,0.16,c,0,-0.70,0,A.armL); box(0.16,0.2,0.16,c,0,-0.70,0,A.armR); }
@@ -3220,6 +3294,25 @@ function poseWalk(a,dist,dt){
  // after a swing ends instead of snapping to the cycle value, so
  // walk → swing → walk blends instead of clicking off and on.
  if(a.armR&&!a.swingStart) a.armR.rotation.x+=(s*0.42*m-a.armR.rotation.x)*Math.min(1,dt*14);
+ // Stage 42: knees and elbows bend on the limbs' lower pivots, so
+ // the stride reads jointed like the app version's knights. A knee
+ // flexes only while its leg travels back-to-front (the
+ // swing-through), lagging the hip by ~0.9 rad of phase, and
+ // settles straight again for the planted push-back. Elbows keep
+ // a soft natural bend that deepens slightly against each arm's
+ // counter-swing. Boots, weapons and shields ride the lower
+ // pivots (see makeKnight), so they follow the joint. All eased,
+ // no per-frame allocation.
+ const ph=a.phase||0;
+ const kL=Math.max(0,Math.sin(ph-0.9))*0.55*m, kR=Math.max(0,-Math.sin(ph-0.9))*0.55*m;
+ const lowL=a.legL.userData?a.legL.userData.lower:null, lowR=a.legR.userData?a.legR.userData.lower:null;
+ if(lowL) lowL.rotation.x+=(kL-lowL.rotation.x)*Math.min(1,dt*18);
+ if(lowR) lowR.rotation.x+=(kR-lowR.rotation.x)*Math.min(1,dt*18);
+ const eBase=-0.10-0.06*m;
+ const eL=eBase-0.13*Math.max(0,-s)*m, eR=eBase-0.13*Math.max(0,s)*m;
+ const lowAL=a.armL&&a.armL.userData?a.armL.userData.lower:null, lowAR=a.armR&&a.armR.userData?a.armR.userData.lower:null;
+ if(lowAL) lowAL.rotation.x+=(eL-lowAL.rotation.x)*Math.min(1,dt*14);
+ if(lowAR&&!a.swingStart) lowAR.rotation.x+=(eR-lowAR.rotation.x)*Math.min(1,dt*14); // applySwing owns the weapon forearm mid-chop
 }
 /* ---- NPC goblins ---- */
 function makeGoblin(n){
@@ -3960,10 +4053,10 @@ function makeProp(o){
  g.position.set(sx2w(o.x),0,sy2w(o.y));
  if(o.kind==='tree'){ // mirror the node trees: trunk + cone canopy
    box(0.35,1.5,0.35,0x5a4020,0,0.75,0,g);
-   const cone=new THREE.Mesh(new THREE.ConeGeometry(1.7,3.4,7),new THREE.MeshLambertMaterial({color:0x2c5e26}));
+   const cone=new THREE.Mesh(new THREE.ConeGeometry(1.7,3.4,7),foliageMat('#2c5e26',['#24501e','#38702f','#1e4519']));
    cone.position.y=3.1; g.add(cone);
  } else if(o.kind==='rock'){ // mirror the node rocks, plain grey
-   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.95),new THREE.MeshLambertMaterial({color:0x8a8578}));
+   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.95),rockMat());
    rock.position.y=0.55; g.add(rock);
  } else if(o.kind==='flowers'){ // a little patch of tiny coloured heads on a green bed
    const bed=new THREE.Mesh(new THREE.CircleGeometry(0.85,14),new THREE.MeshLambertMaterial({color:0x2f6629}));
@@ -4516,10 +4609,15 @@ function applyDeathFall(a,now){
 function applySwing(a,now){
  if(!a||!a.swingStart) return;
  const t=(now-a.swingStart)/320;
- if(t>=1){ a.swingStart=0; if(a.armR) a.armR.rotation.x=0; else if(a.group) a.group.rotation.x=0; return; }
+ if(t>=1){ a.swingStart=0; if(a.armR){ a.armR.rotation.x=0; const l0=a.armR.userData?a.armR.userData.lower:null; if(l0) l0.rotation.x=0; } else if(a.group) a.group.rotation.x=0; return; }
  const ang= t<0.375 ? -2.05*(t/0.375) : -2.05*(1-(t-0.375)/0.625);
  if(a.armR) a.armR.rotation.x=ang;
  else if(a.group) a.group.rotation.x=-ang*0.10;
+ // Stage 42: on a jointed knight the forearm trails the chop
+ // (a whip of extra bend in the swing's own direction), so the
+ // stroke reads as shoulder + elbow, not one stiff board.
+ const lowR=a.armR&&a.armR.userData?a.armR.userData.lower:null;
+ if(lowR) lowR.rotation.x=ang*0.22;
 }
 /* ---- Stage 8: closing / walk-to-hit ---- */
 let lastManualTapAt=0; // set by handleTap + the minimap walk
@@ -4584,7 +4682,12 @@ function updateLabels(now){
    const s=projectTo(a.group.position.x,3.9,a.group.position.z); // Stage 32: above the scaled knight (~3.2 tall + crown room)
    if(!s){ a.label.style.display='none'; continue; }
    a.label.style.display='block';
-   a.label.style.left=s.x+'px'; a.label.style.top=s.y+'px';
+   /* Chat display fix: whole-pixel label placement. projectTo()
+      returns fractional pixels and .plabel centres itself with
+      translate(-50%,-100%), so the label — and the speech text
+      inside it — rasterised at sub-pixel offsets and looked
+      blurry. Rounding to whole pixels keeps overhead speech sharp. */
+   a.label.style.left=Math.round(s.x)+'px'; a.label.style.top=Math.round(s.y)+'px';
    if(a.bubbleUntil && now>a.bubbleUntil){ a.bubbleEl.style.display='none'; a.bubbleUntil=0; }
  }
  for(const a of Object.values(npcAvatars)){
