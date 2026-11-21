@@ -247,14 +247,14 @@ for (const [id, name, tier, buy, accBonus, maxBonus, icon, color] of [
 const PLATE_CHART = {
   //            color       helm {block,buy,hit}        body {block,buy}      legs {block,buy}      boots {block,buy,acc}
   bronze: { color: '#b0703f', helm: [0.01, 90, 0], body: [0.04, 140], legs: [0.01, 80], boots: [0.01, 70, 0] },
-  iron: { color: '#9aa2ad', helm: [0.02, 150, 0], body: [0.08, 280], legs: [0.02, 200], boots: [0.02, 130, 0] },
-  steel: { color: '#dfe8f2', helm: [0.03, 350, 0], body: [0.12, 560], legs: [0.03, 380], boots: [0.03, 320, 0] },
-  mithril: { color: '#4a6fd4', helm: [0.04, 520, 0], body: [0.16, 1120], legs: [0.04, 500], boots: [0.03, 480, 1] },
-  adamant: { color: '#3fae6a', helm: [0.05, 640, 0], body: [0.20, 2240], legs: [0.05, 620], boots: [0.04, 600, 1] },
-  rune: { color: '#2a4fd0', helm: [0.06, 720, 0], body: [0.24, 4480], legs: [0.06, 700], boots: [0.05, 680, 1] },
-  dragon: { color: '#a8161f', helm: [0.07, 800, 1], body: [0.32, 8960], legs: [0.07, 850], boots: [0.05, 700, 2] },
-  torva: { color: '#cfe2ec', helm: [0.08, 1600, 1], body: [0.36, 17920], legs: [0.08, 1500], boots: [0.06, 1400, 2] },
-  necro: { color: '#5b21b6', helm: [0.09, 2800, 2], body: [0.40, 35840], legs: [0.09, 2600], boots: [0.07, 2400, 3] },
+  iron: { color: '#9aa2ad', helm: [0.02, 180, 0], body: [0.08, 280], legs: [0.02, 160], boots: [0.02, 140, 0] },
+  steel: { color: '#dfe8f2', helm: [0.03, 360, 0], body: [0.12, 560], legs: [0.03, 320], boots: [0.03, 280, 0] },
+  mithril: { color: '#4a6fd4', helm: [0.04, 720, 0], body: [0.16, 1120], legs: [0.04, 640], boots: [0.03, 560, 1] },
+  adamant: { color: '#3fae6a', helm: [0.05, 1440, 0], body: [0.20, 2240], legs: [0.05, 1280], boots: [0.04, 1120, 1] },
+  rune: { color: '#2a4fd0', helm: [0.06, 2880, 0], body: [0.24, 4480], legs: [0.06, 2560], boots: [0.05, 2240, 1] },
+  dragon: { color: '#a8161f', helm: [0.07, 5760, 1], body: [0.32, 8960], legs: [0.07, 5120], boots: [0.05, 4480, 2] },
+  torva: { color: '#cfe2ec', helm: [0.08, 11520, 1], body: [0.36, 17920], legs: [0.08, 10240], boots: [0.06, 8960, 2] },
+  necro: { color: '#5b21b6', helm: [0.09, 23040, 2], body: [0.40, 35840], legs: [0.09, 20480], boots: [0.07, 17920, 3] },
 };
 const PLATE_SLOT_DEF = {
   helm: { slot: 'head', suffix: 'helm', icon: '🪖' },
@@ -365,8 +365,8 @@ for (const [id, name, sellOnly] of [
 // being carried: the best one in the backpack speeds up Mining gathers
 // (see the gather handler). `speed` is the multiplier (1.0 = no help).
 for (const [tier, buy, speed] of [
-  ['bronze', 60, 1.0], ['iron', 250, 1.15], ['steel', 900, 1.3],
-  ['mithril', 3200, 1.5], ['adamant', 9000, 1.75], ['rune', 24000, 2.0], ['dragon', 60000, 2.5],
+  ['bronze', 60, 1.0], ['iron', 120, 1.15], ['steel', 240, 1.3],
+  ['mithril', 480, 1.5], ['adamant', 960, 1.75], ['rune', 1920, 2.0], ['dragon', 3840, 2.5],
 ]) {
   ITEMS[`${tier}_pickaxe`] = { name: `${cap(tier)} pickaxe`, kind: 'tool', buy, speed, shop: 'Pickaxe Pete' };
 }
@@ -582,7 +582,7 @@ for (const el of ['air', 'water', 'earth', 'fire']) {
 // sell them (no `buy`).
 const ARROW_TIERS = ['bronze', 'iron', 'steel', 'mithril', 'adamant', 'rune'];
 const ARROW_STR = { bronze: 2, iron: 4, steel: 6, mithril: 9, adamant: 12, rune: 16 }; // ranged strength bonus per tier
-const ARROW_BUY = { bronze: 6, iron: 9, steel: 14, mithril: 22, adamant: 35, rune: 60 }; // Weapon shop price per arrow
+const ARROW_BUY = { bronze: 6, iron: 12, steel: 24, mithril: 48, adamant: 96, rune: 192 }; // Weapon shop price per arrow
 const FLETCH_GATE = { bronze: 1, iron: 15, steel: 30, mithril: 45, adamant: 60, rune: 75 }; // Fletching level per tier (Derek's gates)
 const FLETCH_XP = { bronze: 10, iron: 16, steel: 24, mithril: 36, adamant: 52, rune: 75 }; // Fletching XP per set of 10 arrows
 for (const t of ARROW_TIERS) {
@@ -595,14 +595,14 @@ for (const t of ARROW_TIERS) {
 // from the spell itself (see rollStyleAttack) — the weapon's job
 // is accuracy, rising by tier.
 for (const [id, name, buy, accBonus] of [
-  ['shortbow', 'Shortbow', 120, 0.04], ['oak_shortbow', 'Oak shortbow', 300, 0.06],
-  ['willow_shortbow', 'Willow shortbow', 600, 0.08], ['maple_shortbow', 'Maple shortbow', 1200, 0.10],
-  ['yew_shortbow', 'Yew shortbow', 2400, 0.13], ['magic_shortbow', 'Magic shortbow', 4800, 0.16],
+  ['shortbow', 'Shortbow', 120, 0.04], ['oak_shortbow', 'Oak shortbow', 240, 0.06],
+  ['willow_shortbow', 'Willow shortbow', 480, 0.08], ['maple_shortbow', 'Maple shortbow', 960, 0.10],
+  ['yew_shortbow', 'Yew shortbow', 1920, 0.13], ['magic_shortbow', 'Magic shortbow', 3840, 0.16],
 ]) {
   ITEMS[id] = { name, icon: '🏹', kind: 'weapon', slot: 'weapon', style: 'ranged', buy, accBonus, maxBonus: 0, shop: 'Weapon' };
 }
 for (const [id, name, buy, accBonus] of [
-  ['staff', 'Staff', 150, 0.04], ['magic_staff', 'Magic staff', 700, 0.08], ['mystic_staff', 'Mystic staff', 2500, 0.12],
+  ['staff', 'Staff', 150, 0.04], ['magic_staff', 'Magic staff', 300, 0.08], ['mystic_staff', 'Mystic staff', 600, 0.12],
 ]) {
   ITEMS[id] = { name, icon: '🪄', kind: 'weapon', slot: 'weapon', style: 'magic', buy, accBonus, maxBonus: 0, shop: 'Weapon' };
 }
@@ -623,10 +623,10 @@ const DHIDE_NAME = { leather: 'Leather', studded: 'Studded', snakeskin: 'Snakesk
 const DHIDE_COLORS = ['#9a6b42', '#7a5230', '#9a9a6a', '#2fae4e', '#2456d0', '#c02727', '#2b2b33', '#e8e0c8'];
 const DHIDE_STATS = {
   //            acc pts        block by tier                       buy by tier
-  coif: { acc: [1, 2, 3, 4, 5, 6, 7, 10], block: [0, 0.01, 0.01, 0.02, 0.02, 0.03, 0.03, 0.05], buy: [60, 120, 240, 400, 560, 720, 900, 2000], slot: 'head', suffix: 'coif', icon: '🧢' },
+  coif: { acc: [1, 2, 3, 4, 5, 6, 7, 10], block: [0, 0.01, 0.01, 0.02, 0.02, 0.03, 0.03, 0.05], buy: [60, 120, 240, 480, 960, 1920, 3840, 7680], slot: 'head', suffix: 'coif', icon: '🧢' },
   body: { acc: [1, 2, 3, 4, 5, 6, 7, 10], block: [0.02, 0.04, 0.06, 0.09, 0.12, 0.15, 0.18, 0.25], buy: [120, 240, 480, 960, 1920, 3840, 7680, 15360], slot: 'body', suffix: 'body', icon: '🧥' },
-  chaps: { acc: [1, 2, 3, 4, 5, 6, 7, 10], block: [0, 0.01, 0.01, 0.02, 0.02, 0.03, 0.03, 0.05], buy: [55, 110, 220, 380, 540, 700, 880, 1900], slot: 'legs', suffix: 'chaps', icon: '👖' },
-  boots: { acc: [1, 2, 3, 4, 5, 6, 7, 10], block: [0, 0.01, 0.01, 0.02, 0.02, 0.03, 0.03, 0.05], buy: [50, 100, 200, 350, 500, 650, 820, 1800], slot: 'feet', suffix: 'boots', icon: '🥾' },
+  chaps: { acc: [1, 2, 3, 4, 5, 6, 7, 10], block: [0, 0.01, 0.01, 0.02, 0.02, 0.03, 0.03, 0.05], buy: [55, 110, 220, 440, 880, 1760, 3520, 7040], slot: 'legs', suffix: 'chaps', icon: '👖' },
+  boots: { acc: [1, 2, 3, 4, 5, 6, 7, 10], block: [0, 0.01, 0.01, 0.02, 0.02, 0.03, 0.03, 0.05], buy: [50, 100, 200, 400, 800, 1600, 3200, 6400], slot: 'feet', suffix: 'boots', icon: '🥾' },
 };
 const DHIDE_DESC = {
   coif: ["Ranged armour — a plain brown leather coif. Accuracy over bulk: +1 to every hit chance.", 'Ranged armour — studded leather, a little tougher than plain.', 'Ranged armour — a snakeskin bandana-coif in khaki scales.', 'Ranged armour — green dragonhide, light and springy.', 'Ranged armour — blue dragonhide, a grade above green.', 'Ranged armour — red dragonhide, rich and tough.', 'Ranged armour — black dragonhide, the finest hide on the shelf.', 'Ranged armour — white-and-gold Armadyl, ornate winged crest. The strongest coif on the ranged line.'],
@@ -654,10 +654,10 @@ for (const part of ['coif', 'body', 'chaps', 'boots']) {
 // from the plate line — a Bronze wizard hat is not a Bronze helm.
 const ROBE_COLORS = ['#9a6b42', '#6b6560', '#b9c2cc', '#35d0e0', '#2f9e57', '#2a3fd0', '#c02727', '#cfe2ec', '#5b21b6'];
 const ROBE_STATS = {
-  wizard_hat: { acc: [2, 3, 4, 6, 7, 8, 10, 12, 14], block: [0, 0, 0.01, 0.01, 0.02, 0.02, 0.03, 0.04, 0.05], buy: [70, 140, 300, 550, 700, 850, 1000, 1800, 3000], slot: 'head', icon: '🧙', label: 'wizard hat' },
+  wizard_hat: { acc: [2, 3, 4, 6, 7, 8, 10, 12, 14], block: [0, 0, 0.01, 0.01, 0.02, 0.02, 0.03, 0.04, 0.05], buy: [70, 140, 280, 560, 1120, 2240, 4480, 8960, 17920], slot: 'head', icon: '🧙', label: 'wizard hat' },
   robe_top: { acc: [2, 3, 4, 6, 7, 8, 10, 12, 14], block: [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.10, 0.12], buy: [130, 260, 520, 1040, 2080, 4160, 8320, 16640, 33280], slot: 'body', icon: '👘', label: 'robe top' },
-  robe_skirt: { acc: [2, 3, 4, 6, 7, 8, 10, 12, 14], block: [0, 0, 0.01, 0.01, 0.02, 0.02, 0.03, 0.04, 0.05], buy: [65, 130, 280, 520, 680, 820, 980, 1700, 2900], slot: 'legs', icon: '👗', label: 'robe skirt' },
-  wizard_boots: { acc: [2, 3, 4, 5, 6, 7, 9, 11, 13], block: [0, 0, 0.01, 0.01, 0.02, 0.02, 0.03, 0.04, 0.05], buy: [55, 110, 240, 450, 600, 750, 900, 1600, 2700], slot: 'feet', icon: '🥾', label: 'wizard boots' },
+  robe_skirt: { acc: [2, 3, 4, 6, 7, 8, 10, 12, 14], block: [0, 0, 0.01, 0.01, 0.02, 0.02, 0.03, 0.04, 0.05], buy: [65, 130, 260, 520, 1040, 2080, 4160, 8320, 16640], slot: 'legs', icon: '👗', label: 'robe skirt' },
+  wizard_boots: { acc: [2, 3, 4, 5, 6, 7, 9, 11, 13], block: [0, 0, 0.01, 0.01, 0.02, 0.02, 0.03, 0.04, 0.05], buy: [55, 110, 220, 440, 880, 1760, 3520, 7040, 14080], slot: 'feet', icon: '🥾', label: 'wizard boots' },
 };
 const ROBE_DESC = {
   wizard_hat: ['Magic armour — a plain tan pointed hat, cloth and leather-toned. The first rung of the wizard ladder.', 'Magic armour — a grey cloth pointed hat with a buckled band.', 'Magic armour — a silver-grey pointed hat, stiffened with steel thread.', 'Magic armour — a glowing cyan pointed hat, humming with stored spells.', 'Magic armour — a green pointed hat with a gold clasp.', 'Magic armour — a dark blue hood stitched with glowing runes.', 'Magic armour — a red-and-gold hood with flame trim, warm to the touch.', 'Magic armour — a pale ice-crystal crown-helm, frost curling off its horns. The wizard Torva tier.', 'Magic armour — a dark purple hood with a single watching eye. The strongest wizard hat on the ladder.'],
@@ -944,14 +944,90 @@ const SHOPS = ['Potion', 'Weapon', 'Armour', 'Food & Supplies', 'Pickaxe Pete'];
 const exchangePrices = {};
 for (const g of GOODS) exchangePrices[g.id] = g.base;
 
+// ---------- Pricing stage: DEMAND-DRIVEN PRICES (Derek, 2026-11-18) ----------
+// Derek: "Everything can change the price depending what people
+// want to skill or fight." One price-resolution path serves every
+// counter: currentBuyPrice / sellPrice for the shops (the catalog
+// message, shop_buy, shop_sell, botRestock and bot valuation all
+// read them) and the demand-driven exchangePrices for the Gold
+// Exchange (goodsList, the exchange handlers, bot valuation).
+//
+// Model: every item carries a demand SCORE in points, clamped to
+// [-30, +40]; the shop multiplier is 1 + score/100, so a shop price
+// can drift between 0.7x and 1.4x of its base and nowhere else.
+// Real trade moves the score, but only in aggregate: each unit
+// bought from a shop adds DEMAND_FLOW_PER_UNIT points of pending
+// FLOW (selling to a shop subtracts; Exchange buys/sells do the
+// same on the Exchange goods' own scores), and once per
+// DEMAND_TICK_MS the pending flow is applied — capped at
+// DEMAND_MAX_MOVE points per tick, so no single purchase (or one
+// busy minute) can visibly jump a price. Scores then decay x0.98
+// per tick, so an abandoned market relaxes home over hours.
+// Bot shop/Exchange activity counts exactly like a human's (they
+// are players in this world); bot<->player TRADES do not move
+// demand (no counter is involved). Sell-back is always 60% of the
+// CURRENT buy price and the Exchange buy-back 97% of the CURRENT
+// Exchange price at the moment of the transaction, and a price
+// can move at most ~1% per tick with a single actor's own flow
+// saturating that cap — so a same-counter round trip always loses
+// (60% / 97% haircuts), and nobody can pump a price alone and
+// sell back into their own pump for a profit.
+// Persistence: IN-MEMORY ONLY for v1 (a named simplification) —
+// demand resets to base on a server restart; the store's pattern
+// is per-user profiles and a global market record does not fit it
+// cleanly. DEMAND_OFF=1 freezes the whole engine at base prices
+// (test hook, BOT_PVM_OFF pattern); DEMAND_TICK_MS overrides the
+// tick for tests.
+const DEMAND_OFF = !!process.env.DEMAND_OFF;
+const DEMAND_TICK_MS = Math.max(250, +(process.env.DEMAND_TICK_MS || 60000));
+const DEMAND_MIN_SCORE = -30, DEMAND_MAX_SCORE = 40; // the 0.7x..1.4x band
+const DEMAND_FLOW_PER_UNIT = 0.05; // demand points of flow per item unit traded at a counter
+const DEMAND_MAX_MOVE = 1; // max score points applied per tick (1% per tick)
+const DEMAND_DECAY = 0.98; // per-tick relaxation of every score toward 0
+const demandScore = {}; // itemId -> points (shop items)
+const demandFlow = {}; // itemId -> pending points this window
+const exDemandScore = {}; // goodId -> points (Gold Exchange goods)
+const exDemandFlow = {}; // goodId -> pending points this window
+function demandMult(itemId) {
+  if (DEMAND_OFF) return 1;
+  const s = demandScore[itemId] || 0;
+  return Math.max(1 + DEMAND_MIN_SCORE / 100, Math.min(1 + DEMAND_MAX_SCORE / 100, 1 + s / 100));
+}
+function noteDemand(itemId, qty, dir) { // dir +1 = bought from a shop, -1 = sold to a shop
+  if (DEMAND_OFF || !itemId || !(qty > 0)) return;
+  demandFlow[itemId] = (demandFlow[itemId] || 0) + dir * qty * DEMAND_FLOW_PER_UNIT;
+}
+function noteExchangeDemand(goodId, qty, dir) { // dir +1 = bought on the Exchange, -1 = sold to it
+  if (DEMAND_OFF || !goodId || !(qty > 0)) return;
+  exDemandFlow[goodId] = (exDemandFlow[goodId] || 0) + dir * qty * DEMAND_FLOW_PER_UNIT;
+}
+function currentBuyPrice(itemId) {
+  const def = itemDef(itemId);
+  if (!def || !def.buy) return 0;
+  return Math.max(1, Math.round(def.buy * demandMult(itemId)));
+}
+function currentSellOnlyPrice(itemId) {
+  const def = itemDef(itemId);
+  if (!def || !def.sellOnly) return 0;
+  return Math.max(1, Math.round(def.sellOnly * demandMult(itemId)));
+}
+function priceTrend(itemId) {
+  const m = demandMult(itemId);
+  return m > 1.005 ? 'up' : (m < 0.995 ? 'down' : 'flat');
+}
+function exchangeTrend(g) {
+  const cur = exchangePrices[g.id];
+  return cur > g.base ? 'up' : (cur < g.base ? 'down' : 'flat');
+}
+
 function sellPrice(itemId) {
   const def = itemDef(itemId);
   if (!def) return 0;
   if (def.kind === 'token' || def.kind === 'note') return 0; // Stage 7A/9: tokens and notes are never sellable
   if (def.kind === 'currency') return 0; // Stage 16: gold IS money — it is never sold, it is spent
   if (def.custom) return 0; // Stage 7D: custom items are never sellable
-  if (def.buy) return Math.max(1, Math.floor(def.buy * SHOP_SELLBACK));
-  if (def.sellOnly) return def.sellOnly; // Stage 2 resources: fixed buy-back
+  if (def.buy) return Math.max(1, Math.floor(currentBuyPrice(itemId) * SHOP_SELLBACK)); // Pricing: 60% of the CURRENT buy price
+  if (def.sellOnly) return currentSellOnlyPrice(itemId); // Stage 2 resources: fixed buy-back, demand-adjusted like everything else
   return 0;
 }
 function catalogList() {
@@ -965,7 +1041,7 @@ function catalogList() {
     // so the client lets the override beat its built-in icon map.
     const look = itemLooks.get(id) || null;
     return {
-    id, name: d.name, kind: d.kind, slot: d.slot || null, shop: d.shop || null, buy: d.buy || 0, sell: sellPrice(id),
+    id, name: d.name, kind: d.kind, slot: d.slot || null, shop: d.shop || null, buy: d.buy ? currentBuyPrice(id) : 0, sell: sellPrice(id), trend: priceTrend(id), // Pricing: current (demand) prices + trend vs base
     heal: d.heal || 0, prayerRestore: d.prayerRestore || 0,
     accBonus: d.accBonus || 0, maxBonus: d.maxBonus || 0, reduction: d.reduction || 0,
     desc: d.desc || null, // Stage 28: item examine text (the Barrows pieces carry the app's)
@@ -993,7 +1069,7 @@ function catalogList() {
   return list;
 }
 function goodsList() {
-  return GOODS.map((g) => ({ id: g.id, name: g.name, price: exchangePrices[g.id] }));
+  return GOODS.map((g) => ({ id: g.id, name: g.name, price: exchangePrices[g.id], trend: exchangeTrend(g) })); // Pricing: trend vs base
 }
 
 // ---------- Skills (Stage 1): real OSRS XP curve ----------
@@ -5934,16 +6010,48 @@ function smithHeatNow(sm) {
   return Math.max(0, sm.heat - Math.floor((Date.now() - sm.heatAt) / 2000));
 }
 
-// Gold Exchange prices drift on a random walk inside each good's band.
+// Pricing stage: the Gold Exchange's old 6s random walk is GONE —
+// demand (with the shop engine above) is now the only thing that
+// moves prices. One tick per DEMAND_TICK_MS: pending flow is
+// applied (capped), every score decays toward 0, each Exchange
+// price steps at most ~1% of base toward its demand target
+// (clamped to the good's own min/max band), and any counter whose
+// prices actually changed is re-broadcast so open panels update.
 setInterval(() => {
-  for (const g of GOODS) {
-    const cur = exchangePrices[g.id];
-    let delta = Math.round(cur * (Math.random() - 0.5) * 0.08);
-    if (delta === 0 && Math.random() < 0.5) delta = Math.random() < 0.5 ? -1 : 1;
-    exchangePrices[g.id] = Math.max(g.min, Math.min(g.max, cur + delta));
+  if (DEMAND_OFF) return;
+  const sigBefore = JSON.stringify(catalogList().map((e) => [e.buy, e.sell])) + '|' + JSON.stringify(goodsList().map((g) => g.price));
+  const applyFlow = (scoreMap, flowMap) => {
+    for (const id of Object.keys(flowMap)) {
+      const move = Math.max(-DEMAND_MAX_MOVE, Math.min(DEMAND_MAX_MOVE, flowMap[id]));
+      if (move) scoreMap[id] = Math.max(DEMAND_MIN_SCORE, Math.min(DEMAND_MAX_SCORE, (scoreMap[id] || 0) + move));
+      delete flowMap[id];
+    }
+  };
+  // Decay BEFORE applying the window's flow, so the score band
+  // is a true cap (steady state under max pressure is the cap
+  // itself, not the cap minus one decay step).
+  for (const map of [demandScore, exDemandScore]) {
+    for (const id of Object.keys(map)) {
+      map[id] *= DEMAND_DECAY;
+      if (Math.abs(map[id]) < 0.01) delete map[id];
+    }
   }
-  broadcast({ type: 'exchange_prices', goods: goodsList() });
-}, 6000);
+  applyFlow(demandScore, demandFlow);
+  applyFlow(exDemandScore, exDemandFlow);
+  for (const g of GOODS) {
+    const target = Math.max(g.min, Math.min(g.max, Math.round(g.base * (1 + (exDemandScore[g.id] || 0) / 100))));
+    const step = Math.max(1, Math.round(g.base * 0.01));
+    const cur = exchangePrices[g.id];
+    if (cur < target) exchangePrices[g.id] = Math.min(target, cur + step);
+    else if (cur > target) exchangePrices[g.id] = Math.max(target, cur - step);
+  }
+  const after = catalogList();
+  const sigAfter = JSON.stringify(after.map((e) => [e.buy, e.sell])) + '|' + JSON.stringify(goodsList().map((g) => g.price));
+  if (sigAfter !== sigBefore) {
+    broadcast({ type: 'catalog', items: after, shops: SHOPS });
+    broadcast({ type: 'exchange_prices', goods: goodsList() });
+  }
+}, DEMAND_TICK_MS);
 
 // Prayer drain: 1 point per 3 seconds while a Deflect prayer is active
 // (1/3 point per 1s tick). At 0 the prayer switches itself off.
@@ -7086,10 +7194,11 @@ wss.on('connection', (ws, req) => {
       const def = itemDef(item);
       const qty = Math.max(1, Math.min(999, Math.floor(+m.qty || 1)));
       if (!def || !def.buy) return send(ws, { type: 'error', message: 'That is not sold in the shops.' });
-      const cost = def.buy * qty;
+      const cost = currentBuyPrice(item) * qty; // Pricing: the CURRENT (demand) price
       if (goldTotal(profile) < cost) return send(ws, { type: 'error', message: `Not enough gold — ${def.name} x${qty} costs ${cost}g.` });
       if (addStacks(profile.backpack, item, qty, BACKPACK_MAX_STACKS) > 0) return send(ws, { type: 'error', message: 'Backpack full (28 stacks).' });
       takeGold(profile, cost); // Stage 16: paid from the coin stacks
+      noteDemand(item, qty, +1); // Pricing: buying pushes this item's demand up
       save(key);
       send(ws, { type: 'shop', action: 'buy', shop: def.shop, item, qty, total: cost });
       // Stage 21: the two top-tier party hats are server-wide news.
@@ -7115,7 +7224,8 @@ wss.on('connection', (ws, req) => {
       const sellQty = Math.min(qty, stackQty(profile.backpack, item));
       if (sellQty < 1) return send(ws, { type: 'error', message: `You don't have any ${def.name} to sell.` });
       removeStacks(profile.backpack, item, sellQty);
-      const total = sellPrice(item) * sellQty;
+      const total = sellPrice(item) * sellQty; // Pricing: sellPrice is the CURRENT price (60% of current buy / current sellOnly)
+      noteDemand(item, sellQty, -1); // Pricing: selling to a shop pushes this item's demand down
       addGold(profile, total); // Stage 16: the payment lands on the coin stack
       save(key);
       send(ws, { type: 'shop', action: 'sell', shop: def.shop, item, qty: sellQty, total });
@@ -7397,12 +7507,14 @@ wss.on('connection', (ws, req) => {
         if (goldTotal(profile) < cost) return send(ws, { type: 'error', message: `Not enough gold — ${good.name} x${qty} costs ${cost}g.` });
         if (addStacks(profile.backpack, good.id, qty, BACKPACK_MAX_STACKS) > 0) return send(ws, { type: 'error', message: 'Backpack full (28 stacks).' });
         takeGold(profile, cost); // Stage 16: paid from the coin stacks
+        noteExchangeDemand(good.id, qty, +1); // Pricing: Exchange buys push the good's demand up
         save(key);
         send(ws, { type: 'exchange', action: 'buy', good: good.id, qty, price, total: cost });
       } else {
         if (!removeStacks(profile.backpack, good.id, qty)) return send(ws, { type: 'error', message: `You don't have ${qty} x ${good.name}.` });
-        const total = Math.floor(price * qty * EXCHANGE_SELLBACK);
+        const total = Math.floor(price * qty * EXCHANGE_SELLBACK); // Pricing: 97% of the CURRENT Exchange price
         addGold(profile, total); // Stage 16: the payment lands on the coin stack
+        noteExchangeDemand(good.id, qty, -1); // Pricing: Exchange sells push the good's demand down
         save(key);
         send(ws, { type: 'exchange', action: 'sell', good: good.id, qty, price, total });
       }
@@ -9303,6 +9415,7 @@ function botSellGoods(bot) {
     const price = sellPrice(s.item);
     if (!price || !removeStacks(profile.backpack, s.item, s.qty)) continue;
     addGold(profile, price * s.qty); // the payment lands on the coin stack, like a human's sale
+    noteDemand(s.item, s.qty, -1); // Pricing: a bot's shop sale is trade activity, like a human's
     sold += s.qty;
   }
   if (sold) save(bot.key);
@@ -10025,8 +10138,8 @@ function botMarketValue(item) {
   const def = itemDef(item);
   if (!def) return 0;
   if (def.kind === 'good') return Math.max(1, Math.floor((exchangePrices[item] || 0) * EXCHANGE_SELLBACK)); // the Exchange is this good's real market
-  if (def.buy) return def.buy;
-  if (def.sellOnly) return def.sellOnly;
+  if (def.buy) return currentBuyPrice(item); // Pricing: bots value at CURRENT prices, like every counter
+  if (def.sellOnly) return currentSellOnlyPrice(item);
   return sellPrice(item);
 }
 function botResaleValue(item) {
@@ -10124,9 +10237,11 @@ function botRestock(bot) {
     if (!def || !def.buy) continue;
     let qty = w.qty;
     while (qty > 0) {
-      if (goldTotal(profile) - def.buy < BOT_TRADE_FLOAT) break;
+      const price = currentBuyPrice(w.item); // Pricing: bots pay the CURRENT price, like a human
+      if (goldTotal(profile) - price < BOT_TRADE_FLOAT) break;
       if (addStacks(profile.backpack, w.item, 1, BACKPACK_MAX_STACKS) > 0) break; // pack full — shop_buy refuses too
-      takeGold(profile, def.buy);
+      takeGold(profile, price);
+      noteDemand(w.item, 1, +1); // Pricing: a bot's shop buy is trade activity, like a human's
       qty--; bought = true;
     }
   }
