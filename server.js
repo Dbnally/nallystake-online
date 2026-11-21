@@ -2368,6 +2368,7 @@ function executeTrade(trade) {
   syncGoldMirror(aProf); syncGoldMirror(bProf);
   save(trade.aKey); save(trade.bKey);
   closeTrade(trade);
+  botNoteTrade(trade.aKey, trade.bKey); // Stage 38: a completed trade is remembered in bot relations (no-op when neither side is a bot)
   sendProfile(trade.aKey); sendProfile(trade.bKey);
   for (const k of [trade.aKey, trade.bKey]) {
     const sess = online.get(k);
@@ -8550,6 +8551,7 @@ wss.on('connection', (ws, req) => {
       tradeRequests.delete(req.id);
       const fromSess = online.get(req.fromKey);
       if (m.accept !== true) {
+        botRememberDecline(req.fromKey, key); // a bot initiator remembers a player's refusal too
         if (fromSess) send(fromSess.ws, { type: 'chat', from: 'Game', text: `${profile.username} declined your trade request.` });
         return;
       }
@@ -9114,6 +9116,10 @@ function spawnBotSession(def, profile) {
     key, def, sess, profile,
     plan: null, planUntil: 0, target: null, // the activity state machine
     challengeDecisions: new Map(), // challengeId -> { at, verdict, responded }
+    tradeDecisions: new Map(), // Stage 38: trade request id -> { at, verdict }
+    tradeState: null, // Stage 38: the open trade this bot is currently working
+    lastDealAt: Date.now(), lastWildAt: Date.now(), // Stage 38: deal / wild-trip clocks (start at spawn — a fresh boot does not burst)
+    wildTrip: null, wildEatAt: 0, // Stage 38: the current Wilderness trip, if any
     stakeReadyAt: 0, stakeSeenMatch: null, // stake-match ready-up timing
     lastGiftAt: 0, lastPostAt: 0, lastPartyInviteAt: 0,
     wasInDuel: false,
@@ -9232,6 +9238,11 @@ function botSellGoods(bot) {
   const profile = bot.profile;
   let sold = 0;
   for (const s of [...botSellableStacks(bot)]) {
+    // Stage 38: deal-grade stock (unit market value at the deal
+    // drive's single-item threshold) is NOT dumped at the shop for
+    // 60% — a bot holds it for the trade market, where it fetches
+    // full value. Gathered goods still liquidate as before.
+    if (botMarketValue(s.item) >= BOT_DEAL_GRADE) continue;
     const price = sellPrice(s.item);
     if (!price || !removeStacks(profile.backpack, s.item, s.qty)) continue;
     addGold(profile, price * s.qty); // the payment lands on the coin stack, like a human's sale
@@ -9246,6 +9257,7 @@ function botBankVisit(bot) {
   const profile = bot.profile;
   let moved = false;
   for (const s of [...botSellableStacks(bot)]) {
+    if (botMarketValue(s.item) >= BOT_DEAL_GRADE) continue; // Stage 38: deal-grade stock stays in the backpack, where trades can reach it
     if (removeStacks(profile.backpack, s.item, s.qty)) { addStacks(profile.bank, s.item, s.qty); moved = true; }
   }
   if (moved) completeStarterGoal(bot.key, 'use_bank');
@@ -9338,9 +9350,9 @@ function botPlanDrive(bot) {
       else bot.plan = null;
     }
   } else if (plan.kind === 'sell') {
-    if (!plan.done) { botSellGoods(bot); plan.done = true; }
+    if (!plan.done) { botSellGoods(bot); botRestock(bot); plan.done = true; } // Stage 38: restock duel supplies while at the shops
   } else if (plan.kind === 'bank') {
-    if (!plan.done) { botBankVisit(bot); plan.done = true; }
+    if (!plan.done) { botBankVisit(bot); botRestock(bot); plan.done = true; } // Stage 38: same on a bank trip (the shops are position-free)
   } else if (plan.kind === 'idle') {
     // Wander the current area in short ambles; in the plaza this is
     // also where the Stake Board habits live (see botPlazaHabits).
@@ -9667,6 +9679,8 @@ function botPairingDrive(now) {
     if (duel && bots.has(duel.a) && bots.has(duel.b)) return; // one at a time
   }
   const idle = [...bots.values()].filter((b) => b.sess.area === 'plaza' && !b.sess.duelId && !stakeMatchForKey(b.key)
+    && !(b.wildTrip && b.wildTrip.state === 'enter') // Stage 38: committed to a Wilderness trip — not pairing fodder
+    && !activeTradeForKey(b.key) && !pendingTradeForKey(b.key) // Stage 38: a bot working a trade is not idle — a duel would cancel it
     && ![...challenges.values()].some((ch) => ch.from === b.key || ch.to === b.key));
   if (idle.length < 2) return;
   const challenger = botPickWeighted(null, idle.map((b) => ({ value: b, weight: 10 + botTrait(b.profile, 'aggression') * 0.4 + botTrait(b.profile, 'ambition') * 0.3 })));
@@ -9831,8 +9845,838 @@ function botPartyMaintain(bot) {
 function botDeclineTrade(bot, req) {
   clearTimeout(req.timer);
   tradeRequests.delete(req.id);
+  botRememberDecline(req.fromKey, bot.key); // a bot initiator remembers the refusal
   const fromSess = online.get(req.fromKey);
   if (fromSess) send(fromSess.ws, { type: 'chat', from: 'Game', text: `${bot.profile.username} declined your trade request.` });
+}
+
+// ---------- Stage 38: NPC trading, skill deals, Wilderness society ----------
+// Derek's asks (2026-11-20): the NPC players trade — with players
+// and with each other — make deals that move what each of them
+// needs to the one who needs it, work together in the Wilderness,
+// and sometimes betray each other there. The Stage 37 autonomy
+// rule still governs every line below: each choice is computed
+// from the bot's persisted traits + relations + situation + a
+// roll (botScore / botPickWeighted / the trade-rate and betrayal
+// maths). Nothing is scripted; there is no admin remote control.
+//
+// TRADING runs through the REAL Stage 7B flow end to end: the
+// brain mirrors the trade_request / trade_response / trade_offer /
+// trade_confirm handlers' own state mutations, and every
+// settlement — bot↔player and bot↔bot alike — goes through the
+// one atomic executeTrade with its re-validation. There is no
+// second economy code path and no direct profile poking for
+// settlements. A completed trade is remembered in relations via
+// botNoteTrade, hooked into executeTrade itself so a trade a
+// human confirms last still counts.
+//
+// VALUE: a bot prices goods at their real market — the shop buy
+// price, or the Gold Exchange's live sell-back for Exchange goods
+// (botMarketValue); goods it does not need it values at what it
+// could actually get for them (botResaleValue). Its exchange rate
+// (botTradeRate) is what it demands back per unit given: greed
+// pushes it up, friendship (relations >= FRIEND_THRESHOLD) pulls
+// it down, and a grudge (relations <= BOT_GRUDGE) refuses at any
+// price.
+//
+// DEALS: a bot short of a consumable it uses (botWants) buys it
+// from a bot standing nearby who holds a surplus; a bot holding
+// valuable surplus offers it for sale to a solvent partner
+// standing nearby (players included). Bots also restock their
+// wants at the shops on plaza trips (botRestock, mirroring
+// shop_buy), so the consumable pool the deals move around does
+// not simply drain away.
+//
+// THE WILDERNESS: bots enter through botEnterWild — the travel
+// handler's own entry sequence (cancelWildPendings, then
+// enterWildState: fresh HP pool = Hitpoints level, skull and
+// teleblock cleared) — and leave through exitWildCleanup at the
+// ditch, exactly like a player. Fights run through the real pair
+// engine: botWildAttack mirrors the wild_attack handler check for
+// check (bracket, shallow single-way, skull, engage), eating
+// mirrors the 'use' handler's wild branch, and death is the
+// engine's own wildDeath — keep-3 / drop-everything rules and
+// all. Bots never enter Pure Wild in this stage.
+//
+// TEAM TRIPS + BETRAYAL: a bot whose nerve holds may invite a
+// friend standing in the plaza on a Wilderness trip — the friend
+// accepts or refuses by its own traits. In the wild, the partner
+// shadows the leader and a free bot may defend its partner
+// (loyalty roll; the engine decides whether the extra attacker is
+// legal at that depth). The betrayal decision (botBetrayalRoll)
+// weighs greed + risk against loyalty, scaled by what the friend
+// is carrying and how deep they are: a 100-loyalty bot cannot
+// pass it, a greed monster nearly always does. A betrayal is an
+// ordinary wild attack (the betrayer skulls like anyone striking
+// first) plus a relations crash to -85 on BOTH profiles — the
+// grudge persists, and it bites later: the betrayed bot refuses
+// the betrayer's trade requests and will not confirm a trade
+// with them at any price.
+const BOT_DEAL_EVERY_MS = 150000; // per-bot gap between deal attempts (scaled like every bot clock)
+const BOT_WILD_EVERY_MS = 240000; // per-bot gap between Wilderness-trip decisions (scaled)
+const BOT_WILD_TRIP_MIN_MS = 60000, BOT_WILD_TRIP_MAX_MS = 150000; // a trip's length (scaled)
+const BOT_TRADE_ACT_MS = 700; // a bot re-reads an open trade at most this often
+const BOT_TRADE_STALL_MS = 20000; // a trade with no change this long is abandoned
+const BOT_TRADE_INSULT_MS = 6000; // an insulting imbalance held this long is walked out on
+const BOT_GRUDGE = -30; // relations at or below this are a grudge
+const BOT_REL_TRADE = 2; // relations gained when a trade completes
+const BOT_REL_INSULT = -2; // relations lost when a bot walks out of an insulting bot↔bot trade
+const BOT_TRADE_FLOAT = 60; // gold a bot keeps back when paying inside a trade / restocking
+const BOT_BETRAY_MIN = 78; // the betrayal score that must be beaten
+const BOT_BETRAY_CHECK_MS = 6000; // betrayal re-roll cadence while teamed in the wild (scaled)
+const BOT_TEAM_GRACE_MS = 30000; // how long a leader waits for its partner to cross before the team counts as over (scaled)
+const botDealIntents = new Map(); // tradeId -> { initiatorKey, kind: 'buy'|'sell', item, qty } — what a bot-initiated trade is FOR (server-side only; a human partner sees the trade itself and the bot's chat line)
+const BOT_DEAL_GRADE = 150; // unit market value at/above which a stack is deal stock: held for the trade market, never shop-sold or banked away (mirrors the deal drive's single-item sell threshold)
+const botRecentDeclines = new Map(); // '<initiatorKey>><partnerKey>' -> timestamp — a bot remembers being refused (or ignored until expiry) and does not re-ask that partner for a while; people don't badger someone who just said no
+const BOT_DECLINE_MEMORY_MS = 90000;
+function botRecentlyDeclined(initiatorKey, partnerKey) {
+  const at = botRecentDeclines.get(initiatorKey + '>' + partnerKey) || 0;
+  return Date.now() - at < BOT_DECLINE_MEMORY_MS;
+}
+function botRememberDecline(initiatorKey, partnerKey) {
+  if (bots.has(initiatorKey)) botRecentDeclines.set(initiatorKey + '>' + partnerKey, Date.now());
+}
+
+// ----- value, wants, surplus -----
+function botMarketValue(item) {
+  if (item === 'gold') return 1;
+  const def = itemDef(item);
+  if (!def) return 0;
+  if (def.kind === 'good') return Math.max(1, Math.floor((exchangePrices[item] || 0) * EXCHANGE_SELLBACK)); // the Exchange is this good's real market
+  if (def.buy) return def.buy;
+  if (def.sellOnly) return def.sellOnly;
+  return sellPrice(item);
+}
+function botResaleValue(item) {
+  if (item === 'gold') return 1;
+  const sp = sellPrice(item);
+  if (sp > 0) return sp;
+  const def = itemDef(item);
+  if (!def) return 0;
+  if (def.kind === 'good') return Math.max(1, Math.floor((exchangePrices[item] || 0) * EXCHANGE_SELLBACK));
+  if (def.kind === 'weapon' || def.kind === 'armour') return 1000; // never-sellable gear still has worth (stackValueOf's rule)
+  return 0;
+}
+// What a bot keeps stocked for its own fights — the same supplies
+// botUseInDuel reaches for. Food for everyone, prayer potions for
+// the praying tiers, a restore for the top tier.
+function botFoodCount(bot) {
+  let n = 0;
+  for (const s of bot.profile.backpack) { const d = itemDef(s.item); if (d && d.kind === 'food') n += s.qty; }
+  return n;
+}
+function botWantTarget(bot, item) {
+  const d = itemDef(item);
+  if (d && d.kind === 'food') return 3;
+  if (item === 'prayer_potion') return bot.def.tier >= 1 ? 2 : 0;
+  if (item === 'restore_potion') return bot.def.tier >= 2 ? 1 : 0;
+  return 0;
+}
+function botWants(bot) {
+  const out = [];
+  const foodShort = 3 - botFoodCount(bot);
+  if (foodShort > 0) out.push({ item: 'ration', qty: foodShort });
+  if (bot.def.tier >= 1) { const short = 2 - stackQty(bot.profile.backpack, 'prayer_potion'); if (short > 0) out.push({ item: 'prayer_potion', qty: short }); }
+  if (bot.def.tier >= 2) { const short = 1 - stackQty(bot.profile.backpack, 'restore_potion'); if (short > 0) out.push({ item: 'restore_potion', qty: short }); }
+  return out;
+}
+// How much of an item this bot can spare: consumables above its
+// own keep-target, anything else it carries (gathered stock — the
+// same set botSellGoods sells at the shops). Worn gear is never in
+// the backpack, and notes/tokens/gold never move as trade stock.
+function botSurplusQty(bot, item) {
+  if (item === 'gold') return 0;
+  const d = itemDef(item);
+  if (!d || d.kind === 'note' || d.kind === 'token' || d.kind === 'currency') return 0;
+  const held = stackQty(bot.profile.backpack, item);
+  if (d.kind === 'food' || d.kind === 'potion') return Math.max(0, held - botWantTarget(bot, item));
+  return held;
+}
+// The value of an offer TO this bot (incoming: wanted goods at
+// market, everything else at resale, gold at face) or FROM this
+// bot (outgoing: everything at market, gold at face).
+function botValueOfferTo(bot, offer, incoming) {
+  let v = Math.max(0, Math.floor(+offer.gold || 0));
+  const wants = incoming ? botWants(bot) : null;
+  for (const s of offer.items || []) {
+    if (incoming) v += (wants.some((w) => w.item === s.item) ? botMarketValue(s.item) : botResaleValue(s.item)) * s.qty;
+    else v += botMarketValue(s.item) * s.qty;
+  }
+  return v;
+}
+// What this bot demands back per unit it gives, against a named
+// partner. Infinity = a grudge: no deal at any price.
+function botTradeRate(bot, partnerName) {
+  const rel = botRelation(bot.profile, partnerName);
+  if (rel <= BOT_GRUDGE) return Infinity;
+  let rate = 1 + (botTrait(bot.profile, 'greed') - 50) * 0.004;
+  if (rel >= FRIEND_THRESHOLD) rate -= 0.08 + botTrait(bot.profile, 'loyalty') * 0.0012;
+  return Math.max(0.55, Math.min(1.6, rate));
+}
+// One-sided memory for partners who have no relations map of
+// their own (humans): the bot remembers them on ITS profile.
+function botRemember(bot, otherName, pts) {
+  if (!bot || !otherName || !pts) return;
+  if (!bot.profile.relations || typeof bot.profile.relations !== 'object') bot.profile.relations = {};
+  const cur = botRelation(bot.profile, otherName);
+  bot.profile.relations[otherName] = Math.max(BOT_REL_MIN, Math.min(BOT_REL_MAX, cur + pts));
+  save(bot.key);
+}
+// Called from executeTrade itself, after a settlement: both bots
+// grow closer; a bot trading with a human remembers the human.
+function botNoteTrade(aKey, bKey) {
+  const a = bots.get(aKey), b = bots.get(bKey);
+  if (a && b) { botBumpRelation(a, b, BOT_REL_TRADE); return; }
+  if (a && db.users[bKey]) botRemember(a, db.users[bKey].profile.username, BOT_REL_TRADE);
+  else if (b && db.users[aKey]) botRemember(b, db.users[aKey].profile.username, BOT_REL_TRADE);
+}
+// Restock the duel supplies at the shops (mirrors shop_buy: the
+// catalogue price, paid from the coin stacks, pack-full stops the
+// purchase) — called on plaza sell/bank trips so the consumables
+// the deal economy moves around are replenished like a player's.
+function botRestock(bot) {
+  const profile = bot.profile;
+  let bought = false;
+  for (const w of botWants(bot)) {
+    const def = itemDef(w.item);
+    if (!def || !def.buy) continue;
+    let qty = w.qty;
+    while (qty > 0) {
+      if (goldTotal(profile) - def.buy < BOT_TRADE_FLOAT) break;
+      if (addStacks(profile.backpack, w.item, 1, BACKPACK_MAX_STACKS) > 0) break; // pack full — shop_buy refuses too
+      takeGold(profile, def.buy);
+      qty--; bought = true;
+    }
+  }
+  if (bought) save(bot.key);
+}
+
+// ----- trade requests (mirrors of the human handlers, bot side) -----
+function botCreateTradeRequest(bot, targetKey) {
+  const key = bot.key;
+  const target = online.get(targetKey);
+  if (!target || targetKey === key) return null;
+  if (isWildArea(bot.sess.area) || isWildArea(target.area)) return null; // Stage 30: no trading in the Wilderness
+  if (bot.sess.duelId || target.duelId || bot.sess.modDuelId || target.modDuelId) return null;
+  if (bot.sess.npcFightId || target.npcFightId || bot.sess.barrowsFightId || target.barrowsFightId || bot.sess.fcRunId || target.fcRunId) return null;
+  if (activeTradeForKey(key) || activeTradeForKey(targetKey)) return null;
+  if (pendingTradeForKey(key) || pendingTradeForKey(targetKey)) return null;
+  const id = crypto.randomBytes(6).toString('hex');
+  const req = { id, fromKey: key, toKey: targetKey, expires: Date.now() + 30000, timer: null };
+  req.timer = setTimeout(() => {
+    if (!tradeRequests.has(id)) return;
+    tradeRequests.delete(id);
+    botDealIntents.delete(id);
+    botRememberDecline(key, targetKey); // ignored until expiry counts as a no for a bot initiator
+    const fromSess = online.get(key);
+    if (fromSess) send(fromSess.ws, { type: 'chat', from: 'Game', text: `Your trade request to ${target.profile.username} expired.` });
+  }, 30000);
+  if (req.timer.unref) req.timer.unref();
+  tradeRequests.set(id, req);
+  send(target.ws, { type: 'trade_incoming', from: bot.profile.username, tradeId: id });
+  return req;
+}
+function botDecideTradeRequest(bot, req) {
+  const sess = bot.sess;
+  if (sess.duelId || sess.modDuelId || sess.npcFightId || sess.barrowsFightId || sess.fcRunId) return 'decline';
+  if (isWildArea(sess.area)) return 'decline';
+  if (activeTradeForKey(bot.key)) return 'decline';
+  const fromSess = online.get(req.fromKey);
+  if (!fromSess) return 'decline';
+  const rel = botRelation(bot.profile, fromSess.profile.username);
+  if (rel <= BOT_GRUDGE) { botSay(bot, `Not after what you did, ${fromSess.profile.username}.`); return 'decline'; } // a grudge refuses outright
+  return botScore(bot, { sociability: 0.6 }) + Math.max(0, rel) * 0.2 > 52 ? 'accept' : 'decline';
+}
+// The trade_response accept path, mirrored: re-check, build the
+// trade record with its 120s timer, open it for both sides.
+function botAcceptTradeRequest(bot, req) {
+  if (!tradeRequests.has(req.id) || req.expires < Date.now()) { clearTimeout(req.timer); tradeRequests.delete(req.id); return; }
+  clearTimeout(req.timer);
+  tradeRequests.delete(req.id);
+  const fromSess = online.get(req.fromKey);
+  if (!fromSess) return;
+  if (bot.sess.duelId || fromSess.duelId) return;
+  if (activeTradeForKey(bot.key) || activeTradeForKey(req.fromKey)) return;
+  const trade = {
+    id: req.id, aKey: req.fromKey, bKey: bot.key,
+    offers: { [req.fromKey]: { gold: 0, items: [] }, [bot.key]: { gold: 0, items: [] } },
+    confirmed: { [req.fromKey]: false, [bot.key]: false },
+    expires: Date.now() + 120000, timer: null,
+  };
+  trade.timer = setTimeout(() => { if (trades.has(trade.id)) cancelTrade(trade, 'Trade timed out.'); }, 120000);
+  if (trade.timer.unref) trade.timer.unref();
+  trades.set(trade.id, trade);
+  send(fromSess.ws, { type: 'trade_open', tradeId: trade.id, with: bot.profile.username });
+  send(bot.sess.ws, { type: 'trade_open', tradeId: trade.id, with: fromSess.profile.username });
+}
+function botTradeRequestsDrive(bot) {
+  const now = Date.now();
+  for (const req of [...tradeRequests.values()]) {
+    if (req.toKey !== bot.key) continue;
+    let dec = bot.tradeDecisions.get(req.id);
+    if (!dec) { dec = { at: now + botDelay(800, 2500) }; bot.tradeDecisions.set(req.id, dec); }
+    if (now < dec.at) continue;
+    bot.tradeDecisions.delete(req.id);
+    if (botDecideTradeRequest(bot, req) === 'accept') botAcceptTradeRequest(bot, req);
+    else botDeclineTrade(bot, req);
+  }
+  for (const id of [...bot.tradeDecisions.keys()]) if (!tradeRequests.has(id)) bot.tradeDecisions.delete(id);
+}
+// The trade_offer handler, mirrored: validate against the bot's
+// real purse/backpack, set its side, un-confirm BOTH sides.
+function botSetTradeOffer(bot, trade, offer) {
+  const profile = bot.profile;
+  const gold = Math.max(0, Math.floor(+offer.gold || 0));
+  if (gold > goldTotal(profile)) return false;
+  const items = [];
+  for (const e of offer.items || []) {
+    const def = itemDef(e.item);
+    if (!def || def.kind === 'note') return false; // Stage 9: notes are personal
+    const qty = Math.floor(+e.qty || 0);
+    if (qty < 1) return false;
+    items.push({ item: e.item, qty });
+  }
+  if (!hasItems(profile, items)) return false;
+  trade.offers[bot.key] = { gold, items };
+  trade.confirmed[trade.aKey] = false;
+  trade.confirmed[trade.bKey] = false;
+  sendTradeUpdate(trade);
+  return true;
+}
+// Goods laid out against a partner's gold-only offer: surplus
+// stock up to what the gold fairly buys at MY rate (a greedy bot
+// lays out less than the gold's face — that margin is its profit).
+function botCounterGoods(bot, goldAmount, rate) {
+  const target = goldAmount / rate;
+  const stacks = botSellableStacks(bot)
+    .map((s) => ({ item: s.item, qty: botSurplusQty(bot, s.item), unit: botMarketValue(s.item) }))
+    .filter((s) => s.qty > 0 && s.unit > 0)
+    .sort((a, b) => a.unit - b.unit);
+  const out = [];
+  let v = 0;
+  for (const s of stacks) {
+    if (v >= target) break;
+    // Whole units only, and never past the target: an overshooting
+    // counter (chunky unit values, rounded up) would price the
+    // goods above what the gold fairly buys — and the bot's own
+    // confirm rule would then refuse the very counter it made.
+    const take = Math.min(s.qty, Math.floor((target - v) / s.unit));
+    if (take < 1) continue;
+    out.push({ item: s.item, qty: take });
+    v += take * s.unit;
+  }
+  return out;
+}
+// What this bot wants its side of THIS trade to be, or null to
+// leave its side alone: its own deal goal if it started the
+// trade, the asked-for goods if its partner started a buy deal,
+// nothing for a generic trade (the responder logic handles it).
+function botTradeGoalOffer(bot, trade, st, partnerKey) {
+  const intent = st.intent;
+  if (!intent) return null;
+  if (intent.initiatorKey === bot.key) {
+    if (intent.kind === 'buy') {
+      // Pay for what is actually on the table (a partial fill is
+      // priced for the partial amount); greedy bots open low.
+      const offered = (trade.offers[partnerKey].items || []).find((s) => s.item === intent.item);
+      const qty = offered ? Math.min(intent.qty, offered.qty) : intent.qty;
+      let pay = Math.max(1, Math.round(botMarketValue(intent.item) * qty * (1.02 - botTrait(bot.profile, 'greed') * 0.003)));
+      // Negotiation: if the seller is holding out, the drive
+      // grows st.raiseFactor and the offer climbs toward (never
+      // past) the goods' full catalogue value.
+      if (st.raiseFactor) pay = Math.min(botMarketValue(intent.item) * qty, Math.round(pay * st.raiseFactor));
+      return { gold: Math.min(pay, goldTotal(bot.profile)), items: [] };
+    }
+    return { gold: 0, items: [{ item: intent.item, qty: intent.qty }] }; // a sell deal: the goods go up
+  }
+  if (intent.kind === 'buy') {
+    // I was asked for something specific: offer my surplus of it.
+    const qty = Math.min(intent.qty, botSurplusQty(bot, intent.item));
+    return { gold: 0, items: qty > 0 ? [{ item: intent.item, qty }] : [] };
+  }
+  return null;
+}
+// Working an open trade: set my side, meet a generic offer,
+// confirm when the balance beats my rate, walk away from an
+// insult or a stall. One action per act tick, like a person
+// reading the window.
+function botTradeDrive(bot, trade) {
+  const key = bot.key, now = Date.now();
+  const partnerKey = trade.aKey === key ? trade.bKey : trade.aKey;
+  const partner = online.get(partnerKey);
+  if (!partner) { cancelTrade(trade, 'Trade cancelled.'); bot.tradeState = null; botDealIntents.delete(trade.id); return; }
+  let st = bot.tradeState;
+  if (!st || st.tradeId !== trade.id) {
+    st = bot.tradeState = { tradeId: trade.id, lastActAt: 0, lastSig: '', lastChangeAt: now, insultSince: 0, intent: botDealIntents.get(trade.id) || null };
+  }
+  const sig = JSON.stringify(trade.offers) + '|' + trade.confirmed[trade.aKey] + '|' + trade.confirmed[trade.bKey];
+  if (sig !== st.lastSig) { st.lastSig = sig; st.lastChangeAt = now; st.insultSince = 0; st.sameActs = 0; }
+  else st.sameActs = (st.sameActs || 0) + 1;
+  if (now - st.lastActAt < BOT_TRADE_ACT_MS) return;
+  st.lastActAt = now;
+  const myOffer = trade.offers[key], theirOffer = trade.offers[partnerKey];
+  const partnerName = partner.profile.username;
+  const rate = botTradeRate(bot, partnerName);
+  // Negotiation pressure: I have gold up, they have goods up, and
+  // they still have not confirmed — my price was probably under
+  // their line. Grow the raise factor; the goal-offer and generic
+  // paths below re-derive my side from it (capped at what the
+  // goods are worth, so a bot never bids past catalogue sense).
+  if (st.sameActs >= 6 && myOffer.gold > 0 && (theirOffer.items || []).length > 0 && !trade.confirmed[partnerKey]) {
+    st.raiseFactor = Math.min(2.5, (st.raiseFactor || 1) * 1.15);
+    st.sameActs = 0;
+  }
+  // 1) Put up my side if this trade has a goal for me and my side
+  //    does not match it yet (never re-set an identical offer —
+  //    that would un-confirm us both forever).
+  const goalOffer = botTradeGoalOffer(bot, trade, st, partnerKey);
+  if (goalOffer && JSON.stringify(goalOffer) !== JSON.stringify({ gold: myOffer.gold, items: myOffer.items })) {
+    if (botSetTradeOffer(bot, trade, goalOffer)) { st.lastSig = ''; return; }
+  }
+  const inValue = botValueOfferTo(bot, theirOffer, true);
+  const outValue = botValueOfferTo(bot, myOffer, false);
+  // 2) A generic trade (no goal of mine) where they have put value
+  //    up and I have not: meet it — gold for their goods at my
+  //    resale valuation, surplus goods for their gold.
+  if (!goalOffer && outValue === 0 && inValue > 0 && rate !== Infinity) {
+    if (theirOffer.gold > 0 && !(theirOffer.items || []).length) {
+      const goods = botCounterGoods(bot, theirOffer.gold, rate);
+      if (goods.length && botSetTradeOffer(bot, trade, { gold: 0, items: goods })) { st.lastSig = ''; return; }
+    } else {
+      const pay = Math.min(Math.max(0, goldTotal(bot.profile) - BOT_TRADE_FLOAT), Math.floor(inValue / rate));
+      if (pay > 0 && botSetTradeOffer(bot, trade, { gold: pay, items: [] })) { st.lastSig = ''; return; }
+    }
+  }
+  // 2b) Generic trade with my gold already up and negotiation
+  //     pressure applied: re-price my side at the raised figure
+  //     (never past what their goods are worth to me).
+  if (!goalOffer && myOffer.gold > 0 && (theirOffer.items || []).length > 0 && st.raiseFactor) {
+    const target = Math.min(Math.max(0, goldTotal(bot.profile) - BOT_TRADE_FLOAT), Math.floor(inValue / rate * st.raiseFactor), inValue);
+    if (target > myOffer.gold && botSetTradeOffer(bot, trade, { gold: target, items: myOffer.items })) { st.lastSig = ''; return; }
+  }
+  // 3) Confirm when what I get beats what I give at my rate. A
+  //    buy goal also needs the wanted goods actually on the table.
+  let verdict = false;
+  if (rate !== Infinity && inValue > 0) {
+    const goalMet = !(st.intent && st.intent.initiatorKey === key && st.intent.kind === 'buy')
+      || (theirOffer.items || []).some((s) => s.item === st.intent.item && s.qty >= 1);
+    if (outValue === 0) verdict = !!trade.confirmed[partnerKey]; // value for nothing is a gift — only once THEY have confirmed it is meant
+    else verdict = goalMet && inValue >= outValue * rate;
+  }
+  if (verdict) {
+    if (!trade.confirmed[key]) {
+      trade.confirmed[key] = true;
+      sendTradeUpdate(trade);
+      if (trade.confirmed[trade.aKey] && trade.confirmed[trade.bKey]) {
+        executeTrade(trade);
+        bot.tradeState = null;
+        botDealIntents.delete(trade.id);
+      }
+    }
+    return;
+  }
+  // 4) Walk away: an insulting imbalance that is not improving,
+  //    or a trade gone quiet. (The trade's own 120s timer is the
+  //    backstop, exactly as for a human partner.)
+  const insult = outValue > 0 && inValue < outValue * (rate === Infinity ? 1 : rate) * 0.45;
+  if (insult) {
+    if (!st.insultSince) st.insultSince = now;
+    if (now - st.insultSince > BOT_TRADE_INSULT_MS) {
+      const partnerBot = bots.get(partnerKey);
+      cancelTrade(trade, 'Trade cancelled.');
+      botSay(bot, 'Not worth it.');
+      if (partnerBot) botBumpRelation(bot, partnerBot, BOT_REL_INSULT);
+      bot.tradeState = null;
+      botDealIntents.delete(trade.id);
+      return;
+    }
+  } else st.insultSince = 0;
+  if (now - st.lastChangeAt > BOT_TRADE_STALL_MS) {
+    cancelTrade(trade, 'Trade cancelled.');
+    bot.tradeState = null;
+    botDealIntents.delete(trade.id);
+  }
+}
+
+// ----- skill deals: wanting, holding, and asking -----
+// On its own clock a bot with a reason to trade opens one through
+// the real request flow. Acquire deals target bots (their stock
+// is world knowledge; a bot does not cold-call a player hoping
+// they happen to carry potions). Sell deals target any solvent
+// partner standing here, players included.
+function botDealDrive(bot) {
+  const now = Date.now(), sess = bot.sess, profile = bot.profile;
+  if (now - bot.lastDealAt < BOT_DEAL_EVERY_MS / BOT_TIME_SCALE) return;
+  bot.lastDealAt = now;
+  if (isWildArea(sess.area) || sess.area === 'waiting' || sess.area === 'arena') return;
+  if (sess.duelId || sess.modDuelId || sess.npcFightId || sess.barrowsFightId || sess.fcRunId) return;
+  if (activeTradeForKey(bot.key) || pendingTradeForKey(bot.key)) return;
+  const goals = [];
+  for (const w of botWants(bot)) {
+    for (const other of bots.values()) {
+      if (other === bot || other.sess.area !== sess.area) continue;
+      if (botRecentlyDeclined(bot.key, other.key)) continue; // they said no recently — don't badger
+      if (other.sess.duelId || other.sess.modDuelId || activeTradeForKey(other.key) || pendingTradeForKey(other.key)) continue;
+      const surplus = botSurplusQty(other, w.item);
+      if (surplus > 0) goals.push({ kind: 'buy', item: w.item, qty: Math.min(w.qty, surplus), partnerKey: other.key, weight: 26 + botTrait(profile, 'ambition') * 0.3 + Math.max(0, botRelation(profile, other.profile.username)) * 0.2 });
+    }
+  }
+  const stock = botSellableStacks(bot)
+    .map((s) => ({ item: s.item, qty: botSurplusQty(bot, s.item), unit: botMarketValue(s.item) }))
+    .filter((s) => s.qty > 0 && s.unit > 0);
+  const totalUnits = stock.reduce((t, s) => t + s.qty, 0);
+  const best = [...stock].sort((a, b) => b.unit - a.unit)[0];
+  if (best && (best.unit >= 150 || totalUnits >= 6)) {
+    const qty = best.unit >= 150 ? 1 : best.qty;
+    const value = best.unit * qty;
+    for (const [k, s] of online.entries()) {
+      if (k === bot.key || s.area !== sess.area) continue;
+      if (botRecentlyDeclined(bot.key, k)) continue; // they said no recently — don't badger
+      if (s.duelId || s.modDuelId || s.npcFightId || s.barrowsFightId || s.fcRunId) continue;
+      if (activeTradeForKey(k) || pendingTradeForKey(k)) continue;
+      if (goldTotal(s.profile) < value * 0.25) continue; // they could never pay — do not waste the ask
+      goals.push({ kind: 'sell', item: best.item, qty, partnerKey: k, weight: 14 + botTrait(profile, 'greed') * 0.3 + Math.min(20, goldTotal(s.profile) / 50) + Math.max(0, botRelation(profile, s.profile.username)) * 0.2 });
+    }
+  }
+  if (!goals.length) return;
+  const goal = botPickWeighted(bot, goals.map((g) => ({ value: g, weight: g.weight })));
+  const req = botCreateTradeRequest(bot, goal.partnerKey);
+  if (!req) return;
+  botDealIntents.set(req.id, { initiatorKey: bot.key, kind: goal.kind, item: goal.item, qty: goal.qty });
+  const partnerName = db.users[goal.partnerKey] ? db.users[goal.partnerKey].profile.username : goal.partnerKey;
+  const def = itemDef(goal.item);
+  if (goal.kind === 'buy') botSay(bot, `${partnerName} — buying ${goal.qty}× ${def.name}. I'll pay gold.`);
+  else botSay(bot, `Selling ${goal.qty}× ${def.name} — trade me if you want it.`);
+}
+
+
+// ----- the Wilderness: entry, exit, attack orders -----
+// Entry mirrors the travel handler's wild sequence exactly:
+// pendings cancelled, arrive at the spawn, then enterWildState
+// deals the fresh HP pool and clears skull/teleblock.
+function botEnterWild(bot) {
+  const key = bot.key, sess = bot.sess;
+  cancelWildPendings(key);
+  sess.area = 'wilderness';
+  sess.x = AREAS.wilderness.spawn.x;
+  sess.y = AREAS.wilderness.spawn.y;
+  bot.plan = null;
+  bot.moved = true;
+  enterWildState(key, 'wilderness');
+  if (bot.wildTrip) { bot.wildTrip.state = 'in'; bot.wildTrip.enteredAt = Date.now(); }
+  completeStarterGoal(key, 'visit_area'); // the same first-trip goal a human earns
+}
+// Leaving mirrors a player's ditch crossing: exitWildCleanup ends
+// my fights (my quarry escaped / I escaped) and clears the wild
+// state; I wake at the plaza spawn.
+function botExitWild(bot) {
+  exitWildCleanup(bot.key);
+  bot.sess.area = 'plaza';
+  bot.sess.x = AREAS.plaza.spawn.x;
+  bot.sess.y = AREAS.plaza.spawn.y;
+  bot.moved = true;
+  bot.wildTrip = null;
+  bot.plan = null;
+}
+function botHeadHome(bot) {
+  if (bot.sess.y >= WILD_EXIT_MIN_Y) { botExitWild(bot); return; }
+  botStepToward(bot, bot.sess.x, 870, true);
+}
+// The wild_attack handler, mirrored check for check: busy states,
+// the combat bracket at MY position, shallow single-way, the
+// skull rule, then create/engage the pair. Returns whether the
+// attack order landed.
+function botWildAttack(bot, targetRef) {
+  const sess = bot.sess, key = bot.key, profile = bot.profile;
+  if (!isWildArea(sess.area) || sess.area === 'purewild') return false; // Stage 38: bots never enter Pure Wild
+  if (sess.duelId || sess.modDuelId || sess.npcFightId || sess.barrowsFightId || sess.fcRunId) return false;
+  const myRef = wildRefPlayer(key);
+  if (!targetRef || targetRef === myRef) return false;
+  const tC = combatant(targetRef);
+  if (!tC || tC.area !== sess.area) return false;
+  const existing = wildPairBetween(myRef, targetRef);
+  const myCbt = combatLevelOf(levelsOf(profile));
+  const tgtCbt = tC.isPlayer ? combatLevelOf(levelsOf(tC.profile)) : tC.pker.cbt;
+  const lvl = wildLevelAt(sess.y);
+  if (Math.abs(myCbt - tgtCbt) > lvl) return false;
+  if (!existing && Math.min(lvl, wildLevelAt(tC.y)) < 20) {
+    if (wildPairsOf(targetRef).length || wildPairsOf(myRef).length) return false; // shallow wild is single-way
+  }
+  wildSkullCheck(key, targetRef); // striking first skulls — order given, skull taken
+  const pair = existing || createWildPair(sess.area, myRef, targetRef, myRef);
+  if (!tC.isPlayer) tC.pker.targetKey = key; // the PKer turns and answers
+  engageWild(pair, myRef);
+  return true;
+}
+// Eating and drinking in a wild fight (mirrors the 'use'
+// handler's wild branch): food and restore potions heal the wild
+// HP pool; a prayer potion tops the points back up while a
+// Deflect is running.
+function botUseInWild(bot) {
+  const sess = bot.sess, profile = bot.profile, key = bot.key;
+  if (sess.wildHp == null) return false;
+  const foods = profile.backpack
+    .filter((s) => { const d = itemDef(s.item); return d && d.heal; })
+    .sort((a, b) => (itemDef(b.item).heal || 0) - (itemDef(a.item).heal || 0));
+  if (sess.wildHp < sess.wildMaxHp && foods.length) {
+    const item = foods[0].item, def = itemDef(item);
+    removeStacks(profile.backpack, item, 1);
+    sess.wildHp = Math.min(sess.wildMaxHp, sess.wildHp + def.heal);
+    save(key);
+    sendProfile(key);
+    return true;
+  }
+  if (profile.activePrayer && profile.prayerPoints < 8 && stackQty(profile.backpack, 'prayer_potion') > 0) {
+    const def = itemDef('prayer_potion');
+    removeStacks(profile.backpack, 'prayer_potion', 1);
+    profile.prayerPoints = Math.min(profile.prayerMax, profile.prayerPoints + (def.prayerRestore || 0));
+    save(key);
+    sendProfile(key);
+    return true;
+  }
+  return false;
+}
+// What a profile is carrying, at the wild death-valuation — the
+// prize a betrayer is eyeing.
+function botCarriedValue(profile) {
+  let v = 0;
+  for (const s of profile.backpack) v += stackValueOf(s.item, s.qty);
+  return v;
+}
+// THE BETRAYAL DECISION. Pure trait maths over the situation: a
+// score built from greed and risk, dragged down hard by loyalty,
+// sweetened by what the friend is carrying and by the depth (no
+// witnesses up north), cooled by the friendship itself. At the
+// trait extremes it is deterministic by construction: loyalty
+// 100 caps the score below BOT_BETRAY_MIN even at greed/risk
+// 100, and greed 100 / risk 100 / loyalty 0 clears it even
+// against a best friend — everything between is a personality
+// with a dice roll in it, as Derek's autonomy rule demands.
+function botBetrayalRoll(bot, friendBot) {
+  const rel = botRelation(bot.profile, friendBot.profile.username);
+  return botScore(bot, { greed: 0.5, risk: 0.4, loyalty: -0.6 })
+    + Math.min(15, botCarriedValue(friendBot.profile) / 400)
+    + (wildLevelAt(bot.sess.y) / 50) * 10
+    - Math.max(0, rel) * 0.25
+    > BOT_BETRAY_MIN;
+}
+// A betrayal, recorded: the friendship crashes to a deep grudge
+// on BOTH profiles at once (so the victim's own later behaviour —
+// trade refusals, wild hostility — reads the same fact), saved
+// immediately.
+function botCrashRelations(aBot, bBot) {
+  for (const [me, other] of [[aBot, bBot], [bBot, aBot]]) {
+    if (!me.profile.relations || typeof me.profile.relations !== 'object') me.profile.relations = {};
+    me.profile.relations[other.profile.username] = -85;
+    save(me.key);
+  }
+  botRelLastTouch.set(botPairKey(aBot.key, bBot.key), Date.now());
+}
+// Choosing violence while pair-free: the nearest attackable
+// combatant in bracket — grudges pull hardest, friends are
+// off-limits (betrayal is a separate, deliberate act), my own
+// trip partner is never a "target". PKers are fair game.
+function botWildPickTarget(bot) {
+  const sess = bot.sess, profile = bot.profile;
+  const myCbt = combatLevelOf(levelsOf(profile));
+  const lvl = wildLevelAt(sess.y);
+  const entries = [];
+  for (const [k, s] of online.entries()) {
+    if (k === bot.key || s.area !== sess.area) continue;
+    if (s.duelId || s.modDuelId) continue;
+    if (Math.abs(myCbt - combatLevelOf(levelsOf(s.profile))) > lvl) continue;
+    const d = Math.hypot(s.x - sess.x, s.y - sess.y);
+    if (d > 560) continue;
+    if (bot.wildTrip && bot.wildTrip.partnerKey === k) continue;
+    const rel = botRelation(profile, s.profile.username);
+    if (rel >= FRIEND_THRESHOLD) continue;
+    if (Math.min(lvl, wildLevelAt(s.y)) < 20 && wildPairsOf(wildRefPlayer(k)).length) continue; // shallow: no piling
+    let w = 12 - d / 60;
+    if (rel <= BOT_GRUDGE) w += 26; // a grudge makes a target of them
+    else if (rel < 0) w += Math.min(12, -rel / 4);
+    const otherBot = bots.get(k);
+    w += botTrait(profile, 'greed') * 0.05 * Math.min(10, botCarriedValue(otherBot ? otherBot.profile : s.profile) / 500);
+    entries.push({ value: wildRefPlayer(k), weight: Math.max(1, w) });
+  }
+  for (const pk of pkers.values()) {
+    if (!pk.alive || pk.area !== sess.area) continue;
+    if (Math.abs(myCbt - pk.cbt) > lvl) continue;
+    const d = Math.hypot(pk.x - sess.x, pk.y - sess.y);
+    if (d > 560) continue;
+    if (Math.min(lvl, wildLevelAt(pk.y)) < 20 && wildPairsOf(wildRefPker(pk.id)).length) continue;
+    entries.push({ value: wildRefPker(pk.id), weight: Math.max(1, 8 - d / 70 + botTrait(profile, 'aggression') * 0.05) });
+  }
+  if (!entries.length) return null;
+  if (botScore(bot, { aggression: 0.5, risk: 0.3 }) <= 52) return null; // the nerve to hunt at all
+  return botPickWeighted(bot, entries);
+}
+// Trip decisions, made on a slow clock wherever the bot is
+// standing (bots cross between areas by travelling, like every
+// other bot journey — a decision taken at the Training Cave is
+// walked to the ditch the same way a decision taken in the
+// plaza is): nerve first (aggression/risk/ambition), then
+// company — a friend standing here may be invited; whether they
+// come is THEIR roll, made when the invitation lands (see the
+// botThink entry branch).
+function botWildHabits(bot) {
+  const now = Date.now(), sess = bot.sess, profile = bot.profile;
+  if (bot.wildTrip) return;
+  if (now - bot.lastWildAt < BOT_WILD_EVERY_MS / BOT_TIME_SCALE) return;
+  if (sess.duelId || sess.modDuelId || sess.npcFightId || sess.barrowsFightId || sess.fcRunId) return;
+  if (stakeMatchForKey(bot.key) || activeTradeForKey(bot.key) || pendingTradeForKey(bot.key)) return;
+  if ([...challenges.values()].some((ch) => ch.from === bot.key || ch.to === bot.key)) return;
+  bot.lastWildAt = now;
+  if (botScore(bot, { aggression: 0.4, risk: 0.4, ambition: 0.2 }) <= 58) return;
+  let partner = null;
+  // The party system is not area-scoped — a human can invite a
+  // friend across the world, and so can a bot: the friend hears
+  // the invitation wherever they are standing and decides for
+  // themselves whether to come (their own roll, in the botThink
+  // entry branch). A FREE friend is preferred; if every friend is
+  // busy, the best friend is still asked — the trip then waits in
+  // its entry state (the leader holds until joinBy, the partner
+  // crosses when it frees up) instead of degenerating into yet
+  // another solo trip. Waiting for your friend is the point of
+  // travelling together.
+  const friendBase = (o) => o !== bot && !o.wildTrip
+    && !isWildArea(o.sess.area) && o.sess.area !== 'waiting' && o.sess.area !== 'arena'
+    && botRelation(profile, o.profile.username) >= FRIEND_THRESHOLD;
+  const freeFriends = [...bots.values()].filter((o) => friendBase(o)
+    && !o.sess.duelId && !o.sess.modDuelId && !o.sess.npcFightId && !o.sess.fcRunId
+    && !stakeMatchForKey(o.key) && !activeTradeForKey(o.key) && !pendingTradeForKey(o.key));
+  const busyFriends = [...bots.values()].filter((o) => friendBase(o)
+    && (o.sess.duelId || o.sess.modDuelId || o.sess.npcFightId || o.sess.fcRunId
+      || stakeMatchForKey(o.key) || activeTradeForKey(o.key) || pendingTradeForKey(o.key)));
+  const byRelation = (a, b) => botRelation(profile, b.profile.username) - botRelation(profile, a.profile.username);
+  if (botScore(bot, { sociability: 0.5, loyalty: 0.2 }) > 50) {
+    partner = freeFriends.sort(byRelation)[0] || busyFriends.sort(byRelation)[0] || null;
+  }
+  // The trip length compresses with the test clock only down to
+  // a 30s floor: a Wilderness trip is mostly a PKer chase and a
+  // fight, and those run on the real 600ms pair tick in every
+  // clock — a 5s trip would end before the fight even starts.
+  // (Production lengths, 60–150s, never touch the floor.)
+  const until = now + Math.max(30000, botDelay(BOT_WILD_TRIP_MIN_MS, BOT_WILD_TRIP_MAX_MS) / BOT_TIME_SCALE);
+  bot.wildTrip = { mode: partner ? 'team' : 'hunt', partnerKey: partner ? partner.key : null, until, state: 'enter', role: 'leader', joinBy: now + 90000, nextBetrayAt: now + BOT_BETRAY_CHECK_MS / BOT_TIME_SCALE };
+  if (partner) {
+    partner.wildTrip = { mode: 'team', partnerKey: bot.key, until, state: 'enter', role: 'partner', decided: false, nextBetrayAt: now + BOT_BETRAY_CHECK_MS / BOT_TIME_SCALE };
+    const existing = partyOf.get(bot.key);
+    if (!existing || !parties.get(existing) || !parties.get(existing).has(partner.key)) botPartyInvite(bot, partner.key);
+    botSay(bot, `${partner.profile.username} — Wilderness run. Come if you're coming.`);
+  }
+}
+// Life in the wild, one think at a time: upkeep (eat, pray),
+// answer attacks (a friend's attack is a betrayal — crash the
+// friendship, then fight or run like anyone), defend a partner,
+// weigh betrayal while teamed, hunt while solo, and go home when
+// the trip is done or the health is gone. Movement is
+// server-side, like the PKers: an engaged bot chases its target;
+// a fleeing bot runs for the ditch and crosses out.
+function botWildDrive(bot) {
+  const sess = bot.sess, key = bot.key, profile = bot.profile, now = Date.now();
+  if (!bot.wildTrip) bot.wildTrip = { mode: 'hunt', partnerKey: null, until: now + BOT_WILD_TRIP_MIN_MS / BOT_TIME_SCALE, state: 'in', role: 'leader', enteredAt: now, nextBetrayAt: now };
+  const trip = bot.wildTrip;
+  if (!trip.enteredAt) trip.enteredAt = now;
+  const myRef = wildRefPlayer(key);
+  const maxHp = Math.max(1, sess.wildMaxHp || 1);
+  const myHp = sess.wildHp == null ? maxHp : sess.wildHp;
+  const hpFrac = myHp / maxHp;
+  const pairs = wildPairsOf(myRef);
+  let partner = trip.partnerKey ? bots.get(trip.partnerKey) : null;
+  // The grace runs UNSCALED: crossing, deciding, and the pair
+  // engine all run on real time in every clock, so a partner who
+  // is a few real seconds behind is still coming. (Scaled, the
+  // grace shrank to ~2.5s under the test clock and teams dissolved
+  // before the partner arrived.)
+  if (trip.mode === 'team' && partner && partner.sess.area !== 'wilderness' && now - trip.enteredAt > BOT_TEAM_GRACE_MS) {
+    trip.mode = 'hunt'; trip.partnerKey = null; partner = null; // they never came, left, or died — the team is over
+  }
+  // Upkeep while fighting: eat at the player's threshold, and
+  // the praying tiers flick the Deflect that counters their
+  // opponent — the PKers' own habits, on the same rules.
+  if (pairs.length) {
+    if (hpFrac <= 0.45 && now >= bot.wildEatAt && botUseInWild(bot)) bot.wildEatAt = now + 2400;
+    if (bot.def.tier >= 1 && profile.prayerPoints > 0) {
+      const opp = combatant(pairOtherRef(pairs[0], myRef));
+      if (opp) {
+        const want = PRAYER_FOR_ATTACK_STYLE[attackStyleOf(opp.profile)] || null;
+        if (want && profile.activePrayer !== want) { profile.activePrayer = want; save(key); }
+      }
+    }
+  } else if (profile.activePrayer) { profile.activePrayer = null; save(key); }
+  const wantOut = now > trip.until || hpFrac <= 0.25;
+  if (wantOut && !pairs.length) { botHeadHome(bot); return; }
+  let ranSouth = false;
+  if (pairs.length) {
+    for (const pair of pairs) {
+      const otherRef = pairOtherRef(pair, myRef);
+      const opp = combatant(otherRef);
+      if (!opp) continue;
+      const theyStruck = pair.aggro === otherRef;
+      const oppBot = opp.isPlayer ? bots.get(opp.key) : null;
+      if (theyStruck && oppBot && trip.partnerKey === opp.key && botRelation(profile, opp.profile.username) > BOT_GRUDGE) {
+        // My own partner turned on me: the friendship dies here,
+        // whatever happens next.
+        botCrashRelations(bot, oppBot);
+        botSay(bot, `${opp.profile.username}... after everything? Fine.`);
+        trip.mode = 'hunt'; trip.partnerKey = null; partner = null;
+      }
+      if (pair.eng[myRef]) {
+        if (wantOut) { botStepToward(bot, sess.x, 870, true); ranSouth = true; continue; }
+        const range = styleRange(attackStyleOf(profile));
+        if (Math.hypot(sess.x - opp.x, sess.y - opp.y) > range * 0.85) botStepToward(bot, opp.x, opp.y, true);
+        continue;
+      }
+      if (theyStruck) {
+        let s = botScore(bot, { aggression: 0.5, risk: 0.3 });
+        if (hpFrac < 0.3) s -= 25;
+        if (opp.hp() < myHp) s += 8;
+        if (s > 55 && !wantOut) engageWild(pair, myRef);
+        else { botStepToward(bot, sess.x, 870, true); ranSouth = true; }
+      }
+    }
+    if (ranSouth && sess.y >= WILD_EXIT_MIN_Y) { botExitWild(bot); return; }
+    return;
+  }
+  // Defend my partner: their attacker's head, if my loyalty
+  // holds and the engine allows another attacker at this depth.
+  if (partner && partner.sess.area === 'wilderness') {
+    const pRef = wildRefPlayer(partner.key);
+    for (const pair of wildPairsOf(pRef)) {
+      const attRef = pairOtherRef(pair, pRef);
+      if (attRef === myRef) continue;
+      if (botScore(bot, { loyalty: 0.6, aggression: 0.2 }) + Math.max(0, botRelation(profile, partner.profile.username)) * 0.2 > 58) botWildAttack(bot, attRef);
+      break;
+    }
+    if (wildPairsOf(myRef).length) return; // I jumped in — the fight drives the next ticks
+  }
+  // Betrayal: alone with my partner, deep in the wild, carrying
+  // all that loot... The roll is the personality's, not a script.
+  if (trip.mode === 'team' && partner && partner.sess.area === 'wilderness' && now >= (trip.nextBetrayAt || 0)) {
+    trip.nextBetrayAt = now + BOT_BETRAY_CHECK_MS / BOT_TIME_SCALE;
+    if (botBetrayalRoll(bot, partner)) {
+      botCrashRelations(bot, partner);
+      botSay(bot, `Sorry, ${partner.profile.username}. Your stuff is worth more than you are.`);
+      trip.mode = 'hunt'; trip.partnerKey = null;
+      botWildAttack(bot, wildRefPlayer(partner.key));
+      return;
+    }
+  }
+  // Hunt while solo.
+  if (trip.mode === 'hunt') {
+    const t = botWildPickTarget(bot);
+    if (t && botWildAttack(bot, t)) return;
+  }
+  // Movement: a partner shadows its leader; anyone else drifts
+  // on waypoints (hunters push north, into deeper levels).
+  if (trip.mode === 'team' && partner && partner.sess.area === 'wilderness' && trip.role === 'partner') {
+    if (Math.hypot(sess.x - partner.sess.x, sess.y - partner.sess.y) > 120) botStepToward(bot, partner.sess.x, partner.sess.y, true);
+    return;
+  }
+  if (!trip.wp || Math.hypot(sess.x - trip.wp.x, sess.y - trip.wp.y) < 12) {
+    trip.wp = { x: clamp(sess.x + botRandInt(-220, 220), 40, 1560), y: clamp(sess.y + botRandInt(trip.mode === 'hunt' ? -260 : -80, 120), 60, 845) };
+  }
+  botStepToward(bot, trip.wp.x, trip.wp.y, false);
 }
 
 // ----- friendship trickle + decay -----
@@ -9886,6 +10730,55 @@ function botThink(bot) {
     if (bot.profile.activePrayer) { bot.profile.activePrayer = null; save(bot.key); }
     bot.plan = null;
   }
+  // Stage 38: the Wilderness owns a bot while it is out there —
+  // the wild drive fights, flees, hunts, and brings it home. A
+  // pending team-trip invitation launches the same way: answer the
+  // leader's party invite first, then cross.
+  if (isWildArea(sess.area)) { botWildDrive(bot); return; }
+  if (bot.wildTrip && bot.wildTrip.state === 'enter') {
+    const trip = bot.wildTrip;
+    // An open trade or a stake match owns the bot until it ends —
+    // the trip waits (and if it waits too long, the team simply
+    // dissolves into a solo hunt under the grace rule). The trade
+    // is DRIVEN from here, not just waited on: this branch sits
+    // above the trade block in botThink, so a bare return would
+    // stall the trade until its 120s timeout.
+    const busyTrade = activeTradeForKey(bot.key);
+    if (busyTrade) { botTradeDrive(bot, busyTrade); return; }
+    if (stakeMatchForKey(bot.key)) return;
+    if (trip.role === 'partner' && !trip.decided) {
+      trip.decided = true;
+      const leader = bots.get(trip.partnerKey);
+      if (!leader || botScore(bot, { sociability: 0.4, loyalty: 0.3, risk: -0.2 }) <= 52) { bot.wildTrip = null; return; }
+    }
+    if (trip.role === 'leader' && trip.partnerKey) {
+      // A team crosses together: if my partner is still finishing
+      // something (a duel, most often — the pairing scheduler
+      // keeps grabbing them), I wait for them up to the join
+      // deadline, answering their re-invitation if the original
+      // one lapsed while they were busy.
+      const partner = bots.get(trip.partnerKey);
+      const partnerComing = partner && partner.wildTrip && partner.wildTrip.state === 'enter' && partner.wildTrip.partnerKey === bot.key;
+      const partnerBusy = partnerComing && (partner.sess.duelId || partner.sess.modDuelId || partner.sess.npcFightId || partner.sess.fcRunId
+        || activeTradeForKey(partner.key) || stakeMatchForKey(partner.key));
+      if (partnerBusy && now < (trip.joinBy || 0)) {
+        const inv = findPartyInviteForTarget(bot.key);
+        if (inv && inv.inviterKey === trip.partnerKey) botPartyAnswer(bot, inv);
+        return;
+      }
+    }
+    const inv = findPartyInviteForTarget(bot.key);
+    if (inv && inv.inviterKey === trip.partnerKey) botPartyAnswer(bot, inv);
+    else if (trip.role === 'partner' && trip.partnerKey) {
+      // The leader's invitation lapsed while I was busy: renew it
+      // from my side if they are still waiting to cross.
+      const leader = bots.get(trip.partnerKey);
+      if (leader && leader.wildTrip && leader.wildTrip.state === 'enter') botPartyInvite(bot, trip.partnerKey);
+    }
+    botEnterWild(bot);
+    return;
+  }
+  if (bot.wildTrip) bot.wildTrip = null; // a trip that ended (death, exit, a partner who never came) leaves nothing behind
   // A stake match wants a Ready tap after a short human delay.
   const match = stakeMatchForKey(bot.key);
   if (match) {
@@ -9895,6 +10788,10 @@ function botThink(bot) {
   }
   bot.stakeSeenMatch = null;
   if (sess.area === 'waiting') { botTravelTo(bot, 'plaza'); return; } // a cancelled match left us standing there
+  // Stage 38: an open trade owns the bot until it settles or dies.
+  const myTrade = activeTradeForKey(bot.key);
+  if (myTrade) { botTradeDrive(bot, myTrade); return; }
+  if (bot.tradeState) { botDealIntents.delete(bot.tradeState.tradeId); bot.tradeState = null; }
   // Challenges first — they expire in 30s.
   for (const ch of [...challenges.values()]) {
     if (ch.from === bot.key || ch.to === bot.key) botChallengeDrive(bot, ch);
@@ -9903,11 +10800,13 @@ function botThink(bot) {
   // Social answers.
   const inv = findPartyInviteForTarget(bot.key);
   if (inv) botPartyAnswer(bot, inv);
-  for (const req of [...tradeRequests.values()]) if (req.toKey === bot.key) botDeclineTrade(bot, req);
+  botTradeRequestsDrive(bot); // Stage 38: trade requests are answered for real now (Stage 37 declined them all)
   botPartyMaintain(bot);
   // Habits: Stake Board business in the plaza, friend business
   // anywhere — then the day job.
   if (sess.area === 'plaza') botPlazaHabits(bot);
+  botDealDrive(bot); // Stage 38: skill deals, in any safe area
+  if (!isWildArea(sess.area) && sess.area !== 'waiting' && sess.area !== 'arena') botWildHabits(bot); // Stage 38: Wilderness trip decisions, made wherever the bot is standing
   botFriendHabits(bot);
   botPlanDrive(bot);
 }
