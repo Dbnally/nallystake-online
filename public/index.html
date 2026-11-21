@@ -37,25 +37,36 @@
  .orb.sp .fill{background:#c9a227}.orb.sp{background:#40340a}
  .orb.sp.ready{box-shadow:0 0 12px 3px #c9a227}
 .orb.run{background:#2b2118}.orb.run.on{background:#40340a;box-shadow:0 0 12px 3px #c9a227}
- /* right rail */
- #rail{position:fixed;right:6px;top:190px;z-index:30;display:flex;flex-direction:column;gap:6px;max-height:calc(100dvh - 198px)}
- #rail>.railchip{flex:none}
+ /* panel dock (Interface Overhaul): the one-screen RS-style panel
+    cluster, docked at the right edge under the minimap. One unit:
+    a controls row (the master 🎛️ toggle + Grab / Menu tap / Camera
+    chips), a TAB BAR holding every panel tab, and the panel box
+    itself showing the active tab in place. No slide-in drawer, no
+    scrolling rail, no loop copies — the tabs wrap inside the dock.
+    The 🎛️ toggle hides the chips + tab bar (the persisted
+    nallystake_rail_open choice); an open panel box stays open,
+    exactly as collapsing the old rail never closed an open panel. */
+ #paneldock{position:fixed;right:6px;top:190px;z-index:40;width:min(344px,88vw);display:flex;flex-direction:column;gap:6px;pointer-events:none}
+ #dockhead{display:flex;gap:6px;align-items:flex-start;pointer-events:none}
+ #dockhead>*{pointer-events:auto}
+ #dockhead .railchip{flex:1}
  .rbtn{width:46px;height:46px;border-radius:10px;background:rgba(23,19,16,var(--uia));border:2px solid #7a6748;color:#e8d9b0;font-size:20px;cursor:pointer}
  .rbtn.on{border-color:#c9a227;background:#3a2c1c}
  #gearbtn{width:46px;height:46px;border-radius:10px;background:linear-gradient(135deg,#c9a227,#7a6748);border:2px solid #e3c766;color:#fff;font-size:22px;cursor:pointer;box-shadow:0 0 10px #c9a22755;flex:none}
- /* Stage 25: the button set scrolls — and loops (three copies of the
-    set, silently recentred; see buildRailLoop). Scrollbar hidden.
-    While Grab is on the set is .locked: no scrolling, arranging only. */
- #railset{display:none;flex-direction:column;gap:6px;overflow-y:auto;scrollbar-width:none;min-height:0;flex:1 1 auto;touch-action:pan-y}
- #railset::-webkit-scrollbar{display:none}
- #railset.open{display:flex}
- #railset.locked{overflow-y:hidden;touch-action:none}
- #railset .rbtn{flex:none}
- /* drawer */
- #drawer{position:fixed;top:40px;right:58px;z-index:40;width:min(330px,80vw);max-height:calc(100dvh - 210px);overflow-y:auto;background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:12px;padding:10px;display:none}
- #drawer.open{display:block}
- #drawer h3{margin:2px 0 8px;color:#e3c766;font-size:16px;display:flex;justify-content:space-between;align-items:center}
- #drawer h3 .x{background:none;border:0;color:#e8d9b0;font-size:18px;cursor:pointer}
+ /* the tab bar: every panel one tap away, wrapped in the dock.
+    While Grab is on the bar is .locked: no touch scrolling gestures,
+    arranging only. */
+ #docktabs{display:none;flex-wrap:wrap;gap:6px;background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:12px;padding:6px;pointer-events:auto}
+ #docktabs.open{display:flex}
+ #docktabs.locked{touch-action:none}
+ #docktabs .rbtn{flex:none}
+ /* the panel box: fixed in the dock, in place — the active tab's
+    content lives here, under its title bar, and scrolls internally */
+ #dockpanel{width:100%;box-sizing:border-box;background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:12px;padding:10px;display:none;pointer-events:auto}
+ #dockpanel.open{display:block}
+ #dockpanel h3{margin:2px 0 8px;color:#e3c766;font-size:16px;display:flex;justify-content:space-between;align-items:center}
+ #dockpanel h3 .x{background:none;border:0;color:#e8d9b0;font-size:18px;cursor:pointer}
+ #dockbody{max-height:max(140px,calc(100dvh - 430px));overflow-y:auto}
  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
  .cell{background:#221a13;border:1px solid #4a3a28;border-radius:8px;min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:3px;position:relative}
  .cell.sel{border-color:#c9a227;background:#3a2c1c}
@@ -294,7 +305,7 @@
  /* Stage 18: the chips under the master toggle (Grab / Menu tap / Camera) */
  .railchip{width:46px;min-height:30px;border-radius:10px;border:2px solid #7a6748;background:linear-gradient(180deg,#3a2f22,#241c13);color:#e8d9b0;font-size:10px;font-weight:700;cursor:pointer;padding:2px 0;line-height:1.25}
  .railchip.on{background:#2e7d32;color:#eaffea;border-color:#66bb6a}
- body.grabbing #railset .rbtn{cursor:grab;outline:2px dashed rgba(102,187,106,.65);outline-offset:-2px}
+ body.grabbing #docktabs .rbtn{cursor:grab;outline:2px dashed rgba(102,187,106,.65);outline-offset:-2px}
  /* Stage 23: Grab mode is modal — a standing hint while it's on */
  #grabhint{position:fixed;top:calc(92px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:58;display:none;max-width:94vw;background:rgba(43,33,24,.95);border:2px solid #66bb6a;color:#eaffea;border-radius:999px;padding:8px 14px;font-size:12.5px;font-weight:800;text-align:center;pointer-events:none;box-shadow:0 4px 18px rgba(0,0,0,.5)}
  body.grabbing #grabhint{display:block}
@@ -366,12 +377,14 @@
  <div id="xpdrops"></div>
 </div>
 
-<div id="rail">
- <button id="gearbtn" title="Show / hide all buttons">🎛️</button>
- <button id="railgrab" class="railchip" title="Grab mode: drag the panel buttons where you want them, then toggle off to lock them">✋ Grab</button>
- <button id="railmenutap" class="railchip" title="Menu tap: taps on players, monsters, nodes and piles open their menu instead of acting">🖱️ Menu tap: Off</button>
- <button id="railcam" class="railchip" title="Camera view: third person / first person">🎥 3rd</button>
- <div id="railset">
+<div id="paneldock">
+ <div id="dockhead">
+  <button id="gearbtn" title="Show / hide the panel tabs">🎛️</button>
+  <button id="railgrab" class="railchip" title="Grab mode: drag the panel tabs where you want them, then toggle off to lock them">✋ Grab</button>
+  <button id="railmenutap" class="railchip" title="Menu tap: taps on players, monsters, nodes and piles open their menu instead of acting">🖱️ Menu tap: Off</button>
+  <button id="railcam" class="railchip" title="Camera view: third person / first person">🎥 3rd</button>
+ </div>
+ <div id="docktabs">
   <button class="rbtn" data-panel="backpack" title="Backpack">🎒</button>
   <button class="rbtn" data-panel="worn" title="Worn items">🗡️</button>
   <button class="rbtn" data-panel="shop" title="Shops">🏪</button>
@@ -388,9 +401,8 @@
   <button class="rbtn" data-panel="teleport" title="Teleport">🌀</button>
   <button class="rbtn" data-panel="settings" title="Settings">🎛️</button>
  </div>
+ <div id="dockpanel"><h3><span id="docktitle">Panel</span><button class="x" id="dockx">✕</button></h3><div id="dockbody"></div></div>
 </div>
-
-<div id="drawer"><h3><span id="drawertitle">Panel</span><button class="x" id="drawerx">✕</button></h3><div id="drawerbody"></div></div>
 
 <div id="joy"><div id="knob"></div></div>
 
@@ -600,10 +612,10 @@ function myQty(id){ return me? stackQtyOf(me.backpack,id):0; }
 // Returns false when the socket is not open, so callers (chat above
 // all) can tell the player instead of silently swallowing the action.
 // Playtest fix: shop sends are time-stamped so the error handler can
-// pin a shop refusal inside the shop drawer (see shopNotice below) —
+// pin a shop refusal inside the shop panel (see shopNotice below) —
 // a 2.6s toast alone was easy to miss while shopping.
 let lastShopSendAt=0;
-let shopNotice=''; // last shop refusal, shown persistently inside the shop drawer until a shop action succeeds
+let shopNotice=''; // last shop refusal, shown persistently inside the shop panel until a shop action succeeds
 function send(o){ if(o&&(o.type==='shop_buy'||o.type==='shop_sell')) lastShopSendAt=Date.now(); if(o&&o.type==='use') sfxDrink(); if(ws&&ws.readyState===1){ ws.send(JSON.stringify(o)); return true; } return false; }
 let toastTimer=null;
 function toast(t){ const el=$('toast'); el.textContent=t; el.style.display='block'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.style.display='none',2600); }
@@ -656,9 +668,11 @@ if(typeof settings.uiAlpha!=='number') settings.uiAlpha=0.78;
 if(typeof settings.run!=='boolean') settings.run=true; // run toggle defaults ON; a saved off stays off
 if(!settings.hidden||typeof settings.hidden!=='object') settings.hidden={};
 function saveSettings(){ try{ localStorage.setItem(SETTINGS_KEY,JSON.stringify(settings)); }catch(e){} applySettings(); }
-/* Stage 9+10 §4: ONE master button (🎛️) shows/hides the WHOLE rail of
-   panel buttons as a group. It never hides itself, collapsing the rail
-   never closes an open panel, and the choice persists on this device. */
+/* Stage 9+10 §4: ONE master button (🎛️) shows/hides the dock's tab
+   bar + chips as a group. It never hides itself, collapsing the tabs
+   never closes an open panel, and the choice persists on this device
+   (the nallystake_rail_open key — kept from the rail days so saved
+   choices carry forward untouched). */
 let railOpen=true;
 try{ railOpen=localStorage.getItem('nallystake_rail_open')!=='0'; }catch(e){}
 /* Stage 36 fix: grabMode MUST be declared up here, before initThree()
@@ -670,22 +684,27 @@ try{ railOpen=localStorage.getItem('nallystake_rail_open')!=='0'; }catch(e){}
    bindings, the declaration itself), and every later frame threw
    before renderer.render: black scene, dead panels. */
 let grabMode=false;
-/* Stage 41: the fight-state lets live up here too (same rule as grabMode): animate() reaches them through fightOppAvatar() from its very first frame, so they must be initialised before initThree() runs. */
+/* Stage 41: the fight-state lets live up here too, beside grabMode.
+   Stage 37b's pair-framing (fightOppAvatar, called from animate())
+   reads duel / npcFight / fcRun; they used to be declared thousands
+   of lines below initThree(), so the first frame hit their TDZ and
+   froze the whole client — the Stage 36 bug, second verse. Declared
+   here they precede the initThree() call site, and initThree now
+   schedules the first frame with requestAnimationFrame besides.
+   Their only declarations are these; the sections below assign. */
 let duel=null;
 let npcFight=null;
-let fcRun=null; // {wave,hpYou,maxHpYou,targetId,targetHp,energyYou} — my active run
+let fcRun=null; // {wave,hpYou,maxHpYou,targetId,targetHp,energyYou} — my active Fight Caves run
 function applyRailVisibility(){
- const rs=$('railset'); if(rs) rs.classList.toggle('open',railOpen);
+ const rs=$('docktabs'); if(rs) rs.classList.toggle('open',railOpen);
  const gb=$('gearbtn'); if(gb) gb.textContent=railOpen?'✕':'🎛️';
- for(const id of ['railgrab','railmenutap','railcam']){ const c=$(id); if(c) c.style.display=railOpen?'':'none'; } // Stage 18: the chips follow the rail
- document.querySelectorAll('#railset .rbtn').forEach(b=>{ b.style.display=settings.hidden[b.dataset.panel]?'none':''; });
+ for(const id of ['railgrab','railmenutap','railcam']){ const c=$(id); if(c) c.style.display=railOpen?'':'none'; } // Stage 18: the chips follow the tab bar
+ document.querySelectorAll('#docktabs .rbtn').forEach(b=>{ b.style.display=settings.hidden[b.dataset.panel]?'none':''; });
  refreshToolsBtn();
- syncRailCopies(); // Stage 25: loop copies of placed / admin-gated buttons stay out of the scroll flow
- if(railOpen) requestAnimationFrame(()=>railLoopCentre(true)); // Stage 25: (re)centre the loop whenever the rail opens
 }
 /* Stage 7D: the 🛠️ Tools button exists only for admins/owners (and
    still obeys the Settings visibility toggle). Re-checked whenever the
-   rail is drawn and on every profile refresh, so a promotion (or
+   dock is drawn and on every profile refresh, so a promotion (or
    demotion) shows/hides it without a reload. */
 function refreshToolsBtn(){
  const tb=$('toolsbtn'); if(!tb) return;
@@ -698,15 +717,15 @@ function applySettings(){
 window.toggleRail=function(){ railOpen=!railOpen; try{ localStorage.setItem('nallystake_rail_open',railOpen?'1':'0'); }catch(e){} applyRailVisibility(); };
 $('gearbtn').onclick=()=>toggleRail();
 window.setCamSpeed=function(v){ settings.camSpeed=clamp(parseFloat(v)||1.5,0.25,3); const el=$('camspeedval'); if(el) el.textContent=settings.camSpeed+'×'; saveSettings(); };
-window.setGroundTap=function(m){ settings.groundTap=(m==='face')?'face':'walk'; saveSettings(); renderDrawer(); };
+window.setGroundTap=function(m){ settings.groundTap=(m==='face')?'face':'walk'; saveSettings(); renderDock(); };
 /* Stage 18: menu-tap mode (Part B) + camera POV (Part E) setters.
-   Both persist in the settings store and refresh their rail chips. */
-window.setTapMode=function(m){ settings.tapMode=(m==='menu')?'menu':'normal'; saveSettings(); renderMenuTapChip(); if(drawerPanel==='settings') renderDrawer(); };
-window.setCamPov=function(v){ settings.camPov=(v==='first')?'first':'third'; saveSettings(); renderCamChip(); if(drawerPanel==='settings') renderDrawer(); };
+   Both persist in the settings store and refresh their dock chips. */
+window.setTapMode=function(m){ settings.tapMode=(m==='menu')?'menu':'normal'; saveSettings(); renderMenuTapChip(); if(dockPanel==='settings') renderDock(); };
+window.setCamPov=function(v){ settings.camPov=(v==='first')?'first':'third'; saveSettings(); renderCamChip(); if(dockPanel==='settings') renderDock(); };
 /* Stage 37b: fight-feel toggles, same setter shape as the camera
    ones — persisted in the settings store, panel re-renders in sync. */
-window.setSoundOn=function(v){ settings.soundOn=!!v; saveSettings(); if(settings.soundOn) sfxClick(); if(drawerPanel==='settings') renderDrawer(); };
-window.setShakeOn=function(v){ settings.shakeOn=!!v; saveSettings(); if(drawerPanel==='settings') renderDrawer(); };
+window.setSoundOn=function(v){ settings.soundOn=!!v; saveSettings(); if(settings.soundOn) sfxClick(); if(dockPanel==='settings') renderDock(); };
+window.setShakeOn=function(v){ settings.shakeOn=!!v; saveSettings(); if(dockPanel==='settings') renderDock(); };
 window.toggleCamPov=function(){ setCamPov(settings.camPov==='first'?'third':'first'); };
 function renderMenuTapChip(){ const b=$('railmenutap'); if(!b) return; const on=settings.tapMode==='menu'; b.textContent=on?'🖱️ Menu tap: On':'🖱️ Menu tap: Off'; b.classList.toggle('on',on); }
 function renderCamChip(){ const b=$('railcam'); if(!b) return; const fp=settings.camPov==='first'; b.textContent=fp?'🎥 1st':'🎥 3rd'; b.classList.toggle('on',fp); b.title=fp?'Camera: first person — tap for third person':'Camera: third person — tap for first person'; }
@@ -723,7 +742,7 @@ window.saveCamSet=function(n){
  s[n]={pov:settings.camPov, pitch:Math.round(camPitch*100)/100, speed:settings.camSpeed};
  saveSettings();
  toast(`📸 Camera set ${n+1} saved: ${settings.camPov==='first'?'👀 First person':'🎥 Third person'} · tilt ${s[n].pitch.toFixed(2)} · speed ${settings.camSpeed}×`);
- if(drawerPanel==='settings') renderDrawer();
+ if(dockPanel==='settings') renderDock();
 };
 window.useCamSet=function(n){
  const s=camSetsArr()[n];
@@ -754,7 +773,7 @@ window.setQuick=function(n){
  if(!selStack){ toast('Select an item in your backpack first.'); return; }
  quick[n]=selStack; saveQuick();
  toast(`⭐ Quick ${n} set to ${iconOf(selStack)} ${nameOf(selStack)}`);
- renderDrawer();
+ renderDock();
 };
 window.useQuick=function(n){
  const id=quick[n];
@@ -780,10 +799,10 @@ try{ const hv=JSON.parse(localStorage.getItem(HIGHLIGHT_KEY)||'[]'); if(Array.is
 function saveHighlights(){ try{ localStorage.setItem(HIGHLIGHT_KEY,JSON.stringify([...highlights])); }catch(e){} }
 window.toggleHighlight=function(item){
  if(highlights.has(item)) highlights.delete(item); else highlights.add(item);
- saveHighlights(); renderDrawer();
+ saveHighlights(); renderDock();
 };
 let examineStack=null; // backpack item id whose Examine block is open in the detail sheet
-window.toggleExamine=function(item){ examineStack=(examineStack===item)?null:item; renderDrawer(); };
+window.toggleExamine=function(item){ examineStack=(examineStack===item)?null:item; renderDock(); };
 // The server catalog never lists the two tokens (no buy price, sellOnly 0),
 // so recognise them by id as well as by catalog kind.
 const TOKEN_IDS={nc:1,certificate:1};
@@ -964,7 +983,7 @@ function onAreaMsg(m){
 function onStateMsg(m){
  if(m.area&&m.area!==curArea&&holdActive()){ heldStateMsg=m; return; }
  if(m.area&&m.area!==curArea) setArea(m.area);
- players=m.players||[]; initMyPos(); syncAvatars(); if(drawerPanel==='players') renderDrawer(); drawMinimap();
+ players=m.players||[]; initMyPos(); syncAvatars(); if(dockPanel==='players') renderDock(); drawMinimap();
 }
 function releaseHeldMsgs(){
  if(heldStateMsg){ const m=heldStateMsg; heldStateMsg=null; heldAreaMsg=null; onStateMsg(m); }
@@ -979,8 +998,8 @@ function onMsg(m){
  if(m.type==='ping'){ send({type:'pong'}); return; }
  if(m.type==='pong'){ return; }
  if(m.type==='welcome'){ welcomed=true; quickAttempt=false; wasInGame=true; const wasReconnect=reconnecting; stopReconnect(); reconnectMs=1000; if(wasReconnect){ toast('✅ Reconnected.'); logLine('✅ Reconnected.'); } flushChatOutbox(); me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); maybeShowActivityPicker(); }
- if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(Array.isArray(m.spells)) spellList=m.spells; if(drawerPanel==='shop') renderDrawer(); renderQuickButtons(); renderSpellBtns(); for(const av of Object.values(avatars)) av.gearSig=null; }
- if(m.type==='exchange_prices'){ goods={}; for(const g of (m.goods||[])) goods[g.id]=g; if(drawerPanel==='exchange') renderDrawer(); drawMinimap(); }
+ if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(Array.isArray(m.spells)) spellList=m.spells; if(dockPanel==='shop') renderDock(); renderQuickButtons(); renderSpellBtns(); for(const av of Object.values(avatars)) av.gearSig=null; }
+ if(m.type==='exchange_prices'){ goods={}; for(const g of (m.goods||[])) goods[g.id]=g; if(dockPanel==='exchange') renderDock(); drawMinimap(); }
  if(m.type==='state'){ onStateMsg(m); }
  if(m.type==='area'){ onAreaMsg(m); }
  if(m.type==='player_fell'){ onPlayerFell(m); }
@@ -1012,26 +1031,26 @@ function onMsg(m){
  if(m.type==='fire_lit'){ toast('🔥 Fire lit (60s)'); }
  if(m.type==='cook_result'){ if(m.ok) toast(`🍳 Cooked! +1 ${nameOf(m.item)}`); else toast('🔥 Burnt it…'); }
  if(m.type==='fletch_result'){ toast(`🪵 Fletched! +${m.qty} ${nameOf(m.item)}`); }
- if(m.type==='smelt_result'){ toast(`🔥 Smelted ${m.qty} × ${nameOf(m.bar)} (+${m.xp} Smithing XP)`); logLine(`🔥 Smelted ${m.qty} × ${nameOf(m.bar)} (+${m.xp} Smithing XP)`); if(drawerPanel==='smithy') renderDrawer(); }
+ if(m.type==='smelt_result'){ toast(`🔥 Smelted ${m.qty} × ${nameOf(m.bar)} (+${m.xp} Smithing XP)`); logLine(`🔥 Smelted ${m.qty} × ${nameOf(m.bar)} (+${m.xp} Smithing XP)`); if(dockPanel==='smithy') renderDock(); }
  if(m.type==='smith_state'){ onSmithState(m); }
  if(m.type==='upgrade_result'){ if(m.ok){ toast(`⬆️ Upgraded to ${nameOf(m.item)}!`); logLine(`⬆️ Upgraded to ${nameOf(m.item)} (+${m.xp||0} Smithing XP)`); } else { toast('⬆️ The upgrade failed — the bar was lost, your item is unharmed.'); logLine('⬆️ Upgrade failed — bar lost, item unharmed.'); } }
  if(m.type==='xp'){ onXpDrop(m); }
  if(m.type==='level_up'){ onLevelUp(m); }
  if(m.type==='player_level_up'){ onPlayerLevelUp(m); }
  if(m.type==='announce'){ showBanner(m.text); logLine(m.text); }
- if(m.type==='starter'){ starterGoals=m.goals||[]; if(drawerPanel==='goals') renderDrawer(); }
+ if(m.type==='starter'){ starterGoals=m.goals||[]; if(dockPanel==='goals') renderDock(); }
  if(m.type==='starter_done'){ toast(`✅ Starter goal: ${m.label} — +${m.reward}g`); logLine(`✅ Starter goal complete: ${m.label} — +${m.reward}g!`); }
- if(m.type==='clog'){ clogFound=m.found||[]; clogTotal=m.total||13; if(drawerPanel==='goals') renderDrawer(); }
+ if(m.type==='clog'){ clogFound=m.found||[]; clogTotal=m.total||13; if(dockPanel==='goals') renderDock(); }
  if(m.type==='profile'){ me=m.profile; renderAll(); onProfileForNotes(); onProfileForAppearance(); maybeOpenAppearance(); }
  if(m.type==='note_text'){ openNoteReader(m); }
  if(m.type==='note_request'){ queueNoteRequest(m); }
- if(m.type==='admin_notes'){ lastAdminNotes=m.notes||[]; if(drawerPanel==='admin') renderDrawer(); }
+ if(m.type==='admin_notes'){ lastAdminNotes=m.notes||[]; if(dockPanel==='admin') renderDock(); }
  if(m.type==='chat'){ logLine(`${m.from}: ${m.text}`); showBubble(m.from,m.text); if(!me||m.from!==me.username) bumpUnread(); }
  if(m.type==='error'){ toast('⚠️ '+m.message); logLine('⚠️ '+m.message);
    // Playtest fix: a refusal to a shop action also pins itself in
-   // the shop drawer, where the player's eyes already are — the
+   // the shop panel, where the player's eyes already are — the
    // toast + chat line above still happen.
-   if(lastShopSendAt && Date.now()-lastShopSendAt<2000){ shopNotice=m.message; lastShopSendAt=0; if(drawerPanel==='shop') renderDrawer(); }
+   if(lastShopSendAt && Date.now()-lastShopSendAt<2000){ shopNotice=m.message; lastShopSendAt=0; if(dockPanel==='shop') renderDock(); }
    if(pendingGiveAfterSign){ pendingGiveAfterSign=null; } // the sign failed — the error above says why
    if(/chest is locked behind the puzzle door/.test(m.message||'')){ puzzleSolved=false; renderBarrowsBar(); openPuzzle(); }
    if(activeNode && /level|used up|not here|No such spot/.test(m.message||'')) stopGather();
@@ -1050,21 +1069,21 @@ function onMsg(m){
  if(m.type==='challenge_terms'){ adoptChallengeTerms(m); }
  if(m.type==='challenge_closed'){ if(chalTerms&&m.challengeId===chalTerms.challengeId){ chalTerms=null; chalNotice=false; stopIncomingTimer(); closeModal('challengemodal'); closeModal('incomingmodal'); toast('Challenge ended — nothing was taken.'); } }
  if(m.type==='challenging'){ if(m.area===curArea&&m.from) challengeMarks[m.from]={to:m.to||null,expires:Date.now()+30000}; }
- if(m.type==='challenge_clear'){ if(m.from){ delete challengeMarks[m.from]; if(incomingCh&&incomingCh.from===m.from) incomingCh=null; if(chalTerms&&chalTerms.from===m.from){ chalTerms=null; chalNotice=false; stopIncomingTimer(); closeModal('challengemodal'); closeModal('incomingmodal'); } if(drawerPanel==='players') renderDrawer(); } }
+ if(m.type==='challenge_clear'){ if(m.from){ delete challengeMarks[m.from]; if(incomingCh&&incomingCh.from===m.from) incomingCh=null; if(chalTerms&&chalTerms.from===m.from){ chalTerms=null; chalNotice=false; stopIncomingTimer(); closeModal('challengemodal'); closeModal('incomingmodal'); } if(dockPanel==='players') renderDock(); } }
  if(m.type==='admin_note'){ toast(m.text); logLine(`👑 Admin: ${m.text}`); }
- if(m.type==='admin_list'){ lastAdminList=m.players||[]; if(drawerPanel==='admin') renderDrawer(); }
- if(m.type==='online_list'){ lastOnlineList=m.players||[]; if(drawerPanel==='admin') renderDrawer(); }
- if(m.type==='city_ideas'){ lastCityIdeas=m.ideas||[]; if(Array.isArray(m.areas)&&m.areas.length) cityIdeaAreas=m.areas; if(drawerPanel==='admin') renderDrawer(); }
- if(m.type==='objects'){ objectsByArea[m.area]=m.objects||[]; if(m.area===curArea) rebuildObjects(); if(drawerPanel==='tools') renderDrawer(); }
- if(m.type==='ref_lists'){ lastRefLists=m; if(drawerPanel==='tools') renderDrawer(); }
- if(m.type==='custom_created'){ toolArtDirty=false; if(drawerPanel==='tools') renderDrawer(); }
- if(m.type==='custom_edited'){ toolArtDirty=false; if(drawerPanel==='tools') renderDrawer(); }
+ if(m.type==='admin_list'){ lastAdminList=m.players||[]; if(dockPanel==='admin') renderDock(); }
+ if(m.type==='online_list'){ lastOnlineList=m.players||[]; if(dockPanel==='admin') renderDock(); }
+ if(m.type==='city_ideas'){ lastCityIdeas=m.ideas||[]; if(Array.isArray(m.areas)&&m.areas.length) cityIdeaAreas=m.areas; if(dockPanel==='admin') renderDock(); }
+ if(m.type==='objects'){ objectsByArea[m.area]=m.objects||[]; if(m.area===curArea) rebuildObjects(); if(dockPanel==='tools') renderDock(); }
+ if(m.type==='ref_lists'){ lastRefLists=m; if(dockPanel==='tools') renderDock(); }
+ if(m.type==='custom_created'){ toolArtDirty=false; if(dockPanel==='tools') renderDock(); }
+ if(m.type==='custom_edited'){ toolArtDirty=false; if(dockPanel==='tools') renderDock(); }
  if(m.type==='fight_offer'){ openFightOffer(m); }
  if(m.type==='cert_request'){ openCertRequest(m); }
  if(m.type==='whisper'){ if(m.to) logLine(`💬 you → ${m.to}: ${m.text}`); else { logLine(`💬 ${m.from} → you: ${m.text}`); bumpUnread(); } }
  if(m.type==='examine'){ openExamine(m); }
  if(m.type==='party_invite'){ openPartyInvite(m); }
- if(m.type==='party'){ myParty=m.members||[]; if(drawerPanel==='players') renderDrawer(); }
+ if(m.type==='party'){ myParty=m.members||[]; if(dockPanel==='players') renderDock(); }
  if(m.type==='trade_incoming'){ openTradeIncoming(m); }
  if(m.type==='trade_open'){ openTrade(m); }
  if(m.type==='trade_update'){ onTradeUpdate(m); }
@@ -1081,7 +1100,7 @@ function onMsg(m){
 }
 
 /* ================= HUD / orbs ================= */
-function renderAll(){ renderHUD(); renderOrbs(); refreshToolsBtn(); if(drawerPanel) renderDrawer(); if(fcRun) renderFcBar(); drawMinimap(); if($('stakeboardmodal').classList.contains('open')) renderStakeBoard(); }
+function renderAll(){ renderHUD(); renderOrbs(); refreshToolsBtn(); if(dockPanel) renderDock(); if(fcRun) renderFcBar(); drawMinimap(); if($('stakeboardmodal').classList.contains('open')) renderStakeBoard(); }
 function renderHUD(){
  if(!me) return;
  $('hudname').textContent=me.username;
@@ -1147,7 +1166,7 @@ function onXpDrop(m){
  }
  if(m.level>prevLevel){ toast(`⚔️ Level up! ${SKILL_ICON[m.skill]||''} ${SKILL_NAME[m.skill]||m.skill} is now level ${m.level}`); logLine(`⚔️ Level up! ${SKILL_NAME[m.skill]||m.skill} is now level ${m.level}.`); }
  renderHUD();
- if(drawerPanel==='skills') renderDrawer();
+ if(dockPanel==='skills') renderDock();
 }
 
 /* ================= Stage 20: the rewarding layer ================= */
@@ -1249,9 +1268,9 @@ async function fetchBoards(){
    boardRows=(boardTab==='duels'? d.leaderboard : d.hiscores)||[];
  }catch{ boardRows=[]; }
  boardLoading=false;
- if(drawerPanel==='players') renderDrawer();
+ if(dockPanel==='players') renderDock();
 }
-window.setBoardTab=function(t){ if(boardTab===t) return; boardTab=t; boardRows=null; fetchBoards(); if(drawerPanel==='players') renderDrawer(); };
+window.setBoardTab=function(t){ if(boardTab===t) return; boardTab=t; boardRows=null; fetchBoards(); if(dockPanel==='players') renderDock(); };
 function pBoards(){
  let h=`<h4 style="margin:14px 0 5px;color:#e3c766">🏆 Boards</h4>`;
  h+=`<div style="display:flex;gap:6px;margin-bottom:6px"><button class="${boardTab==='duels'?'act':'ghost'}" style="flex:1" onclick="setBoardTab('duels')">⚔️ Duels</button><button class="${boardTab==='hiscores'?'act':'ghost'}" style="flex:1" onclick="setBoardTab('hiscores')">🏆 Hiscores</button></div>`;
@@ -2735,7 +2754,7 @@ function refreshChalBadges(){
  let dirty=false;
  for(const k of Object.keys(challengeMarks)) if(challengeMarks[k].expires<=Date.now()){ delete challengeMarks[k]; dirty=true; }
  for(const [name,a] of Object.entries(avatars)){ if(a.chalEl) a.chalEl.textContent=chalMark(name)?'❗':''; }
- if(dirty&&drawerPanel==='players') renderDrawer();
+ if(dirty&&dockPanel==='players') renderDock();
 }
 function syncAvatars(){
  if(!scene||!me) return;
@@ -5616,61 +5635,70 @@ function initThree(){
    else if(o.material&&o.material.isMeshLambertMaterial){ o.castShadow=true; o.receiveShadow=true; }
  });
  addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
- requestAnimationFrame(animate); // Stage 41 fix: the first frame is SCHEDULED, not run inside initThree — a synchronous first frame reads fight-state lets (duel/npcFight/fcRun) declared later in the script, and the TDZ ReferenceError aborted all remaining top-level init (Stage 36's bug class, reintroduced by Stage 37b's fightOppAvatar call in animate)
+ // Stage 41: the first frame is SCHEDULED, never called synchronously
+ // from here. initThree() runs during script load; a synchronous
+ // animate() executes before the rest of the script has been
+ // evaluated, and any `let` it touches that is declared further down
+ // (grabMode in Stage 36; duel / npcFight / fcRun via Stage 37b's
+ // fightOppAvatar) throws a TDZ error that aborts all remaining
+ // top-level initialisation — black world, dead panels. A rAF
+ // callback can only fire after the current task (the whole script)
+ // has finished, so every declaration is live by the first frame.
+ requestAnimationFrame(animate);
  return true;
 }
 initThree();
 
-/* ================= drawer panels ================= */
-let drawerPanel=null, shopTab='Potion', shopMode='buy', bankQty='1', selStack=null, selIdx=-1, packSorted=false; // Stage 29: selIdx = the backpack slot selStack was tapped in (exact-spot equip swaps)
+/* ================= dock panels (Interface Overhaul) ================= */
+let dockPanel=null, shopTab='Potion', shopMode='buy', bankQty='1', selStack=null, selIdx=-1, packSorted=false; // Stage 29: selIdx = the backpack slot selStack was tapped in (exact-spot equip swaps)
 const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',spellbook:'📖 Spellbook',players:'👥 Players online',admin:'👑 Admin',tools:'🛠️ Admin Tools',skills:'📊 Skills',goals:'📋 Goals & Log',smithy:'🔥 Emberfall Smithy',teleport:'🌀 Teleport',settings:'🎛️ Settings'};
-function togglePanel(name){ drawerPanel===(name)? closeDrawer() : openPanel(name); }
-function openPanel(name){ drawerPanel=name; selStack=null; selIdx=-1; if(name!=='shop') shopNotice=''; if(name==='backpack') packSorted=false; $('drawer').classList.add('open'); renderDrawer();
+function togglePanel(name){ dockPanel===(name)? closeDock() : openPanel(name); }
+function openPanel(name){ dockPanel=name; selStack=null; selIdx=-1; if(name!=='shop') shopNotice=''; if(name==='backpack') packSorted=false; $('dockpanel').classList.add('open'); renderDock();
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.toggle('on',b.dataset.panel===name));
  if(name==='admin') refreshAdminLists();
  if(name==='players'&&boardRows===null) fetchBoards(); // Stage 20: boards load on open
  if(name==='tools'&&isAdminOrOwner()) send({type:'ref_lists'}); }
-function closeDrawer(){ drawerPanel=null; $('drawer').classList.remove('open');
+function closeDock(){ dockPanel=null; $('dockpanel').classList.remove('open');
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.remove('on')); }
 document.querySelectorAll('.rbtn').forEach(b=>b.onclick=()=>{ if(b._suppressClickUntil&&Date.now()<b._suppressClickUntil) return; togglePanel(b.dataset.panel); });
-$('drawerx').onclick=closeDrawer;
+$('dockx').onclick=closeDock;
 function itemCell(s,onclick,extra){
  const hl=highlights.has(s.item);
  return `<div class="cell ${extra||''}${hl?' hl':''}" onclick="${onclick}">${hl?'<span class="hlb">⭐</span>':''}<span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${itemIconHTML(s.item,24,s.qty)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
 }
-function renderDrawer(){
- if(!drawerPanel||!me) return;
- $('drawertitle').textContent=PANEL_TITLES[drawerPanel]||'Panel';
- const b=$('drawerbody');
- if(drawerPanel==='backpack') b.innerHTML=pBackpack();
- if(drawerPanel==='worn') b.innerHTML=pWorn();
- if(drawerPanel==='shop') b.innerHTML=pShop();
- if(drawerPanel==='bank') b.innerHTML=pBank();
- if(drawerPanel==='exchange') b.innerHTML=pExchange();
- if(drawerPanel==='prayers') b.innerHTML=pPrayers();
- if(drawerPanel==='spellbook') b.innerHTML=pSpellbook();
- if(drawerPanel==='players') b.innerHTML=pPlayers();
- if(drawerPanel==='admin') b.innerHTML=pAdmin();
- if(drawerPanel==='tools') b.innerHTML=pTools();
- if(drawerPanel==='skills') b.innerHTML=pSkills();
- if(drawerPanel==='goals') b.innerHTML=pGoals();
- if(drawerPanel==='smithy') b.innerHTML=pSmithy();
- if(drawerPanel==='teleport') b.innerHTML=pTeleport();
- if(drawerPanel==='settings') b.innerHTML=pSettings();
- if(drawerPanel==='bank') applyBankFilter();
- if(drawerPanel==='tools') initToolCanvas(); // Stage 8: restore the drawing canvas after every tools render
- if(drawerPanel==='backpack') wireBpCells(); // Stage 9+10 §8: tap / hold / drag gestures
- if(drawerPanel==='bank') wireBankDrag(); // Stage 9+10 §8: drag a backpack cell onto the bank grid = deposit
- if(drawerPanel==='spellbook') wireSpellPlace(); // Stage 24: 📌 drag-out placement for cast buttons
+function renderDock(){
+ if(!dockPanel||!me) return;
+ $('docktitle').textContent=PANEL_TITLES[dockPanel]||'Panel';
+ const b=$('dockbody');
+ if(dockPanel==='backpack') b.innerHTML=pBackpack();
+ if(dockPanel==='worn') b.innerHTML=pWorn();
+ if(dockPanel==='shop') b.innerHTML=pShop();
+ if(dockPanel==='bank') b.innerHTML=pBank();
+ if(dockPanel==='exchange') b.innerHTML=pExchange();
+ if(dockPanel==='prayers') b.innerHTML=pPrayers();
+ if(dockPanel==='spellbook') b.innerHTML=pSpellbook();
+ if(dockPanel==='players') b.innerHTML=pPlayers();
+ if(dockPanel==='admin') b.innerHTML=pAdmin();
+ if(dockPanel==='tools') b.innerHTML=pTools();
+ if(dockPanel==='skills') b.innerHTML=pSkills();
+ if(dockPanel==='goals') b.innerHTML=pGoals();
+ if(dockPanel==='smithy') b.innerHTML=pSmithy();
+ if(dockPanel==='teleport') b.innerHTML=pTeleport();
+ if(dockPanel==='settings') b.innerHTML=pSettings();
+ if(dockPanel==='bank') applyBankFilter();
+ if(dockPanel==='tools') initToolCanvas(); // Stage 8: restore the drawing canvas after every tools render
+ if(dockPanel==='backpack') wireBpCells(); // Stage 9+10 §8: tap / hold / drag gestures
+ if(dockPanel==='bank') wireBankDrag(); // Stage 9+10 §8: drag a backpack cell onto the bank grid = deposit
+ if(dockPanel==='spellbook') wireSpellPlace(); // Stage 24: 📌 drag-out placement for cast buttons
 }
 /* ---- Backpack ---- */
-window.selBp=function(item){ selStack=selStack===item?null:item; examineStack=null; renderDrawer(); };
+window.selBp=function(item){ selStack=selStack===item?null:item; examineStack=null; renderDock(); };
 window.lightFire=function(){ send({type:'light_fire'}); };
 window.cookItem=function(item){
  if(!fireNearby()){ toast('No fire nearby — light one with Logs first'); return; }
  send({type:'cook',item});
 };
-window.packBackpack=function(){ packSorted=true; renderDrawer(); toast('🎒 Packed — everything pulled to the top, in order.'); };
+window.packBackpack=function(){ packSorted=true; renderDock(); toast('🎒 Packed — everything pulled to the top, in order.'); };
 /* ---- Stage 7C: Examine block (built from catalog data, no server call) ---- */
 const KIND_LABEL={food:'Food',potion:'Potion',weapon:'Weapon',armour:'Armour',tool:'Tool',resource:'Resource',good:'Trade good',token:'Token',trophy:'Trophy',currency:'Money',rune:'Rune',ammo:'Arrows',arrowhead:'Arrowheads'};
 const KIND_DESC={food:'Eat it to heal.',potion:'Drink it to restore yourself.',weapon:'Wield it to fight with it.',armour:'Wear it to protect yourself in a fight.',tool:'A tool — it speeds up the work it is made for.',resource:'A raw material — cook it, smelt it, smith with it, or sell it.',good:'A trade good — its price drifts on the Gold Exchange.',trophy:'A hard-won trophy. Wear it to show what you beat.',currency:'Your money, as a stack of coins. It lives in your backpack (or the bank) — shops, stakes and trades draw from both stacks together.',rune:'Spent to cast spells — each spell burns only its own element. Wizards drop runes.',ammo:'Ammunition for bows. Each shot spends 1 arrow from the FIRST arrow stack in your backpack — reorder your stacks (drag them in the backpack) to choose which arrows are spent first.',arrowhead:'Fletch it with a log to make 10 arrows of its tier — use the 🪵 Fletch button. Rangers drop arrowheads.'};
@@ -5844,8 +5872,8 @@ function pWorn(){
  return h;
 }
 /* ---- Shops ---- */
-window.setShopTab=function(t){ shopTab=t; renderDrawer(); };
-window.setShopMode=function(m){ shopMode=m; renderDrawer(); };
+window.setShopTab=function(t){ shopTab=t; renderDock(); };
+window.setShopMode=function(m){ shopMode=m; renderDock(); };
 function trendMark(t){ return t==='up'?' <span style="color:#8fd07a" title="Price is up on demand">▲</span>':(t==='down'?' <span style="color:#ff9d8a" title="Price is down on demand">▼</span>':''); } // Pricing: demand trend marker
 function pShop(){
  let h=`<div class="tabs">${shopNames.map(s=>`<button class="${s===shopTab?'on':''}" onclick="setShopTab('${s}')">${esc(s)}</button>`).join('')}</div>`;
@@ -5882,9 +5910,9 @@ function bankCat(item){
 window.setBankQty=function(q){
  if(q==='x'){ const v=parseInt(prompt('How many?','10'),10); bankXQty=(isFinite(v)&&v>=1)? Math.min(9999,v) : 10; bankQty='x'; }
  else bankQty=q;
- renderDrawer();
+ renderDock();
 };
-window.setBankTab=function(t){ bankTab=t; renderDrawer(); };
+window.setBankTab=function(t){ bankTab=t; renderDock(); };
 window.bankSearchInput=function(v){ bankSearch=v||''; applyBankFilter(); };
 function bankValue(){ return (me?me.bank:[]).reduce((t,s)=>{ const d=catalog[s.item]; const v=d? d.buy : (goods[s.item]? goods[s.item].price : 0); return t+v*s.qty; },0); }
 function qtyFor(owned){ if(bankQty==='all') return owned; if(bankQty==='x') return Math.min(owned,bankXQty); return Math.min(owned, bankQty==='10'?10 : bankQty==='5'?5 : 1); }
@@ -5892,9 +5920,9 @@ function bankCell(s,onclick){
  return `<div class="cell" data-cat="${bankCat(s.item)}" data-item="${s.item}" data-qty="${s.qty}" data-name="${esc(nameOf(s.item)).toLowerCase()}" onclick="${onclick}"><span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${itemIconHTML(s.item,24,s.qty)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
 }
 function applyBankFilter(){
- if(drawerPanel!=='bank') return;
+ if(dockPanel!=='bank') return;
  const q=bankSearch.trim().toLowerCase();
- document.querySelectorAll('#drawerbody .cell[data-cat]').forEach(c=>{
+ document.querySelectorAll('#dockbody .cell[data-cat]').forEach(c=>{
    const okCat=(bankTab==='all'||c.dataset.cat===bankTab);
    const okQ=(!q||c.dataset.name.includes(q));
    c.style.display=(okCat&&okQ)?'':'none';
@@ -6094,7 +6122,7 @@ let toolPropKind='tree';
 /* Stage 8: tint + drawn art state. The tint is an on/off flag + a hex
    (a colour input always shows SOME value, so the flag is the truth).
    The drawing lives in module vars exactly like the text fields: the
-   canvas element is rebuilt on every drawer render, so on pointer-up
+   canvas element is rebuilt on every panel render, so on pointer-up
    the drawing is saved to toolArtData and restored by initToolCanvas. */
 let toolColor='', toolColorOn=false;
 let toolEditColor='', toolEditColorOn=false;
@@ -6114,15 +6142,15 @@ window.toolsEditField=function(){
  if(tc) toolEditColor=tc.value;
 };
 window.toolColorInput=function(v){ toolColor=v; toolColorOn=true; const el=$('toolcolortxt'); if(el) el.textContent=v; };
-window.toolColorClear=function(){ toolsField(); toolColorOn=false; renderDrawer(); };
+window.toolColorClear=function(){ toolsField(); toolColorOn=false; renderDock(); };
 window.toolEditColorInput=function(v){ toolEditColor=v; toolEditColorOn=true; const el=$('tooleditcolortxt'); if(el) el.textContent=v; };
-window.toolEditColorClear=function(){ toolsEditField(); toolEditColorOn=false; renderDrawer(); };
+window.toolEditColorClear=function(){ toolsEditField(); toolEditColorOn=false; renderDock(); };
 window.toolBaseChange=function(v){
  toolBase=v;
  const d=catalog[v]; // prefill the stats with the base item's own — the server's clone defaults
  if(d){ toolAcc=String(Math.round((d.accBonus||0)*100)); toolMax=String(d.maxBonus||0); toolRed=String(Math.round((d.reduction||0)*100)); }
  toolArtData=null; toolArtDirty=false; // the drawing canvas restarts from the new base's picture
- renderDrawer();
+ renderDock();
 };
 window.toolEditPick=function(id){
  toolEditId=id;
@@ -6132,7 +6160,7 @@ window.toolEditPick=function(id){
    toolEditColor=d.color||''; toolEditColorOn=!!d.color; // Stage 8: load its tint…
    toolArtData=d.art||null; toolArtDirty=false; // …and its drawing (or its icon as the guide)
  }
- renderDrawer();
+ renderDock();
 };
 /* The art payload for a save: the live canvas when it's on screen,
    downscaled 96→64→48 until it fits the server's cap. */
@@ -6185,8 +6213,8 @@ function initToolCanvas(){
  const end=()=>{ if(!drawing) return; drawing=false; toolArtData=cv.toDataURL('image/png'); toolArtDirty=true; };
  cv.addEventListener('pointerup',end); cv.addEventListener('pointercancel',end);
 }
-window.toolBrushPick=function(c){ toolBrush=c; toolErase=false; renderDrawer(); };
-window.toolEraser=function(){ toolErase=!toolErase; renderDrawer(); };
+window.toolBrushPick=function(c){ toolBrush=c; toolErase=false; renderDock(); };
+window.toolEraser=function(){ toolErase=!toolErase; renderDock(); };
 window.toolArtClear=function(){
  const cv=$('toolcanvas'); if(cv) cv.getContext('2d').clearRect(0,0,96,96);
  toolArtData=null; toolArtDirty=true; // cleared IS a change: a save sends the blank canvas
@@ -6231,11 +6259,11 @@ window.lookPick=function(id){
  lookIcon=(d&&d.look&&d.icon)? d.icon : ''; // the override's icon when one is live, else "item's own"
  lookColor=(d&&d.color)? d.color : '';
  lookColorOn=!!(d&&d.color);
- renderDrawer();
+ renderDock();
 };
 window.lookField=function(){ const i=$('lookicon'); if(i) lookIcon=i.value; };
 window.lookColorInput=function(v){ lookColor=v; lookColorOn=true; const t=$('lookcolortxt'); if(t) t.textContent=v; };
-window.lookColorClear=function(){ lookColor=''; lookColorOn=false; renderDrawer(); };
+window.lookColorClear=function(){ lookColor=''; lookColorOn=false; renderDock(); };
 window.adminSetLook=function(){
  if(!lookItemId){ toast('Pick a base item first.'); return; }
  // Both fields always ride, so the save means exactly what the
@@ -6400,7 +6428,7 @@ function onSmithState(m){
  } else {
    smithState={item:m.item,progress:m.progress||0,heat:(typeof m.heat==='number'?m.heat:100),at:Date.now()};
  }
- if(drawerPanel==='smithy') renderDrawer();
+ if(dockPanel==='smithy') renderDock();
 }
 // The server cools heat 1 point per 2s; mirror that locally for the bar.
 function smithHeatShown(){
@@ -6445,7 +6473,7 @@ function pSmithy(){
 window.doTravel=function(to){
  if(to===curArea){ toast('You are already here.'); return; }
  send({type:'travel',to,via:'teleport'}); // Stage 30: teleports say so (no teleporting out of the deep wild)
- closeDrawer();
+ closeDock();
 };
 function pTeleport(){
  const here=(a)=>a===curArea;
@@ -6466,7 +6494,7 @@ function pTeleport(){
 /* ---- Settings ---- */
 const PANEL_LIST=[['backpack','🎒 Backpack'],['worn','🗡️ Worn items'],['shop','🏪 Shops'],['bank','🏦 Bank'],['exchange','💱 Gold Exchange'],['prayers','🙏 Prayers'],['spellbook','📖 Spellbook'],['players','👥 Players'],['admin','👑 Admin'],['tools','🛠️ Admin Tools'],['skills','📊 Skills'],['smithy','🔥 Smithy'],['teleport','🌀 Teleport'],['settings','🎛️ Settings']];
 function pSettings(){
- let h=`<div class="setrow"><span class="grow">🎨 Appearance<br><span class="note">Change how your knight looks</span></span><button class="act" onclick="closeDrawer();openAppearance()">🎨 Appearance</button></div>`;
+ let h=`<div class="setrow"><span class="grow">🎨 Appearance<br><span class="note">Change how your knight looks</span></span><button class="act" onclick="closeDock();openAppearance()">🎨 Appearance</button></div>`;
  h+=`<div class="setrow"><span class="grow">📷 Camera drag speed<br><span class="note">Screen-drag rotation &amp; tilt, camera stick</span></span><input type="range" min="0.25" max="3" step="0.25" value="${settings.camSpeed}" oninput="setCamSpeed(this.value)"><b id="camspeedval" style="color:#e3c766;min-width:34px;text-align:right">${settings.camSpeed}×</b></div>`;
  h+=`<div class="setrow"><span class="grow">👆 Ground tap mode</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.groundTap==='walk'?'on':''}" onclick="setGroundTap('walk')">🚶 Walk</button><button class="${settings.groundTap==='face'?'on':''}" onclick="setGroundTap('face')">🧭 Face</button></div>`;
  h+=`<p class="note" style="margin:2px 0 8px">Walk: tapping the ground walks there. Face: tapping just turns your knight to face that spot.</p>`;
@@ -6869,20 +6897,31 @@ function openTradeIncoming(m){
    it moves back. There is NO catalogue restriction: everything in
    the pack can be offered (custom items included) except the gold
    stack itself (the amount field moves money) and notes (personal
-   — the server refuses them, so they're shown locked). */
-let trade=null; // {id, with, you:{gold,items}, them:{gold,items}, youConfirmed, themConfirmed}
+   — the server refuses them, so they're shown locked).
+   Trade inventories (Derek, 2026-11-21): the window now shows BOTH
+   full backpacks — yours and your partner's, each labelled, each
+   with that player's gold as the FIRST slot (the server sends
+   youInv/themInv on every trade_update, so both packs stay live).
+   Tap an item in THEIR backpack to ask for it: an ask moves
+   nothing by itself — a human partner answers by offering the
+   item (tap the "they're asking you for" chip, or the item in
+   their own backpack); a bot partner puts the asked item into
+   its offer through its own pricing logic. */
+let trade=null; // {id, with, you:{gold,items}, them:{gold,items}, youConfirmed, themConfirmed, youInv, themInv, youAsked, themAsked}
 let tradeCancelMine=false; // I hit Cancel — the echoing trade_done stays quiet
 let tradeQtyStep=1; // how much one tap moves: 1, 5, or 'all'
 function openTrade(m){
- trade={id:m.tradeId,with:m.with,you:{gold:0,items:[]},them:{gold:0,items:[]},youConfirmed:false,themConfirmed:false};
+ trade={id:m.tradeId,with:m.with,you:{gold:0,items:[]},them:{gold:0,items:[]},youConfirmed:false,themConfirmed:false,youInv:m.youInv||null,themInv:m.themInv||null,youAsked:[],themAsked:[]};
  tradeCancelMine=false;
  $('tradesheet').innerHTML=`<h3>🤝 Trading with ${esc(m.with)}</h3>
  <div class="rowline"><span class="grow">Gold to offer (you have ${me?me.gold:0}g)</span><input type="number" id="tradegold" value="0" min="0"></div>
  <div class="seg"><button class="tqbtn on" data-tq="1">Tap moves 1</button><button class="tqbtn" data-tq="5">5</button><button class="tqbtn" data-tq="all">All</button></div>
  <div style="font-weight:800;color:#e3c766;margin:6px 0 4px">Your backpack — tap an item to offer it</div>
  <div id="tradebp"></div>
+ <div style="font-weight:800;color:#e3c766;margin:8px 0 4px">${esc(m.with)}'s backpack — tap an item to ask for it</div>
+ <div id="tradebp2"></div>
  <div id="tradestate"></div>
- <p class="note" style="margin-top:8px">Tap an item in your offer to take it back. Changing your offer un-confirms BOTH sides — always re-check before confirming.</p>
+ <p class="note" style="margin-top:8px">Tap an item in your offer to take it back. Changing your offer un-confirms BOTH sides — always re-check before confirming. Asking for an item moves nothing until they offer it and both sides confirm.</p>
  <div class="btns"><button class="act" id="tradeconfirm">Confirm trade</button><button class="ghost" id="tradecancel">Cancel</button></div>`;
  $('trademodal').classList.add('open');
  renderTradeState();
@@ -6900,9 +6939,9 @@ function sendTradeOffer(items){
  const list=(items||trade.you.items||[]).map(s=>({item:s.item,qty:s.qty}));
  send({type:'trade_offer',tradeId:trade.id,gold:g,items:list});
 }
-window.tradeTapAdd=function(idx){
+window.tradeTapAdd=function(item){
  if(!trade||!me) return;
- const s=me.backpack[idx]; if(!s||s.item==='gold') return;
+ const s=(me.backpack||[]).find(x=>x.item===item); if(!s||s.item==='gold') return;
  const offered=tradeOfferQty(s.item);
  const step=tradeQtyStep==='all'? s.qty : tradeQtyStep;
  const nq=Math.min(s.qty,offered+step);
@@ -6921,17 +6960,93 @@ window.tradeTapBack=function(item){
  if(nq>0) items.push({item,qty:nq});
  sendTradeOffer(items);
 };
+/* My inventory for the trade window: slot 1 is ALWAYS my gold
+   (the coin pile + my total purse), then my backpack stacks. The
+   server's youInv is the live source; before the first update
+   lands, fall back to my own profile (same shape). */
+function tradeInvMine(){
+ if(trade&&trade.youInv) return trade.youInv;
+ return { gold: me?me.gold:0, items:(me?me.backpack:[]).filter(s=>s.item!=='gold').map(s=>({item:s.item,qty:s.qty})) };
+}
 function renderTradeBp(){
  const el=$('tradebp'); if(!el||!trade||!me) return;
- if(!me.backpack.length){ el.innerHTML=`<p class="note">Your backpack is empty — gold-only trade.</p>`; return; }
- const cells=me.backpack.map((s,i)=>{
-   if(s.item==='gold') return ''; // money moves via the gold field, never as an item
+ const inv=tradeInvMine();
+ const goldOffered=trade.you.gold||0;
+ let cells=`<div class="cell" onclick="var g=document.getElementById('tradegold'); if(g){ g.focus(); g.select(); }" title="Your gold — slot 1. Tap, then type an amount above to offer some."><span class="ic">${itemIconHTML('gold',24,Math.max(1,inv.gold))}</span><span class="nm">🪙 ${inv.gold}g</span>${goldOffered?`<span class="hlb">✔${goldOffered} offered</span>`:''}</div>`;
+ cells+=inv.items.map((s)=>{
    const d=catalog[s.item];
    if(d&&d.kind==='note') return `<div class="cell empty" title="Notes are personal — they can't be traded"><span class="ic">${itemIconHTML(s.item,24,s.qty)}</span><span class="nm">🔒 personal</span></div>`;
    const offered=tradeOfferQty(s.item), left=s.qty-offered;
-   return `<div class="cell${left>0?'':' empty'}" ${left>0?`onclick="tradeTapAdd(${i})"`:''} title="Tap to offer"><span class="q">${left>1?left:''}</span><span class="ic">${itemIconHTML(s.item,24,Math.max(1,left))}</span><span class="nm">${esc(nameOf(s.item))}</span>${offered?`<span class="hlb">✔${offered}</span>`:''}</div>`;
+   return `<div class="cell${left>0?'':' empty'}" ${left>0?`onclick="tradeTapAdd('${s.item}')"`:''} title="Tap to offer"><span class="q">${left>1?left:''}</span><span class="ic">${itemIconHTML(s.item,24,Math.max(1,left))}</span><span class="nm">${esc(nameOf(s.item))}</span>${offered?`<span class="hlb">✔${offered}</span>`:''}</div>`;
  }).join('');
  el.innerHTML=`<div class="grid">${cells}</div>`;
+}
+/* ---- Their backpack: read-and-ask. Slot 1 is THEIR gold; every
+   cell tap asks for more of that stack (the 1/5/All step applies);
+   the ask shows as a badge and in the "You're asking them for"
+   line under their offer. ---- */
+function tradeAskedQty(item){ if(!trade) return 0; const s=(trade.youAsked||[]).find(x=>x.item===item); return s? s.qty:0; }
+window.tradeTapAsk=function(item){
+ if(!trade||!trade.themInv) return;
+ let held=0;
+ if(item==='gold') held=trade.themInv.gold;
+ else { const s=(trade.themInv.items||[]).find(x=>x.item===item); held=s? s.qty:0; }
+ if(held<1) return;
+ const asked=tradeAskedQty(item);
+ const step=tradeQtyStep==='all'? held : tradeQtyStep;
+ const nq=Math.min(held,asked+step);
+ if(nq===asked){ toast(`You're already asking for all their ${item==='gold'?'gold':nameOf(item)}.`); return; }
+ send({type:'trade_request_item',tradeId:trade.id,item,qty:nq});
+};
+window.tradeTapAskBack=function(item){
+ if(!trade) return;
+ const asked=tradeAskedQty(item);
+ if(asked<1) return;
+ const step=tradeQtyStep==='all'? asked : tradeQtyStep;
+ send({type:'trade_request_item',tradeId:trade.id,item,qty:Math.max(0,asked-step)});
+};
+function renderTradeBp2(){
+ const el=$('tradebp2'); if(!el||!trade) return;
+ const inv=trade.themInv;
+ if(!inv){ el.innerHTML=`<p class="note">Waiting for their inventory…</p>`; return; }
+ let cells=`<div class="cell" onclick="tradeTapAsk('gold')" title="Tap to ask for gold"><span class="ic">${itemIconHTML('gold',24,Math.max(1,inv.gold))}</span><span class="nm">🪙 ${inv.gold}g</span>${tradeAskedQty('gold')?`<span class="hlb">ask ${tradeAskedQty('gold')}g</span>`:''}</div>`;
+ cells+=inv.items.map((s)=>{
+   const d=catalog[s.item];
+   if(d&&d.kind==='note') return `<div class="cell empty" title="Notes are personal — they can't be traded"><span class="ic">${itemIconHTML(s.item,24,s.qty)}</span><span class="nm">🔒 personal</span></div>`;
+   const inOffer=tradeOfferQty2(s.item), asked=tradeAskedQty(s.item);
+   const badges=[inOffer?`✔${inOffer} in offer`:'', asked?`ask ${asked}`:''].filter(Boolean).join(' · ');
+   return `<div class="cell" onclick="tradeTapAsk('${s.item}')" title="Tap to ask for this"><span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${itemIconHTML(s.item,24,s.qty)}</span><span class="nm">${esc(nameOf(s.item))}</span>${badges?`<span class="hlb">${badges}</span>`:''}</div>`;
+ }).join('');
+ el.innerHTML=`<div class="grid">${cells}</div>`;
+}
+function tradeOfferQty2(item){ if(!trade) return 0; const s=(trade.them.items||[]).find(x=>x.item===item); return s? s.qty:0; }
+/* A chip in the "they're asking you for" line: tapping it offers
+   exactly what they asked for (or as much of it as I hold) through
+   the normal offer path — my tap, my offer, both confirms. */
+window.tradeAskChip=function(item){
+ if(!trade||!me) return;
+ const ask=(trade.themAsked||[]).find(x=>x.item===item); if(!ask) return;
+ if(item==='gold'){
+   const gEl=$('tradegold'); if(gEl) gEl.value=Math.min(ask.qty,me.gold);
+   sendTradeOffer();
+   return;
+ }
+ const s=(me.backpack||[]).find(x=>x.item===item);
+ if(!s){ toast(`You don't have any ${nameOf(item)} to offer.`); return; }
+ const want=Math.min(ask.qty,s.qty);
+ const items=(trade.you.items||[]).filter(x=>x.item!==item);
+ if(want>0) items.push({item,qty:want});
+ sendTradeOffer(items);
+};
+function askChips(list,mine){
+ return (list||[]).map(s=>{
+   if(s.item==='gold') return mine
+     ? `<button class="fchip" onclick="tradeAskChip('gold')" title="Tap to put this much gold in your offer">🪙 ${s.qty}g</button>`
+     : `<button class="fchip" onclick="tradeTapAskBack('gold')" title="Tap to ask for less">🪙 ${s.qty}g ↩</button>`;
+   return mine
+     ? `<button class="fchip" onclick="tradeAskChip('${s.item}')" title="Tap to offer this">${itemIconHTML(s.item,16,s.qty)} ${esc(nameOf(s.item))} ×${s.qty}</button>`
+     : `<button class="fchip" onclick="tradeTapAskBack('${s.item}')" title="Tap to ask for less">${itemIconHTML(s.item,16,s.qty)} ${esc(nameOf(s.item))} ×${s.qty} ↩</button>`;
+ }).join(' ');
 }
 function offerChips(o,mine){
  const parts=[];
@@ -6944,16 +7059,23 @@ function offerChips(o,mine){
 function renderTradeState(){
  if(!trade) return;
  renderTradeBp();
+ renderTradeBp2();
  const el=$('tradestate'); if(!el) return;
- el.innerHTML=`<div class="detail"><b>Your offer</b> <span class="note">— tap an item to take it back</span><br>${offerChips(trade.you,true)}<br><span class="note">${trade.youConfirmed?'You confirmed ✓':'You have not confirmed yet.'}</span></div>
- <div class="detail"><b>${esc(trade.with)}'s offer</b><br>${offerChips(trade.them,false)}<br><span class="note">${trade.themConfirmed?'They confirmed ✓':'They have not confirmed yet.'}</span></div>
+ el.innerHTML=`<div class="detail"><b>Your offer</b> <span class="note">— tap an item to take it back</span><br>${offerChips(trade.you,true)}<br><span class="note">${trade.youConfirmed?'You confirmed ✓':'You have not confirmed yet.'}</span>${(trade.themAsked&&trade.themAsked.length)?`<br><span class="note" style="color:#e3c766">${esc(trade.with)} is asking you for:</span> ${askChips(trade.themAsked,true)} <span class="note">— tap one to offer it</span>`:''}</div>
+ <div class="detail"><b>${esc(trade.with)}'s offer</b><br>${offerChips(trade.them,false)}<br><span class="note">${trade.themConfirmed?'They confirmed ✓':'They have not confirmed yet.'}</span>${(trade.youAsked&&trade.youAsked.length)?`<br><span class="note" style="color:#e3c766">You're asking them for:</span> ${askChips(trade.youAsked,false)} <span class="note">— tap one to ask for less</span>`:''}</div>
  ${trade.youConfirmed&&!trade.themConfirmed?'<p class="note" style="margin-top:6px">Waiting for them to confirm…</p>':''}`;
  const cb=$('tradeconfirm');
  if(cb){ cb.disabled=!!trade.youConfirmed; cb.textContent=trade.youConfirmed?'✓ Confirmed — waiting…':'Confirm trade'; }
 }
 function onTradeUpdate(m){
  if(!trade||m.tradeId!==trade.id) return;
+ const prevAsked=JSON.stringify(trade.themAsked||[]);
  trade.you=m.you; trade.them=m.them; trade.youConfirmed=!!m.youConfirmed; trade.themConfirmed=!!m.themConfirmed;
+ if(m.youInv) trade.youInv=m.youInv; // both inventories ride every update — both packs stay live
+ if(m.themInv) trade.themInv=m.themInv;
+ trade.youAsked=m.youAsked||[]; trade.themAsked=m.themAsked||[];
+ if(JSON.stringify(trade.themAsked)!==prevAsked && trade.themAsked.length && $('trademodal').classList.contains('open'))
+   toast(`🤝 ${trade.with} is asking you for something — see the trade window.`);
  if($('trademodal').classList.contains('open')) renderTradeState(); // server-state sections only — my inputs stay untouched
 }
 function onTradeDone(m){
@@ -7013,7 +7135,7 @@ function followTick(){
  }
 }
 /* ================= duel UI ================= */
-/* (let duel / let npcFight are declared early — see the Stage 41 note beside grabMode.) */
+// duel / npcFight are declared early, beside grabMode (Stage 41).
 /* Tap-to-engage: my swings only start once I've tapped my opponent
    (duel_attack) or the server's auto-retaliate kicks in. The hint shows
    until I'm engaged — tapped, or one of my swings shows in a tick. */
@@ -7165,7 +7287,7 @@ function startDuelUI(m){
  $('duellast').textContent='Fight! Land hits to charge your Dragon Slash (50%).';
  renderDuelBar(); renderAll();
 }
-/* Stage 23: the duel row's prayer chips mirror the Prayers drawer —
+/* Stage 23: the duel row's prayer chips mirror the Prayers panel —
    active one lit gold, all greyed in a No Prayer duel (visual only;
    the server is the real gate). */
 function syncBarPrayers(noPray){
@@ -7558,7 +7680,7 @@ function modDuelUI(m){
  }
 }
 /* ================= Fight Caves UI (Stage 4) ================= */
-/* (let fcRun is declared early — see the Stage 41 note beside grabMode.) */
+// fcRun is declared early, beside grabMode (Stage 41).
 let prevFcHp={}, prevFcMyHp=null; // Stage 8: last-seen HP per cave monster + me (hitsplats from drops)
 let jadWarnStyle=null, jadWarnTimer=null;
 function renderFcBar(){
@@ -7743,7 +7865,7 @@ applySettings();
 renderQuickButtons();
 // While a piece is on the anvil, refresh the Smithy panel once a second so
 // the heat bar visibly cools (the server fades heat 1 point per 2 seconds).
-setInterval(()=>{ if(smithState&&drawerPanel==='smithy') renderDrawer(); refreshChalBadges(); },1000);
+setInterval(()=>{ if(smithState&&dockPanel==='smithy') renderDock(); refreshChalBadges(); },1000);
 // Stage 7B: follow mode steering (checks 3× a second; stepMovement does the walking).
 setInterval(followTick,300);
 
@@ -7838,7 +7960,7 @@ function cancelUse(silent){
  if(!useMode&&!pendingUseCook&&!pendingUseLogs) return;
  useMode=null; pendingUseCook=null; pendingUseLogs=null;
  renderUseChip();
- if(drawerPanel==='backpack') renderDrawer();
+ if(dockPanel==='backpack') renderDock();
 }
 window.armUse=function(item){
  if(!me||myQty(item)<1){ toast("You don't have that any more."); return; }
@@ -7848,7 +7970,7 @@ window.armUse=function(item){
  if(d0&&d0.kind==='arrowhead'){ send({type:'fletch',item}); return; }
  useMode={item};
  renderUseChip();
- if(drawerPanel==='backpack') renderDrawer(); // paints the pulsing gold outline
+ if(dockPanel==='backpack') renderDock(); // paints the pulsing gold outline
 };
 $('usechip').onclick=()=>cancelUse();
 function resolveUseTap(cx,cy){
@@ -7993,7 +8115,7 @@ function bpPrimaryTap(item,idx){
  if(d&&(d.kind==='food'||d.kind==='potion')){ send({type:'use',item}); return; }
  if(d&&d.slot){ send({type:'equip',item,slot:(typeof idx==='number'? idx : (me? me.backpack.findIndex(s=>s.item===item) : -1))}); return; }
  if(item==='note'){ send({type:'read_note'}); return; }
- selStack=selStack===item?null:item; examineStack=null; renderDrawer(); // everything else just opens the sheet
+ selStack=selStack===item?null:item; examineStack=null; renderDock(); // everything else just opens the sheet
 }
 function makeGhost(item){
  const g=document.createElement('div'); g.className='dragghost'; g.innerHTML=itemIconHTML(item,30);
@@ -8008,7 +8130,7 @@ function wireBpCells(){
      if(grabMode) return; // Stage 23: Grab is modal — backpack taps and drags do nothing while arranging
      pid=e.pointerId; sx=lx=e.clientX; sy=ly=e.clientY; downAt=Date.now(); holdFired=false; dragging=false; dead=false;
      if(useMode){ dead=true; toast('Nothing happens.'); cancelUse(true); return; } // a backpack tap resolves use-mode
-     holdT=setTimeout(()=>{ holdT=null; if(!dragging&&!dead){ holdFired=true; selStack=item; selIdx=idx; examineStack=null; renderDrawer(); } },450);
+     holdT=setTimeout(()=>{ holdT=null; if(!dragging&&!dead){ holdFired=true; selStack=item; selIdx=idx; examineStack=null; renderDock(); } },450);
    });
    cell.addEventListener('pointermove',e=>{
      if(pid===null||e.pointerId!==pid||dead) return;
@@ -8032,8 +8154,8 @@ function wireBpCells(){
        const under=document.elementFromPoint(e.clientX,e.clientY);
        const targetCell=under? under.closest('.bp-cell'):null;
        if(targetCell&&targetCell!==cell){ send({type:'inv_swap',a:idx,b:+targetCell.dataset.idx}); return; }
-       const drawerEl=$('drawer');
-       if(drawerEl&&under&&!drawerEl.contains(under)){ // released over the 3D view = drop the stack
+       const dockEl=$('dockpanel');
+       if(dockEl&&under&&!dockEl.contains(under)){ // released over the 3D view = drop the stack
          const s=me? me.backpack[idx]:null;
          if(s&&s.item===item){
            if(isTokenItem(s.item,catalog[s.item])||s.item==='note') toast("That can't be dropped.");
@@ -8046,7 +8168,7 @@ function wireBpCells(){
      if(Math.hypot(lx-sx,ly-sy)>10) return; // it was a scroll
      // Stage 18: Menu tap mode — a tap opens the item's detail sheet
      // instead of quick-using / equipping it.
-     if(settings.tapMode==='menu'){ selStack=item; selIdx=idx; examineStack=null; renderDrawer(); return; }
+     if(settings.tapMode==='menu'){ selStack=item; selIdx=idx; examineStack=null; renderDock(); return; }
      bpPrimaryTap(item,idx);
    };
    cell.addEventListener('pointerup',finish);
@@ -8054,7 +8176,7 @@ function wireBpCells(){
  });
 }
 function wireBankDrag(){
- const grids=document.querySelectorAll('#drawerbody .grid');
+ const grids=document.querySelectorAll('#dockbody .grid');
  if(grids.length<2) return;
  const bpGrid=grids[0], bankGrid=grids[1];
  bpGrid.querySelectorAll('.cell[data-item]').forEach(cell=>{
@@ -8266,10 +8388,10 @@ function rebuildMyKnight(app,key){
    armed, the next tap on an opponent sends cast_at to the server
    (no staff needed — the button is the casting method) and disarms:
    ONE cast per arming. Buttons persist in localStorage under their
-   own key (positions are screen pixels, like the rail buttons'
+   own key (positions are screen pixels, like the dock tabs'
    store, but the SET of placed spells is new state, so it gets a
    dedicated key rather than extending BTN_POS). Long-press removes
-   a button; ✋ Grab mode drags them like the rail buttons, and the
+   a button; ✋ Grab mode drags them like the dock tabs, and the
    Stage 23 modal gate keeps them inert (not armable/castable)
    while Grab is on. */
 const SPELL_BTN_KEY='nallystake_spell_btns';
@@ -8330,7 +8452,7 @@ function wireSpellBtn(el,b){
  el.addEventListener('pointerdown',e=>{
    if(grabMode){
      // Grab drags placed spell buttons too (they are interface
-     // buttons); movement persists like the rail buttons'.
+     // buttons); movement persists like the dock tabs'.
      if(pid!==null) return;
      pid=e.pointerId; sx=e.clientX; sy=e.clientY; dragging=false;
      try{ el.setPointerCapture(pid); }catch(err){}
@@ -8387,9 +8509,9 @@ function openSpellPop(b,anchorEl){
 }
 function closeSpellPop(){ const pop=$('spellpop'); if(pop) pop.style.display='none'; }
 /* Drag-out placement: pointerdown on a spellbook row's 📌 starts a
-   ghost that follows the pointer; dropping OUTSIDE the drawer
+   ghost that follows the pointer; dropping OUTSIDE the panel box
    places (or moves) that spell's button there. Dropping back on
-   the book cancels. The drawer stays open so several spells can be
+   the book cancels. The panel stays open so several spells can be
    placed in one visit. */
 function wireSpellPlace(){
  document.querySelectorAll('.spellplace').forEach(btn=>{
@@ -8410,9 +8532,9 @@ function startSpellDrag(e,spellId){
  window.addEventListener('pointermove',onMove);
  window.addEventListener('pointerup',ev=>{
    cleanup();
-   const dr=$('drawer').getBoundingClientRect();
-   const overDrawer=ev.clientX>=dr.left&&ev.clientX<=dr.right&&ev.clientY>=dr.top&&ev.clientY<=dr.bottom;
-   if(!overDrawer) placeSpellBtn(spellId,Math.round(ev.clientX-30),Math.round(ev.clientY-30));
+   const dr=$('dockpanel').getBoundingClientRect();
+   const overPanel=ev.clientX>=dr.left&&ev.clientX<=dr.right&&ev.clientY>=dr.top&&ev.clientY<=dr.bottom;
+   if(!overPanel) placeSpellBtn(spellId,Math.round(ev.clientX-30),Math.round(ev.clientY-30));
  },{once:true});
  window.addEventListener('pointercancel',cleanup,{once:true});
 }
@@ -8519,7 +8641,7 @@ function refreshFrozenFx(){
 setInterval(refreshFrozenFx,400);
 
 /* ---- Stage 18: ✋ Grab mode replaces hold-drag + the Clear chip ----
-   The rail buttons are LOCKED by default: taps fire their actions
+   The dock tabs are LOCKED by default: taps fire their actions
    and nothing can be dragged (the old hold-450ms-to-drag is gone,
    and so is Clear — saved spots now just stay where you put them).
    Toggle ✋ Grab ON and the same buttons move with a plain
@@ -8532,11 +8654,10 @@ const BTN_POS_KEY='nallystake_btn_pos';
 function loadBtnPos(){ try{ return JSON.parse(localStorage.getItem(BTN_POS_KEY)||'{}')||{}; }catch(e){ return {}; } }
 function applyBtnPositions(){
  const pos=loadBtnPos();
- document.querySelectorAll('#railset .rbtn').forEach(b=>{
+ document.querySelectorAll('#docktabs .rbtn').forEach(b=>{
    const p=pos[b.dataset.panel];
    if(p){ b.style.position='fixed'; b.style.left=p.l+'px'; b.style.top=p.t+'px'; b.style.zIndex='60'; }
  });
- syncRailCopies(); // Stage 25: a placed button's loop copies leave the scroll flow
 }
 // grabMode is declared near the top of the script (Stage 36 fix —
 // animate() reads it during initThree(), before this block runs).
@@ -8552,13 +8673,13 @@ function setGrabMode(on){
  const gb=$('railgrab');
  if(gb){ gb.classList.toggle('on',grabMode); gb.textContent=grabMode?'✋ Grab: On':'✋ Grab'; }
  document.body.classList.toggle('grabbing',grabMode);
- const rsEl=$('railset'); if(rsEl) rsEl.classList.toggle('locked',grabMode); // Stage 25: rail scrolling locks while arranging
+ const rsEl=$('docktabs'); if(rsEl) rsEl.classList.toggle('locked',grabMode); // Interface Overhaul: the tab bar locks while arranging
  toast(grabMode?'✋ Grab on — drag the buttons where you want them. Everything else is paused until you tap Grab again to lock.':'🔒 Buttons locked in place.');
 }
 $('railgrab').onclick=()=>setGrabMode(!grabMode);
 /* Stage 23: the central Grab gate for click-driven UI. While Grab is
    on, the ONLY clicks that land are the master 🎛️ toggle (#gearbtn —
-   it reveals the rail the Grab chip lives on) and the Grab chip
+   it reveals the tab bar the Grab chip lives beside) and the Grab chip
    itself. Every other click — panels, fight row, quickbar, orbs,
    modals, chat — is swallowed here before it reaches its handler.
    Pointer-driven paths (world taps, long-press, joystick, minimap,
@@ -8570,53 +8691,18 @@ document.addEventListener('click',e=>{
  if(t&&t.closest&&t.closest('#gearbtn,#railgrab')) return; // arranging controls stay live
  e.preventDefault(); e.stopPropagation();
 },true);
-/* ---- Stage 25: the rail LOOPS — scroll through the buttons and
-   they wrap round: past the last button the first ones come round
-   again, and past the first (scrolling up) the last ones do. The
-   railset holds THREE copies of the button set and scrolling is
-   silently recentred into the middle copy, so it never ends.
-   The 🎛️ gear and the Grab / Menu tap / Camera chips live in #rail
-   ABOVE #railset, not inside it — they do not scroll (the Grab chip
-   must stay reachable while arranging, and the gear is the toggle
-   that reveals the rail at all). Loop copies are full working
-   buttons — same panel, same tap behaviour, and the Grab wiring
-   below covers them because they exist before it runs. A button
-   that has been dragged OUT of the rail (saved position) keeps
-   only its placed original: its copies leave the scroll flow. */
-function syncRailCopies(){
- const pos=loadBtnPos();
- document.querySelectorAll('#railset .rbtn.loopclone').forEach(b=>{
-   const p=b.dataset.panel;
-   let show=!pos[p]&&!settings.hidden[p];
-   if(p==='tools'&&!isAdminOrOwner()) show=false; // the Tools copy obeys the same admin rule as the original
-   b.style.display=show?'':'none';
- });
-}
-var railSetH=0; // height of ONE copy set (the railset's scrollHeight / 3)
-function railLoopCentre(force){
- const rs=$('railset');
- if(!rs||!rs.classList.contains('open')||!rs.querySelector('.loopclone')) return; // loop not built yet / rail closed
- const h=rs.scrollHeight/3; if(h>0) railSetH=h;
- if(!railSetH) return;
- if(force){ rs.scrollTop=railSetH; return; }
- const st=rs.scrollTop;
- if(st<railSetH*0.5) rs.scrollTop=st+railSetH;
- else if(st>=railSetH*1.5) rs.scrollTop=st-railSetH;
-}
-(function buildRailLoop(){
- const rs=$('railset'); if(!rs) return;
- const orig=[...rs.children];
- const mk=()=>orig.map(b=>{ const c=b.cloneNode(true); c.classList.add('loopclone'); c.removeAttribute('id'); return c; });
- for(const c of mk()) rs.appendChild(c); // copy 3 (below)
- const pre=mk(); for(let i=pre.length-1;i>=0;i--) rs.insertBefore(pre[i],rs.firstChild); // copy 1 (above)
- // The clones missed the mid-script rbtn onclick wiring (it ran
- // before they existed) — give them the identical tap behaviour.
- rs.querySelectorAll('.rbtn.loopclone').forEach(c=>{ c.onclick=()=>{ if(c._suppressClickUntil&&Date.now()<c._suppressClickUntil) return; togglePanel(c.dataset.panel); }; });
- rs.addEventListener('scroll',()=>railLoopCentre(false));
- addEventListener('resize',()=>railLoopCentre(false));
- syncRailCopies();
-})();
-document.querySelectorAll('#railset .rbtn').forEach(b=>{
+/* ---- Interface Overhaul: the tab bar replaced the Stage 25 looping
+   rail. The old rail held THREE copies of the button set in a
+   silently-recentring scroller because fifteen 46px buttons did not
+   fit the screen height in one column. The dock's tab bar wraps
+   instead: every tab is present exactly once, in the fixed cluster,
+   no scrolling and no copies — so there is nothing to sync or
+   recentre, and a tab dragged out of the dock by Grab mode is simply
+   the one real tab, placed. The 🎛️ gear and the Grab / Menu tap /
+   Camera chips live in #dockhead ABOVE #docktabs — they are not tabs
+   (the Grab chip must stay reachable while arranging, and the gear
+   is the toggle that reveals the tab bar at all). */
+document.querySelectorAll('#docktabs .rbtn').forEach(b=>{
  let pid=null,sx=0,sy=0,startL=0,startT=0,dragging=false;
  b.addEventListener('pointerdown',e=>{
    if(!grabMode||pid!==null) return; // locked: the press is a normal tap
@@ -8643,7 +8729,7 @@ document.querySelectorAll('#railset .rbtn').forEach(b=>{
      const r=b.getBoundingClientRect();
      const pos=loadBtnPos(); pos[b.dataset.panel]={l:Math.round(r.left),t:Math.round(r.top)};
      try{ localStorage.setItem(BTN_POS_KEY,JSON.stringify(pos)); }catch(err){}
-     applyBtnPositions(); // Stage 25: the placed original takes the spot; its loop copies leave the flow
+     applyBtnPositions(); // Stage 25: the placed original takes the spot
    }
    b._suppressClickUntil=Date.now()+350; // swallow the click this press produces
  };
