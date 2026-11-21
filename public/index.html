@@ -5842,6 +5842,7 @@ function pWorn(){
 /* ---- Shops ---- */
 window.setShopTab=function(t){ shopTab=t; renderDrawer(); };
 window.setShopMode=function(m){ shopMode=m; renderDrawer(); };
+function trendMark(t){ return t==='up'?' <span style="color:#8fd07a" title="Price is up on demand">▲</span>':(t==='down'?' <span style="color:#ff9d8a" title="Price is down on demand">▼</span>':''); } // Pricing: demand trend marker
 function pShop(){
  let h=`<div class="tabs">${shopNames.map(s=>`<button class="${s===shopTab?'on':''}" onclick="setShopTab('${s}')">${esc(s)}</button>`).join('')}</div>`;
  h+=`<div class="seg"><button class="${shopMode==='buy'?'on':''}" onclick="setShopMode('buy')">Buy</button><button class="${shopMode==='sell'?'on':''}" onclick="setShopMode('sell')">Sell (60% back)</button></div>`;
@@ -5851,7 +5852,7 @@ function pShop(){
    const items=catalogArr.filter(i=>i.shop===shopTab);
    if(!items.length) h+=`<p class="note">Nothing here yet.</p>`;
    for(const d of items){
-     h+=`<div class="rowline"><span class="ic">${itemIconHTML(d.id,24)}</span><span class="grow"><b>${esc(d.name)}</b>${myQty(d.id)?` <span class="sub">(have ${myQty(d.id)})</span>`:''}<br><span class="sub">${d.heal?`heals ${d.heal} HP · `:''}${d.prayerRestore?`restores ${d.prayerRestore} prayer · `:''}${d.accBonus?`+${Math.round(d.accBonus*100)}% accuracy · `:''}${d.maxBonus?`+${d.maxBonus} max hit · `:''}${d.strBonus?`+${d.strBonus} ranged strength · `:''}${d.reduction?`−${Math.round(d.reduction*100)}% dmg · `:''}${d.buy}g</span></span>
+     h+=`<div class="rowline"><span class="ic">${itemIconHTML(d.id,24)}</span><span class="grow"><b>${esc(d.name)}</b>${myQty(d.id)?` <span class="sub">(have ${myQty(d.id)})</span>`:''}<br><span class="sub">${d.heal?`heals ${d.heal} HP · `:''}${d.prayerRestore?`restores ${d.prayerRestore} prayer · `:''}${d.accBonus?`+${Math.round(d.accBonus*100)}% accuracy · `:''}${d.maxBonus?`+${d.maxBonus} max hit · `:''}${d.strBonus?`+${d.strBonus} ranged strength · `:''}${d.reduction?`−${Math.round(d.reduction*100)}% dmg · `:''}${d.buy}g${trendMark(d.trend)}</span></span>
      <button class="act" onclick="send({type:'shop_buy',item:'${d.id}',qty:1})">Buy 1</button><button class="ghost" onclick="send({type:'shop_buy',item:'${d.id}',qty:5})">Buy 5</button></div>`;
    }
  } else {
@@ -5859,7 +5860,7 @@ function pShop(){
    if(!sellable.length) h+=`<p class="note">Nothing in your backpack the shops will buy. (Exchange goods sell on the Gold Exchange.)</p>`;
    for(const s of sellable){
      const d=catalog[s.item];
-     h+=`<div class="rowline"><span class="ic">${itemIconHTML(s.item,24,s.qty)}</span><span class="grow"><b>${esc(d.name)}</b> x${s.qty}<br><span class="sub">shops pay ${d.sell}g each</span></span>
+     h+=`<div class="rowline"><span class="ic">${itemIconHTML(s.item,24,s.qty)}</span><span class="grow"><b>${esc(d.name)}</b> x${s.qty}<br><span class="sub">shops pay ${d.sell}g each${trendMark(d.trend)}</span></span>
      <button class="act" onclick="send({type:'shop_sell',item:'${s.item}',qty:1})">Sell 1</button><button class="ghost" onclick="send({type:'shop_sell',item:'${s.item}',qty:5})">Sell 5</button></div>`;
    }
  }
@@ -5913,7 +5914,7 @@ function pExchange(){
  if(!list.length) h+=`<p class="note">Waiting for prices…</p>`;
  for(const g of list){
    const owned=myQty(g.id);
-   h+=`<div class="rowline"><span class="ic">${iconOf(g.id)}</span><span class="grow"><b>${esc(g.name)}</b><br><span class="sub">${g.price}g each · you have ${owned}</span></span>
+   h+=`<div class="rowline"><span class="ic">${iconOf(g.id)}</span><span class="grow"><b>${esc(g.name)}</b><br><span class="sub">${g.price}g each${trendMark(g.trend)} · you have ${owned}</span></span>
    <button class="act" onclick="send({type:'exchange_buy',good:'${g.id}',qty:1})">Buy 1</button><button class="ghost" onclick="send({type:'exchange_buy',good:'${g.id}',qty:5})">5</button>
    <button class="act" onclick="send({type:'exchange_sell',good:'${g.id}',qty:1})">Sell 1</button><button class="ghost" onclick="send({type:'exchange_sell',good:'${g.id}',qty:5})">5</button></div>`;
  }
