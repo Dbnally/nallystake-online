@@ -670,6 +670,10 @@ try{ railOpen=localStorage.getItem('nallystake_rail_open')!=='0'; }catch(e){}
    bindings, the declaration itself), and every later frame threw
    before renderer.render: black scene, dead panels. */
 let grabMode=false;
+/* Stage 41: the fight-state lets live up here too (same rule as grabMode): animate() reaches them through fightOppAvatar() from its very first frame, so they must be initialised before initThree() runs. */
+let duel=null;
+let npcFight=null;
+let fcRun=null; // {wave,hpYou,maxHpYou,targetId,targetHp,energyYou} — my active run
 function applyRailVisibility(){
  const rs=$('railset'); if(rs) rs.classList.toggle('open',railOpen);
  const gb=$('gearbtn'); if(gb) gb.textContent=railOpen?'✕':'🎛️';
@@ -5612,7 +5616,7 @@ function initThree(){
    else if(o.material&&o.material.isMeshLambertMaterial){ o.castShadow=true; o.receiveShadow=true; }
  });
  addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
- animate();
+ requestAnimationFrame(animate); // Stage 41 fix: the first frame is SCHEDULED, not run inside initThree — a synchronous first frame reads fight-state lets (duel/npcFight/fcRun) declared later in the script, and the TDZ ReferenceError aborted all remaining top-level init (Stage 36's bug class, reintroduced by Stage 37b's fightOppAvatar call in animate)
  return true;
 }
 initThree();
@@ -7009,8 +7013,7 @@ function followTick(){
  }
 }
 /* ================= duel UI ================= */
-let duel=null;
-let npcFight=null;
+/* (let duel / let npcFight are declared early — see the Stage 41 note beside grabMode.) */
 /* Tap-to-engage: my swings only start once I've tapped my opponent
    (duel_attack) or the server's auto-retaliate kicks in. The hint shows
    until I'm engaged — tapped, or one of my swings shows in a tick. */
@@ -7555,7 +7558,7 @@ function modDuelUI(m){
  }
 }
 /* ================= Fight Caves UI (Stage 4) ================= */
-let fcRun=null; // {wave,hpYou,maxHpYou,targetId,targetHp,energyYou} — my active run
+/* (let fcRun is declared early — see the Stage 41 note beside grabMode.) */
 let prevFcHp={}, prevFcMyHp=null; // Stage 8: last-seen HP per cave monster + me (hitsplats from drops)
 let jadWarnStyle=null, jadWarnTimer=null;
 function renderFcBar(){
