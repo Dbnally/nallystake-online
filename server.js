@@ -1534,7 +1534,9 @@ function publicProfile(p) {
 // history, not players. Matched case-insensitively on username.
 const RETIRED_TEST_ACCOUNTS = new Set(['livesoak988391', 's33check1119', 'liveduoa27128', 's30check1118', 'loadtest1119', 'deploychk1120', 'b5chk1120',
   // 2026-11-22 sweep (Derek approved): the other throwaway check accounts from earlier live test runs.
-  'stakechklive1', 'stakechkb96910', 's912chk31135', 'goldchk28953', 's6browser4821', 's8check7319', 'liveduob548605', 'p2check', 's7check5674', 's5check7115', 's6check9219', 's3check397', 's6check9127', 's13chk7030', 'livesoak791399']);
+  'stakechklive1', 'stakechkb96910', 's912chk31135', 'goldchk28953', 's6browser4821', 's8check7319', 'liveduob548605', 'p2check', 's7check5674', 's5check7115', 's6check9219', 's3check397', 's6check9127', 's13chk7030', 'livesoak791399',
+  // Same sweep, second layer: these surfaced in the top 20 once the first layer was hidden.
+  's28check1118', 'stakechka96910', 's31check1119', 'stakechkb63551', 's29check1118', 'stakechka63551', 's14chk15587', 's1check', 's4check1729', 's32check1119']);
 function isRetiredTestAccount(p) {
   return !!(p && RETIRED_TEST_ACCOUNTS.has(String(p.username || '').toLowerCase()));
 }
