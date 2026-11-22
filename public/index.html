@@ -263,6 +263,19 @@
  .fcpray{background:#221a13;border:2px solid #4a3a28;border-radius:999px;color:#e8d9b0;padding:7px 10px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;line-height:1;font-family:inherit}
  .fcpray.on{border-color:#c9a227;background:#3a2c1c;box-shadow:0 0 10px #c9a22766}
  .fcpray.flash{animation:fcflash .28s ease-in-out infinite alternate}
+ /* Always-on bottom bar (Derek, 2026-11-21): 🎒 Backpack, the four
+    attack styles and the three Deflects on ONE slim strip pinned in
+    the fight-strip slot (just above the chat bar), visible at all
+    times so they're always in reach. When a fight strip opens it
+    takes this same slot — carrying its own copies of these controls
+    — and this bar hides: never two strips stacked in the slot. */
+ #bottombar{position:fixed;left:0;right:0;bottom:calc(38px + env(safe-area-inset-bottom,0px));z-index:45;display:none;align-items:center;gap:6px;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;padding:6px 8px;background:rgba(23,19,16,.85);border-top:2px solid #c9a227;scrollbar-width:none}
+ #bottombar.open{display:flex}
+ #bottombar::-webkit-scrollbar{display:none}
+ #bottombar>*{flex:none}
+ #bbstyles,#bbprayers,#duelstyles,#fcstyles{display:contents}
+ .fchip.sty.on{border-color:#c9a227;background:#3a2c1c;box-shadow:0 0 10px #c9a22766;color:#ffd75e}
+ .fchip.pack.on{border-color:#c9a227;background:#3a2c1c;box-shadow:0 0 10px #c9a22766;color:#ffd75e}
  @keyframes fcflash{from{border-color:#ff3b30;background:#5a1408;box-shadow:0 0 6px #ff3b30}to{border-color:#e3c766;background:#7a2a08;box-shadow:0 0 18px #ff7b24}}
  #jadwarn{position:fixed;top:26%;left:50%;transform:translateX(-50%);z-index:56;width:min(430px,92vw);background:rgba(90,16,4,.94);border:3px solid #ff7b24;border-radius:14px;padding:14px 12px;text-align:center;display:none;cursor:pointer;box-shadow:0 0 30px #ff5a1f88;animation:fcflash .28s ease-in-out infinite alternate}
  #jadwarntxt{font-size:21px;font-weight:900;color:#f0dfae;text-shadow:0 2px 4px #000}
@@ -435,6 +448,13 @@
  <div class="hprow fightinfo"><span class="nm" id="dueloppname">Opponent</span><div class="hpbar"><div id="hpopp" style="width:100%"></div></div><span id="hpoppv">99</span></div>
  <div id="duellast" class="note fightinfo" style="text-align:center"></div>
  <span class="fchip ctx" id="duelctx">⚔️ Duel</span>
+ <button class="fchip pack" id="duelpack" title="Backpack">🎒</button>
+ <div id="duelstyles">
+  <button class="fchip sty" data-style="accurate">🎯 Accurate</button>
+  <button class="fchip sty" data-style="aggressive">💪 Aggressive</button>
+  <button class="fchip sty" data-style="defensive">🛡️ Defensive</button>
+  <button class="fchip sty" data-style="controlled">⚖️ Controlled</button>
+ </div>
  <div id="duelhint" style="display:none">⚔️ Tap your opponent to attack!</div>
  <button class="fchip atk" id="atkchip" style="display:none" title="Attack — the same tap as tapping your opponent">⚔️ Attack</button>
  <div id="duelnomove" style="display:none">🚫 No Movement</div>
@@ -449,6 +469,13 @@
 
 <div id="fcbar">
  <div class="t" id="fctitle">🌋 Fight Caves</div>
+ <button class="fchip pack" id="fcpack" title="Backpack">🎒</button>
+ <div id="fcstyles">
+  <button class="fchip sty" data-style="accurate">🎯 Accurate</button>
+  <button class="fchip sty" data-style="aggressive">💪 Aggressive</button>
+  <button class="fchip sty" data-style="defensive">🛡️ Defensive</button>
+  <button class="fchip sty" data-style="controlled">⚖️ Controlled</button>
+ </div>
  <div class="hprow fightinfo"><span class="nm">You</span><div class="hpbar"><div id="fchpyou" style="width:100%"></div></div><span id="fchpyouv">0</span></div>
  <div class="hprow fightinfo"><span class="nm" id="fctargetname">Target</span><div class="hpbar"><div id="fchptarget" style="width:100%"></div></div><span id="fchptargetv"></span></div>
  <div id="fclast" class="note fightinfo" style="text-align:center"></div>
@@ -460,6 +487,21 @@
  </div>
  <div id="fcquick"></div>
  <div><button class="fchip" id="fcleavebtn" title="Leave the caves">🏃 Leave</button></div>
+</div>
+
+<div id="bottombar">
+ <button class="fchip pack" id="bbpack" title="Backpack">🎒 Backpack</button>
+ <div id="bbstyles">
+  <button class="fchip sty" data-style="accurate">🎯 Accurate</button>
+  <button class="fchip sty" data-style="aggressive">💪 Aggressive</button>
+  <button class="fchip sty" data-style="defensive">🛡️ Defensive</button>
+  <button class="fchip sty" data-style="controlled">⚖️ Controlled</button>
+ </div>
+ <div id="bbprayers">
+  <button class="fchip pray" id="bbpray-melee">🛡️ Deflect Melee</button>
+  <button class="fchip pray" id="bbpray-missiles">🏹 Deflect Missiles</button>
+  <button class="fchip pray" id="bbpray-magic">🔮 Deflect Magic</button>
+ </div>
 </div>
 
 <div id="barrowsbar">
@@ -1109,7 +1151,7 @@ function onMsg(m){
 }
 
 /* ================= HUD / orbs ================= */
-function renderAll(){ renderHUD(); renderOrbs(); refreshToolsBtn(); if(dockPanel) renderDock(); if(fcRun) renderFcBar(); drawMinimap(); if($('stakeboardmodal').classList.contains('open')) renderStakeBoard(); }
+function renderAll(){ renderHUD(); renderOrbs(); refreshToolsBtn(); if(dockPanel) renderDock(); if(fcRun) renderFcBar(); drawMinimap(); if($('stakeboardmodal').classList.contains('open')) renderStakeBoard(); syncBottomBar(); }
 function renderHUD(){
  if(!me) return;
  $('hudname').textContent=me.username;
@@ -3565,6 +3607,7 @@ function renderWildBar(){
  $('duelctx').textContent=`💀 ${curArea==='purewild'?'Pure Wild':'Wilderness'} — ${wildFight.oppName}`;
  $('fleebtn').textContent='🚪 Leave (walk out)';
  syncBarPrayers(false);
+ syncCombatControls(); // bottom-bar build: the strip's style/backpack chips track the same server state
  const consum=(me?me.backpack:[]).filter(s=>catalog[s.item]&&(catalog[s.item].kind==='food'||catalog[s.item].kind==='potion'));
  let h=`<button class="fchip spec" id="specbtn" title="Dragon Slash">⚡ ${wildFight.energyYou}%</button>`;
  for(const s of consum) h+=`<button class="fchip" title="${esc(nameOf(s.item))}" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ×${s.qty}</button>`;
@@ -7418,6 +7461,7 @@ function renderDuelBar(){
  // only — the server is the real gate and answers with the 🚫 line).
  const R=duel.rules||{};
  syncBarPrayers(!!R.noPrayer);
+ syncCombatControls(); // bottom-bar build: the strip's style/backpack chips track the same server state
  // Stage 18: a No Movement duel says so in the strip and greys the
  // joystick out (the server ignores duelists' moves anyway).
  const nmEl=$('duelnomove'); if(nmEl) nmEl.style.display=R.noMovement?'block':'none';
@@ -7812,6 +7856,7 @@ function renderFcBar(){
    $('fchptargetv').textContent='';
  }
  for(const pr of ['melee','missiles','magic']){ const b=$('fcpray-'+pr); if(b) b.classList.toggle('on',!!me&&me.activePrayer===pr); }
+ syncCombatControls(); // bottom-bar build: the strip's style/backpack chips track the same server state
  const consum=(me?me.backpack:[]).filter(s=>catalog[s.item]&&(catalog[s.item].kind==='food'||catalog[s.item].kind==='potion'));
  let h=`<button class="fchip spec" id="fcspecbtn" title="Dragon Slash">⚡ ${Math.floor(fcRun.energyYou||0)}%</button>`;
  for(const s of consum) h+=`<button class="fchip" title="${esc(nameOf(s.item))}" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ×${s.qty}</button>`;
@@ -7965,6 +8010,42 @@ function openFcStart(){
 window.startFcRun=function(){ closeModal('fcstartmodal'); send({type:'fc_start'}); };
 for(const pr of ['melee','missiles','magic']){ const b=$('fcpray-'+pr); if(b) b.onclick=()=>send({type:'prayer',prayer:pr}); }
 for(const pr of ['melee','missiles','magic']){ const b=$('duelpray-'+pr); if(b) b.onclick=()=>send({type:'prayer',prayer:pr}); }
+
+/* ================= always-on bottom bar (Derek, 2026-11-21) =================
+   One slim strip in the fight-strip slot (just above the chat bar)
+   holding 🎒 Backpack, the four attack styles and the three Deflects,
+   so they're reachable at all times — 🎛️ dock hidden or not, Grab
+   mode or not (the bar is not a dock tab: it is never dragged,
+   placed or hidden by the rail toggle). When a fight starts, the
+   fight strip (#duelbar / #fcbar) opens in this SAME slot carrying
+   its own copies of the same controls — the Deflect chips were
+   already there; backpack + styles are added there by this build —
+   and this bar hides: one strip in the slot, never two stacked.
+   All state is the server's: the lit style is me.style, the lit
+   Deflect is me.activePrayer, and the buttons send the exact
+   {type:'style'} / {type:'prayer'} messages the challenge screen
+   and the Prayers panel send. No client-only state: a prayer the
+   server refuses (Pure Wild, a No Prayer duel, 0 prayer points)
+   simply never lights up. */
+function anyFightStripOpen(){ return $('duelbar').classList.contains('open')||$('fcbar').classList.contains('open'); }
+function syncBottomBar(){
+ const bb=$('bottombar'); if(!bb) return;
+ bb.classList.toggle('open',!!me&&!anyFightStripOpen());
+ syncCombatControls();
+}
+function syncCombatControls(){
+ document.querySelectorAll('.fchip.sty').forEach(b=>b.classList.toggle('on',!!me&&me.style===b.dataset.style));
+ for(const pr of ['melee','missiles','magic']){ const b=$('bbpray-'+pr); if(b) b.classList.toggle('on',!!me&&me.activePrayer===pr); }
+ document.querySelectorAll('.fchip.pack').forEach(b=>b.classList.toggle('on',dockPanel==='backpack'));
+}
+for(const pr of ['melee','missiles','magic']){ const b=$('bbpray-'+pr); if(b) b.onclick=()=>send({type:'prayer',prayer:pr}); }
+document.querySelectorAll('.fchip.sty').forEach(b=>b.onclick=()=>{ if(me&&me.style!==b.dataset.style) send({type:'style',style:b.dataset.style}); });
+document.querySelectorAll('.fchip.pack').forEach(b=>b.onclick=()=>togglePanel('backpack'));
+/* The fight strips open/close from many fight handlers; watching
+   their class keeps the bottom bar's turn in the slot automatic —
+   no fight code path needs to know this bar exists. */
+for(const id of ['duelbar','fcbar']){ const el=$(id); if(el&&window.MutationObserver) new MutationObserver(syncBottomBar).observe(el,{attributes:true,attributeFilter:['class']}); }
+syncBottomBar();
 $('fcleavebtn').onclick=()=>send({type:'fc_leave'});
 $('jadwarn').onclick=()=>{ if(jadWarnStyle){ send({type:'prayer',prayer:jadWarnStyle}); } $('jadwarn').style.display='none'; };
 
