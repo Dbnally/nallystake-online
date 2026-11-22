@@ -60,6 +60,14 @@
  #docktabs.open{display:flex}
  #docktabs.locked{touch-action:none}
  #docktabs .rbtn{flex:none}
+ /* Placed-button fix: a tab dragged out of the dock lives in this
+    full-screen layer (the #spellbtns pattern) — OUTSIDE #docktabs,
+    so the 🎛️ toggle hiding the tab bar (display:none) can never
+    hide or move a placed tab, and the tab keeps working while the
+    rest of the dock is hidden. The layer itself never takes pointer
+    events; its tabs do. Same stacking as the dock it came from. */
+ #placedtabs{position:fixed;inset:0;z-index:40;pointer-events:none}
+ #placedtabs .rbtn{pointer-events:auto;touch-action:none}
  /* the panel box: fixed in the dock, in place — the active tab's
     content lives here, under its title bar, and scrolls internally */
  #dockpanel{width:100%;box-sizing:border-box;background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:12px;padding:10px;display:none;pointer-events:auto}
@@ -305,7 +313,7 @@
  /* Stage 18: the chips under the master toggle (Grab / Menu tap / Camera) */
  .railchip{width:46px;min-height:30px;border-radius:10px;border:2px solid #7a6748;background:linear-gradient(180deg,#3a2f22,#241c13);color:#e8d9b0;font-size:10px;font-weight:700;cursor:pointer;padding:2px 0;line-height:1.25}
  .railchip.on{background:#2e7d32;color:#eaffea;border-color:#66bb6a}
- body.grabbing #docktabs .rbtn{cursor:grab;outline:2px dashed rgba(102,187,106,.65);outline-offset:-2px}
+ body.grabbing #docktabs .rbtn,body.grabbing #placedtabs .rbtn{cursor:grab;outline:2px dashed rgba(102,187,106,.65);outline-offset:-2px}
  /* Stage 23: Grab mode is modal — a standing hint while it's on */
  #grabhint{position:fixed;top:calc(92px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:58;display:none;max-width:94vw;background:rgba(43,33,24,.95);border:2px solid #66bb6a;color:#eaffea;border-radius:999px;padding:8px 14px;font-size:12.5px;font-weight:800;text-align:center;pointer-events:none;box-shadow:0 4px 18px rgba(0,0,0,.5)}
  body.grabbing #grabhint{display:block}
@@ -403,6 +411,7 @@
  </div>
  <div id="dockpanel"><h3><span id="docktitle">Panel</span><button class="x" id="dockx">✕</button></h3><div id="dockbody"></div></div>
 </div>
+<div id="placedtabs"></div>
 
 <div id="joy"><div id="knob"></div></div>
 
@@ -699,7 +708,7 @@ function applyRailVisibility(){
  const rs=$('docktabs'); if(rs) rs.classList.toggle('open',railOpen);
  const gb=$('gearbtn'); if(gb) gb.textContent=railOpen?'✕':'🎛️';
  for(const id of ['railgrab','railmenutap','railcam']){ const c=$(id); if(c) c.style.display=railOpen?'':'none'; } // Stage 18: the chips follow the tab bar
- document.querySelectorAll('#docktabs .rbtn').forEach(b=>{ b.style.display=settings.hidden[b.dataset.panel]?'none':''; });
+ document.querySelectorAll('#docktabs .rbtn, #placedtabs .rbtn').forEach(b=>{ b.style.display=settings.hidden[b.dataset.panel]?'none':''; }); // Placed-button fix: the Settings hidden-tab rule covers placed tabs too
  refreshToolsBtn();
 }
 /* Stage 7D: the 🛠️ Tools button exists only for admins/owners (and
@@ -8755,11 +8764,37 @@ setInterval(refreshFrozenFx,400);
    and stay fixed. */
 const BTN_POS_KEY='nallystake_btn_pos';
 function loadBtnPos(){ try{ return JSON.parse(localStorage.getItem(BTN_POS_KEY)||'{}')||{}; }catch(e){ return {}; } }
+/* Placed-button fix: the canonical dock order, captured now —
+   before anything is placed — while every tab is still home in
+   #docktabs in its authored order. An un-placed tab returns to
+   its own spot in that order, not to the end of the bar. */
+const DOCK_TAB_ORDER=[...document.querySelectorAll('#docktabs .rbtn')].map(b=>b.dataset.panel);
+function dockTabHome(b){
+ const tabs=$('docktabs'); if(!tabs||b.parentElement===tabs) return;
+ const my=DOCK_TAB_ORDER.indexOf(b.dataset.panel);
+ for(const sib of tabs.querySelectorAll('.rbtn')){
+   if(DOCK_TAB_ORDER.indexOf(sib.dataset.panel)>my){ tabs.insertBefore(b,sib); return; }
+ }
+ tabs.appendChild(b);
+}
 function applyBtnPositions(){
  const pos=loadBtnPos();
- document.querySelectorAll('#docktabs .rbtn').forEach(b=>{
+ const layer=$('placedtabs');
+ document.querySelectorAll('#docktabs .rbtn, #placedtabs .rbtn').forEach(b=>{
    const p=pos[b.dataset.panel];
-   if(p){ b.style.position='fixed'; b.style.left=p.l+'px'; b.style.top=p.t+'px'; b.style.zIndex='60'; }
+   if(p){
+     // Placed: the tab moves OUT of #docktabs into the #placedtabs
+     // layer, so hiding the tab bar leaves it standing in its spot.
+     if(layer&&b.parentElement!==layer) layer.appendChild(b);
+     b.classList.add('placed');
+     b.style.position='fixed'; b.style.left=p.l+'px'; b.style.top=p.t+'px'; b.style.zIndex='60';
+   } else {
+     // Not placed: the tab lives in the bar, in flow, at its
+     // canonical spot, with no fixed positioning left on it.
+     dockTabHome(b);
+     b.classList.remove('placed');
+     b.style.position=''; b.style.left=''; b.style.top=''; b.style.bottom=''; b.style.zIndex='';
+   }
  });
 }
 // grabMode is declared near the top of the script (Stage 36 fix —
@@ -8805,6 +8840,20 @@ document.addEventListener('click',e=>{
    Camera chips live in #dockhead ABOVE #docktabs — they are not tabs
    (the Grab chip must stay reachable while arranging, and the gear
    is the toggle that reveals the tab bar at all). */
+/* Placed-button fix: the return gesture's helpers. The dock only
+   counts as a drop target while it is OPEN (railOpen) — Derek's
+   flow is: reopen the dock, drag the placed tab back onto it.
+   While a tab drag is live the tab bar glows gold (the Stage 29
+   .spelldroptarget affordance) so the target reads clearly. */
+function overDock(x,y){
+ const d=$('paneldock'); if(!d) return false;
+ const r=d.getBoundingClientRect();
+ return x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom;
+}
+function setDockDropHighlight(on){ const dt=$('docktabs'); if(dt) dt.classList.toggle('spelldroptarget',!!on); }
+/* This binding runs while every tab is still home in #docktabs
+   (applyBtnPositions() is called after it, at the foot of this
+   block) — the handlers ride along wherever a tab later lives. */
 document.querySelectorAll('#docktabs .rbtn').forEach(b=>{
  let pid=null,sx=0,sy=0,startL=0,startT=0,dragging=false;
  b.addEventListener('pointerdown',e=>{
@@ -8821,18 +8870,33 @@ document.querySelectorAll('#docktabs .rbtn').forEach(b=>{
      const r=b.getBoundingClientRect();
      b.style.position='fixed'; b.style.left=r.left+'px'; b.style.top=r.top+'px'; b.style.bottom='auto'; b.style.zIndex='70';
      startL=r.left; startT=r.top;
+     if(railOpen) setDockDropHighlight(true);
    }
    if(dragging){ b.style.left=(startL+dx)+'px'; b.style.top=(startT+dy)+'px'; }
  });
  const finish=e=>{
    if(pid===null||(e.pointerId!==undefined&&e.pointerId!==pid)) return;
    pid=null;
+   setDockDropHighlight(false);
    if(dragging){
      dragging=false;
-     const r=b.getBoundingClientRect();
-     const pos=loadBtnPos(); pos[b.dataset.panel]={l:Math.round(r.left),t:Math.round(r.top)};
-     try{ localStorage.setItem(BTN_POS_KEY,JSON.stringify(pos)); }catch(err){}
-     applyBtnPositions(); // Stage 25: the placed original takes the spot
+     const pos=loadBtnPos();
+     // Placed-button fix: dropped back on the OPEN dock = put the
+     // tab away — its saved spot is cleared and applyBtnPositions
+     // carries it home to the tab bar. A drop anywhere else is a
+     // move, exactly as before. Outside Grab mode this handler
+     // never runs a drag at all, so a plain tap can't un-place.
+     if(e.type==='pointerup'&&typeof e.clientX==='number'&&railOpen&&overDock(e.clientX,e.clientY)){
+       delete pos[b.dataset.panel];
+       try{ localStorage.setItem(BTN_POS_KEY,JSON.stringify(pos)); }catch(err){}
+       applyBtnPositions();
+       toast('↩️ Tab back in the dock.');
+     } else {
+       const r=b.getBoundingClientRect();
+       pos[b.dataset.panel]={l:Math.round(r.left),t:Math.round(r.top)};
+       try{ localStorage.setItem(BTN_POS_KEY,JSON.stringify(pos)); }catch(err){}
+       applyBtnPositions(); // Stage 25: the placed original takes the spot
+     }
    }
    b._suppressClickUntil=Date.now()+350; // swallow the click this press produces
  };
