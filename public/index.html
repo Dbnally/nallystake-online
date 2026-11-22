@@ -746,6 +746,24 @@ let grabMode=false;
 let duel=null;
 let npcFight=null;
 let fcRun=null; // {wave,hpYou,maxHpYou,targetId,targetHp,energyYou} — my active Fight Caves run
+/* Week 2 (D11): drop ALL local fight state and close the fight
+   strips. The server is the authority on fights: a fresh session
+   (every 'welcome') never has one — disconnect cleanup settles
+   every fight server-side — and no fight spans an area change
+   (travel ends NPC / Barrows fights, and duels refuse travel
+   outright). So local fight state surviving either moment means
+   the settling 'end' message never reached this client — the
+   socket dropped mid-fight — and without this reset the fight
+   strip stayed up forever while Flee, teleport and Dragon Slash
+   all hit a server with no fight to clear: the wizard-fight
+   soft-lock from the Week 2 list. */
+function clearLocalFightState(){
+ duel=null; modDuel=null; npcFight=null; fcRun=null; wildFight=null;
+ $('duelbar').classList.remove('open');
+ $('fcbar').classList.remove('open');
+ $('duelflee').style.display='none';
+ const jw=$('jadwarn'); if(jw) jw.style.display='none';
+}
 function applyRailVisibility(){
  const rs=$('docktabs'); if(rs) rs.classList.toggle('open',railOpen);
  const gb=$('gearbtn'); if(gb) gb.textContent=railOpen?'✕':'🎛️';
@@ -1048,7 +1066,10 @@ function onPlayerFell(m){
 function onMsg(m){
  if(m.type==='ping'){ send({type:'pong'}); return; }
  if(m.type==='pong'){ return; }
- if(m.type==='welcome'){ welcomed=true; quickAttempt=false; wasInGame=true; const wasReconnect=reconnecting; stopReconnect(); reconnectMs=1000; if(wasReconnect){ toast('✅ Reconnected.'); logLine('✅ Reconnected.'); } flushChatOutbox(); me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); maybeShowActivityPicker(); }
+ // Week 2 (D11): a welcome is a fresh server session — it never has
+ // a live fight, so any local fight state is stale (see
+ // clearLocalFightState) and is dropped before anything renders.
+ if(m.type==='welcome'){ welcomed=true; quickAttempt=false; wasInGame=true; const wasReconnect=reconnecting; stopReconnect(); reconnectMs=1000; clearLocalFightState(); if(wasReconnect){ toast('✅ Reconnected.'); logLine('✅ Reconnected.'); } flushChatOutbox(); me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); maybeShowActivityPicker(); }
  if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(Array.isArray(m.spells)) spellList=m.spells; if(dockPanel==='shop') renderDock(); renderQuickButtons(); renderSpellBtns(); for(const av of Object.values(avatars)) av.gearSig=null; }
  if(m.type==='exchange_prices'){ goods={}; for(const g of (m.goods||[])) goods[g.id]=g; if(dockPanel==='exchange') renderDock(); drawMinimap(); }
  if(m.type==='state'){ onStateMsg(m); }
@@ -1968,6 +1989,16 @@ function buildGatheringCave(root){
  rockWallRun(S,80,-45,80,45); // east
  gatePosts(S,0,-45);
  buildTorch(S,-28,40); buildTorch(S,28,40);
+ // Week 2 (D16): the cave read dark and empty. A warm light lift
+ // scoped to THIS area group (three.js only renders lights whose
+ // group is visible, so the plaza keeps its own light), plus lit
+ // torches at the west rocks, the cave's middle and the pool shore
+ // — the spots a gatherer actually stands.
+ S.add(new THREE.AmbientLight(0xffd9a8,0.5));
+ for(const [tx,tz] of [[-48,-20],[-48,24],[-24,0],[40,-14],[40,16]]){
+   buildTorch(S,tx,tz);
+   const pl=new THREE.PointLight(0xff9a3c,0.85,22); pl.position.set(tx,2.6,tz); S.add(pl);
+ }
  // scattered decor rocks (nodes render separately, from data) — x2 + extras
  for(const [rx,rz] of [[-60,28],[-36,-28],[4,32],[-12,-36],[24,-32],[-66,-8],[40,36],[-44,40]]){
    const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.6),rockMat());
@@ -2025,6 +2056,23 @@ function buildFishingCove(root){
    r.position.set(Math.cos(a)*1.1,0.12,Math.sin(a)*1.1); ringC.add(r); }
  box(1.4,0.22,0.26,0x5a4020,0,0.12,0,ringC);
  const cl=box(1.4,0.22,0.26,0x5a4020,0,0.12,0,ringC); cl.rotation.y=1.57;
+ // Week 2 (D16): shore life for the cove — reed clusters along the
+ // waterline (the lake starts at world x +26), lily pads out on the
+ // water, boulders on the grass, and a soft sky-light lift scoped
+ // to this area group so the cove reads bright like the plaza.
+ const reedMat=new THREE.MeshLambertMaterial({color:0x4a7a3a});
+ for(const [rx,rz] of [[25,-32],[25,-14],[25,6],[25,24],[25,38],[30,32],[30,-24]]){
+   for(let i=0;i<4;i++){ const reed=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.07,1.6+Math.random()*0.7,5),reedMat); reed.position.set(rx+Math.random()*1.6-0.8,0.8,rz+Math.random()*1.6-0.8); reed.rotation.z=(Math.random()-0.5)*0.15; S.add(reed); }
+ }
+ const lilyMat=new THREE.MeshLambertMaterial({color:0x3f7a34});
+ for(const [lx,lz] of [[38,-20],[46,10],[58,-6],[64,26],[42,34]]){
+   const pad=new THREE.Mesh(new THREE.CylinderGeometry(0.9,0.9,0.05,10),lilyMat); pad.position.set(lx,0.06,lz); S.add(pad);
+ }
+ for(const [rx,rz] of [[-58,-30],[-24,34],[8,-36]]){
+   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.7),rockMat());
+   rock.position.set(rx,0.4,rz); S.add(rock);
+ }
+ S.add(new THREE.HemisphereLight(0xcfe8ff,0x3a5230,0.35));
 }
 function buildMine(root){
  const S=root;
@@ -2671,6 +2719,11 @@ function setArea(a){
      fcRun=null; $('fcbar').classList.remove('open'); $('jadwarn').style.display='none';
      clearFcMonsters();
    }
+   // Week 2 (D11): no NPC / duel / mod-duel fight spans an area
+   // change either (travel ends them server-side; duels and mod
+   // duels refuse travel) — clear local state the same way, so a
+   // lost 'end' message can never strand the fight strip here.
+   if(npcFight||duel||modDuel){ npcFight=null; duel=null; modDuel=null; $('duelbar').classList.remove('open'); $('duelflee').style.display='none'; }
    pendingMound=null; pendingPile=null; pendingSeaweed=null; pendingChest=null;
    // Stage 30: leaving a wild area drops the local wild state
    // (PKer avatars, the wild fight bar, the HUD chip) — the server
@@ -7025,7 +7078,7 @@ window.openTalk=function(name){
  setTimeout(()=>{ try{ inp.focus(); }catch(e){} },50);
 };
 /* ---- Examine sheet ---- */
-const AREA_LABELS={plaza:'🏰 Plaza',goblins:'👺 Goblin Camp',training:'🏋️ Training Cave',gathering:'⛏️ Gathering Cave',cove:'🎣 Fishing Cove',mine:'⛏️🔥 Emberfall Mine & Smithy',fightcaves:'🌋 Fight Caves',barrows:'💀 Barrows',barrows_crypt:'💀 Barrows Crypt',barrows_tunnels:'💀 Barrows Tunnels',arena:'⚔️ Duel Arena',waiting:'⏳ Waiting Area',magic:'🧙 Wizard Grounds',range:'🏹 Ranger Camp',wilderness:'💀 The Wilderness',purewild:'💀 Pure Wild'};
+const AREA_LABELS={plaza:'🏰 Plaza',goblins:'👺 Goblin Camp',training:'🏋️ Training Cave',gathering:'⛏️ Gathering Cave',cove:'🎣 Fishing Cove',mine:'⛏️🔥 Emberfall Mine & Smithy',fightcaves:'🌋 Fight Caves',barrows:'💀 Barrows',barrows_crypt:'💀 Barrows Crypt',barrows_tunnels:'💀 Barrows Tunnels',arena:'⚔️ Tournament Dais',waiting:'⏳ Waiting Area',magic:'🧙 Wizard Grounds',range:'🏹 Ranger Camp',wilderness:'💀 The Wilderness',purewild:'💀 Pure Wild'};
 function openExamine(m){
  const p=m.player; if(!p) return;
  const wornRows=SLOT_DEFS.filter(([slot])=>p.worn&&p.worn[slot]).map(([slot,label])=>`<div class="rowline"><span class="ic">${itemIconHTML(p.worn[slot],24)}</span><span class="grow"><b>${label}</b><br><span class="sub">${esc(nameOf(p.worn[slot]))}</span></span></div>`).join('');
