@@ -1527,6 +1527,15 @@ function publicProfile(p) {
     modLadder: { wins: { t1: 0, t2: 0, t3: 0, ...((p.modLadder && p.modLadder.wins) || {}) } },
   };
 }
+// Week 2 (D15): retired throwaway test accounts from the November
+// playtests. Their profiles stay in the store untouched (this is
+// reversible), but they no longer rank on the leaderboard or the
+// hiscores — like the Stage 37 bot exclusion, they are world
+// history, not players. Matched case-insensitively on username.
+const RETIRED_TEST_ACCOUNTS = new Set(['livesoak988391', 's33check1119', 'liveduoa27128', 's30check1118', 'loadtest1119', 'deploychk1120', 'b5chk1120']);
+function isRetiredTestAccount(p) {
+  return !!(p && RETIRED_TEST_ACCOUNTS.has(String(p.username || '').toLowerCase()));
+}
 function leaderboardProfile(p) {
   ensureV2(p);
   return { username: p.username, gold: p.gold, rating: p.rating, wins: p.wins, losses: p.losses, style: p.style, role: effectiveRole(p) };
@@ -1831,7 +1840,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && url.pathname === '/api/leaderboard') {
     // Stage 37: bot accounts are world actors, not ranked players — excluded.
-    const rows = Object.values(db.users).filter((u) => !(u.profile && u.profile.bot)).map((u) => leaderboardProfile(u.profile))
+    const rows = Object.values(db.users).filter((u) => !(u.profile && u.profile.bot) && !isRetiredTestAccount(u.profile)).map((u) => leaderboardProfile(u.profile))
       .sort((a, b) => b.rating - a.rating).slice(0, 20);
     return json(res, 200, { leaderboard: rows });
   }
@@ -1840,7 +1849,7 @@ const server = http.createServer(async (req, res) => {
   // Reads the same in-memory db.users the leaderboard reads.
   if (req.method === 'GET' && url.pathname === '/api/hiscores') {
     // Stage 37: bots excluded, as on the duel leaderboard.
-    const rows = Object.values(db.users).filter((u) => !(u.profile && u.profile.bot)).map((u) => {
+    const rows = Object.values(db.users).filter((u) => !(u.profile && u.profile.bot) && !isRetiredTestAccount(u.profile)).map((u) => {
       const p = u.profile;
       ensureV2(p);
       const levels = levelsOf(p);
@@ -2154,7 +2163,7 @@ const AREAS = {
   // chest is no longer at the spawn — see BARROWS_CHEST).
   barrows_crypt: { name: 'Barrows Crypt', spawn: { x: 800, y: 600 } },
   barrows_tunnels: { name: 'Barrows Tunnels', spawn: { x: 800, y: 800 } },
-  arena: { name: 'Duel Arena', spawn: { x: 800, y: 450 } },
+  arena: { name: 'Tournament Dais', spawn: { x: 800, y: 450 } }, // Week 2 (D14): duels live on the Tournament Dais — the area's player-facing name says so
   // Stage 17: the Stake Board waiting area — NOT travel-reachable;
   // only the stake-match flow moves players in (stake_ready), and
   // startDuel / a match cancel moves them back out.
@@ -4783,6 +4792,10 @@ function startFcRun(key) {
   sess.fcRunId = id;
   spawnFcWave(run, 1);
   run.timer = setInterval(() => fcTick(run), TICK_MS);
+  // Week 2 (D13): the caves' HP pool IS the player's Hitpoints level
+  // (by design) — say so up front, so the smaller number never reads
+  // as a bug.
+  send(sess.ws, { type: 'chat', from: 'Game', text: `🌋 Fight Caves: your hitpoints here are a pool equal to your Hitpoints level (${maxHpYou}) for the whole run.` });
 }
 // A monster died: count the kill, run the on-death specials (Tz-Kek
 // splits into two small Tz-Kek in the same wave; Jad ends the caves).
@@ -4951,6 +4964,7 @@ function fcTick(run) {
 
   // 3) The surviving monsters act on their own cadences.
   let anyStyleBlock = false;
+  let tzkihDrained = 0; // Week 2 (D12): prayer points a Tz-Kih took this tick (named on the tick note below)
   for (const mon of run.monsters.values()) {
     if (!mon.alive || run.done) continue;
     mon.cooldown -= 1;
@@ -4998,13 +5012,13 @@ function fcTick(run) {
       deflected = monsterDeflect(profile, mon.attackType, raw);
       if (deflected > 0) {
         prayerBlocked = true;
-        if (mon.kind === 'tzkih') profile.prayerPoints = Math.max(0, profile.prayerPoints - 2);
+        if (mon.kind === 'tzkih') { const ppBefore = profile.prayerPoints; profile.prayerPoints = Math.max(0, profile.prayerPoints - 2); tzkihDrained += ppBefore - profile.prayerPoints; }
         mon.hp -= deflected;
         if (mon.hp <= 0) killFcMonster(run, mon);
       } else if (Math.random() < styleBlockChance(profile)) {
         styleBlocked = true;
       } else {
-        if (mon.kind === 'tzkih') profile.prayerPoints = Math.max(0, profile.prayerPoints - 2);
+        if (mon.kind === 'tzkih') { const ppBefore = profile.prayerPoints; profile.prayerPoints = Math.max(0, profile.prayerPoints - 2); tzkihDrained += ppBefore - profile.prayerPoints; }
         dmg = Math.floor(raw * (1 - armourReduction(profile)));
       }
     }
@@ -5033,6 +5047,13 @@ function fcTick(run) {
   // 4) Wave clear: everything (splits included) is dead — a breather,
   // then the next wave spawns.
   const anyAlive = [...run.monsters.values()].some((m) => m.alive);
+  // Week 2 (D12): a Tz-Kih's drain is a pool attack — it lands whether
+  // or not a prayer is up (Derek's Fight Caves spec) — but it must
+  // never be a MYSTERY drain: the tick it happens, the tick says so.
+  // (The over-time drain is separate and only ever runs while a
+  // prayer is active — see the prayer drain interval.)
+  if (tzkihDrained > 0) note = note ? `${note} The Tz-Kih drains ${tzkihDrained} prayer points!` : `The Tz-Kih drains ${tzkihDrained} prayer points!`;
+
   if (!anyAlive && !run.betweenWaves) {
     run.betweenWaves = true;
     run.targetId = null;
@@ -6781,7 +6802,10 @@ wss.on('connection', (ws, req) => {
       send(ws, objectsMsg('barrows_tunnels'));
       send(ws, barrowsStateMsg(me));
       broadcastState();
-      return send(ws, { type: 'chat', from: 'Game', text: 'You climb down into the Barrows tunnels. The reward chest waits in the room at the far end, behind a puzzle door — and prayer drains twice as fast down here.' });
+      // Week 2 (D13): the descend line also names the tunnel HP pool
+      // (dealt fresh above, equal to the Hitpoints level — by design)
+      // so the number on the fight strip never reads as a bug.
+      return send(ws, { type: 'chat', from: 'Game', text: `You climb down into the Barrows tunnels. The reward chest waits in the room at the far end, behind a puzzle door — and prayer drains twice as fast down here. Your hitpoints down here are a fresh pool of ${me.barrowsHp} — your Hitpoints level — and the puzzle door and the ambush spend it.` });
     }
     if (m.type === 'barrows_leave_crypt') {
       if (me.area !== 'barrows_crypt') return send(ws, { type: 'error', message: 'You are not in a crypt.' });
@@ -7025,11 +7049,16 @@ wss.on('connection', (ws, req) => {
       // Pickaxe bonus (Stage 3): the best pickaxe carried speeds up
       // Mining only — a shorter action cooldown and slightly better
       // odds. Other skills keep the standard shared cooldown.
+      // Week 2 (D17): a rock NEEDS a pickaxe — bare hands no longer
+      // mine at all, which is what makes the pickaxe line matter.
+      // (Pickaxes are tools: carried in the backpack, never worn, so
+      // the backpack check in bestPickaxeSpeed is the whole check.)
       let cooldownMs = ACTION_COOLDOWN_MS;
       let pickBonus = 0;
       if (node.skill === 'mining') {
         const speed = bestPickaxeSpeed(profile);
-        if (speed > 0) { cooldownMs = ACTION_COOLDOWN_MS / speed; pickBonus = (speed - 1) * 0.1; }
+        if (speed <= 0) return send(ws, { type: 'error', message: 'You need a pickaxe to mine — Pickaxe Pete at the Emberfall Mine sells a bronze one for 60g.' });
+        cooldownMs = ACTION_COOLDOWN_MS / speed; pickBonus = (speed - 1) * 0.1;
       }
       if (actionOnCooldown(me, cooldownMs)) return send(ws, { type: 'error', message: 'Too fast — one action at a time.' });
       // Success chance: 55% at the required level, +2% per level above
@@ -9483,6 +9512,22 @@ function botTravelTo(bot, area) {
   if (area !== 'plaza') completeStarterGoal(bot.key, 'visit_area'); // the same first-trip goal a human earns
 }
 
+// Week 2 (D17): a bot that wants to mine but owns no pickaxe buys a
+// bronze one at Pickaxe Pete's — the current catalogue price a
+// player pays, from its own coin stacks (mirrors botRestock's buy
+// loop). Returns true when the bot holds a pickaxe afterwards.
+function botBuyPickaxe(bot) {
+  const profile = bot.profile;
+  if (bestPickaxeSpeed(profile) > 0) return true;
+  const price = currentBuyPrice('bronze_pickaxe');
+  if (goldTotal(profile) < price) return false;
+  if (addStacks(profile.backpack, 'bronze_pickaxe', 1, BACKPACK_MAX_STACKS) > 0) return false; // pack full — shop_buy refuses too
+  takeGold(profile, price);
+  noteDemand('bronze_pickaxe', 1, +1); // Pricing: a bot's shop buy is trade activity, like a human's
+  save(bot.key);
+  return true;
+}
+
 // ----- gathering / training (mirrors the 'gather' handler) -----
 function botGatherOnce(bot, node) {
   const sess = bot.sess, profile = bot.profile, key = bot.key;
@@ -9493,8 +9538,12 @@ function botGatherOnce(bot, node) {
   if (level < node.levelReq) return 'locked';
   let cooldownMs = ACTION_COOLDOWN_MS / BOT_TIME_SCALE;
   if (node.skill === 'mining') {
+    // Week 2 (D17): bots follow the same rule as players — no
+    // pickaxe, no mining. The plan drive answers 'nopick' (buy one,
+    // or go chop / fish instead).
     const speed = bestPickaxeSpeed(profile);
-    if (speed > 0) cooldownMs = cooldownMs / speed;
+    if (speed <= 0) return 'nopick';
+    cooldownMs = cooldownMs / speed;
   }
   if (actionOnCooldown(sess, cooldownMs)) return 'cooling';
   const pickBonus = node.skill === 'mining' ? Math.max(0, (bestPickaxeSpeed(profile) - 1) * 0.1) : 0;
@@ -9645,6 +9694,18 @@ function botPlanDrive(bot) {
     const node = NODES.get(plan.nodeId);
     if (!node) { bot.plan = null; return; }
     const r = botGatherOnce(bot, node);
+    if (r === 'nopick') {
+      // Week 2 (D17): mining needs a pickaxe now. Buy a bronze one if
+      // the purse allows; otherwise switch this plan to chopping or
+      // fishing rather than stalling at the rock face.
+      if (!botBuyPickaxe(bot)) {
+        const altSkill = ['woodcutting', 'fishing'].find((s) => botNodesForSkill(bot, s).length);
+        const alt = altSkill ? botPickNode(bot, altSkill) : null;
+        if (alt) bot.plan = { ...plan, area: alt.area, nodeId: alt.id, skill: altSkill, x: alt.x, y: alt.y };
+        else bot.plan = null;
+      }
+      return;
+    }
     if (r === 'depleted' || r === 'locked' || r === 'gone') {
       // Hop to another node for the same skill, or give up the plan.
       const alt = botPickNode(bot, plan.skill);
