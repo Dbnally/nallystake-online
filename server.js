@@ -805,6 +805,22 @@ const STARTER_REWARD = 25;
 function clogEntryIds() {
   return [...Object.keys(BARROWS_BROTHERS), 'fire_cape', ...BARROWS_WEAPONS, ...BARROWS_ARMOUR_PIECES, ...BARROWS_TIER_PIECES];
 }
+// Starter build (Derek, settled 2026-11-21): the Nooby sword is a
+// distinct first weapon BELOW bronze, granted free at account
+// creation (and once to existing accounts by the noobyV migration
+// in ensureV2). Defined LAST in the catalog so every existing base
+// item keeps its Stage 7D reference-list number. Chosen defaults
+// (Derek set no numbers): accBonus 0.01 and maxBonus 0 — exactly
+// one step under the bronze sword's 0.02 / +1 — so it helps a
+// brand-new fighter without touching the chart ladder. It is never
+// stocked by a shop and never on the Gold Exchange (no `buy`, no
+// `shop`, and it is not a GOODS id); shops buy it back at the
+// fixed sellOnly 2g, like other basics. It is not a collection-log
+// entry (clogEntryIds above is built only from the Barrows tables).
+// Its dull wooden-brown catalog colour is what the worn mesh reads
+// (gearColorFor falls back to the catalog colour for non-tier ids)
+// and weaponShape defaults to 'sword', so it is held as a sword.
+ITEMS.nooby_sword = { name: 'Nooby sword', icon: '🗡️', kind: 'weapon', slot: 'weapon', style: 'melee', tier: 'nooby', sellOnly: 2, accBonus: 0.01, maxBonus: 0, color: '#8a6b4a' };
 
 // ---------- Stage 7D: custom items + placed objects (registries) ----------
 // Base items are numbered 1..BASE_ITEM_COUNT in ITEMS definition
@@ -1170,10 +1186,11 @@ function newProfile(username) {
     appearance: defaultAppearance(), // Stage 10 — see cleanAppearance
     // Stage 16: the starter gold IS the backpack coin stack below;
     // the `gold` number above is only its synced mirror (goldTotal).
-    backpack: [{ item: 'gold', qty: START_GOLD }], // [{item, qty}] stacks, max BACKPACK_MAX_STACKS distinct
+    backpack: [{ item: 'gold', qty: START_GOLD }, { item: 'nooby_sword', qty: 1 }], // [{item, qty}] stacks, max BACKPACK_MAX_STACKS distinct
     worn: emptyWorn(),
     bank: [], // [{item, qty}] stacks — gold coins stack here too (Stage 16)
     goldV: 2, // Stage 16: born migrated — money already lives in stacks
+    noobyV: 1, // Starter build: born with the Nooby sword grant already made (see ensureV2)
     prayerPoints: PRAYER_MAX, prayerMax: PRAYER_MAX, activePrayer: null,
     specialEnergy: 0,
     xp: defaultXp(), // Stage 1 skills — see SKILLS / XP_TABLE above
@@ -1406,6 +1423,23 @@ function ensureV2(p) {
     p.goldV = 2; changed = true;
     const total = stackQty(p.backpack, 'gold') + stackQty(p.bank, 'gold');
     if (p.gold !== total) p.gold = total; // the number is now just the mirror
+  }
+  // Starter build migration: existing accounts receive exactly ONE
+  // Nooby sword, once. The noobyV flag is the whole rule: new
+  // profiles are born with it set (their sword rides in the starter
+  // backpack), and the first ensureV2 that finds it unset grants
+  // the sword — backpack if a stack slot is free, else the bank
+  // (the same overflow the gold migration uses) — and sets it.
+  // Once set it is final: dropping or selling the sword never
+  // re-grants it, and restarts cannot duplicate it. (The grant is
+  // inlined rather than routed through addItemToProfile, which
+  // itself calls ensureV2.) Bot profiles are persistent profiles
+  // and pass through here exactly like human ones, so bots receive
+  // the same one-time grant — no special-casing.
+  if (p.noobyV !== 1) {
+    const leftover = addStacks(p.backpack, 'nooby_sword', 1, BACKPACK_MAX_STACKS);
+    if (leftover > 0) addStacks(p.bank, 'nooby_sword', leftover);
+    p.noobyV = 1; changed = true;
   }
   return changed;
 }
