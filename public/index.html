@@ -1629,11 +1629,15 @@ function buildPlaza(root){
  $('labels').appendChild(wsl);
  worldLabels.push({el:wsl,x:sx2w(1290),y:3.8,z:sy2w(26),area:'plaza',kind:'static'});
  // Duel Master — static figure standing by the board (Fisher Wren pattern)
+ // Stage 43: rounded like the players now — cylinder robe, sphere
+ // head, tapered legs; he was the last cube-headed figure in the plaza.
  const dm=new THREE.Group(); dm.position.set(23,0,5.6); scene.add(dm); // Stage 13: x2, still beside the duel board
- box(0.24,0.7,0.24,0x241a12,-0.16,0.35,0,dm); box(0.24,0.7,0.24,0x241a12,0.16,0.35,0,dm); // legs
- box(0.7,0.8,0.4,0x6b4a7a,0,1.1,0,dm); // purple robe body
- box(0.44,0.44,0.44,0xd9a066,0,1.75,0,dm); // head
- box(0.52,0.2,0.52,0xc9a227,0,2.08,0,dm); // gold circlet
+ const dmLegG=new THREE.CylinderGeometry(0.10,0.12,0.7,8), dmLegM=new THREE.MeshLambertMaterial({color:0x241a12});
+ const dmLegL=new THREE.Mesh(dmLegG,dmLegM); dmLegL.position.set(-0.16,0.35,0); dm.add(dmLegL);
+ const dmLegR=new THREE.Mesh(dmLegG,dmLegM); dmLegR.position.set(0.16,0.35,0); dm.add(dmLegR); // legs
+ const dmRobe=new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.44,0.85,12),new THREE.MeshLambertMaterial({color:0x6b4a7a})); dmRobe.position.y=1.1; dm.add(dmRobe); // purple robe body
+ const dmHead=new THREE.Mesh(new THREE.SphereGeometry(0.26,12,10),new THREE.MeshLambertMaterial({color:0xd9a066})); dmHead.position.y=1.75; dm.add(dmHead); // head
+ const dmCirc=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.28,0.09,12),new THREE.MeshLambertMaterial({color:0xc9a227})); dmCirc.position.y=1.93; dm.add(dmCirc); // gold circlet
  const dmSw=box(0.07,1.1,0.14,0xd9dee6,0.62,1.5,0,dm); dmSw.rotation.z=-0.5; // raised sword
  const dmlabel=document.createElement('div'); dmlabel.className='plabel';
  dmlabel.innerHTML=`<div class="nname">⚔️ Duel Master</div>`;
@@ -1701,17 +1705,20 @@ function buildPlaza(root){
  fenceRun(80,-45,80,-7); fenceRun(80,7,80,45); // east
  // Stage 19 gate posts + signs: NW corner -> Wizard Grounds,
  // north wall (west segment) -> Ranger Camp.
- box(0.5,3.4,0.5,0x7c7565,-80,1.7,-40.2,scene); box(0.5,3.4,0.5,0x7c7565,-75.2,1.7,-45,scene);
+ // Stage 43: the gate posts wear the plaza's cobblestone texture
+ // instead of a flat grey fill.
+ const gateStoneMat=new THREE.MeshLambertMaterial({map:stoneTexture(1,2)});
+ boxM(0.5,3.4,0.5,gateStoneMat,-80,1.7,-40.2,scene); boxM(0.5,3.4,0.5,gateStoneMat,-75.2,1.7,-45,scene);
  box(0.18,2.2,0.18,0x5a4020,-70,1.1,-38,scene);
  const wsp=textSprite('🧙 Wizard Grounds','#cdbcf2','rgba(23,19,12,0.85)'); wsp.position.set(-70,3.0,-38); scene.add(wsp);
- box(0.5,3.4,0.5,0x7c7565,-60.8,1.7,-45,scene); box(0.5,3.4,0.5,0x7c7565,-35.2,1.7,-45,scene);
+ boxM(0.5,3.4,0.5,gateStoneMat,-60.8,1.7,-45,scene); boxM(0.5,3.4,0.5,gateStoneMat,-35.2,1.7,-45,scene);
  box(0.18,2.2,0.18,0x5a4020,-48,1.1,-38,scene);
  const rsp=textSprite('🏹 Ranger Camp','#b7e3a8','rgba(23,19,12,0.85)'); rsp.position.set(-48,3.0,-38); scene.add(rsp);
  // gate posts N/E/S/W (visual only — Phase 3 areas later)
  for(const [gx,gz] of [[0,-45],[0,45],[-80,0],[80,0]]){
    const horiz=Math.abs(gz)>Math.abs(gx);
    const dx=horiz?5.2:0, dz=horiz?0:5.2;
-   box(0.5,3.4,0.5,0x7c7565,gx-dx,1.7,gz-dz,scene); box(0.5,3.4,0.5,0x7c7565,gx+dx,1.7,gz+dz,scene);
+   boxM(0.5,3.4,0.5,gateStoneMat,gx-dx,1.7,gz-dz,scene); boxM(0.5,3.4,0.5,gateStoneMat,gx+dx,1.7,gz+dz,scene);
    box(horiz?11.4:0.6,0.4,horiz?0.6:11.4,0xd4af37,gx,3.3,gz,scene);
  }
  // Stage 25: a fence ring around the tournament dais — back and
@@ -1750,9 +1757,13 @@ function buildPlaza(root){
  const treeSpots=[[-68,-34],[-52,32],[-28,-38],[28,38],[52,-34],[68,32],[72,-12],[-72,10],[40,-40],[-40,40],[60,8],[-60,-10],[16,40],[-16,-40],
    [-58,-24],[58,24],[-46,38],[46,-38],[74,20],[-74,-20],[24,26],[-24,-26],[64,-40],[-64,40]];
  for(const [tx,tz] of treeSpots){
-   box(0.35,1.4,0.35,0x5a4020,tx,0.7,tz,scene);
+   // Stage 43: tapered round trunk (was a square post) and a
+   // two-tier pine canopy, so the trees read as trees at distance.
+   const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.24,1.5,8),new THREE.MeshLambertMaterial({map:woodTexture('#5a4020')})); trunk.position.set(tx,0.75,tz); trunk.castShadow=true; scene.add(trunk);
    const cone=new THREE.Mesh(new THREE.ConeGeometry(1.7,3.4,7),foliageMat('#2c5e26',['#24501e','#38702f','#1e4519']));
-   cone.position.set(tx,3.1,tz); scene.add(cone);
+   cone.position.set(tx,3.1,tz); cone.castShadow=true; scene.add(cone);
+   const cone2=new THREE.Mesh(new THREE.ConeGeometry(1.15,2.2,7),foliageMat('#33702c',['#2a6124','#3d7f35','#24501e']));
+   cone2.position.set(tx,4.6,tz); cone2.castShadow=true; scene.add(cone2);
  }
  // a few rocks / bushes for feel (x2 + extras, as above)
  for(const [rx,rz] of [[-36,16],[36,-18],[48,24],[-48,-24],[12,-36],[-12,34],[-56,-32],[56,34],[30,-28],[-30,28],[70,-4],[-70,6]]){
@@ -2778,18 +2789,36 @@ function makeKnight(isMe,name,app){
  const footMat=hasApp? outMat(app.feet) : steelDarkMat;
  const legL=limbPart(0.115,0.92,legMat,footMat); legL.position.set(-0.19,1.00,0); pivot.add(legL);
  const legR=limbPart(0.115,0.92,legMat,footMat); legR.position.set(0.19,1.00,0); pivot.add(legR);
+ // Stage 43 (graphics update): a rounded pelvis bridging torso and
+ // legs (no gap at the hips), and a real SHOE on each foot — an
+ // ellipsoid toe-forward last in the feet colour riding the leg's
+ // lower segment, so an ungeared player's feet read as shoes, not
+ // ball ends. Worn boots (syncGear) cover them exactly as before.
+ const pelvis=new THREE.Mesh(new THREE.CylinderGeometry(0.295,0.335,0.24,12),legMat); pelvis.position.y=0.99; pivot.add(pelvis);
+ const _shoeGeo=new THREE.SphereGeometry(0.105,10,8);
+ for(const leg of [legL,legR]){
+   const shoe=new THREE.Mesh(_shoeGeo,footMat); if(shoe.scale) shoe.scale.set(1,0.62,1.6); shoe.position.set(0,-0.425,0.05); leg.userData.lower.add(shoe); // guarded scale: the headless gear test's THREE stub has no scale (same pattern as the group scale in makeKnight)
+ }
  // torso: tapered cylinder; appearance repaints it + the tabard in the
  // outfit colour, classic knights keep steel + heraldic tabard
  const female=hasApp&&app.gender==='female';
  const torsoMat=hasApp? outMat(app.torso) : steelMat;
  const torso=new THREE.Mesh(new THREE.CylinderGeometry(0.27*(female?0.88:1),0.36*(female?0.88:1),0.86,12),torsoMat); torso.position.y=1.45; pivot.add(torso);
- const tabardMesh=box(0.42*(female?0.88:1),0.68,0.07,hasApp? (OUTFIT_COLORS[app.torso]||OUTFIT_COLORS[0]) : main,0,1.41,0.28,pivot); // tabard (hidden by syncGear while body armour is worn)
+ // Stage 43: rounded shoulder caps where the arms meet the torso,
+ // so the silhouette flows shoulder -> arm instead of stepping.
+ const shoulderGeo=new THREE.SphereGeometry(0.135,10,8);
+ for(const sx of [-0.40,0.40]){ const sh2=new THREE.Mesh(shoulderGeo,torsoMat); sh2.position.set(sx,1.82,0); pivot.add(sh2); }
+ // Stage 43: the tabard is a CURVED cloth panel (a partial cylinder
+ // hugging the torso's front), not a flat box — cloth, not cardboard.
+ const tabardMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.30*(female?0.88:1),0.395*(female?0.88:1),0.68,12,1,true,-0.62,1.24),new THREE.MeshLambertMaterial({color:hasApp? (OUTFIT_COLORS[app.torso]||OUTFIT_COLORS[0]) : main,side:THREE.DoubleSide})); tabardMesh.position.y=1.41; pivot.add(tabardMesh); // tabard (hidden by syncGear while body armour is worn)
  // Stage 42: an ungeared appearance knight wears a diagonal chest
  // strap in the trim colour over the tabard, so the bare look
  // reads as styled clothes instead of a plain painted cylinder.
  // syncGear hides it under body armour, same as the tabard.
- const strapMesh=hasApp? box(0.13,0.98,0.075,trim,0,1.45,0.29,pivot) : null;
- if(strapMesh) strapMesh.rotation.z=0.55;
+ // Stage 43: the chest strap is now a tilted cloth SASH — a thin
+ // open band wrapped around the torso and rotated, so it lies
+ // diagonally like cloth instead of a flat slab floating in front.
+ const strapMesh=hasApp? (()=>{ const sm=new THREE.Mesh(new THREE.CylinderGeometry(0.315,0.375,0.14,12,1,true),new THREE.MeshLambertMaterial({color:trim,side:THREE.DoubleSide})); sm.position.y=1.45; sm.rotation.z=0.55; pivot.add(sm); return sm; })() : null;
  const belt=new THREE.Mesh(new THREE.CylinderGeometry(0.37,0.38,0.10,12),trimMat); belt.position.y=1.05; pivot.add(belt);
  // arms on shoulder pivots; the RIGHT arm is the weapon arm; hands are skin
  const armMat=hasApp? outMat(app.arms) : steelMat;
@@ -2823,6 +2852,9 @@ function makeKnight(isMe,name,app){
  // a thin steel circlet (still reads armoured); classic knights keep the
  // steel helmet cap + trim band. Beards for male appearance knights.
  const head=new THREE.Mesh(new THREE.SphereGeometry(0.26,14,12),skinMat); head.position.y=2.17; pivot.add(head);
+ // Stage 43: a NECK between torso and head — without one the head
+ // sat straight on the chest like a ball on a barrel.
+ const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.105,0.125,0.24,10),skinMat); neck.position.y=1.97; pivot.add(neck);
  // Stage 30: a face — two dark eyes on the front of the head sphere,
  // so the figure reads as a person (and you can tell which way it is
  // facing) instead of a blank ball.
@@ -3035,18 +3067,22 @@ function buildWeaponInto(a,id){
  const d0=catalog[id];
  if(d0&&d0.twoHanded){ wg.scale.set(1.18,1.18,1.18); wg.rotation.z=-0.30; wg.rotation.x=0.10; }
  if(shape==='sword'){
-   box(0.11,0.95,0.18,c,0,0.36,0,wg); // blade in the tier's colour (Stage 37: wider + longer, so it reads at distance)
-   box(0.34,0.08,0.22,gold,0,-0.12,0,wg); // crossguard
-   box(0.09,0.24,0.09,grip,0,-0.28,0,wg); // grip
+   // Stage 43: grip centred ON the fist (the group origin is the
+   // hand) — guard just above the fist, blade beyond it. Before,
+   // the whole sword sat ~0.28 too low: the fist closed on the
+   // blade and the grip dangled unheld below the hand.
+   box(0.11,0.95,0.18,c,0,0.64,0,wg); // blade in the tier's colour (Stage 37: wider + longer, so it reads at distance)
+   box(0.34,0.08,0.22,gold,0,0.16,0,wg); // crossguard
+   box(0.09,0.24,0.09,grip,0,0,0,wg); // grip
  } else if(shape==='scimitar'){
    const curve=new THREE.Mesh(new THREE.TorusGeometry(0.46,0.055,8,20,1.8),new THREE.MeshLambertMaterial({color:c}));
-   curve.position.set(-0.18,0.30,0); curve.rotation.z=2.25; wg.add(curve); // the swept curved blade
-   box(0.26,0.07,0.18,gold,0,-0.10,0,wg); // small guard
-   box(0.09,0.22,0.09,grip,0,-0.24,0,wg); // grip
+   curve.position.set(-0.18,0.58,0); curve.rotation.z=2.25; wg.add(curve); // the swept curved blade
+   box(0.26,0.07,0.18,gold,0,0.14,0,wg); // small guard (Stage 43: grip on the fist, as the sword)
+   box(0.09,0.22,0.09,grip,0,0,0,wg); // grip
  } else if(shape==='blade'){
-   box(0.14,0.52,0.2,c,0,0.16,0,wg); // short, broad blade — reads as a dagger/blade, not a sword
-   box(0.22,0.06,0.16,gold,0,-0.12,0,wg); // small guard
-   box(0.08,0.2,0.08,grip,0,-0.24,0,wg); // grip
+   box(0.14,0.52,0.2,c,0,0.40,0,wg); // short, broad blade — reads as a dagger/blade, not a sword
+   box(0.22,0.06,0.16,gold,0,0.12,0,wg); // small guard (Stage 43: grip on the fist, as the sword)
+   box(0.08,0.2,0.08,grip,0,0,0,wg); // grip
  } else if(shape==='greataxe'){
    box(0.08,1.3,0.08,grip,0,0.3,0,wg); // long haft
    box(0.52,0.36,0.06,c,0,0.78,0,wg); // broad double head
@@ -3067,9 +3103,9 @@ function buildWeaponInto(a,id){
    chain.position.set(0.13,0.42,0); chain.rotation.z=-0.7; wg.add(chain);
    const ball=new THREE.Mesh(new THREE.SphereGeometry(0.13,10,8),new THREE.MeshLambertMaterial({color:c})); ball.position.set(0.26,0.56,0); wg.add(ball);
  } else if(shape==='greatsword'){
-   box(0.09,1.18,0.16,c,0,0.44,0,wg); // long broad blade in the tier's colour
-   box(0.38,0.08,0.22,gold,0,-0.18,0,wg); // wide crossguard
-   box(0.1,0.34,0.1,grip,0,-0.38,0,wg); // two-hand grip
+   box(0.09,1.18,0.16,c,0,0.72,0,wg); // long broad blade in the tier's colour
+   box(0.38,0.08,0.22,gold,0,0.10,0,wg); // wide crossguard (Stage 43: grip on the fist, as the sword)
+   box(0.1,0.34,0.1,grip,0,-0.05,0,wg); // two-hand grip
  } else if(shape==='axe'){
    box(0.07,1.0,0.07,grip,0,0.26,0,wg); // haft
    box(0.46,0.38,0.06,c,0.18,0.68,0,wg); // crescent head (Stage 37: bigger, so the axe reads as an axe)
@@ -3213,7 +3249,7 @@ function syncGear(a,p){
    box(0.09,0.09,0.06,0xc9a227,-0.24,1.87,0.29,A.cape); box(0.09,0.09,0.06,0xc9a227,0.24,1.87,0.29,A.cape);
  }
  // --- gauntlets + amulet
- if(w&&w.hands){ const c=gearColorFor(w.hands); box(0.16,0.2,0.16,c,0,-0.70,0,A.armL); box(0.16,0.2,0.16,c,0,-0.70,0,A.armR); }
+ if(w&&w.hands){ const c=gearColorFor(w.hands); for(const an of [A.armL,A.armR]){ const gm=new THREE.Mesh(new THREE.SphereGeometry(0.115,10,8),mat(c)); if(gm.scale) gm.scale.set(1,1.3,1); gm.position.set(0,-0.70,0); an.add(gm); } } // Stage 43: rounded gauntlets (scaled spheres), not cubes; scale guarded for the gear test's THREE stub
  if(w&&w.amulet){ const d=catalog[w.amulet]; box(0.13,0.15,0.06,(d&&d.color)? parseInt(d.color.slice(1),16) : 0xc9a227,0,1.67,0.35,A.body); }
  for(const k of Object.keys(A)) shadowify(A[k]);
 }
