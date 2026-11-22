@@ -50,9 +50,21 @@
  #dockhead{display:flex;gap:6px;align-items:flex-start;pointer-events:none}
  #dockhead>*{pointer-events:auto}
  #dockhead .railchip{flex:1}
- .rbtn{width:46px;height:46px;border-radius:10px;background:rgba(23,19,16,var(--uia));border:2px solid #7a6748;color:#e8d9b0;font-size:20px;cursor:pointer}
+ /* Navigation pass: every tab carries its name under its icon —
+    a new player can read what a button does instead of guessing
+    from an emoji (the title attribute never shows on touch). The
+    tab grows to 60×54 to fit icon + label; the bar still wraps
+    inside the dock (5 per row at full dock width). */
+ .rbtn{width:60px;height:54px;border-radius:10px;background:rgba(23,19,16,var(--uia));border:2px solid #7a6748;color:#e8d9b0;font-size:20px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px 1px;box-sizing:border-box}
+ .rbtn .tic{font-size:19px;line-height:1}
+ .rbtn .tlbl{font-size:9px;font-weight:700;line-height:1;color:#d8c9a3;white-space:nowrap}
  .rbtn.on{border-color:#c9a227;background:#3a2c1c}
- #gearbtn{width:46px;height:46px;border-radius:10px;background:linear-gradient(135deg,#c9a227,#7a6748);border:2px solid #e3c766;color:#fff;font-size:22px;cursor:pointer;box-shadow:0 0 10px #c9a22755;flex:none}
+ /* Navigation pass: the master toggle is labelled "Menu" in words
+    (icon span + label span, so applyRailVisibility swaps only the
+    glyph 🎛️/✕ and the label survives). */
+ #gearbtn{min-width:46px;height:46px;border-radius:10px;background:linear-gradient(135deg,#c9a227,#7a6748);border:2px solid #e3c766;color:#fff;font-size:22px;cursor:pointer;box-shadow:0 0 10px #c9a22755;flex:none;display:flex;align-items:center;justify-content:center;gap:4px;padding:0 9px;box-sizing:border-box}
+ #gearbtn .gbic{font-size:20px;line-height:1}
+ #gearbtn .gblbl{font-size:11px;font-weight:800;line-height:1}
  /* the tab bar: every panel one tap away, wrapped in the dock.
     While Grab is on the bar is .locked: no touch scrolling gestures,
     arranging only. */
@@ -73,7 +85,11 @@
  #dockpanel{width:100%;box-sizing:border-box;background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:12px;padding:10px;display:none;pointer-events:auto}
  #dockpanel.open{display:block}
  #dockpanel h3{margin:2px 0 8px;color:#e3c766;font-size:16px;display:flex;justify-content:space-between;align-items:center}
- #dockpanel h3 .x{background:none;border:0;color:#e8d9b0;font-size:18px;cursor:pointer}
+ #dockpanel h3 .x{background:none;border:0;color:#e8d9b0;font-size:18px;cursor:pointer;padding:6px 10px;min-height:38px;min-width:38px;border-radius:8px;box-sizing:border-box}
+ /* Navigation pass: the "‹ Tabs" back button sits beside the ✕ in
+    every panel header — one tap from any panel back to the tab
+    grid (see backToTabs). */
+ #dockpanel h3 #dockback{margin-left:auto;font-size:13px;font-weight:800;color:#e3c766}
  #dockbody{max-height:max(140px,calc(100dvh - 430px));overflow-y:auto}
  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
  .cell{background:#221a13;border:1px solid #4a3a28;border-radius:8px;min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:3px;position:relative}
@@ -87,6 +103,9 @@
  .rowline .ic{font-size:22px}
  .rowline .grow{flex:1}
  .rowline .sub{font-size:11px;color:#b8a888}
+ /* Navigation pass: the selected spell's row is lit like a
+    selected backpack cell, so the casting spell reads at a glance. */
+ .rowline.sel{border-color:#c9a227;background:#3a2c1c}
  button.act{background:linear-gradient(135deg,#c9a227,#8e2f32);color:#fff;border:0;border-radius:7px;padding:6px 9px;font-weight:700;font-size:12px;cursor:pointer}
  button.act:disabled{opacity:.45}
  button.ghost{background:#2b2118;color:#e8d9b0;border:1px solid #7a6748;border-radius:7px;padding:6px 9px;font-weight:700;font-size:12px;cursor:pointer}
@@ -161,7 +180,7 @@
  #duelbar::-webkit-scrollbar{display:none}
  #duelbar>*{flex:none}
  .fightinfo{display:none!important}
- .fchip{flex:none;display:inline-flex;align-items:center;gap:4px;background:#2b2118;color:#e8d9b0;border:1px solid #7a6748;border-radius:999px;padding:7px 10px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap;line-height:1;font-family:inherit}
+ .fchip{flex:none;display:inline-flex;align-items:center;gap:4px;background:#2b2118;color:#e8d9b0;border:1px solid #7a6748;border-radius:999px;padding:9px 10px;min-height:40px;box-sizing:border-box;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;line-height:1;font-family:inherit}
  .fchip.ctx{cursor:default;color:#ffd75e;border-color:#c9a227;background:#3a2c1c}
  .fchip.spec{background:linear-gradient(135deg,#c9a227,#8e2f32);color:#fff;border-color:#c9a227}
  .fchip.pray.on{border-color:#c9a227;background:#3a2c1c;box-shadow:0 0 10px #c9a22766}
@@ -260,7 +279,7 @@
  #fcquick{display:contents}
  #fcspecbtn.ready{box-shadow:0 0 12px 3px #c9a227;background:#8e2f32}
  #fcprayers{display:contents}
- .fcpray{background:#221a13;border:2px solid #4a3a28;border-radius:999px;color:#e8d9b0;padding:7px 10px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;line-height:1;font-family:inherit}
+ .fcpray{background:#221a13;border:2px solid #4a3a28;border-radius:999px;color:#e8d9b0;padding:9px 10px;min-height:40px;box-sizing:border-box;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap;line-height:1;font-family:inherit}
  .fcpray.on{border-color:#c9a227;background:#3a2c1c;box-shadow:0 0 10px #c9a22766}
  .fcpray.flash{animation:fcflash .28s ease-in-out infinite alternate}
  /* Always-on bottom bar (Derek, 2026-11-21): 🎒 Backpack, the four
@@ -324,7 +343,7 @@
  .parchment .ghost{background:rgba(43,33,24,.12);color:#2b2118;border-color:#7a6748}
  .parchment input[type=number]{background:#f4ead0;color:#2b2118}
  /* Stage 18: the chips under the master toggle (Grab / Menu tap / Camera) */
- .railchip{width:46px;min-height:30px;border-radius:10px;border:2px solid #7a6748;background:linear-gradient(180deg,#3a2f22,#241c13);color:#e8d9b0;font-size:10px;font-weight:700;cursor:pointer;padding:2px 0;line-height:1.25}
+ .railchip{width:46px;min-height:40px;border-radius:10px;border:2px solid #7a6748;background:linear-gradient(180deg,#3a2f22,#241c13);color:#e8d9b0;font-size:10px;font-weight:700;cursor:pointer;padding:2px 0;line-height:1.25}
  .railchip.on{background:#2e7d32;color:#eaffea;border-color:#66bb6a}
  body.grabbing #docktabs .rbtn,body.grabbing #placedtabs .rbtn{cursor:grab;outline:2px dashed rgba(102,187,106,.65);outline-offset:-2px}
  /* Stage 23: Grab mode is modal — a standing hint while it's on */
@@ -400,29 +419,29 @@
 
 <div id="paneldock">
  <div id="dockhead">
-  <button id="gearbtn" title="Show / hide the panel tabs">🎛️</button>
+  <button id="gearbtn" title="Show / hide the panel tabs"><span class="gbic">🎛️</span><span class="gblbl">Menu</span></button>
   <button id="railgrab" class="railchip" title="Grab mode: drag the panel tabs where you want them, then toggle off to lock them">✋ Grab</button>
   <button id="railmenutap" class="railchip" title="Menu tap: taps on players, monsters, nodes and piles open their menu instead of acting">🖱️ Menu tap: Off</button>
   <button id="railcam" class="railchip" title="Camera view: third person / first person">🎥 3rd</button>
  </div>
  <div id="docktabs">
-  <button class="rbtn" data-panel="backpack" title="Backpack">🎒</button>
-  <button class="rbtn" data-panel="worn" title="Worn items">🗡️</button>
-  <button class="rbtn" data-panel="shop" title="Shops">🏪</button>
-  <button class="rbtn" data-panel="bank" title="Bank of Gielinor">🏦</button>
-  <button class="rbtn" data-panel="exchange" title="Gold Exchange">💱</button>
-  <button class="rbtn" data-panel="prayers" title="Prayers">🙏</button>
-  <button class="rbtn" data-panel="spellbook" title="Spellbook">📖</button>
-  <button class="rbtn" data-panel="players" title="Players">👥</button>
-  <button class="rbtn" data-panel="admin" title="Admin">👑</button>
-  <button class="rbtn" data-panel="tools" id="toolsbtn" title="Admin tools" style="display:none">🛠️</button>
-  <button class="rbtn" data-panel="skills" title="Skills">📊</button>
-  <button class="rbtn" data-panel="goals" title="Starter goals & collection log">📋</button>
-  <button class="rbtn" data-panel="smithy" title="Smithy">🔥</button>
-  <button class="rbtn" data-panel="teleport" title="Teleport">🌀</button>
-  <button class="rbtn" data-panel="settings" title="Settings">🎛️</button>
+  <button class="rbtn" data-panel="backpack" title="Backpack"><span class="tic">🎒</span><span class="tlbl">Backpack</span></button>
+  <button class="rbtn" data-panel="worn" title="Worn items"><span class="tic">🗡️</span><span class="tlbl">Worn</span></button>
+  <button class="rbtn" data-panel="shop" title="Shops"><span class="tic">🏪</span><span class="tlbl">Shops</span></button>
+  <button class="rbtn" data-panel="bank" title="Bank of Gielinor"><span class="tic">🏦</span><span class="tlbl">Bank</span></button>
+  <button class="rbtn" data-panel="exchange" title="Gold Exchange"><span class="tic">💱</span><span class="tlbl">Exchange</span></button>
+  <button class="rbtn" data-panel="prayers" title="Prayers"><span class="tic">🙏</span><span class="tlbl">Prayers</span></button>
+  <button class="rbtn" data-panel="spellbook" title="Spellbook"><span class="tic">📖</span><span class="tlbl">Spells</span></button>
+  <button class="rbtn" data-panel="players" title="Players"><span class="tic">👥</span><span class="tlbl">Players</span></button>
+  <button class="rbtn" data-panel="admin" title="Admin"><span class="tic">👑</span><span class="tlbl">Admin</span></button>
+  <button class="rbtn" data-panel="tools" id="toolsbtn" title="Admin tools" style="display:none"><span class="tic">🛠️</span><span class="tlbl">Tools</span></button>
+  <button class="rbtn" data-panel="skills" title="Skills"><span class="tic">📊</span><span class="tlbl">Skills</span></button>
+  <button class="rbtn" data-panel="goals" title="Starter goals & collection log"><span class="tic">📋</span><span class="tlbl">Goals</span></button>
+  <button class="rbtn" data-panel="smithy" title="Smithy"><span class="tic">🔥</span><span class="tlbl">Smithy</span></button>
+  <button class="rbtn" data-panel="teleport" title="Teleport"><span class="tic">🌀</span><span class="tlbl">Teleport</span></button>
+  <button class="rbtn" data-panel="settings" title="Settings"><span class="tic">🎛️</span><span class="tlbl">Settings</span></button>
  </div>
- <div id="dockpanel"><h3><span id="docktitle">Panel</span><button class="x" id="dockx">✕</button></h3><div id="dockbody"></div></div>
+ <div id="dockpanel"><h3><span id="docktitle">Panel</span><button class="x" id="dockback" title="Back to the panel tabs">‹ Tabs</button><button class="x" id="dockx">✕</button></h3><div id="dockbody"></div></div>
 </div>
 <div id="placedtabs"></div>
 
@@ -726,6 +745,16 @@ function saveSettings(){ try{ localStorage.setItem(SETTINGS_KEY,JSON.stringify(s
    choices carry forward untouched). */
 let railOpen=true;
 try{ railOpen=localStorage.getItem('nallystake_rail_open')!=='0'; }catch(e){}
+/* Navigation pass: railFirstRun is TRUE only on the first ever
+   load on this device — the rail_open key has never been written,
+   so this player has never been shown the dock or made a choice
+   about it. The dock already defaults open in that state; the
+   welcome handler spends this flag once on a one-line chat hint
+   pointing at the 🎛️ Menu button, and writes the key ('1' = the
+   open state they're looking at) so the hint never repeats. Any
+   later 🎛️ toggle overwrites the key with the player's choice. */
+let railFirstRun=false, navHintDone=false;
+try{ railFirstRun=localStorage.getItem('nallystake_rail_open')===null; }catch(e){}
 /* Stage 36 fix: grabMode MUST be declared up here, before initThree()
    runs. animate() reads it (Stage 31 camera-behind block) and
    initThree() calls animate() synchronously during script load —
@@ -766,7 +795,7 @@ function clearLocalFightState(){
 }
 function applyRailVisibility(){
  const rs=$('docktabs'); if(rs) rs.classList.toggle('open',railOpen);
- const gb=$('gearbtn'); if(gb) gb.textContent=railOpen?'✕':'🎛️';
+ const gb=$('gearbtn'); if(gb){ const gi=gb.querySelector('.gbic'); if(gi) gi.textContent=railOpen?'✕':'🎛️'; } // Navigation pass: swap only the glyph — the "Menu" label span stays
  for(const id of ['railgrab','railmenutap','railcam']){ const c=$(id); if(c) c.style.display=railOpen?'':'none'; } // Stage 18: the chips follow the tab bar
  document.querySelectorAll('#docktabs .rbtn, #placedtabs .rbtn').forEach(b=>{ b.style.display=settings.hidden[b.dataset.panel]?'none':''; }); // Placed-button fix: the Settings hidden-tab rule covers placed tabs too
  refreshToolsBtn();
@@ -1069,7 +1098,7 @@ function onMsg(m){
  // Week 2 (D11): a welcome is a fresh server session — it never has
  // a live fight, so any local fight state is stale (see
  // clearLocalFightState) and is dropped before anything renders.
- if(m.type==='welcome'){ welcomed=true; quickAttempt=false; wasInGame=true; const wasReconnect=reconnecting; stopReconnect(); reconnectMs=1000; clearLocalFightState(); if(wasReconnect){ toast('✅ Reconnected.'); logLine('✅ Reconnected.'); } flushChatOutbox(); me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); maybeShowActivityPicker(); }
+ if(m.type==='welcome'){ welcomed=true; quickAttempt=false; wasInGame=true; const wasReconnect=reconnecting; stopReconnect(); reconnectMs=1000; clearLocalFightState(); if(wasReconnect){ toast('✅ Reconnected.'); logLine('✅ Reconnected.'); } if(railFirstRun&&!navHintDone){ navHintDone=true; railFirstRun=false; try{ localStorage.setItem('nallystake_rail_open','1'); }catch(e){} logLine('👋 New here? Everything lives in the dock, top right — the 🎛️ Menu button shows or hides the panel tabs (🎒 Backpack, 🌀 Teleport, 📊 Skills and more).'); } flushChatOutbox(); me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); maybeShowActivityPicker(); }
  if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(Array.isArray(m.spells)) spellList=m.spells; if(dockPanel==='shop') renderDock(); renderQuickButtons(); renderSpellBtns(); for(const av of Object.values(avatars)) av.gearSig=null; }
  if(m.type==='exchange_prices'){ goods={}; for(const g of (m.goods||[])) goods[g.id]=g; if(dockPanel==='exchange') renderDock(); drawMinimap(); }
  if(m.type==='state'){ onStateMsg(m); }
@@ -5906,6 +5935,14 @@ function closeDock(){ dockPanel=null; $('dockpanel').classList.remove('open');
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.remove('on')); }
 document.querySelectorAll('.rbtn').forEach(b=>b.onclick=()=>{ if(b._suppressClickUntil&&Date.now()<b._suppressClickUntil) return; togglePanel(b.dataset.panel); });
 $('dockx').onclick=closeDock;
+/* Navigation pass: "‹ Tabs" in every panel header — one tap from
+   any open panel back to the tab grid. If the panel was opened
+   while the dock was hidden (a placed tab, the bottom-bar 🎒, the
+   prayer orb), the grid isn't on screen at all, so returning also
+   reopens the tab bar — persisted exactly like the 🎛️ toggle, so
+   the player's screen ends on the full grid either way. */
+window.backToTabs=function(){ closeDock(); if(!railOpen){ railOpen=true; try{ localStorage.setItem('nallystake_rail_open','1'); }catch(e){} applyRailVisibility(); } };
+$('dockback').onclick=()=>backToTabs();
 function itemCell(s,onclick,extra){
  const hl=highlights.has(s.item);
  return `<div class="cell ${extra||''}${hl?' hl':''}" onclick="${onclick}">${hl?'<span class="hlb">⭐</span>':''}<span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${itemIconHTML(s.item,24,s.qty)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`;
@@ -6091,7 +6128,7 @@ function pSpellbook(){
      const action=s.id==='freeze'? '<span class="sub">❄️ Button only</span>'
        : sel? '<span class="sub">Casting</span>'
        : `<button class="act" ${ok?`onclick="send({type:'set_spell',spell:'${s.id}'})"`:'disabled style="opacity:.45"'}>${ok?'Select':`Lvl ${s.level}`}</button>`;
-     h+=`<div class="rowline"><span class="grow"><b>${esc(s.name)}</b>${sel?' <span class="cf">✅ selected</span>':''}<br><span class="sub">Magic lvl ${s.level} · costs ${s.runes} × ${capEl(el)} rune (you have ${have}) · ${detail}</span></span>${action}<button class="act spellplace" data-spell="${s.id}" title="Drag onto the screen to place a cast button">📌</button></div>`;
+     h+=`<div class="rowline${sel?' sel':''}"><span class="grow"><b>${esc(s.name)}</b>${sel?' <span class="cf">✅ selected</span>':''}<br><span class="sub">Magic lvl ${s.level} · costs ${s.runes} × ${capEl(el)} rune (you have ${have}) · ${detail}</span></span>${action}<button class="act spellplace" data-spell="${s.id}" title="Drag onto the screen to place a cast button">📌</button></div>`;
    }
  }
  return h;
