@@ -1917,6 +1917,17 @@ setInterval(() => {
 }, +(process.env.HEARTBEAT_MS || 15000));
 const online = new Map(); // usernameKey -> { ws, profile, x, y, area, duelId, npcFightId }
 const challenges = new Map(); // id -> { id, from, to, stake, items, itemsTo, rules, freePlay, confirm: {from,to}, expires } (Stage 14/15)
+// Feel-fixes (Derek, 2026-11-23): the answer window is 60 SECONDS —
+// it was 30s from creation, and a challenged player who noticed it
+// late, or whose connection blinked mid-countdown, found it dead:
+// the client's local countdown kept ticking while the socket was
+// down, and the reconnect sweep deleted anything already lapsed.
+// Now: 60s at creation and on every negotiation refresh, the
+// client pauses its countdown while disconnected, and a challenge
+// that lapsed while a player was away is revived once on their
+// reconnect (see the re-push loop in the connection handler).
+const CHALLENGE_WINDOW_MS = 60000;
+const CHALLENGE_REVIVE_MS = 5 * 60000; // a lapsed challenge is revived on reconnect only if it expired within this long
 const duels = new Map(); // id -> duel
 // Stage 7A pending flows (session-only, like challenges):
 const fightOffers = new Map(); // id -> { id, runnerKey, aKey, bKey, accepted: Map/key->bool, expires, timer }
@@ -2298,8 +2309,32 @@ RANGER_SPAWNS.forEach(([x, y], i) => {
   const id = 'ranger' + (i + 1);
   npcs.set(id, { id, ...RANGER_DEF, area: 'range', x, y, spawnX: x, spawnY: y, hp: RANGER_DEF.maxHp, alive: true, respawnAt: 0, fightId: null });
 });
+// Feel-fixes (Derek, 2026-11-23): the LOW-LEVEL WILDERNESS POCKET —
+// a few skeletons shambling in the SHALLOW wild, near the ditch
+// (server y 780-850, where wildLevelAt reads ~3-7), so a new player
+// who crosses over has something their own size to fight before the
+// PKers deeper in. Same shared-NPC framework as the camps: they hold
+// their spawns, respawn on the camp timer, and are fought through
+// attack_npc / npcTick exactly like a goblin. NOTHING about the
+// wild's own rules changes — PKer levels, brackets, skull and
+// teleblock are untouched; these are ordinary monsters standing in
+// the wild (a player fighting one is still in the wild: skulling,
+// other players and PKers all work as they always did). Mirrored in
+// Pure Wild because both variants share this table.
+const SKELETON_DEF = { kind: 'skeleton', name: 'Skeleton', combatLevel: 3, maxHp: 8, maxHit: 1, acc: 0.5, attackType: 'melee', respawnMs: 10000 };
+const SKELETON_WARRIOR_DEF = { kind: 'skeleton', name: 'Skeleton warrior', combatLevel: 8, maxHp: 14, maxHit: 3, acc: 0.54, attackType: 'melee', respawnMs: 12000 };
+const WILD_POCKET_SPAWNS = [
+  [SKELETON_DEF, 300, 820], [SKELETON_DEF, 620, 850], [SKELETON_DEF, 1300, 800],
+  [SKELETON_WARRIOR_DEF, 820, 790], [SKELETON_WARRIOR_DEF, 1080, 840], [SKELETON_WARRIOR_DEF, 480, 790],
+];
+for (const area of ['wilderness', 'purewild']) {
+  WILD_POCKET_SPAWNS.forEach(([def, x, y], i) => {
+    const id = `${area === 'wilderness' ? 'wild' : 'pure'}_skeleton${i + 1}`;
+    npcs.set(id, { id, ...def, area, x, y, spawnX: x, spawnY: y, hp: def.maxHp, alive: true, respawnAt: 0, fightId: null });
+  });
+}
 // The areas whose live NPC roster rides on npc_state messages.
-const NPC_AREAS = ['goblins', 'magic', 'range'];
+const NPC_AREAS = ['goblins', 'magic', 'range', 'wilderness', 'purewild'];
 const npcFights = new Map(); // id -> { id, playerKey, npcId, hpYou, maxHpYou, specialQueued, done, timer, tickCount, nextSwingYou, nextSwingNpc }
 // Pseudo-profile so goblins can be the defender in the duel rollHit():
 // no style block, no worn gear, no armour reduction.
@@ -3170,6 +3205,13 @@ function endDuel(duel, winnerKey, reason) {
   if (/KO/.test(reason || '')) {
     const loserSess = online.get(loserKey);
     if (loserSess) broadcastArea(loserSess.area, { type: 'player_fell', username: loser.username, respawn: true });
+    // Feel-fixes: the death recap — one factual line for the loser
+    // naming the killer and what the settlement took / left.
+    if (loserSess) {
+      send(loserSess.ws, { type: 'chat', from: 'Game', text: duel.freePlay
+        ? `☠️ You were killed by ${winner.username}. Dropped: nothing — Free Play settles no stakes. Kept: everything you carry and wear.`
+        : `☠️ You were killed by ${winner.username}. Dropped: your stake of ${duel.stake}g${duel.escrowItems.length ? ' plus the item(s) you staked' : ''} — ${winner.username} takes the ${duel.pot}g pot${itemsWon.length ? ' and the staked items' : ''}. Kept: everything else you carry and wear.` });
+    }
   }
   // Stage 20: ANY duel win (staked, Free Play or mod-run) completes
   // the winner's "Win a duel" starter goal.
@@ -3778,6 +3820,27 @@ function rollNpcDrops(profile, npc) {
     if (leftover > 0) addStacks(profile.bank, `${el}_rune`, leftover); // full pack: bank it, never lose a drop
     return { gold, items: [{ item: `${el}_rune`, qty }] };
   }
+  if (kind === 'skeleton') {
+    // Feel-fixes: the shallow-wild pocket. Derek's standing rule —
+    // everything killed drops something that builds a skill: bones
+    // (the game's Prayer good) most kills, a few coins always, and
+    // a bronze gear roll on the side. Backpack first, bank on
+    // overflow, like every other drop table here.
+    const gold = 2 + Math.floor(Math.random() * 5); // 2-6
+    addGold(profile, gold);
+    const items = [];
+    const give = (item, qty) => {
+      const leftover = addStacks(profile.backpack, item, qty, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(profile.bank, item, leftover);
+      items.push({ item, qty });
+    };
+    if (Math.random() < 0.6) give('bones', 1);
+    if (Math.random() < 0.2) {
+      const gear = ['bronze_sword', 'bronze_helm', 'bronze_platebody', 'bronze_platelegs', 'bronze_boots', 'bronze_shield'];
+      give(gear[Math.floor(Math.random() * gear.length)], 1);
+    }
+    return { gold, items };
+  }
   if (kind === 'ranger') {
     const gold = 3 + Math.floor(Math.random() * 6); // 3-8
     addGold(profile, gold);
@@ -4052,14 +4115,21 @@ function npcTick(fight) {
     const playerDead = fight.hpYou <= 0;
     finishNpcFight(fight, 'kill', drops);
     broadcastNpcState(npc.area);
-    if (playerDead) respawnPlayer(fight.playerKey, `You took the ${npc.name.toLowerCase()} down with you — you wake up in the plaza. Nothing lost.`);
+    // Feel-fixes: dying in the Wilderness — even to a pocket
+    // skeleton — is a Wilderness death (wildDeath's keep-3 /
+    // skulled drop rules), never the free camp respawn.
+    if (playerDead) {
+      if (isWildArea(npc.area)) wildDeath(fight.playerKey, npc.name);
+      else respawnPlayer(fight.playerKey, `☠️ You were killed by the ${npc.name.toLowerCase()} — you took it down with you. Dropped: nothing. Kept: everything you carry and wear. You wake up in the plaza at full health.`);
+    }
     return;
   }
   if (fight.hpYou <= 0) {
     npc.hp = npc.maxHp; // the creature resets when it wins
     finishNpcFight(fight, 'death', null);
     broadcastNpcState(npc.area);
-    respawnPlayer(fight.playerKey, `The ${npc.name.toLowerCase()} got you! You wake up in the plaza at full health. Nothing lost.`);
+    if (isWildArea(npc.area)) wildDeath(fight.playerKey, npc.name); // Feel-fixes: a wild death follows wild rules (see above)
+    else respawnPlayer(fight.playerKey, `☠️ You were killed by the ${npc.name.toLowerCase()}. Dropped: nothing. Kept: everything you carry and wear. You wake up in the plaza at full health.`);
   }
 }
 
@@ -4585,12 +4655,12 @@ function barrowsTick(fight) {
     // wakes in the plaza (the both-resolve tick rule).
     const playerDead = fight.hpYou <= 0;
     finishBarrowsFight(fight, 'kill');
-    if (playerDead) respawnPlayer(fight.playerKey, `${def.name} took you down with him — you wake up in the plaza. Your Barrows kills are kept.`);
+    if (playerDead) respawnPlayer(fight.playerKey, `☠️ You were killed by ${def.name} — you took him down with you. Dropped: nothing. Kept: everything you carry, and your Barrows kills. You wake up in the plaza.`);
     return;
   }
   if (fight.hpYou <= 0) {
     finishBarrowsFight(fight, 'death');
-    respawnPlayer(fight.playerKey, `${def.name} got you! You wake up in the plaza at full health. Your Barrows kills are kept — nothing else lost.`);
+    respawnPlayer(fight.playerKey, `☠️ You were killed by ${def.name}. Dropped: nothing. Kept: everything you carry, and your Barrows kills. You wake up in the plaza at full health.`);
   }
 }
 // Stage 28: the tunnels puzzle door, ported from the app version —
@@ -5149,7 +5219,7 @@ function endFcRun(run, reason) {
   save(run.playerKey);
   if (sess && reason !== 'disconnect') {
     send(sess.ws, { type: 'fc_end', reason, wave: run.wave, kills: run.kills, timeMs, reward, profile: publicProfile(p) });
-    if (reason === 'death') respawnPlayer(run.playerKey, 'The Fight Caves overwhelm you — you wake up in the plaza. Nothing lost.');
+    if (reason === 'death') respawnPlayer(run.playerKey, `☠️ You were killed by the Fight Caves on wave ${run.wave}. Dropped: nothing. Kept: everything you carry — and your run record (best wave ${Math.max(run.wave, p.fc.bestWave)}). You wake up in the plaza.`);
   }
 }
 
@@ -5595,6 +5665,7 @@ function enterWildState(key, area) {
   sess.wildHp = sess.wildMaxHp;
   if (area === 'purewild' && sess.profile.activePrayer) sess.profile.activePrayer = null; // Pure Wild: no prayer for anyone
   send(sess.ws, wildStateMsg(area, sess));
+  send(sess.ws, npcStateMsg(area)); // Feel-fixes: the shallow-wild skeleton pocket rides the shared NPC roster
 }
 // Leaving the wild (any route): my fights end — I got out, my
 // opponents' quarry escaped — and skull / teleblock / HP pool go.
@@ -6426,7 +6497,20 @@ wss.on('connection', (ws, req) => {
   // of having silently vanished mid-countdown.
   for (const ch of challenges.values()) {
     if (ch.from !== key && ch.to !== key) continue;
-    if (ch.expires < Date.now()) { challenges.delete(ch.id); broadcastChallengeClear(ch.from); continue; }
+    if (ch.expires < Date.now()) {
+      // Feel-fixes: a challenge that lapsed WHILE this player was
+      // dropped is not dead — if it expired recently (within
+      // CHALLENGE_REVIVE_MS) and the other duelist is still online,
+      // it is revived once with a fresh full window and re-offered
+      // below, so an answer after a connection blink still lands.
+      // Anything older, or with the other side gone, clears as before.
+      const otherKey = ch.from === key ? ch.to : ch.from;
+      if (Date.now() - ch.expires <= CHALLENGE_REVIVE_MS && online.has(otherKey)) {
+        ch.expires = Date.now() + CHALLENGE_WINDOW_MS;
+        pushChallengeTerms(ch); // the other side's screen refreshes to the new window too
+        send(ws, { type: 'chat', from: 'Game', text: '🔄 That duel challenge was still waiting for you — it has a fresh 60 seconds.' });
+      } else { challenges.delete(ch.id); broadcastChallengeClear(ch.from); continue; }
+    }
     send(ws, challengeTermsMsg(ch, key));
     if (ch.to === key) {
       const fromU = db.users[ch.from];
@@ -6909,7 +6993,7 @@ wss.on('connection', (ws, req) => {
       send(ws, { type: 'barrows_puzzle_result', ok: false, hpYou: Math.max(0, me.barrowsHp), maxHpYou });
       if (me.barrowsHp <= 0) {
         me.barrowsPuzzle = null;
-        respawnPlayer(key, 'The puzzle door\'s bite finishes you — you wake up in the plaza. Your Barrows kills, tunnel and solved puzzle are kept.');
+        respawnPlayer(key, '☠️ You were killed by the puzzle door\'s bite. Dropped: nothing. Kept: everything you carry, plus your Barrows kills, tunnel and solved puzzle. You wake up in the plaza.');
       }
       return;
     }
@@ -9012,9 +9096,9 @@ wss.on('connection', (ws, req) => {
       // it carries the agreed rules and BOTH sides' stakes, and waits
       // for both confirms (challenge_confirm) instead of starting on
       // the target's accept.
-      const ch = { id, from: key, to: targetKey, stake, items, itemsTo: [], rules: cleanDuelRules(m.rules), freePlay, confirm: { from: false, to: false }, expires: Date.now() + 30000 };
+      const ch = { id, from: key, to: targetKey, stake, items, itemsTo: [], rules: cleanDuelRules(m.rules), freePlay, confirm: { from: false, to: false }, expires: Date.now() + CHALLENGE_WINDOW_MS };
       challenges.set(id, ch);
-      send(target.ws, { type: 'challenge_incoming', challengeId: id, from: profile.username, stake, items, rules: ch.rules, freePlay: ch.freePlay, seconds: 30, h2h: h2hVs(target.profile, profile.username) }); // Stage 33: the challenged player's own record vs the challenger
+      send(target.ws, { type: 'challenge_incoming', challengeId: id, from: profile.username, stake, items, rules: ch.rules, freePlay: ch.freePlay, seconds: Math.round(CHALLENGE_WINDOW_MS / 1000), h2h: h2hVs(target.profile, profile.username) }); // Stage 33: the challenged player's own record vs the challenger
       broadcastChallenging(key, targetKey); // Stage 7C: '!' over the challenger
       pushChallengeTerms(ch); // both screens open on the same terms
       send(ws, { type: 'chat', from: 'Game', text: freePlay ? `Challenge sent to ${target.profile.username} — 🆓 free play, no stakes.` : `Challenge sent to ${target.profile.username} for ${stake}g${items.length ? ' + items' : ''}.` });
@@ -9044,7 +9128,7 @@ wss.on('connection', (ws, req) => {
       if (Array.isArray(m.items) && m.items.some((e) => e && e.item === 'gold')) return send(ws, { type: 'error', message: GOLD_STAKE_MSG }); // Stage 16: coins stake via the amount
       if (!hasItems(profile, myItems)) return send(ws, { type: 'error', message: 'You don\'t have all the items you tried to stake.' });
       if (JSON.stringify(myItems) !== JSON.stringify(ch.itemsTo)) { ch.itemsTo = myItems; ch.confirm.from = false; ch.confirm.to = false; }
-      ch.expires = Date.now() + 30000;
+      ch.expires = Date.now() + CHALLENGE_WINDOW_MS;
       pushChallengeTerms(ch);
     }
     // Stage 14: either duelist edits the shared terms (their own
@@ -9056,7 +9140,7 @@ wss.on('connection', (ws, req) => {
       if (ch.expires < Date.now()) { challenges.delete(m.challengeId); broadcastChallengeClear(ch.from); return send(ws, { type: 'error', message: 'That challenge is gone.' }); }
       const err = applyChallengeTerms(ch, key, m);
       if (err) return send(ws, { type: 'error', message: err });
-      ch.expires = Date.now() + 30000; // an active negotiation stays alive
+      ch.expires = Date.now() + CHALLENGE_WINDOW_MS; // an active negotiation stays alive
       pushChallengeTerms(ch);
     }
     // Stage 14: confirm. The message may carry the sender's current
@@ -9073,7 +9157,7 @@ wss.on('connection', (ws, req) => {
       const err = applyChallengeTerms(ch, key, m);
       if (err) return send(ws, { type: 'error', message: err });
       if (key === ch.from) ch.confirm.from = true; else ch.confirm.to = true;
-      ch.expires = Date.now() + 30000;
+      ch.expires = Date.now() + CHALLENGE_WINDOW_MS;
       if (!(ch.confirm.from && ch.confirm.to)) { pushChallengeTerms(ch); return; }
       const fromSess = online.get(ch.from), toSess = online.get(ch.to);
       if (!fromSess || !toSess) { challenges.delete(m.challengeId); broadcastChallengeClear(ch.from); return send(ws, { type: 'error', message: 'That challenge is gone.' }); }
@@ -10072,12 +10156,12 @@ function botChallengeDrive(bot, ch) {
   // side is still editing): a stake that has grown past this bot's
   // willingness is cancelled, never silently swallowed.
   if (!ch.freePlay && ch.stake > botMaxStake(bot)) { botCancelChallenge(bot, ch); bot.challengeDecisions.delete(ch.id); return; }
-  if (ch.to === key && !dec.responded) { ch.expires = now + 30000; dec.responded = true; pushChallengeTerms(ch); }
+  if (ch.to === key && !dec.responded) { ch.expires = now + CHALLENGE_WINDOW_MS; dec.responded = true; pushChallengeTerms(ch); }
   const side = ch.from === key ? 'from' : 'to';
   if (!ch.confirm[side]) {
     if (applyChallengeTerms(ch, key, {})) { botCancelChallenge(bot, ch); bot.challengeDecisions.delete(ch.id); return; }
     ch.confirm[side] = true;
-    ch.expires = now + 30000;
+    ch.expires = now + CHALLENGE_WINDOW_MS;
     if (ch.confirm.from && ch.confirm.to) { botStartConfirmedChallenge(ch); bot.challengeDecisions.delete(ch.id); }
     else pushChallengeTerms(ch);
   }
@@ -10091,9 +10175,9 @@ function botCreateChallenge(bot, targetKey, stake, freePlay) {
   if (bot.sess.duelId || target.duelId || bot.sess.modDuelId || target.modDuelId) return null;
   if (!freePlay && (stake < 1 || stake > goldTotal(bot.profile) || stake > goldTotal(target.profile))) return null;
   const id = crypto.randomBytes(6).toString('hex');
-  const ch = { id, from: bot.key, to: targetKey, stake: freePlay ? 0 : stake, items: [], itemsTo: [], rules: cleanDuelRules(null), freePlay: !!freePlay, confirm: { from: false, to: false }, expires: Date.now() + 30000 };
+  const ch = { id, from: bot.key, to: targetKey, stake: freePlay ? 0 : stake, items: [], itemsTo: [], rules: cleanDuelRules(null), freePlay: !!freePlay, confirm: { from: false, to: false }, expires: Date.now() + CHALLENGE_WINDOW_MS };
   challenges.set(id, ch);
-  send(target.ws, { type: 'challenge_incoming', challengeId: id, from: bot.profile.username, stake: ch.stake, items: [], rules: ch.rules, freePlay: ch.freePlay, seconds: 30, h2h: h2hVs(target.profile, bot.profile.username) });
+  send(target.ws, { type: 'challenge_incoming', challengeId: id, from: bot.profile.username, stake: ch.stake, items: [], rules: ch.rules, freePlay: ch.freePlay, seconds: Math.round(CHALLENGE_WINDOW_MS / 1000), h2h: h2hVs(target.profile, bot.profile.username) });
   broadcastChallenging(bot.key, targetKey);
   pushChallengeTerms(ch);
   return ch;
@@ -11394,7 +11478,7 @@ function botBarrowsAnswerPuzzle(bot) {
   sess.barrowsHp -= 5;
   if (sess.barrowsHp <= 0) {
     sess.barrowsPuzzle = null;
-    respawnPlayer(key, 'The puzzle door\'s bite finishes you — you wake up in the plaza. Your Barrows kills, tunnel and solved puzzle are kept.');
+    respawnPlayer(key, '☠️ You were killed by the puzzle door\'s bite. Dropped: nothing. Kept: everything you carry, plus your Barrows kills, tunnel and solved puzzle. You wake up in the plaza.');
   }
   return true;
 }
