@@ -352,11 +352,79 @@ ITEMS.seaweed = { name: 'Seaweed', icon: '🥬', kind: 'resource', sellOnly: 2, 
 // COOKABLE) into cooked beef. The bones are a NEW item — the
 // existing `bones` id is the Dragon bones Exchange good and is NOT
 // touched: these bury for Prayer XP (see the 'bury' handler).
-ITEMS.wool = { name: 'Wool', icon: '🧶', kind: 'resource', sellOnly: 6, desc: 'Soft wool from a plaza sheep. Spin it into yarn at a spinning wheel — the crafters are coming to town.' };
+ITEMS.wool = { name: 'Wool', icon: '🧶', kind: 'resource', sellOnly: 6, desc: 'Soft wool from a plaza sheep. Spin it into yarn at the spinning wheel by the farm rows.' };
 ITEMS.cowhide = { name: 'Cowhide', icon: '🐄', kind: 'resource', sellOnly: 12, desc: 'A cowhide from a plaza cow. Shops buy it as-is; leather work comes later.' };
 ITEMS.animal_bones = { name: 'Bones', icon: '🦴', kind: 'resource', sellOnly: 3, desc: 'Bones from a farm animal. Bury them for Prayer XP.' };
 ITEMS.raw_beef = { name: 'Raw beef', icon: '🥩', kind: 'resource', sellOnly: 5, desc: 'Raw beef from a plaza cow. Cook it on a fire.' };
 ITEMS.cooked_beef = { name: 'Cooked beef', icon: '🍖', kind: 'food', heal: 12, sellOnly: 9, desc: 'Cooked beef. Eat it to heal.' };
+// Crafting chain (Derek, 2026-11-23): wool -> spinning wheel ->
+// yarn; yarn strings amulets; gold ore -> smelted gold bars (the
+// `bars` good, Stage 3); gems from mining; the new Crafting skill
+// makes unstrung amulets (1 gold bar + 1 gem); string with yarn ->
+// wearable amulet; enchant with Magic spells -> enchanted amulet.
+// Gem tiers weakest -> strongest, Derek's corrected order:
+// Sapphire, Emerald, Ruby, Diamond, Dragonstone.
+// Gems turn up while mining ANY rock (see the gather handler's gem
+// roll): 6% of a successful mine, weighted down the tier ladder;
+// the Gathering Cave's Gem rock rolls at 25% instead (its base
+// yield stays the generic `uncut_gem`). Sell prices are a rising
+// ladder by tier (flagged choices, Derek can retune).
+const GEM_DEFS = {
+  sapphire:    { name: 'Sapphire',    icon: '🔷', color: '#2f6fd0', sell: 30 },
+  emerald:     { name: 'Emerald',     icon: '💚', color: '#1faa59', sell: 60 },
+  ruby:        { name: 'Ruby',        icon: '🔴', color: '#d42a35', sell: 120 },
+  diamond:     { name: 'Diamond',     icon: '💎', color: '#9fd8e8', sell: 250 },
+  dragonstone: { name: 'Dragonstone', icon: '🟣', color: '#8e44ad', sell: 500 },
+};
+const GEM_TIERS = Object.keys(GEM_DEFS); // weakest -> strongest
+const GEM_ROLL_WEIGHTS = [['sapphire', 40], ['emerald', 28], ['ruby', 18], ['diamond', 9], ['dragonstone', 5]];
+function rollGem() {
+  let total = 0; for (const [, w] of GEM_ROLL_WEIGHTS) total += w;
+  let r = Math.random() * total;
+  for (const [gem, w] of GEM_ROLL_WEIGHTS) { r -= w; if (r <= 0) return gem; }
+  return 'sapphire';
+}
+for (const [gem, gd] of Object.entries(GEM_DEFS)) {
+  ITEMS[gem] = { name: gd.name, icon: gd.icon, kind: 'gem', color: gd.color, sellOnly: gd.sell, desc: `A ${gd.name.toLowerCase()} turned up while mining. Set it in a gold amulet with Crafting.` };
+}
+ITEMS.yarn = { name: 'Ball of yarn', icon: '🧵', kind: 'resource', sellOnly: 10, desc: 'Wool spun at the farm spinning wheel. Use it to string an unstrung amulet.' };
+// Amulet making: Crafting level gates + XP per unstrung amulet
+// (flagged ladder, Derek can retune). Stringing pays STRING_XP.
+const AMULET_CRAFT = {
+  sapphire:    { level: 1,  xp: 20 },
+  emerald:     { level: 15, xp: 35 },
+  ruby:        { level: 30, xp: 55 },
+  diamond:     { level: 45, xp: 80 },
+  dragonstone: { level: 60, xp: 110 },
+};
+const STRING_XP = 6; // Crafting XP for stringing one amulet
+// Enchanted-amulet bonuses (flagged defaults, proposed to Derek):
+// Sapphire +Magic (spell max hit), Emerald +Defence (damage
+// reduction), Ruby +Strength (melee max hit), Diamond a little of
+// everything, Dragonstone the strongest (glory-style Strength +
+// Magic). They ride the existing worn-armour paths: accBonus feeds
+// weaponAccPoints (every style's accuracy), maxBonus feeds
+// armourMaxBonus (melee max), reduction feeds armourReduction,
+// and the new magicBonus feeds rollMagicCast's spell max.
+const AMULET_ENCHANT_BONUS = {
+  sapphire:    { accBonus: 0.02, magicBonus: 3 },
+  emerald:     { accBonus: 0.02, reduction: 0.03 },
+  ruby:        { accBonus: 0.02, maxBonus: 2 },
+  diamond:     { accBonus: 0.03, maxBonus: 1, reduction: 0.02, magicBonus: 1 },
+  dragonstone: { accBonus: 0.03, maxBonus: 3, magicBonus: 3 },
+};
+for (const gem of GEM_TIERS) {
+  const gd = GEM_DEFS[gem];
+  const tierIdx = GEM_TIERS.indexOf(gem);
+  // Unstrung: a shaped gold setting holding the gem — a resource
+  // until it is strung (not wearable yet).
+  ITEMS[`${gem}_amulet_unstrung`] = { name: `${gd.name} amulet (unstrung)`, icon: '📿', kind: 'resource', color: gd.color, sellOnly: 60 * Math.pow(2, tierIdx), gem, desc: `A gold amulet set with a ${gd.name.toLowerCase()}, waiting for a string. String it with a ball of yarn.` };
+  // Strung: wearable in the amulet slot; a token +accuracy until
+  // it is enchanted (accBonus 0.02 = 1 accuracy point, the same
+  // rounding weaponAccPoints applies to every armour piece).
+  ITEMS[`${gem}_amulet`] = { name: `${gd.name} amulet`, icon: '📿', kind: 'armour', slot: 'amulet', color: gd.color, sellOnly: 90 * Math.pow(2, tierIdx), gem, accBonus: 0.02, desc: `A ${gd.name.toLowerCase()} amulet on a yarn string. Enchant it with the Enchant ${gd.name} spell to wake its power.` };
+  ITEMS[`${gem}_amulet_enchanted`] = { name: `${gd.name} amulet (enchanted)`, icon: '📿', kind: 'armour', slot: 'amulet', color: gd.color, sellOnly: 160 * Math.pow(2, tierIdx), gem, ...AMULET_ENCHANT_BONUS[gem], desc: `A ${gd.name.toLowerCase()} amulet humming with magic — its enchantment boosts you while you wear it.` };
+}
 // Stage 3: Emberfall ores + smelted bars. Sell-only resources, like
 // Stage 2's. (The eighth bar, gold, is the `bars` Exchange good above.)
 for (const [id, name, sellOnly] of [
@@ -787,6 +855,19 @@ const SPELLS = [
   // refuses it, because a staff autocasting a 0-damage root every
   // 5 ticks would be a rune-burning loop that never deals damage.
   { id: 'freeze', name: 'Freeze', element: 'water', tier: 'freeze', level: 25, runes: 3, max: 0, icon: '❄️', desc: 'Stops your opponent in the spot they are standing for 5 seconds.' },
+  // Crafting chain (Derek, 2026-11-23): Enchant spells — one per
+  // gem tier, weakest to strongest. NOT combat spells: they are
+  // cast on a strung amulet in your backpack (the enchant_amulet
+  // handler), never selected for a staff (set_spell refuses them)
+  // and never button-cast at a target (cast_at refuses them).
+  // `element` is the rune they burn — a deliberate rune sink ahead
+  // of Runecrafting. Magic levels / rune costs / cast XP are
+  // flagged choices, Derek can retune.
+  { id: 'enchant_sapphire', name: 'Enchant Sapphire', element: 'water', tier: 'enchant', level: 7, runes: 3, max: 0, gem: 'sapphire', castXp: 25, icon: '✨', desc: 'Enchants a strung sapphire amulet: +Magic while worn.' },
+  { id: 'enchant_emerald', name: 'Enchant Emerald', element: 'earth', tier: 'enchant', level: 27, runes: 3, max: 0, gem: 'emerald', castXp: 40, icon: '✨', desc: 'Enchants a strung emerald amulet: +Defence while worn.' },
+  { id: 'enchant_ruby', name: 'Enchant Ruby', element: 'fire', tier: 'enchant', level: 47, runes: 3, max: 0, gem: 'ruby', castXp: 55, icon: '✨', desc: 'Enchants a strung ruby amulet: +Strength while worn.' },
+  { id: 'enchant_diamond', name: 'Enchant Diamond', element: 'air', tier: 'enchant', level: 57, runes: 5, max: 0, gem: 'diamond', castXp: 70, icon: '✨', desc: 'Enchants a strung diamond amulet: a little of everything while worn.' },
+  { id: 'enchant_dragonstone', name: 'Enchant Dragonstone', element: 'fire', tier: 'enchant', level: 70, runes: 5, max: 0, gem: 'dragonstone', castXp: 90, icon: '✨', desc: 'Enchants a strung dragonstone amulet: the strongest — Strength + Magic while worn.' },
 ];
 const SPELL_BY_ID = {};
 for (const s of SPELLS) SPELL_BY_ID[s.id] = s;
@@ -1074,6 +1155,8 @@ function catalogList() {
     id, name: d.name, kind: d.kind, slot: d.slot || null, shop: d.shop || null, buy: d.buy ? currentBuyPrice(id) : 0, sell: sellPrice(id), trend: priceTrend(id), // Pricing: current (demand) prices + trend vs base
     heal: d.heal || 0, prayerRestore: d.prayerRestore || 0,
     accBonus: d.accBonus || 0, maxBonus: d.maxBonus || 0, reduction: d.reduction || 0,
+    magicBonus: d.magicBonus || 0, // Crafting chain: worn spell max-hit bonus (enchanted amulets)
+    gem: d.gem || null, // Crafting chain: the gem an amulet/gem item belongs to
     desc: d.desc || null, // Stage 28: item examine text (the Barrows pieces carry the app's)
     speed: d.speed || 0, // Stage 3: pickaxe speed multiplier (0 for non-tools)
     icon: (look && look.icon) || d.icon || null, // Stage 7A: token icons (null for older items)
@@ -1107,7 +1190,7 @@ function goodsList() {
 // OSRS formula: floor( sum_{x=1}^{L-1} floor(x + 300 * 2^(x/7)) / 4 ).
 // (Level 2 = 83, level 10 = 1154, level 99 = 13,034,431.)
 const SKILLS = ['attack', 'strength', 'defence', 'hitpoints', 'ranged', 'magic', 'prayer',
-  'mining', 'smithing', 'woodcutting', 'firemaking', 'fishing', 'cooking', 'fletching']; // Stage 19 adds fletching (ranged/magic were already here)
+  'mining', 'smithing', 'woodcutting', 'firemaking', 'fishing', 'cooking', 'fletching', 'crafting']; // Stage 19 adds fletching; the Crafting chain (Derek, 2026-11-23) adds crafting as the 15th skill — ensureV2 backfills it onto old profiles
 const XP_TABLE = [0, 0]; // index by level 1..99
 {
   let points = 0;
@@ -1605,6 +1688,9 @@ function unlockTextFor(skill, level) {
   }
   if (skill === 'fletching') {
     for (const [tier, gate] of Object.entries(FLETCH_GATE)) if (gate === level) parts.push(`You can now fletch ${cap(tier)} arrows`);
+  }
+  if (skill === 'crafting') {
+    for (const [gem, rec] of Object.entries(AMULET_CRAFT)) if (rec.level === level) parts.push(`You can now craft ${GEM_DEFS[gem].name} amulets`);
   }
   if (skill === 'smithing') {
     for (const [bar, rec] of Object.entries(BAR_RECIPES)) if (rec.level === level) parts.push(`You can now smelt ${ITEMS[bar].name}`);
@@ -2797,7 +2883,7 @@ function armourReduction(p) {
   // (any tiers/lines) completes the same way mixed tiers always
   // did. Only a piece that actually protects (reduction > 0)
   // counts — a cosmetic party hat never completes a set (Stage 21).
-  for (const slot of ['head', 'body', 'legs', 'shield', 'feet', 'hands']) {
+  for (const slot of ['head', 'body', 'legs', 'shield', 'feet', 'hands', 'amulet']) { // Crafting chain: the amulet slot counts too — no amulet-slot armour existed before the enchanted amulets, so every pre-chain setup reduces exactly as before
     const def = p.worn && p.worn[slot] ? itemDef(p.worn[slot]) : null;
     if (def && def.kind === 'armour') {
       r += def.reduction || 0;
@@ -2837,6 +2923,18 @@ function armourMaxBonus(p) {
   for (const slot of ['head', 'body', 'legs', 'shield', 'feet', 'hands', 'amulet', 'ring']) {
     const def = p.worn && p.worn[slot] ? itemDef(p.worn[slot]) : null;
     if (def && def.kind === 'armour') b += def.maxBonus || 0;
+  }
+  return b;
+}
+// Crafting chain: the magic-side twin of armourMaxBonus — a worn
+// piece's magicBonus adds to a cast's max hit (the enchanted
+// amulets carry it; no pre-chain armour does, so existing casts
+// are unchanged).
+function armourMagicBonus(p) {
+  let b = 0;
+  for (const slot of ['head', 'body', 'legs', 'shield', 'feet', 'hands', 'amulet', 'ring']) {
+    const def = p.worn && p.worn[slot] ? itemDef(p.worn[slot]) : null;
+    if (def && def.kind === 'armour') b += def.magicBonus || 0;
   }
   return b;
 }
@@ -3117,6 +3215,7 @@ function rollMagicCast(attackerProfile, defenderProfile, spell, useSpecial = fal
   // Stage 5 — now actually applies it to its casts.
   const wDef = weaponBonus(attackerProfile);
   if (wDef && wDef.style === 'magic') max += wDef.maxBonus || 0;
+  max += armourMagicBonus(attackerProfile); // Crafting chain: a worn enchanted amulet's magicBonus feeds the cast too
   if (useSpecial) max = Math.floor(max * 1.5);
   let raw = 1 + Math.floor(Math.random() * max);
   let deflected = 0;
@@ -6266,6 +6365,14 @@ const COOKABLE = {
 // level; the Dragon bones Exchange good is NOT buryable, it is a
 // trade good). Only `animal_bones` buries (see the 'bury' handler).
 const BURY_XP = { animal_bones: 5 };
+// Crafting chain: the spinning wheel stands at the east end of
+// the farm crop rows (plaza). Spinning is a wheel-side action,
+// like cooking is a fire-side one: you must be in the plaza
+// within SPIN_RANGE of it. SPIN_XP is the Crafting XP per ball
+// of yarn (flagged choice).
+const SPIN_WHEEL_POS = { x: 728, y: 727 };
+const SPIN_RANGE = 150;
+const SPIN_XP = 8;
 // Shared per-player action cooldown for gather / cook / light_fire.
 // Returns true (and does NOT stamp) when the player is acting too fast.
 // `ms` lets a caller use a shorter/longer gap (Stage 3 pickaxes shorten
@@ -7300,6 +7407,19 @@ wss.on('connection', (ws, req) => {
         const leftover = addStacks(profile.backpack, node.item, 1, BACKPACK_MAX_STACKS);
         if (leftover > 0) addStacks(profile.bank, node.item, leftover); // full pack: bank it, never lose a gather
       }
+      // Crafting chain: mining turns up gems — a bonus roll on a
+      // successful mine (6% at any rock; the Gem rock rolls 25%).
+      // The gem rides the gather_result as `bonus` so the client
+      // can celebrate it; it lands backpack-first like the ore.
+      let bonusItem = null;
+      if (node.skill === 'mining' && node.item) {
+        const gemChance = node.id === 'gem_rock' ? 0.25 : 0.06;
+        if (Math.random() < gemChance) {
+          bonusItem = rollGem();
+          const leftover = addStacks(profile.backpack, bonusItem, 1, BACKPACK_MAX_STACKS);
+          if (leftover > 0) addStacks(profile.bank, bonusItem, leftover);
+        }
+      }
       addXp(key, { [node.skill]: node.xp });
       // Stage 20: the first REAL resource gather (a node with an
       // item — Training Cave stations grant XP only, item null, and
@@ -7307,7 +7427,7 @@ wss.on('connection', (ws, req) => {
       if (node.item) completeStarterGoal(key, 'gather');
       save(key);
       me.actSkill = node.skill; me.actAt = Date.now(); // Stage 7C: activity marker (training stations share this handler)
-      send(ws, { type: 'gather_result', nodeId: node.id, ok: true, item: node.item, xp: node.xp });
+      send(ws, { type: 'gather_result', nodeId: node.id, ok: true, item: node.item, xp: node.xp, bonus: bonusItem });
       return sendProfile(key);
     }
 
@@ -7367,6 +7487,89 @@ wss.on('connection', (ws, req) => {
       return sendProfile(key);
     }
 
+    // ----- Crafting chain (Derek, 2026-11-23): spin / craft /
+    // string / enchant — the wool-to-amulet loop. Each step is a
+    // small handler in the bury/fletch shape: validate, consume,
+    // grant, save, answer, push the profile. -----
+    if (m.type === 'spin') {
+      if (me.duelId || me.npcFightId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
+      if (me.area !== 'plaza' || Math.hypot(me.x - SPIN_WHEEL_POS.x, me.y - SPIN_WHEEL_POS.y) > SPIN_RANGE) return send(ws, { type: 'error', message: 'You need the spinning wheel at the plaza farm — it stands at the east end of the crop rows.' });
+      if (stackQty(profile.backpack, 'wool') < 1) return send(ws, { type: 'error', message: 'No Wool in your backpack — the plaza sheep give it.' });
+      if (actionOnCooldown(me)) return send(ws, { type: 'error', message: 'Too fast — one action at a time.' });
+      removeStacks(profile.backpack, 'wool', 1);
+      const leftover = addStacks(profile.backpack, 'yarn', 1, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(profile.bank, 'yarn', leftover); // full pack: bank it, never lose a spin
+      addXp(key, { crafting: SPIN_XP });
+      save(key);
+      me.actSkill = 'crafting'; me.actAt = Date.now(); // Stage 7C: activity marker
+      send(ws, { type: 'spin_result', ok: true, item: 'yarn', xp: SPIN_XP });
+      return sendProfile(key);
+    }
+    if (m.type === 'craft_amulet') {
+      const gem = String(m.gem || '');
+      const rec = AMULET_CRAFT[gem];
+      if (!rec) return send(ws, { type: 'error', message: 'That is not a gem you can set in an amulet.' });
+      if (me.duelId || me.npcFightId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
+      const cLvl = levelForXp((profile.xp && profile.xp.crafting) || 0);
+      if (cLvl < rec.level) return send(ws, { type: 'error', message: `You need Crafting level ${rec.level} to make a ${GEM_DEFS[gem].name} amulet (you are level ${cLvl}).` });
+      if (stackQty(profile.backpack, gem) < 1) return send(ws, { type: 'error', message: `No ${GEM_DEFS[gem].name} in your backpack — gems turn up while mining.` });
+      if (stackQty(profile.backpack, 'bars') < 1) return send(ws, { type: 'error', message: 'You need a Gold bar in your backpack — smelt gold ore at the Emberfall furnace.' });
+      if (actionOnCooldown(me)) return send(ws, { type: 'error', message: 'Too fast — one action at a time.' });
+      removeStacks(profile.backpack, gem, 1);
+      removeStacks(profile.backpack, 'bars', 1);
+      const out = `${gem}_amulet_unstrung`;
+      const leftover = addStacks(profile.backpack, out, 1, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(profile.bank, out, leftover);
+      addXp(key, { crafting: rec.xp });
+      save(key);
+      me.actSkill = 'crafting'; me.actAt = Date.now();
+      send(ws, { type: 'craft_result', ok: true, item: out, xp: rec.xp });
+      return sendProfile(key);
+    }
+    if (m.type === 'string_amulet') {
+      const item = String(m.item || '');
+      const def = itemDef(item);
+      if (!def || !def.gem || !item.endsWith('_amulet_unstrung')) return send(ws, { type: 'error', message: 'That is not an unstrung amulet.' });
+      if (me.duelId || me.npcFightId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
+      if (stackQty(profile.backpack, item) < 1) return send(ws, { type: 'error', message: `No ${def.name} in your backpack.` });
+      if (stackQty(profile.backpack, 'yarn') < 1) return send(ws, { type: 'error', message: 'You need a Ball of yarn — spin wool at the farm spinning wheel.' });
+      if (actionOnCooldown(me)) return send(ws, { type: 'error', message: 'Too fast — one action at a time.' });
+      removeStacks(profile.backpack, item, 1);
+      removeStacks(profile.backpack, 'yarn', 1);
+      const out = `${def.gem}_amulet`;
+      const leftover = addStacks(profile.backpack, out, 1, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(profile.bank, out, leftover);
+      addXp(key, { crafting: STRING_XP });
+      save(key);
+      me.actSkill = 'crafting'; me.actAt = Date.now();
+      send(ws, { type: 'string_result', ok: true, item: out, xp: STRING_XP });
+      return sendProfile(key);
+    }
+    if (m.type === 'enchant_amulet') {
+      const item = String(m.item || '');
+      const def = itemDef(item);
+      if (!def || !def.gem || def.slot !== 'amulet' || item.endsWith('_amulet_enchanted')) return send(ws, { type: 'error', message: 'That is not a strung amulet waiting for an enchantment.' });
+      const spell = SPELLS.find((s) => s.tier === 'enchant' && s.gem === def.gem);
+      if (!spell) return send(ws, { type: 'error', message: 'No enchantment is known for that amulet.' });
+      if (me.duelId || me.npcFightId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
+      if (stackQty(profile.backpack, item) < 1) return send(ws, { type: 'error', message: `No ${def.name} in your backpack.` });
+      const mLvl = levelForXp((profile.xp && profile.xp.magic) || 0);
+      if (mLvl < spell.level) return send(ws, { type: 'error', message: `You need Magic level ${spell.level} for ${spell.name} (you are level ${mLvl}).` });
+      if (actionOnCooldown(me)) return send(ws, { type: 'error', message: 'Too fast — one action at a time.' });
+      const runeId = `${spell.element}_rune`;
+      // removeStacks is atomic: false (and nothing taken) when short.
+      if (!removeStacks(profile.backpack, runeId, spell.runes)) return send(ws, { type: 'error', message: `You don't have the runes for ${spell.name} — it costs ${spell.runes} x ${ITEMS[runeId].name}.` });
+      removeStacks(profile.backpack, item, 1);
+      const out = `${def.gem}_amulet_enchanted`;
+      const leftover = addStacks(profile.backpack, out, 1, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(profile.bank, out, leftover);
+      addXp(key, { magic: spell.castXp || 0 });
+      save(key);
+      me.actSkill = 'magic'; me.actAt = Date.now();
+      send(ws, { type: 'enchant_result', ok: true, item: out, spell: spell.id, xp: spell.castXp || 0 });
+      return sendProfile(key);
+    }
+
     // ----- Stage 19: spellbook selection + fletching -----
     if (m.type === 'set_spell') {
       const sp = SPELL_BY_ID[String(m.spell || '')];
@@ -7374,6 +7577,9 @@ wss.on('connection', (ws, req) => {
       // Stage 24: Freeze is cast from a placed spell button only —
       // a staff autocasting a 0-damage root would just burn runes.
       if (sp.id === 'freeze') return send(ws, { type: 'error', message: '❄️ Freeze is cast from a placed spell button — drag it out of the spellbook onto your screen.' });
+      // Crafting chain: Enchant spells are cast on a strung amulet
+      // in the backpack, never selected for a staff.
+      if (sp.tier === 'enchant') return send(ws, { type: 'error', message: `✨ ${sp.name} is cast on a strung amulet in your backpack — open the amulet and tap Enchant.` });
       const mLvl = levelForXp((profile.xp && profile.xp.magic) || 0);
       if (mLvl < sp.level) return send(ws, { type: 'error', message: `You need Magic level ${sp.level} for ${sp.name} (you are level ${mLvl}).` });
       profile.spell = sp.id;
@@ -7977,6 +8183,9 @@ wss.on('connection', (ws, req) => {
     if (m.type === 'cast_at') {
       const spell = SPELL_BY_ID[String(m.spell || '')];
       if (!spell) return send(ws, { type: 'error', message: 'Unknown spell.' });
+      // Crafting chain: Enchant spells target an amulet in the
+      // backpack, never a creature or a player.
+      if (spell.tier === 'enchant') return send(ws, { type: 'error', message: `✨ ${spell.name} is cast on a strung amulet in your backpack — open the amulet and tap Enchant.` });
       const kind = String(m.targetKind || '');
       const targetId = String(m.targetId || '');
       const now = Date.now();
