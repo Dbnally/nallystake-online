@@ -1293,6 +1293,10 @@ function onMsg(m){
  if(m.type==='cook_result'){ if(m.ok) toast(`🍳 Cooked! +1 ${nameOf(m.item)}`); else toast('🔥 Burnt it…'); }
  if(m.type==='bury_result'){ toast(`🙏 Buried the bones. +${m.xp||5} Prayer XP`); if(myAv) spawnTextSplat(myAv,`+${m.xp||5} 🙏 Prayer XP`,'good'); }
  if(m.type==='fletch_result'){ toast(`🪵 Fletched! +${m.qty} ${nameOf(m.item)}`); }
+ if(m.type==='spin_result'){ toast(`🌀 Spun a Ball of yarn (+${m.xp||0} 🧵 Crafting XP)`); const avS=me?avatars[me.username]:null; if(avS) spawnTextSplat(avS,`+${m.xp||0} 🧵 Crafting XP`,'good'); }
+ if(m.type==='craft_result'){ toast(`📿 Crafted ${nameOf(m.item)}! (+${m.xp||0} 🧵 Crafting XP)`); const avC=me?avatars[me.username]:null; if(avC) spawnTextSplat(avC,`+${m.xp||0} 🧵 Crafting XP`,'good'); }
+ if(m.type==='string_result'){ toast(`🧵 Strung it — ${nameOf(m.item)} is ready to wear! (+${m.xp||0} Crafting XP)`); }
+ if(m.type==='enchant_result'){ toast(`✨ Enchanted! ${nameOf(m.item)} (+${m.xp||0} 🔮 Magic XP)`); const avE=me?avatars[me.username]:null; if(avE) spawnTextSplat(avE,'✨ Enchanted!','good'); }
  if(m.type==='smelt_result'){ toast(`🔥 Smelted ${m.qty} × ${nameOf(m.bar)} (+${m.xp} Smithing XP)`); logLine(`🔥 Smelted ${m.qty} × ${nameOf(m.bar)} (+${m.xp} Smithing XP)`); if(dockPanel==='smithy') renderDock(); }
  if(m.type==='smith_state'){ onSmithState(m); }
  if(m.type==='upgrade_result'){ if(m.ok){ toast(`⬆️ Upgraded to ${nameOf(m.item)}!`); logLine(`⬆️ Upgraded to ${nameOf(m.item)} (+${m.xp||0} Smithing XP)`); } else { toast('⬆️ The upgrade failed — the bar was lost, your item is unharmed.'); logLine('⬆️ Upgrade failed — bar lost, item unharmed.'); } }
@@ -1395,7 +1399,7 @@ $('orbhp').onclick=()=>{ if(duel||npcFight||fcRun||wildFight) toast('Eat food or
 $('orbrun').onclick=()=>{ settings.run=!settings.run; saveSettings(); renderOrbs(); toast(settings.run?'🏃 Run on — full speed':'🚶 Run off — walking pace'); };
 
 /* ================= XP drops ================= */
-const SKILL_DEFS=[['attack','⚔️','Attack'],['strength','💪','Strength'],['defence','🛡️','Defence'],['hitpoints','❤️','Hitpoints'],['ranged','🏹','Ranged'],['magic','🔮','Magic'],['prayer','🙏','Prayer'],['mining','⛏️','Mining'],['smithing','🔨','Smithing'],['woodcutting','🪓','Woodcutting'],['firemaking','🔥','Firemaking'],['fishing','🎣','Fishing'],['cooking','🍳','Cooking'],['fletching','🪶','Fletching']];
+const SKILL_DEFS=[['attack','⚔️','Attack'],['strength','💪','Strength'],['defence','🛡️','Defence'],['hitpoints','❤️','Hitpoints'],['ranged','🏹','Ranged'],['magic','🔮','Magic'],['prayer','🙏','Prayer'],['mining','⛏️','Mining'],['smithing','🔨','Smithing'],['woodcutting','🪓','Woodcutting'],['firemaking','🔥','Firemaking'],['fishing','🎣','Fishing'],['cooking','🍳','Cooking'],['fletching','🪶','Fletching'],['crafting','🧵','Crafting']];
 const SKILL_ICON={}; const SKILL_NAME={};
 for(const [id,ic,nm] of SKILL_DEFS){ SKILL_ICON[id]=ic; SKILL_NAME[id]=nm; }
 let lastXp={};
@@ -1862,6 +1866,7 @@ function crowdRow(parent,x1,z1,x2,z2,faceAng,seed){
    animated in animate() via farmWorkers. The Lumbridge-inspired
    town build inherits this spot as its farm dressing. */
 let farmWorkers=[]; // {g, armR, labelRef, row, x, lo, hi, dir, speed, phase, state, target, until}
+let spinWheelRotors=[]; // Crafting chain: the farm spinning wheel's rotor groups, turned slowly in animate()
 const FARMER_DEFS=[
  { name:'Farmer Bramble', icon:'🌾', row:27.2, x0:-24, lo:-26.5, hi:-9.5, speed:1.15, phase:0.0, shirt:0x8a6d1f },
  { name:'Farmer Wrenna', icon:'🌻', row:29.8, x0:-12, lo:-26.5, hi:-9.5, speed:0.95, phase:2.4, shirt:0x7a4a2b },
@@ -1938,6 +1943,21 @@ function buildFarm(S){
  // a wooden farm sign by the pasture gate
  box(0.18,2.2,0.18,0x5a4020,-15.2,1.1,29.4,S);
  const fsp=textSprite('🌾 NALLY FARM','#e3c766','rgba(23,19,12,0.85)'); fsp.position.set(-15.2,2.9,29.4); S.add(fsp);
+ // Crafting chain: the spinning wheel at the east end of the crop
+ // rows (server 728,727 — SPIN_WHEEL_POS server-side). A framed
+ // wheel that turns slowly in animate(); tapping it (or tapping
+ // Spin on a Wool stack) walks you over and spins wool into yarn.
+ spinWheelRotors=[]; // reset BEFORE the push below (a scene rebuild must not stack rotors)
+ const swAct={type:'spinwheel'};
+ box(0.16,1.5,0.16,0x5a4020,-7.9,0.75,27.7,S,swAct); box(0.16,1.5,0.16,0x5a4020,-6.5,0.75,27.7,S,swAct); // frame posts
+ const swRotor=new THREE.Group(); swRotor.position.set(-7.2,1.15,27.7); S.add(swRotor);
+ const swDisc=new THREE.Mesh(new THREE.CylinderGeometry(0.82,0.82,0.1,18),new THREE.MeshLambertMaterial({color:0x8a6b42}));
+ swDisc.rotation.x=Math.PI/2; swDisc.userData.act=swAct; interactives.push(swDisc); swRotor.add(swDisc);
+ for(let k=0;k<3;k++){ const spoke=box(0.09,1.5,0.06,0x5a4020,0,0,0,swRotor); spoke.rotation.z=k*Math.PI/3; }
+ const swHub=new THREE.Mesh(new THREE.SphereGeometry(0.14,8,8),new THREE.MeshLambertMaterial({color:0xd8b25e})); swRotor.add(swHub);
+ box(1.9,0.14,0.5,0x74552a,-7.2,0.35,27.7,S,swAct); // treadle bench
+ spinWheelRotors.push(swRotor);
+ const ssp=textSprite('🌀 SPINNING WHEEL','#e3c766','rgba(23,19,12,0.85)'); ssp.position.set(-7.2,2.75,27.7); S.add(ssp);
  // the farmers themselves — figures with a hoe on a shoulder
  // pivot, animated by the farmWorkers loop in animate()
  farmWorkers=[];
@@ -3481,7 +3501,7 @@ function setArea(a){
    // duels refuse travel) — clear local state the same way, so a
    // lost 'end' message can never strand the fight strip here.
    if(npcFight||duel||modDuel){ npcFight=null; duel=null; modDuel=null; $('duelbar').classList.remove('open'); $('duelflee').style.display='none'; }
-   pendingMound=null; pendingPile=null; pendingSeaweed=null; pendingChest=null;
+   pendingMound=null; pendingPile=null; pendingSeaweed=null; pendingChest=null; pendingSpin=false;
    // Stage 30: leaving a wild area drops the local wild state
    // (PKer avatars, the wild fight bar, the HUD chip) — the server
    // ends the fights themselves and its end messages settle them.
@@ -4996,6 +5016,7 @@ let nodeProps={}; // CURRENT area: node id -> {x,z,labelY,node} (world coords, f
 let worldLabels=[]; // {el,x,y,z,area,kind,nodeId?} — positioned by updateLabels, shown only in their area
 let activeNode=null; // node def being auto-gathered
 let pendingNode=null; // node def to walk to, then auto-gather on arrival
+let pendingSpin=false; // Crafting chain: walk to the spinning wheel, then spin on arrival
 let gatherTimer=null;
 const ROCK_TINT={copper_ore:0xb87333,tin_ore:0xcfd4d8,iron_ore:0x8a5a4a,coal:0x2b2b2b,uncut_gem:0x9b59d0,
  silver_ore:0xd8dde2,gold_ore:0xf2c230,mithril_ore:0x7f9fb0,adamantite_ore:0x5e7a52,runite_ore:0x9fd8e8};
@@ -5121,7 +5142,7 @@ function startGather(n){
 }
 function stopGather(){
  if(gatherTimer){ clearInterval(gatherTimer); gatherTimer=null; }
- activeNode=null; pendingNode=null;
+ activeNode=null; pendingNode=null; pendingSpin=false;
 }
 /* Playtest fix: a fishing spot's visible prop is a flat ripple
    ring ON the water (y≈0.1), so its tap test projects at water
@@ -5142,6 +5163,23 @@ function checkPendingNode(){
  const n=(nodesByArea[curArea]||[]).find(x=>x.id===pendingNode.id)||pendingNode;
  if(n.depleted){ pendingNode=null; return; }
  if(Math.hypot(myPos.x-n.x,myPos.y-n.y)<=140){ pendingNode=null; tapTarget=null; startGather(n); }
+}
+/* Crafting chain: the spinning wheel (server SPIN_WHEEL_POS
+   728,727 at the farm). Tapping the wheel itself, or the Spin
+   button on a Wool stack, walks you over first if you're far —
+   the pendingNode pattern. The server checks the range itself. */
+const SPIN_WHEEL_CLIENT={x:728,y:727};
+window.tapSpinWheel=function(){
+ if(!myPos) return;
+ if(curArea!=='plaza'){ toast('🌀 The spinning wheel is at the plaza farm.'); return; }
+ spawnTapSplat(SPIN_WHEEL_CLIENT.x,SPIN_WHEEL_CLIENT.y,true);
+ if(Math.hypot(myPos.x-SPIN_WHEEL_CLIENT.x,myPos.y-SPIN_WHEEL_CLIENT.y)<=140){ send({type:'spin'}); }
+ else { pendingSpin=true; tapTarget={x:SPIN_WHEEL_CLIENT.x,y:SPIN_WHEEL_CLIENT.y}; toast('🚶 Walking to the spinning wheel…'); }
+};
+function checkPendingSpin(){
+ if(!pendingSpin||!myPos) return;
+ if(curArea!=='plaza'){ pendingSpin=false; return; }
+ if(Math.hypot(myPos.x-SPIN_WHEEL_CLIENT.x,myPos.y-SPIN_WHEEL_CLIENT.y)<=140){ pendingSpin=false; tapTarget=null; send({type:'spin'}); }
 }
 /* ---- Visual pass (Derek, 2026-11-23): ground pieces ----
    The three-looks rule, third look: a dropped piece of GEAR lies
@@ -5428,6 +5466,9 @@ function onGatherResult(m){
    if(m.item){
      logLine(`+1 ${nameOf(m.item)}`);
      spawnTextSplat(myAv,`${iconOf(m.item)} +1`,'good');
+     // Crafting chain: a gem turned up while mining — celebrate
+     // it over the knight like the ore itself.
+     if(m.bonus){ logLine(`💎 A ${nameOf(m.bonus)} turned up in the rock!`); spawnTextSplat(myAv,`${iconOf(m.bonus)} ${nameOf(m.bonus)}!`,'good'); }
    } else {
      logLine(`Trained ${n?(SKILL_NAME[n.skill]||n.skill):''} (+${m.xp||0} XP)`);
      if(myAv) spawnTextSplat(myAv,`+${m.xp||0} ${n?(SKILL_ICON[n.skill]||'✨'):''} XP`,'good');
@@ -6273,6 +6314,7 @@ function handleTap(cx,cy){
      if(act.type==='stakeboard'){ openStakeBoard(); return; }
      if(act.type==='teleportsign'){ openPanel('teleport'); return; } // Stage 25: the sign by the bank opens the Teleport panel
      if(act.type==='sign'){ openSignPanel(); return; } // Polish build: the Derek Nally sign opens its read panel (and tells the server)
+     if(act.type==='spinwheel'){ tapSpinWheel(); return; } // Crafting chain: the farm spinning wheel (walks over first if far)
    }
  }
  // Stage 18: Menu tap mode — a quick tap on a player, NPC/monster,
@@ -6663,7 +6705,7 @@ function finishStep(moved){
    lastSend=now;
  }
  checkGates();
- if(moved){ checkPendingAttack(); checkPendingNode(); checkPendingFcAttack(); checkPendingMound(); checkPendingPile(); checkPendingSeaweed(); checkPendingChest(); checkPendingUse(); checkPendingWildAttack(); checkPendingWildPker(); }
+ if(moved){ checkPendingAttack(); checkPendingNode(); checkPendingSpin(); checkPendingFcAttack(); checkPendingMound(); checkPendingPile(); checkPendingSeaweed(); checkPendingChest(); checkPendingUse(); checkPendingWildAttack(); checkPendingWildPker(); }
 }
 /* ================= minimap (rotating, player-centred) ================= */
 const MM_S=128/520; // minimap px per server unit (~520 units across — Stage 13 kept the same view window: the map is player-centred, so a bigger world just means more of it lies off-map; every feature below is drawn in the new 0..1600 x 0..900 server coords)
@@ -6999,6 +7041,8 @@ function animate(){
    const fs=1+0.10*Math.sin(now*0.03+f.phase*5);
    f.flame.scale.set(fs,1+0.16*Math.sin(now*0.041+f.phase),fs);
  }
+ // Crafting chain: the spinning wheel turns slowly, always ready.
+ for(const r of spinWheelRotors) r.rotation.z-=dt*0.5;
  // Farm life: the plaza farmers work their crop rows — hoe a
  // spot for a few seconds, step along the row, hoe again; at the
  // row's end they turn around. Their name labels follow them.
@@ -7321,7 +7365,7 @@ window.cookItem=function(item){
 window.packBackpack=function(){ packSorted=true; renderDock(); toast('🎒 Packed — everything pulled to the top, in order.'); };
 /* ---- Stage 7C: Examine block (built from catalog data, no server call) ---- */
 const KIND_LABEL={food:'Food',potion:'Potion',weapon:'Weapon',armour:'Armour',tool:'Tool',resource:'Resource',good:'Trade good',token:'Token',trophy:'Trophy',currency:'Money',rune:'Rune',ammo:'Arrows',arrowhead:'Arrowheads'};
-const KIND_DESC={food:'Eat it to heal.',potion:'Drink it to restore yourself.',weapon:'Wield it to fight with it.',armour:'Wear it to protect yourself in a fight.',tool:'A tool — it speeds up the work it is made for.',resource:'A raw material — cook it, smelt it, smith with it, or sell it.',good:'A trade good — its price drifts on the Gold Exchange.',trophy:'A hard-won trophy. Wear it to show what you beat.',currency:'Your money, as a stack of coins. It lives in your backpack (or the bank) — shops, stakes and trades draw from both stacks together.',rune:'Spent to cast spells — each spell burns only its own element. Wizards drop runes.',ammo:'Ammunition for bows. Each shot spends 1 arrow from the FIRST arrow stack in your backpack — reorder your stacks (drag them in the backpack) to choose which arrows are spent first.',arrowhead:'Fletch it with a log to make 10 arrows of its tier — use the 🪵 Fletch button. Rangers drop arrowheads.'};
+const KIND_DESC={food:'Eat it to heal.',potion:'Drink it to restore yourself.',weapon:'Wield it to fight with it.',armour:'Wear it to protect yourself in a fight.',tool:'A tool — it speeds up the work it is made for.',resource:'A raw material — cook it, smelt it, smith with it, or sell it.',good:'A trade good — its price drifts on the Gold Exchange.',trophy:'A hard-won trophy. Wear it to show what you beat.',currency:'Your money, as a stack of coins. It lives in your backpack (or the bank) — shops, stakes and trades draw from both stacks together.',rune:'Spent to cast spells — each spell burns only its own element. Wizards drop runes.',ammo:'Ammunition for bows. Each shot spends 1 arrow from the FIRST arrow stack in your backpack — reorder your stacks (drag them in the backpack) to choose which arrows are spent first.',arrowhead:'Fletch it with a log to make 10 arrows of its tier — use the 🪵 Fletch button. Rangers drop arrowheads.',gem:'A gem that turned up while mining. Set it in a gold amulet with Crafting, string the amulet with yarn, then enchant it with Magic.'};
 const ITEM_NAME_FALLBACK={nc:'NC',certificate:'Certificate'};
 /* Stage 7D: the identity line for admin-made custom items — every copy
    of the item carries the maker's name and the base it was cloned from. */
@@ -7394,7 +7438,7 @@ function pBackpack(){
    const s=sIdx>=0? me.backpack[sIdx] : null, d=catalog[selStack];
    if(s){
      h+=`<div class="detail"><b>${itemIconHTML(s.item,22,s.qty)} ${esc(nameOf(s.item))}</b> x${s.qty}`;
-     if(d) h+=`<div class="note">${d.kind}${d.slot?` · worn: ${d.slot}`:''}${d.heal?` · heals ${d.heal} HP`:''}${d.prayerRestore?` · restores ${d.prayerRestore} prayer`:''}${d.accBonus?` · +${Math.round(d.accBonus*100)}% accuracy`:''}${d.maxBonus?` · +${d.maxBonus} max hit`:''}${d.reduction?` · −${Math.round(d.reduction*100)}% damage taken`:''}${d.speed?` · ⛏️ pickaxe speed ×${d.speed}`:''}</div>`;
+     if(d) h+=`<div class="note">${d.kind}${d.slot?` · worn: ${d.slot}`:''}${d.heal?` · heals ${d.heal} HP`:''}${d.prayerRestore?` · restores ${d.prayerRestore} prayer`:''}${d.accBonus?` · +${Math.round(d.accBonus*100)}% accuracy`:''}${d.maxBonus?` · +${d.maxBonus} max hit`:''}${d.magicBonus?` · +${d.magicBonus} spell max hit`:''}${d.reduction?` · −${Math.round(d.reduction*100)}% damage taken`:''}${d.speed?` · ⛏️ pickaxe speed ×${d.speed}`:''}</div>`;
      h+=customLineHTML(s.item);
      if(s.item==='gold'){
        // Stage 16: the coin stack IS the money — say where it lives
@@ -7419,6 +7463,12 @@ function pBackpack(){
      if(isLogs) h+=`<button class="act" onclick="lightFire()">🔥 Use — light fire</button>`;
      if(s.item==='raw_trout'||s.item==='raw_shrimps'||s.item==='raw_beef') h+=`<button class="act" onclick="cookItem('${s.item}')">🍳 Cook on fire</button>`;
      if(s.item==='animal_bones') h+=`<button class="act" onclick="send({type:'bury',item:'animal_bones'})">🙏 Bury (+5 Prayer XP)</button>`;
+     // Crafting chain (Derek, 2026-11-23): the wool-to-amulet
+     // steps live on the items themselves, fletch/bury-style.
+     if(s.item==='wool') h+=`<button class="act" onclick="tapSpinWheel()">🌀 Spin at the wheel (farm)</button>`;
+     if(d&&d.kind==='gem') h+=`<button class="act" onclick="send({type:'craft_amulet',gem:'${s.item}'})">📿 Make amulet (1 gold bar + this gem)</button>`;
+     if(s.item.endsWith('_amulet_unstrung')) h+=`<button class="act" onclick="send({type:'string_amulet',item:'${s.item}'})">🧵 String it (1 ball of yarn)</button>`;
+     if(d&&d.slot==='amulet'&&!s.item.endsWith('_enchanted')){ const esp=spellList.find(x=>x.tier==='enchant'&&x.gem===d.gem); h+=`<button class="act" onclick="send({type:'enchant_amulet',item:'${s.item}'})">✨ Enchant${esp?` — ${esc(esp.name)} (Magic ${esp.level}, ${esp.runes} ${esc(esp.element)} runes)`:''}</button>`; }
      const smithM=s.item.startsWith('smith_')? s.item.match(/^smith_([a-z]+)_(?:sword|platebody)(?:_u(\d))?$/) : null;
      if(smithM&&(+ (smithM[2]||0))<4) h+=`<button class="act" onclick="send({type:'smith_upgrade',item:'${s.item}'})">⬆️ Upgrade (+1)</button>`;
      if(d&&d.kind==='arrowhead') h+=`<button class="act" onclick="send({type:'fletch',item:'${s.item}'})">🪵 Fletch (1 log + 1 head → 10 arrows)</button>`;
@@ -7464,11 +7514,13 @@ function pSpellbook(){
      const ok=mLvl>=s.level, sel=me&&me.spell===s.id;
      // Stage 24: Freeze is button-cast only (no staff Select) and
      // its line carries Derek's description instead of a max hit.
-     const detail=s.id==='freeze'? esc(s.desc||''): `max hit ${s.max}`;
+     const isEnch=s.tier==='enchant'; // Crafting chain: cast on a strung amulet in the backpack — no staff Select, no placed button
+     const detail=(s.id==='freeze'||isEnch)? esc(s.desc||''): `max hit ${s.max}`;
      const action=s.id==='freeze'? '<span class="sub">❄️ Button only</span>'
+       : isEnch? '<span class="sub">✨ Cast on a strung amulet (🎒)</span>'
        : sel? '<span class="sub">Casting</span>'
        : `<button class="act" ${ok?`onclick="send({type:'set_spell',spell:'${s.id}'})"`:'disabled style="opacity:.45"'}>${ok?'Select':`Lvl ${s.level}`}</button>`;
-     h+=`<div class="rowline${sel?' sel':''}"><span class="grow"><b>${esc(s.name)}</b>${sel?' <span class="cf">✅ selected</span>':''}<br><span class="sub">Magic lvl ${s.level} · costs ${s.runes} × ${capEl(el)} rune (you have ${have}) · ${detail}</span></span>${action}<button class="act spellplace" data-spell="${s.id}" title="Drag onto the screen to place a cast button">📌</button></div>`;
+     h+=`<div class="rowline${sel?' sel':''}"><span class="grow"><b>${esc(s.name)}</b>${sel?' <span class="cf">✅ selected</span>':''}<br><span class="sub">Magic lvl ${s.level} · costs ${s.runes} × ${capEl(el)} rune (you have ${have}) · ${detail}</span></span>${action}${isEnch?'':`<button class="act spellplace" data-spell="${s.id}" title="Drag onto the screen to place a cast button">📌</button>`}</div>`;
    }
  }
  return h;
