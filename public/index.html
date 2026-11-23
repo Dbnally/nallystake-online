@@ -706,6 +706,7 @@
 <div class="modal" id="certreqmodal"><div class="sheet" id="certreqsheet"></div></div>
 <div class="modal" id="playermenumodal"><div class="sheet" id="playermenusheet"></div></div>
 <div class="modal" id="pknoobmodal"><div class="sheet" id="pknoobsheet"></div></div>
+<div class="modal" id="keepermodal"><div class="sheet" id="keepersheet"></div></div>
 <div class="modal" id="talkmodal"><div class="sheet" id="talksheet"></div></div>
 <div class="modal" id="examinemodal"><div class="sheet" id="examinesheet"></div></div>
 <div class="modal" id="partyinvitemodal"><div class="sheet" id="partyinvitesheet"></div></div>
@@ -1145,6 +1146,7 @@ function showConnbar(v){ const b=$('connbar'); if(b) b.classList.toggle('open',!
 function scheduleReconnect(){
  if(reconnectTimer) return;
  reconnecting=true;
+ stopIncomingTimer(); // Feel-fixes: freeze the challenge answer countdown while the socket is down — a blink must not locally expire a challenge the server is still holding; the re-push on reconnect restarts it with the true remaining seconds
  showConnbar(true);
  logLine('⚠️ Connection lost — reconnecting…');
  reconnectTimer=setTimeout(()=>{ reconnectTimer=null; connect(); },reconnectMs);
@@ -1561,6 +1563,7 @@ const STAKE_SIGN_POS={x:180,y:780}; // Stage 17: Stake Board sign, south-west pl
 const TELEPORT_SIGN_POS={x:880,y:470}; // Stage 25: teleport sign beside the bank (server 880,470 = world (8,2)) — clear of the bank chest, the spawn point and the Duel Board (984,450); tapping it opens the Teleport panel
 const NALLY_SIGN_POS={x:855,y:510}; // Polish build: the Derek Nally sign, a few steps south-east of the spawn (800,450), facing it — clear of the bank chest, the south path, the armour-shop path and the teleport sign (880,470); tapping it opens the read panel and notifies Muse (sign_read)
 let stakeSparkles=[]; // sign sparkle meshes, pulsed in animate()
+let fishSparkles=[]; // Feel-fixes: fishing-spot shimmer sparkles, pulsed in animate() like the Stake Board's
 let stakeBoard={offers:[]}; // latest stake_board payload
 let stakeMatch=null; // {matchId,opponent,stake,pot,readyMine,readyOpponent} while matched
 let renderer, scene, camera, raycaster, sunLight=null;
@@ -1985,8 +1988,8 @@ function buildPlaza(root){
  const dmLegR=new THREE.Mesh(dmLegG,dmLegM); dmLegR.position.set(0.16,0.35,0); dm.add(dmLegR); // legs
  const dmRobe=new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.44,0.85,12),new THREE.MeshLambertMaterial({color:0x6b4a7a})); dmRobe.position.y=1.1; dm.add(dmRobe); // purple robe body
  const dmHead=new THREE.Mesh(new THREE.SphereGeometry(0.26,12,10),new THREE.MeshLambertMaterial({color:0xd9a066})); dmHead.position.y=1.75; dm.add(dmHead); // head
- const dmCirc=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.28,0.09,12),new THREE.MeshLambertMaterial({color:0xc9a227})); dmCirc.position.y=1.93; dm.add(dmCirc); // gold circlet
- const dmSw=box(0.07,1.1,0.14,0xd9dee6,0.62,1.5,0,dm); dmSw.rotation.z=-0.5; // raised sword
+ const dmCirc=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.28,0.09,12),metalMat(0xc9a227)); dmCirc.position.y=1.93; dm.add(dmCirc); // gold circlet (Feel-fixes: metalMat, like the mods)
+ const dmSw=boxM(0.07,1.1,0.14,metalMat(0xd9dee6),0.62,1.5,0,dm); dmSw.rotation.z=-0.5; // raised sword
  const dmlabel=document.createElement('div'); dmlabel.className='plabel';
  dmlabel.innerHTML=`<div class="nname">⚔️ Duel Master</div>`;
  $('labels').appendChild(dmlabel);
@@ -2333,6 +2336,23 @@ function buildRangerCamp(root){
  box(11.4,0.4,0.6,0xc9a227,0,3.3,45,S);
  box(0.18,2.2,0.18,0x5a4020,8.4,1.1,38,S);
  const sp=textSprite('🏹 Ranger Camp','#b7e3a8','rgba(23,19,12,0.85)'); sp.position.set(8.4,3.0,38); S.add(sp);
+ // Feel-fixes: Ranger Fern — the camp's standing ranger character
+ // (the Pickaxe Pete / Fisher Wren pattern: a named figure + label,
+ // tappable for talk lines and an examine). She stands by the
+ // shooting line at world (-30,18) = server (500,630), clear of the
+ // ranger monsters' spawns. Client-only fixture, like Pete/Wren.
+ const fern=new THREE.Group(); fern.position.set(RANGER_KEEPER_POS.x,0,RANGER_KEEPER_POS.z); S.add(fern);
+ box(0.24,0.7,0.24,0x4a3520,-0.16,0.35,0,fern); box(0.24,0.7,0.24,0x4a3520,0.16,0.35,0,fern); // legs
+ box(0.7,0.8,0.4,0x3f6b2f,0,1.1,0,fern); // green ranger body
+ box(0.44,0.44,0.44,0xd9a066,0,1.75,0,fern); // head
+ const hood=new THREE.Mesh(new THREE.ConeGeometry(0.36,0.6,10),new THREE.MeshLambertMaterial({color:0x2e5233})); hood.position.set(0,2.05,0); fern.add(hood); // hood point
+ const bow=box(0.06,1.7,0.06,0x6e4a1f,0.72,1.35,0.15,fern); bow.rotation.z=0.12; // longbow stave
+ box(0.03,1.55,0.03,0xe8e2d2,0.86,1.35,0.15,fern); // bowstring
+ const quiv=box(0.16,0.55,0.16,0x6e4a1f,-0.1,1.15,-0.3,fern); quiv.rotation.z=0.25; // quiver on the back
+ const flabel=document.createElement('div'); flabel.className='plabel';
+ flabel.innerHTML=`<div class="nname">🏹 Ranger Fern</div>`;
+ $('labels').appendChild(flabel);
+ worldLabels.push({el:flabel,x:RANGER_KEEPER_POS.x,y:3.1,z:RANGER_KEEPER_POS.z,area:'range',kind:'static'});
  // Visual pass: the camp-side gateway + practice target stands
  buildGateway(S,0,45,0,'🏹 RANGER CAMP',{banner:'#3f7d2c'});
  targetStand(S,-30,8,0); targetStand(S,-4,10,0); targetStand(S,24,8,0);
@@ -2733,6 +2753,20 @@ function buildFightCaves(root){
  const sp=textSprite('🌋 Fight Caves','#ffb03a','rgba(23,19,12,0.85)'); sp.position.set(11,3.0,39); S.add(sp);
  // Visual pass: the caves-side gateway + obsidian dressing
  buildGateway(S,0,45,0,'🌋 FIGHT CAVES',{banner:'#8e2f32'});
+ // Feel-fixes: the WAY OUT, labelled at the entry edge. Leaving
+ // between waves already worked (walk south through the gap, or
+ // the fight strip's Leave button — the run ends as a normal
+ // 'left' run, records kept) but nothing in the caves SAID so.
+ // A glowing green exit pad in the south gap + a sign a player
+ // spawning at (0,35) can read the moment they arrive.
+ const exitPad=new THREE.Mesh(new THREE.CircleGeometry(2.2,20),new THREE.MeshBasicMaterial({color:0x39d353,transparent:true,opacity:0.5}));
+ exitPad.rotation.x=-Math.PI/2; exitPad.position.set(0,0.06,44); S.add(exitPad);
+ box(0.18,2.4,0.18,0x5a4020,-8,1.2,40,S);
+ const exsp=textSprite('🚪 EXIT — walk out to leave','#8affa0','rgba(10,30,14,0.88)'); exsp.position.set(-8,3.2,40); S.add(exsp);
+ const exlabel=document.createElement('div'); exlabel.className='plabel';
+ exlabel.innerHTML=`<div class="nname">🚪 Exit — walk south out of the caves (ends the run, records kept)</div>`;
+ $('labels').appendChild(exlabel);
+ worldLabels.push({el:exlabel,x:-8,y:3.9,z:40,area:'fightcaves',kind:'static'});
  spikeRock(S,-58,-4,1.25,0x241a12); spikeRock(S,58,24,1.0,0x241a12); spikeRock(S,-70,36,0.9,0x241a12);
  bonePile(S,-22,32); bonePile(S,28,-16);
 }
@@ -3358,7 +3392,9 @@ function setArea(a){
 }
 const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_crypt:1,barrows_tunnels:1,arena:1,waiting:1,magic:1,range:1,wilderness:1,purewild:1}; // Stage 30 adds the two wild variants
 // Stage 19: the areas with a live shared-NPC roster (npc_state).
-const NPC_AREAS_CLIENT=['goblins','magic','range'];
+// Feel-fixes: the two Wilderness variants join the roster — the
+// shallow-wild skeleton pocket rides the same npc_state flow.
+const NPC_AREAS_CLIENT=['goblins','magic','range','wilderness','purewild'];
 /* Knight armour (Stage 8 medieval theme): rounded bodies — sphere
    head under a steel helmet cap, tapered-cylinder torso, cylinder
    limbs on shoulder/hip pivots (the right shoulder pivot is the weapon
@@ -4289,9 +4325,36 @@ function makeRanger(n){
  return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
    x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:1.95,hp:n.hp,maxHp:n.maxHp};
 }
+/* Feel-fixes: the shallow-wild pocket skeleton — bone-white rig on
+   the goblin's proportions (same armR swing pivot the fight code
+   expects), a skull head with dark eye sockets and a rusty sword. */
+function makeSkeleton(n){
+ const g=new THREE.Group();
+ const bone=0xe8e2d0, boneMat=new THREE.MeshLambertMaterial({color:bone});
+ box(0.18,0.45,0.18,bone,-0.14,0.23,0,g); box(0.18,0.45,0.18,bone,0.14,0.23,0,g); // bone legs
+ const body=new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.33,0.62,10),new THREE.MeshLambertMaterial({color:0xd8d2c0})); body.position.y=0.76; g.add(body); // ribcage
+ box(0.16,0.5,0.16,bone,-0.4,0.8,0,g); // left arm
+ const armR=new THREE.Group(); armR.position.set(0.4,1.02,0); g.add(armR);
+ const armMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.08,0.5,8),boneMat); armMesh.position.y=-0.25; armR.add(armMesh);
+ box(0.07,0.7,0.07,0x8a5a2b,0,-0.8,0.05,armR); // rusty bronze sword
+ const head=new THREE.Mesh(new THREE.SphereGeometry(0.27,12,10),boneMat); head.position.y=1.32; g.add(head); // skull
+ const eyeG=new THREE.SphereGeometry(0.055,8,8), eyeM=new THREE.MeshBasicMaterial({color:0x14100c});
+ const eyeL=new THREE.Mesh(eyeG,eyeM); eyeL.position.set(-0.1,1.36,0.23); g.add(eyeL);
+ const eyeR=new THREE.Mesh(eyeG,eyeM); eyeR.position.set(0.1,1.36,0.23); g.add(eyeR);
+ box(0.2,0.07,0.05,bone,0,1.14,0.24,g); // jaw
+ shadowify(g);
+ const sh=new THREE.Mesh(new THREE.CircleGeometry(0.5,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
+ sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
+ const label=document.createElement('div'); label.className='plabel';
+ label.innerHTML=`<div class="gname">${esc(n.name||'Skeleton')} · lvl ${n.combatLevel||3}</div><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
+ $('labels').appendChild(label);
+ return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
+   x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:1.95,hp:n.hp,maxHp:n.maxHp};
+}
 function makeNpcAvatar(n){
  if(n.kind==='wizard') return makeWizard(n);
  if(n.kind==='ranger') return makeRanger(n);
+ if(n.kind==='skeleton') return makeSkeleton(n);
  return makeGoblin(n);
 }
 function syncNpcs(){
@@ -4332,6 +4395,23 @@ function attackNpc(id){
    startSwingAt/faceTarget handles swing facing). */
 const PK_NOOB_PLAZA_POS={x:1150,y:120};
 const PK_NOOB_WILD_POS={x:900,y:830};
+/* Feel-fixes: Ranger Fern, the Ranger Camp's standing character
+   (world coords for the figure; server coords for taps/splats). */
+const RANGER_KEEPER_POS={x:-30,z:18};
+const RANGER_KEEPER_SERVER={x:500,y:630};
+const RANGER_KEEPER_LINES=[
+ 'Mind the shooting line — loose only when I call it. A bow is only as good as the arrows you feed it: fletch your own from logs and arrowheads and they will fly true.',
+ 'See those rangers out on the range? They shoot back. Keep your distance, pray Deflect from Missiles, and bring more arrows than you think you need.',
+];
+let rangerKeeperLine=0;
+window.openRangerKeeper=function(){
+ const line=RANGER_KEEPER_LINES[rangerKeeperLine % RANGER_KEEPER_LINES.length]; rangerKeeperLine++;
+ $('keepersheet').innerHTML=`<h3>🏹 Ranger Fern</h3>
+ <p style="margin-bottom:8px">“${line}”</p>
+ <p class="note" style="margin-bottom:8px">🔍 Examine: The camp's resident ranger. She keeps the target butts strung, the hay bales dry, and a quiver of arrows on her back for anyone who asks nicely. Her longbow has more kills chalked on it than the whole range put together.</p>
+ <div class="btns"><button class="act" onclick="openRangerKeeper()">💬 Talk more</button><button class="ghost" onclick="closeModal('keepermodal')">Close</button></div>`;
+ $('keepermodal').classList.add('open');
+};
 const WILD_OBELISK_POS={x:700,y:830};
 function isWildClient(){ return curArea==='wilderness'||curArea==='purewild'; }
 let pkerList=[]; // from wild_state: [{id,name,cbt,style,x,y,hp,maxHp,frozenUntil}]
@@ -4542,16 +4622,21 @@ const MOD_PLUME=[0xb0793f,0xb9bfc7,0xc22f2f]; // tier 1 / 2 / 3
 function makeModNpc(n){
  const g=new THREE.Group();
  if(g.scale) g.scale.setScalar(AVATAR_SCALE); // Stage 32: the plaza's human NPCs grow with the players (their own rig, same factor)
- const steel=new THREE.MeshLambertMaterial({color:0x9aa2ad});
+ // Feel-fixes: the mods' metal goes through metalMat like every
+ // player knight — this rig used to build its own Lambert steel,
+ // which is why Ash/Blair/Vega rendered flat matte pale next to
+ // the glossy player avatars. Identity colours are unchanged:
+ // white tabard, gold trim, tier plume.
+ const steel=metalMat(0x9aa2ad);
  const accent=MOD_PLUME[(n.tier||1)-1]||0xc9a227;
  box(0.2,0.45,0.2,0x6b5636,-0.14,0.23,0,g); box(0.2,0.45,0.2,0x6b5636,0.14,0.23,0,g); // legs
  const body=new THREE.Mesh(new THREE.CylinderGeometry(0.27,0.34,0.62,10),new THREE.MeshLambertMaterial({color:0xe8e2d0})); body.position.y=0.76; g.add(body); // white tabard
- box(0.34,0.09,0.38,0xc9a227,0,1.04,0,g); // gold trim band
- box(0.18,0.5,0.18,0x9aa2ad,-0.4,0.8,0,g); // left arm (steel)
+ boxM(0.34,0.09,0.38,metalMat(0xc9a227),0,1.04,0,g); // gold trim band
+ boxM(0.18,0.5,0.18,steel,-0.4,0.8,0,g); // left arm (steel)
  const armR=new THREE.Group(); armR.position.set(0.4,1.02,0); g.add(armR);
  const armMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.09,0.5,8),steel); armMesh.position.y=-0.25; armR.add(armMesh);
- box(0.07,0.85,0.07,0xd9dee6,0,-0.88,0.05,armR); // sword blade
- box(0.24,0.06,0.1,0xc9a227,0,-0.48,0.05,armR); // crossguard
+ boxM(0.07,0.85,0.07,metalMat(0xd9dee6),0,-0.88,0.05,armR); // sword blade
+ boxM(0.24,0.06,0.1,metalMat(0xc9a227),0,-0.48,0.05,armR); // crossguard
  const head=new THREE.Mesh(new THREE.SphereGeometry(0.27,12,10),new THREE.MeshLambertMaterial({color:0xe8c39a})); head.position.y=1.3; g.add(head);
  const helm=new THREE.Mesh(new THREE.SphereGeometry(0.3,12,8,0,Math.PI*2,0,Math.PI/2),steel); helm.position.y=1.35; g.add(helm); // helmet cap
  const plume=new THREE.Mesh(new THREE.ConeGeometry(0.09,0.5,6),new THREE.MeshLambertMaterial({color:accent})); plume.position.set(0,1.74,-0.06); plume.rotation.x=0.5; g.add(plume); // tier plume
@@ -4761,6 +4846,23 @@ function makeNodeProp(n){
    ring.rotation.x=-Math.PI/2; ring.position.y=0.09; g.add(ring);
    const dot=new THREE.Mesh(new THREE.CircleGeometry(0.3,16),new THREE.MeshBasicMaterial({color:0xdff2ff,transparent:true,opacity:0.9}));
    dot.rotation.x=-Math.PI/2; dot.position.y=0.09; g.add(dot); labelY=1.3;
+   // Feel-fixes: a flat ring alone was nearly invisible at phone
+   // zoom — an ACTIVE spot now shimmers: a brighter, wider ripple
+   // plus rising sparkle motes (pulsed in animate(), the Stake
+   // Board sparkle pattern). Depleted spots keep only the flat
+   // ring, so live water reads at a glance. Dressing only — the
+   // spot's position and fishing mechanics are untouched.
+   if(!n.depleted){
+     const halo=new THREE.Mesh(new THREE.RingGeometry(1.15,1.5,24),new THREE.MeshBasicMaterial({color:0xdff2ff,transparent:true,opacity:0.55,side:THREE.DoubleSide}));
+     halo.rotation.x=-Math.PI/2; halo.position.y=0.1; g.add(halo);
+     for(let i=0;i<4;i++){
+       const sm=new THREE.Mesh(new THREE.OctahedronGeometry(0.11),new THREE.MeshBasicMaterial({color:i%2? 0xffffff:0x9fd8ff}));
+       const a=(i/4)*Math.PI*2+0.6;
+       sm.position.set(Math.cos(a)*0.55,0.45+ (i%3)*0.35,Math.sin(a)*0.55);
+       g.add(sm);
+       fishSparkles.push({mesh:sm,phase:Math.random()*10,baseY:sm.position.y,area:curArea});
+     }
+   }
  } else if(n.kind==='station'){
    if(n.id==='ranged_target'){
      box(0.18,1.9,0.18,0x5a4020,0,0.95,0,g);
@@ -4789,6 +4891,7 @@ function makeNodeProp(n){
 function rebuildNodes(){
  const area=curArea, root=areaGroups[area];
  nodeProps={};
+ fishSparkles=fishSparkles.filter(s=>s.area!==area); // this area's old sparkles go with its old node props
  // drop this area's old node labels (other areas' labels stay, hidden by area)
  worldLabels=worldLabels.filter(wl=>{ if(wl.kind==='node'&&wl.area===area){ wl.el.remove(); return false; } return true; });
  if(!root||!scene) return;
@@ -5125,12 +5228,22 @@ function rebuildObjects(){
 window.dropItem=(item,qty)=>{ send({type:'drop',item,qty}); };
 function onGatherResult(m){
  const n=(nodesByArea[curArea]||[]).find(x=>x.id===m.nodeId)||activeNode;
+ const myAv=me?avatars[me.username]:null;
+ // Feel-fixes: EVERY gather result now answers back on screen. The
+ // diagnosis (clean local run): the server always granted station
+ // XP (addXp fires, the DOM XP drop appears), but this handler only
+ // LOGGED station results — no swing, no in-world floater — so a
+ // Training Cave tap read as nothing happening. Now the swing plays
+ // on every result (success or "no luck"), and a station success
+ // floats its XP gain over the knight like an item gain does.
+ if(myAv) startSwing(myAv);
  if(m.ok){
    if(m.item){
      logLine(`+1 ${nameOf(m.item)}`);
-     spawnTextSplat(me?avatars[me.username]:null,`${iconOf(m.item)} +1`,'good');
+     spawnTextSplat(myAv,`${iconOf(m.item)} +1`,'good');
    } else {
      logLine(`Trained ${n?(SKILL_NAME[n.skill]||n.skill):''} (+${m.xp||0} XP)`);
+     if(myAv) spawnTextSplat(myAv,`+${m.xp||0} ${n?(SKILL_ICON[n.skill]||'✨'):''} XP`,'good');
    }
  } else {
    logLine('No luck that swing');
@@ -6045,6 +6158,11 @@ function handleTap(cx,cy){
    const ns=projectTo(sx2w(PK_NOOB_PLAZA_POS.x),1.4,sy2w(PK_NOOB_PLAZA_POS.y));
    if(ns&&Math.hypot(ns.x-cx,ns.y-cy)<52){ spawnTapSplat(PK_NOOB_PLAZA_POS.x,PK_NOOB_PLAZA_POS.y,true); openPkNoob(); return; }
  }
+ // Feel-fixes: Ranger Fern at the Ranger Camp (the PK Noob tap pattern).
+ if(curArea==='range'){
+   const ns=projectTo(RANGER_KEEPER_POS.x,1.4,RANGER_KEEPER_POS.z);
+   if(ns&&Math.hypot(ns.x-cx,ns.y-cy)<52){ spawnTapSplat(RANGER_KEEPER_SERVER.x,RANGER_KEEPER_SERVER.y,true); openRangerKeeper(); return; }
+ }
  // Fight Caves monsters (tap to target; walks over first if too far)
  if(curArea==='fightcaves'&&fcRun){
    let fb=null,fbD=1e9;
@@ -6118,7 +6236,8 @@ function handleTap(cx,cy){
      const s=projectTo(p.x,nodeTapY(p),p.z);
      if(!s) continue;
      const d=Math.hypot(s.x-cx,s.y-cy);
-     if(d<52 && d<nbD){ nb=p.node; nbD=d; }
+     const tapR=p.node.kind==='fish'? 88 : 52; // Feel-fixes: fishing spots get a forgiving tap target — the ripple is small on a phone
+     if(d<tapR && d<nbD){ nb=p.node; nbD=d; }
    }
    if(nb){ tapNode(nb); return; }
  }
@@ -6693,6 +6812,15 @@ function animate(){
    s.mesh.rotation.y+=0.04;
    s.mesh.position.y=s.baseY+0.14*Math.sin(now*0.003+s.phase*3);
  }
+ // Feel-fixes: fishing-spot shimmer — the same twinkle as the Stake
+ // Board sparkles, slower, so live water catches the eye.
+ for(const s of fishSparkles){
+   const sc=0.7+0.5*Math.abs(Math.sin(now*0.004+s.phase*7));
+   s.mesh.scale.set(sc,sc,sc);
+   s.mesh.visible=Math.sin(now*0.006+s.phase*5)>-0.5;
+   s.mesh.rotation.y+=0.03;
+   s.mesh.position.y=s.baseY+0.12*Math.sin(now*0.0025+s.phase*3);
+ }
  updateLiveSplats(now);
  updateTapSplats(now); // Visual pass: fade the tap splats (~600ms)
  updateFlashes(now); // Stage 37b: expire hit flashes (~160ms)
@@ -6768,11 +6896,23 @@ function animate(){
    // centre-LOW and a touch left, the world readable ahead over
    // his sword shoulder — aim point shifted less (0.30 of the
    // side offset) and lower than the Polish build's centre.
+   // Feel-fixes retune: the live check found that framing still
+   // pitched ~32° down (camera at y≈4.7 looking at the knight's
+   // feet — no horizon, no sky, knight huge centre-frame). The
+   // shoulder view now uses its OWN effective pitch — the shared
+   // camPitch scaled by OTS_PITCH_SCALE — and aims at a point
+   // AHEAD of the knight, so at the default pitch the gaze runs
+   // only ~7° down: horizon and world ahead in frame, knight
+   // centre-low. The player's drag/stick pitch still adjusts it
+   // (through the same camPitch), and third/first person are
+   // untouched.
    const OTS_SIDE=1.9;
+   const OTS_PITCH_SCALE=0.45, OTS_AIM_AHEAD=3.0; // Feel-fixes retune constants (see above)
    const rx=Math.cos(camYaw), rz=-Math.sin(camYaw); // view-right in world xz
-   const sp=Math.sin(camPitch), cp=Math.cos(camPitch);
+   const otsPitch=camPitch*OTS_PITCH_SCALE;
+   const sp=Math.sin(otsPitch), cp=Math.cos(otsPitch);
    camera.position.set(fx+Math.sin(camYaw)*cp*otsDist+rx*OTS_SIDE, 1.50+sp*otsDist*0.5, fz+Math.cos(camYaw)*cp*otsDist+rz*OTS_SIDE);
-   camera.lookAt(fx+rx*OTS_SIDE*0.30,1.62,fz+rz*OTS_SIDE*0.30);
+   camera.lookAt(fx-Math.sin(camYaw)*OTS_AIM_AHEAD+rx*OTS_SIDE*0.30,1.9,fz-Math.cos(camYaw)*OTS_AIM_AHEAD+rz*OTS_SIDE*0.30);
  } else {
    if(a) a.group.visible=true;
    // FAIR-DUEL pair framing (Derek, 2026-11-22 18:45: "I want it
@@ -8095,7 +8235,7 @@ function openIncoming(m){
  // Stage 14: the challenged player gets the SAME configuration
  // screen as the challenger — offered terms filled in, my side of
  // the items box empty, rules editable, Confirm instead of Accept.
- chalRole='to'; chalNotice=false; chalLeft=m.seconds||30;
+ chalRole='to'; chalNotice=false; chalLeft=m.seconds||60; // Feel-fixes: the server's answer window is 60s
  chalTerms={challengeId:m.challengeId,from:m.from,to:me?me.username:'',stake:m.stake,items:m.items||[],itemsTo:[],rules:m.rules?{...CHAL_NO_RULES,...m.rules}:{...CHAL_NO_RULES},freePlay:!!m.freePlay,confirm:{from:false,to:false},h2h:(m.h2h===undefined?null:m.h2h)}; // Stage 33: my record vs the challenger, from challenge_incoming
  $('incomingmodal').classList.add('open');
  renderChalSheet();
@@ -8182,6 +8322,7 @@ function openExamine(m){
  ${m.h2h?`<div class="setrow"><span class="grow">⚔️ Your record vs them</span><b style="color:#e3c766">${m.h2h.w}W – ${m.h2h.l}L</b></div>`:''}
  <div class="setrow"><span class="grow">⭐ Rating</span><b style="color:#e3c766">${p.rating}</b></div>
  <div class="setrow"><span class="grow">🥊 Style</span><b style="color:#e3c766">${esc(p.style||'')}</b></div>
+ ${p.bestFriend?`<div class="setrow"><span class="grow">💛 Best friend</span><b style="color:#e3c766">${esc(p.bestFriend)}</b></div>`:''}
  <div class="setrow"><span class="grow">📍 Area</span><b style="color:#e3c766">${AREA_LABELS[p.area]||esc(p.area||'')}</b></div>
  ${p.inDuel?`<div class="setrow"><span class="grow">⚔️ Status</span><b style="color:#e3c766">In a duel right now</b></div>`:''}
  <h4 style="margin:10px 0 5px;color:#e3c766">🗡️ Worn</h4>
