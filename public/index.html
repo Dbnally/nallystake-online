@@ -1291,6 +1291,7 @@ function onMsg(m){
  if(m.type==='gather_result'){ onGatherResult(m); }
  if(m.type==='fire_lit'){ toast('🔥 Fire lit (60s)'); }
  if(m.type==='cook_result'){ if(m.ok) toast(`🍳 Cooked! +1 ${nameOf(m.item)}`); else toast('🔥 Burnt it…'); }
+ if(m.type==='bury_result'){ toast(`🙏 Buried the bones. +${m.xp||5} Prayer XP`); if(myAv) spawnTextSplat(myAv,`+${m.xp||5} 🙏 Prayer XP`,'good'); }
  if(m.type==='fletch_result'){ toast(`🪵 Fletched! +${m.qty} ${nameOf(m.item)}`); }
  if(m.type==='smelt_result'){ toast(`🔥 Smelted ${m.qty} × ${nameOf(m.bar)} (+${m.xp} Smithing XP)`); logLine(`🔥 Smelted ${m.qty} × ${nameOf(m.bar)} (+${m.xp} Smithing XP)`); if(dockPanel==='smithy') renderDock(); }
  if(m.type==='smith_state'){ onSmithState(m); }
@@ -1851,6 +1852,116 @@ function crowdRow(parent,x1,z1,x2,z2,faceAng,seed){
  const len=Math.hypot(x2-x1,z2-z1), n=Math.max(2,Math.round(len/1.35));
  for(let i=0;i<n;i++){ const tt=(i+0.5)/n; spectatorFigure(parent,x1+(x2-x1)*tt,z1+(z2-z1)*tt,faceAng,seed+i); }
 }
+/* ================= Farm life (Derek, 2026-11-23) =================
+   The plaza farm: crop rows + a fenced pasture on the open
+   south-west ground (server x 520-720, y 700-830; world x -28..-8,
+   z 25..38), clear of every fixture, gate, path and protected
+   radius. The sheep and cows in the pasture are SERVER NPCs
+   (npc_state, kinds sheep/cow); the farmers are client-side
+   keepers who WORK the rows — step to a spot, hoe it, step on —
+   animated in animate() via farmWorkers. The Lumbridge-inspired
+   town build inherits this spot as its farm dressing. */
+let farmWorkers=[]; // {g, armR, labelRef, row, x, lo, hi, dir, speed, phase, state, target, until}
+const FARMER_DEFS=[
+ { name:'Farmer Bramble', icon:'🌾', row:27.2, x0:-24, lo:-26.5, hi:-9.5, speed:1.15, phase:0.0, shirt:0x8a6d1f },
+ { name:'Farmer Wrenna', icon:'🌻', row:29.8, x0:-12, lo:-26.5, hi:-9.5, speed:0.95, phase:2.4, shirt:0x7a4a2b },
+];
+/* Farmer talk (the keeper-modal pattern, like the ranger keeper's). */
+const FARMER_LINES={
+ 'Farmer Bramble':[
+  'Mind the rows, friend. Hoe, step, hoe — that\'s the whole secret, done ten thousand times.',
+  'Sheep give wool and bones, cows give hide, beef and bones. Bury the bones — the gods notice, and your Prayer grows.',
+ ],
+ 'Farmer Wrenna':[
+  'Everything on this farm earns its keep. Even the bones — bury them for Prayer, don\'t just leave them lying.',
+  'Cook the beef on a fire before you eat it. Raw beef is nobody\'s friend.',
+ ],
+};
+let farmerLineIdx={};
+window.openFarmer=function(name){
+ const lines=FARMER_LINES[name]||FARMER_LINES['Farmer Bramble'];
+ const i=(farmerLineIdx[name]||0); farmerLineIdx[name]=i+1;
+ const line=lines[i%lines.length];
+ const icon=name==='Farmer Wrenna'?'🌻':'🌾';
+ const exam=name==='Farmer Wrenna'
+  ? 'She works the south rows and keeps the pasture gate oiled. Her scythe is older than the plaza and twice as sharp.'
+  : 'He has hoed these rows since before the dais was built. Ask him about any crop on the farm and he\'ll tell you its grandfather\'s name.';
+ $('keepersheet').innerHTML=`<h3>${icon} ${esc(name)}</h3>
+ <p style="margin-bottom:8px">“${line}”</p>
+ <p class="note" style="margin-bottom:8px">🔍 Examine: ${exam}</p>
+ <div class="btns"><button class="act" onclick="openFarmer('${name}')">💬 Talk more</button><button class="ghost" onclick="closeModal('keepermodal')">Close</button></div>`;
+ $('keepermodal').classList.add('open');
+};
+function buildFarm(S){
+ // tilled earth under the crop rows (server y ~705-752)
+ const soil=new THREE.Mesh(new THREE.PlaneGeometry(19.5,5.2),new THREE.MeshLambertMaterial({map:dirtTexture(10,3)}));
+ soil.rotation.x=-Math.PI/2; soil.position.set(-18,0.03,27.7); soil.receiveShadow=true; S.add(soil);
+ // crop rows: tuft lines running east-west
+ const cropMats=[new THREE.MeshLambertMaterial({color:0x58a03c}),new THREE.MeshLambertMaterial({color:0x77b84a}),new THREE.MeshLambertMaterial({color:0x9ab84a})];
+ for(let r=0;r<4;r++){
+   const rz=25.9+r*1.3;
+   for(let cx=-27.2;cx<=-8.8;cx+=1.55){
+     const tuft=new THREE.Mesh(new THREE.ConeGeometry(0.3,0.65,6),cropMats[r%3]);
+     tuft.position.set(cx+(r%2? 0.7:0),0.32,rz); S.add(tuft);
+   }
+ }
+ // pasture grass patch inside the fence (server y 755-825)
+ const pg=new THREE.Mesh(new THREE.PlaneGeometry(19.5,7.2),new THREE.MeshLambertMaterial({map:noiseTexture('#527a3a',['#486e33','#5d8743','#3f612c'],10,5)}));
+ pg.rotation.x=-Math.PI/2; pg.position.set(-18,0.025,34); pg.receiveShadow=true; S.add(pg);
+ // the fence (goblin-camp pattern), with a gate gap on the north
+ // side facing the crop rows (world x -19.5..-16.5)
+ const fenceMat=0x6b4e26;
+ function farmFence(x1,z1,x2,z2){
+   const len=Math.hypot(x2-x1,z2-z1), n=Math.max(2,Math.round(len/1.6));
+   for(let i=0;i<=n;i++){ const t=i/n; box(0.15,1.05,0.15,fenceMat,x1+(x2-x1)*t,0.52,z1+(z2-z1)*t,S); }
+   const midx=(x1+x2)/2, midz=(z1+z2)/2, ang=Math.atan2(x2-x1,z2-z1);
+   const rail=box(0.07,0.11,len,fenceMat,midx,0.82,midz,S); rail.rotation.y=ang;
+   const rail2=box(0.07,0.11,len,fenceMat,midx,0.42,midz,S); rail2.rotation.y=ang;
+ }
+ farmFence(-27.5,30.5,-19.5,30.5); farmFence(-16.5,30.5,-8.5,30.5); // north (gate gap between)
+ farmFence(-27.5,37.5,-8.5,37.5); // south
+ farmFence(-27.5,30.5,-27.5,37.5); // west
+ farmFence(-8.5,30.5,-8.5,37.5); // east
+ box(0.3,1.7,0.3,0x7c7565,-19.5,0.85,30.5,S); box(0.3,1.7,0.3,0x7c7565,-16.5,0.85,30.5,S); // gate posts
+ // hay bale + water trough inside the pasture
+ const bale=new THREE.Mesh(new THREE.CylinderGeometry(0.8,0.8,1.1,10),new THREE.MeshLambertMaterial({color:0xd8b25e}));
+ bale.rotation.z=Math.PI/2; bale.position.set(-24,0.8,35.5); shadowify(bale); S.add(bale);
+ box(2.2,0.5,0.9,0x5a4020,-11,0.25,33,S);
+ const tw=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.14,0.7),new THREE.MeshLambertMaterial({color:0x3f6db0})); tw.position.set(-11,0.53,33); S.add(tw);
+ // a scarecrow watching the crop rows
+ const sc=new THREE.Group(); sc.position.set(-18,0,26.6); S.add(sc);
+ box(0.14,2.2,0.14,0x5a4020,0,1.1,0,sc);
+ box(1.5,0.12,0.12,0x5a4020,0,1.65,0,sc);
+ box(0.5,0.62,0.34,0x77683f,0,1.25,0,sc);
+ const schead=new THREE.Mesh(new THREE.SphereGeometry(0.24,10,8),new THREE.MeshLambertMaterial({color:0xd8b25e})); schead.position.y=2.15; sc.add(schead);
+ const scbrim=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,0.06,12),new THREE.MeshLambertMaterial({color:0xb03a2e})); scbrim.position.y=2.32; sc.add(scbrim);
+ // a wooden farm sign by the pasture gate
+ box(0.18,2.2,0.18,0x5a4020,-15.2,1.1,29.4,S);
+ const fsp=textSprite('🌾 NALLY FARM','#e3c766','rgba(23,19,12,0.85)'); fsp.position.set(-15.2,2.9,29.4); S.add(fsp);
+ // the farmers themselves — figures with a hoe on a shoulder
+ // pivot, animated by the farmWorkers loop in animate()
+ farmWorkers=[];
+ for(const fd of FARMER_DEFS){
+   const g=new THREE.Group(); S.add(g);
+   box(0.24,0.7,0.24,0x4a3520,-0.16,0.35,0,g); box(0.24,0.7,0.24,0x4a3520,0.16,0.35,0,g); // legs
+   box(0.7,0.8,0.4,fd.shirt,0,1.1,0,g); // shirt body
+   box(0.44,0.44,0.44,0xd9a066,0,1.75,0,g); // head
+   const brim=new THREE.Mesh(new THREE.CylinderGeometry(0.46,0.46,0.07,12),new THREE.MeshLambertMaterial({color:0xd8b25e})); brim.position.set(0,1.99,0); g.add(brim);
+   box(0.4,0.22,0.4,0xd8b25e,0,2.12,0,g); // straw hat top
+   const armR=new THREE.Group(); armR.position.set(0.42,1.42,0); g.add(armR);
+   box(0.16,0.5,0.16,fd.shirt,0,-0.22,0,armR); // work arm
+   const hoe=box(0.07,1.5,0.07,0x5a4020,0,-0.9,0.28,armR); hoe.rotation.x=0.45; // hoe handle
+   box(0.36,0.09,0.09,0x8a8f96,0,-1.55,0.62,armR); // hoe blade
+   shadowify(g);
+   g.position.set(fd.x0,0,fd.row-0.5);
+   const lab=document.createElement('div'); lab.className='plabel';
+   lab.innerHTML=`<div class="nname">${fd.icon} ${esc(fd.name)}</div>`;
+   $('labels').appendChild(lab);
+   const labelRef={el:lab,x:fd.x0,y:3.1,z:fd.row-0.5,area:'plaza',kind:'static'};
+   worldLabels.push(labelRef);
+   farmWorkers.push({g,armR,labelRef,name:fd.name,row:fd.row-0.5,x:fd.x0,lo:fd.lo,hi:fd.hi,dir:1,speed:fd.speed,phase:fd.phase,state:'work',target:fd.x0,until:1+fd.phase});
+ }
+}
 function buildPlaza(root){
  const scene=root; // build into the plaza area group (box()/add calls below target it)
  // ground: dark grass (subtle noise texture) — Stage 13: 160x90 world units
@@ -2194,6 +2305,7 @@ function buildPlaza(root){
    const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.7),rockMat());
    rock.position.set(rx,0.4,rz); scene.add(rock);
  }
+ buildFarm(scene); // Farm life: the plaza farm (crop rows + pasture + working farmers)
 }
 function buildGoblinCamp(root){
  const S=root;
@@ -3395,7 +3507,9 @@ const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fight
 // Stage 19: the areas with a live shared-NPC roster (npc_state).
 // Feel-fixes: the two Wilderness variants join the roster — the
 // shallow-wild skeleton pocket rides the same npc_state flow.
-const NPC_AREAS_CLIENT=['goblins','magic','range','wilderness','purewild'];
+// Farm life: the plaza joins — the farm's sheep and cows are
+// shared NPCs standing in the plaza pasture.
+const NPC_AREAS_CLIENT=['goblins','magic','range','wilderness','purewild','plaza'];
 /* Knight armour (Stage 8 medieval theme): rounded bodies — sphere
    head under a steel helmet cap, tapered-cylinder torso, cylinder
    limbs on shoulder/hip pivots (the right shoulder pivot is the weapon
@@ -4352,10 +4466,66 @@ function makeSkeleton(n){
  return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
    x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:1.95,hp:n.hp,maxHp:n.maxHp};
 }
+/* Farm life: the plaza pasture animals — a woolly sheep and a
+   brown cow on the goblin rig's proportions. The head rides the
+   armR pivot, so a fight swing reads as a head toss. */
+function makeSheep(n){
+ const g=new THREE.Group();
+ const woolMat=new THREE.MeshLambertMaterial({color:0xe9e4da});
+ const darkMat=new THREE.MeshLambertMaterial({color:0x3a3630});
+ box(0.16,0.4,0.16,0x3a3630,-0.2,0.2,-0.14,g); box(0.16,0.4,0.16,0x3a3630,0.2,0.2,-0.14,g);
+ box(0.16,0.4,0.16,0x3a3630,-0.2,0.2,0.14,g); box(0.16,0.4,0.16,0x3a3630,0.2,0.2,0.14,g); // legs
+ const body=new THREE.Mesh(new THREE.SphereGeometry(0.52,12,10),woolMat); body.scale.set(1.25,0.95,0.9); body.position.y=0.72; g.add(body); // woolly body
+ const tail=new THREE.Mesh(new THREE.SphereGeometry(0.16,8,8),woolMat); tail.position.set(0,0.82,-0.62); g.add(tail);
+ const armR=new THREE.Group(); armR.position.set(0,0.78,0.5); g.add(armR); // head pivot (the swing arm)
+ const head=new THREE.Mesh(new THREE.SphereGeometry(0.24,10,8),darkMat); head.scale.set(0.85,0.9,1.15); head.position.set(0,0.02,0.18); armR.add(head);
+ const earG=new THREE.SphereGeometry(0.09,8,6);
+ const earL=new THREE.Mesh(earG,darkMat); earL.position.set(-0.24,0.1,0.12); armR.add(earL);
+ const earR=new THREE.Mesh(earG,darkMat); earR.position.set(0.24,0.1,0.12); armR.add(earR);
+ const puff=new THREE.Mesh(new THREE.SphereGeometry(0.15,8,8),woolMat); puff.position.set(0,0.2,0.1); armR.add(puff); // wool tuft
+ shadowify(g);
+ const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
+ sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
+ const label=document.createElement('div'); label.className='plabel';
+ label.innerHTML=`<div class="gname">${esc(n.name||'Sheep')} · lvl ${n.combatLevel||1}</div><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
+ $('labels').appendChild(label);
+ return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
+   x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:1.35,hp:n.hp,maxHp:n.maxHp};
+}
+function makeCow(n){
+ const g=new THREE.Group();
+ const hideMat=new THREE.MeshLambertMaterial({color:0x8a5a34});
+ const creamMat=new THREE.MeshLambertMaterial({color:0xe8dcc8});
+ box(0.2,0.55,0.2,0x6e4525,-0.28,0.28,-0.2,g); box(0.2,0.55,0.2,0x6e4525,0.28,0.28,-0.2,g);
+ box(0.2,0.55,0.2,0x6e4525,-0.28,0.28,0.2,g); box(0.2,0.55,0.2,0x6e4525,0.28,0.28,0.2,g); // legs
+ const body=new THREE.Mesh(new THREE.SphereGeometry(0.62,12,10),hideMat); body.scale.set(1.3,0.95,0.95); body.position.y=0.95; g.add(body); // big body
+ const patch=new THREE.Mesh(new THREE.SphereGeometry(0.34,10,8),creamMat); patch.scale.set(1.1,0.7,0.25); patch.position.set(0.25,1.12,0.52); g.add(patch); // hide patch
+ const patch2=new THREE.Mesh(new THREE.SphereGeometry(0.26,10,8),creamMat); patch2.scale.set(1.0,0.65,0.25); patch2.position.set(-0.4,1.05,-0.55); patch2.rotation.y=0.7; g.add(patch2);
+ const tail=new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.045,0.7,6),hideMat); tail.position.set(0,0.95,-0.82); tail.rotation.x=0.35; g.add(tail);
+ const armR=new THREE.Group(); armR.position.set(0,1.05,0.62); g.add(armR); // head pivot (the swing arm)
+ const head=new THREE.Mesh(new THREE.SphereGeometry(0.3,10,8),hideMat); head.scale.set(0.95,0.9,1.1); head.position.set(0,-0.02,0.2); armR.add(head);
+ const muzzle=new THREE.Mesh(new THREE.SphereGeometry(0.19,10,8),new THREE.MeshLambertMaterial({color:0xd9a0a0})); muzzle.scale.set(1.05,0.75,0.8); muzzle.position.set(0,-0.12,0.44); armR.add(muzzle);
+ const hornG=new THREE.ConeGeometry(0.06,0.3,6), hornM=new THREE.MeshLambertMaterial({color:0xe8e2d0});
+ const hornL=new THREE.Mesh(hornG,hornM); hornL.position.set(-0.3,0.18,0.12); hornL.rotation.z=0.9; armR.add(hornL);
+ const hornR=new THREE.Mesh(hornG,hornM); hornR.position.set(0.3,0.18,0.12); hornR.rotation.z=-0.9; armR.add(hornR);
+ const earG2=new THREE.SphereGeometry(0.11,8,6);
+ const earL2=new THREE.Mesh(earG2,hideMat); earL2.position.set(-0.36,0.02,0.14); armR.add(earL2);
+ const earR2=new THREE.Mesh(earG2,hideMat); earR2.position.set(0.36,0.02,0.14); armR.add(earR2);
+ shadowify(g);
+ const sh=new THREE.Mesh(new THREE.CircleGeometry(0.7,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
+ sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
+ const label=document.createElement('div'); label.className='plabel';
+ label.innerHTML=`<div class="gname">${esc(n.name||'Cow')} · lvl ${n.combatLevel||2}</div><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
+ $('labels').appendChild(label);
+ return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
+   x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:1.8,hp:n.hp,maxHp:n.maxHp};
+}
 function makeNpcAvatar(n){
  if(n.kind==='wizard') return makeWizard(n);
  if(n.kind==='ranger') return makeRanger(n);
  if(n.kind==='skeleton') return makeSkeleton(n);
+ if(n.kind==='sheep') return makeSheep(n);
+ if(n.kind==='cow') return makeCow(n);
  return makeGoblin(n);
 }
 function syncNpcs(){
@@ -6180,6 +6350,14 @@ function handleTap(cx,cy){
    const ns=projectTo(RANGER_KEEPER_POS.x,1.4,RANGER_KEEPER_POS.z);
    if(ns&&Math.hypot(ns.x-cx,ns.y-cy)<52){ spawnTapSplat(RANGER_KEEPER_SERVER.x,RANGER_KEEPER_SERVER.y,true); openRangerKeeper(); return; }
  }
+ // Farm life: the plaza farmers (the keeper tap pattern) — they
+ // walk their rows, so the tap tests their LIVE positions.
+ if(curArea==='plaza'){
+   for(const w of farmWorkers){
+     const ns=projectTo(w.g.position.x,1.4,w.g.position.z);
+     if(ns&&Math.hypot(ns.x-cx,ns.y-cy)<52){ spawnTapSplat(Math.round(w.g.position.x*10+800),Math.round(w.g.position.z*10+450),true); openFarmer(w.name); return; }
+   }
+ }
  // Fight Caves monsters (tap to target; walks over first if too far)
  if(curArea==='fightcaves'&&fcRun){
    let fb=null,fbD=1e9;
@@ -6821,6 +6999,30 @@ function animate(){
    const fs=1+0.10*Math.sin(now*0.03+f.phase*5);
    f.flame.scale.set(fs,1+0.16*Math.sin(now*0.041+f.phase),fs);
  }
+ // Farm life: the plaza farmers work their crop rows — hoe a
+ // spot for a few seconds, step along the row, hoe again; at the
+ // row's end they turn around. Their name labels follow them.
+ for(const w of farmWorkers){
+   const t=now/1000;
+   if(w.state==='work'){
+     w.armR.rotation.x=-0.3-0.65*Math.abs(Math.sin(now*0.0052+w.phase*7)); // the hoe rises and falls
+     w.g.position.y=0;
+     if(t>w.until){
+       let nt=w.x+w.dir*2.3;
+       if(nt>w.hi||nt<w.lo){ w.dir*=-1; nt=w.x+w.dir*2.3; }
+       w.target=nt; w.state='walk';
+     }
+   } else {
+     w.armR.rotation.x+=( -0.15-w.armR.rotation.x )*Math.min(1,dt*8); // hoe rests on the walk
+     const dx=w.target-w.x, step=w.speed*dt;
+     if(Math.abs(dx)<=step){ w.x=w.target; w.state='work'; w.until=t+2.4+(w.phase%1.3); }
+     else { w.x+=Math.sign(dx)*step; w.g.position.y=Math.abs(Math.sin(now*0.011+w.phase*9))*0.05; }
+     w.g.rotation.y=dx>0? Math.PI/2 : -Math.PI/2; // face along the row
+   }
+   if(w.state==='work') w.g.rotation.y=0; // face the row (south) while hoeing
+   w.g.position.x=w.x; w.g.position.z=w.row;
+   w.labelRef.x=w.x; w.labelRef.z=w.row;
+ }
  // Stake Board sparkles twinkle (Stage 17): scale pulse + flicker + bob
  for(const s of stakeSparkles){
    const sc=0.65+0.55*Math.abs(Math.sin(now*0.006+s.phase*7));
@@ -7215,7 +7417,8 @@ function pBackpack(){
      if(d&&d.kind==='potion') h+=`<button class="act" onclick="send({type:'use',item:'${s.item}'})">🧪 Drink</button>`;
      if(d&&d.slot) h+=`<button class="act" onclick="send({type:'equip',item:'${s.item}',slot:${sIdx}})">${d.kind==='weapon'?'⚔️ Wield':d.kind==='armour'?'🛡️ Wear':'Equip'}</button>`;
      if(isLogs) h+=`<button class="act" onclick="lightFire()">🔥 Use — light fire</button>`;
-     if(s.item==='raw_trout'||s.item==='raw_shrimps') h+=`<button class="act" onclick="cookItem('${s.item}')">🍳 Cook on fire</button>`;
+     if(s.item==='raw_trout'||s.item==='raw_shrimps'||s.item==='raw_beef') h+=`<button class="act" onclick="cookItem('${s.item}')">🍳 Cook on fire</button>`;
+     if(s.item==='animal_bones') h+=`<button class="act" onclick="send({type:'bury',item:'animal_bones'})">🙏 Bury (+5 Prayer XP)</button>`;
      const smithM=s.item.startsWith('smith_')? s.item.match(/^smith_([a-z]+)_(?:sword|platebody)(?:_u(\d))?$/) : null;
      if(smithM&&(+ (smithM[2]||0))<4) h+=`<button class="act" onclick="send({type:'smith_upgrade',item:'${s.item}'})">⬆️ Upgrade (+1)</button>`;
      if(d&&d.kind==='arrowhead') h+=`<button class="act" onclick="send({type:'fletch',item:'${s.item}'})">🪵 Fletch (1 log + 1 head → 10 arrows)</button>`;
@@ -9691,7 +9894,7 @@ function resolveUseTap(cx,cy){
  const hit=detectWorldTap(cx,cy);
  if(!hit){ cancelUse(true); return; }
  if(hit.kind==='fire'){
-   if(item==='raw_trout'||item==='raw_shrimps'){
+   if(item==='raw_trout'||item==='raw_shrimps'||item==='raw_beef'){
      cancelUse(true);
      const f=hit.fire;
      if(myPos&&Math.hypot(myPos.x-f.x,myPos.y-f.y)<=120) send({type:'cook',item});
