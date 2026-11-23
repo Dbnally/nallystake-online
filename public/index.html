@@ -29,7 +29,7 @@
  #mapwrap{position:fixed;top:40px;right:8px;z-index:20;text-align:center}
  #minimap{background:#241d15;border:2px solid #c9a227;border-radius:8px}
  #orbs{display:flex;gap:6px;justify-content:center;margin-top:5px}
- .orb{width:52px;height:52px;border-radius:50%;border:2px solid #c9a227;position:relative;overflow:hidden;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.6)}
+ .orb{width:52px;height:52px;border-radius:50%;border:2px solid #c9a227;position:relative;overflow:hidden;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.6),inset 0 3px 6px rgba(255,255,255,.28),inset 0 -4px 7px rgba(0,0,0,.35)} /* Polish build: a glassy top highlight + shaded foot, so the orbs read as round glass like Derek's picture — same size, same place */
  .orb .fill{position:absolute;left:0;right:0;bottom:0}
  .orb .txt{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;text-shadow:0 1px 2px #000;line-height:1.1;z-index:2}
  .orb.hp .fill{background:#c1271b}.orb.hp{background:#3d0a06}
@@ -65,6 +65,25 @@
  #gearbtn{min-width:46px;height:46px;border-radius:10px;background:linear-gradient(135deg,#c9a227,#7a6748);border:2px solid #e3c766;color:#fff;font-size:22px;cursor:pointer;box-shadow:0 0 10px #c9a22755;flex:none;display:flex;align-items:center;justify-content:center;gap:4px;padding:0 9px;box-sizing:border-box}
  #gearbtn .gbic{font-size:20px;line-height:1}
  #gearbtn .gblbl{font-size:11px;font-weight:800;line-height:1}
+ /* Polish build: the ❓ Help button sits beside the 🎛️ Menu toggle
+    in #dockhead and is NEVER hidden by the rail toggle (only the
+    three chips follow it) — help is always one tap away. Same
+    46px target and two-part glyph+label anatomy as the Menu button. */
+ #helpbtn{min-width:46px;height:46px;border-radius:10px;background:linear-gradient(135deg,#3f6212,#2b2118);border:2px solid #a3c14a;color:#fff;font-size:22px;cursor:pointer;box-shadow:0 0 10px #a3c14a44;flex:none;display:flex;align-items:center;justify-content:center;gap:4px;padding:0 9px;box-sizing:border-box}
+ #helpbtn .gbic{font-size:20px;line-height:1}
+ #helpbtn .gblbl{font-size:11px;font-weight:800;line-height:1}
+ /* Polish build: Help panel task rows — a task is a rowline whose
+    steps expand under it; the current task is lit like a selection. */
+ .helptask{cursor:pointer}
+ .helpsteps{background:#1b140e;border:1px solid #4a3a28;border-radius:8px;padding:8px 10px;margin:-2px 0 8px;font-size:13px}
+ .helpsteps ol{margin:4px 0 6px;padding-left:20px}
+ .helpsteps li{margin:4px 0;line-height:1.35}
+ .helpsteps .btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+ /* Polish build: the sign read panel's essentials rows — a gold
+    heading over each one-line brief. */
+ .kv{margin:0 0 9px}
+ .kv span{display:block;color:#e3c766;font-weight:800;margin-bottom:1px}
+ .kv b{font-weight:600;color:#f0e6cf}
  /* the tab bar: every panel one tap away, wrapped in the dock.
     While Grab is on the bar is .locked: no touch scrolling gestures,
     arranging only. */
@@ -124,14 +143,14 @@
  input,select{background:#171310;color:#e8d9b0;border:1px solid #7a6748;border-radius:6px;padding:7px;font-size:14px}
  input[type=number]{width:76px}
  /* joystick */
- #joy{position:fixed;left:18px;bottom:86px;width:112px;height:112px;border-radius:50%;background:rgba(23,19,16,.55);border:2px solid rgba(122,103,72,.85);z-index:30;touch-action:none;opacity:var(--uia)}
+ #joy{position:fixed;left:18px;bottom:86px;width:112px;height:112px;border-radius:50%;background:rgba(23,19,16,.55);border:2px solid rgba(201,162,39,.85);z-index:30;touch-action:none;opacity:var(--uia)}
  #knob{position:absolute;left:50%;top:50%;width:50px;height:50px;border-radius:50%;background:rgba(201,162,39,.75);border:2px solid #7a6748;transform:translate(-50%,-50%)}
- #camstick{position:fixed;right:16px;bottom:196px;width:104px;height:104px;border-radius:50%;background:rgba(23,19,16,.55);border:2px solid rgba(176,141,79,.7);z-index:30;touch-action:none;opacity:var(--uia)}
+ #camstick{position:fixed;right:16px;bottom:196px;width:104px;height:104px;border-radius:50%;background:rgba(23,19,16,.55);border:2px solid rgba(201,162,39,.8);z-index:30;touch-action:none;opacity:var(--uia)}
  #camknob{position:absolute;left:50%;top:50%;width:46px;height:46px;border-radius:50%;background:rgba(176,141,79,.75);border:2px solid #6e5a3e;transform:translate(-50%,-50%)}
  #camstick .sticklbl{position:absolute;left:0;right:0;bottom:6px;text-align:center;font-size:10px;color:#cfe6ff;pointer-events:none}
  /* quick-set buttons */
  #quickbar{position:fixed;left:146px;bottom:108px;z-index:30;display:flex;gap:8px}
- .qbtn{width:54px;height:54px;border-radius:50%;background:rgba(23,19,16,var(--uia));border:2px solid #7a6748;color:#e8d9b0;font-size:24px;cursor:pointer;position:relative}
+ .qbtn{width:54px;height:54px;border-radius:50%;background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;color:#e8d9b0;font-size:24px;cursor:pointer;position:relative;box-shadow:inset 0 3px 6px rgba(255,255,255,.22),inset 0 -4px 7px rgba(0,0,0,.35)} /* Polish build: gold rim + glassy highlight, OSRS-mobile style (Derek's duel photo) — same size, same place */
  .qbtn .qnum{position:absolute;top:-5px;right:-5px;background:#c9a227;border:1px solid #e3c766;border-radius:50%;width:19px;height:19px;font-size:11px;font-weight:800;color:#fff;display:flex;align-items:center;justify-content:center}
  .qbtn.actbtn{font-size:21px;line-height:1}
  .qbtn .qlbl{position:absolute;left:0;right:0;bottom:3px;font-size:8px;font-weight:800;color:#e0cfa0;text-align:center;pointer-events:none}
@@ -180,11 +199,26 @@
  #duelbar::-webkit-scrollbar{display:none}
  #duelbar>*{flex:none}
  .fightinfo{display:none!important}
- .fchip{flex:none;display:inline-flex;align-items:center;gap:4px;background:#2b2118;color:#e8d9b0;border:1px solid #7a6748;border-radius:999px;padding:9px 10px;min-height:40px;box-sizing:border-box;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;line-height:1;font-family:inherit}
+ .fchip{flex:none;display:inline-flex;align-items:center;gap:4px;background:#2b2118;color:#e8d9b0;border:1px solid #c9a227;border-radius:999px;padding:9px 10px;min-height:40px;box-sizing:border-box;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;line-height:1;font-family:inherit} /* Polish build: gold rim on the bar chips, toward the gold-rimmed bottom row of Derek's duel photo — contents and layout untouched (settled spec) */
  .fchip.ctx{cursor:default;color:#ffd75e;border-color:#c9a227;background:#3a2c1c}
  .fchip.spec{background:linear-gradient(135deg,#c9a227,#8e2f32);color:#fff;border-color:#c9a227}
  .fchip.pray.on{border-color:#c9a227;background:#3a2c1c;box-shadow:0 0 10px #c9a22766}
  #duelhint{font-weight:800;color:#ffd75e;font-size:12px;background:#3a2c1c;border:1px solid #c9a227;border-radius:999px;padding:4px 9px;white-space:nowrap}
+ /* OSRS-basis duel presentation (Derek, 2026-11-22): a slim pair of
+    HP bars at the TOP of the screen during a duel / mod fight —
+    name + bar + number for you and your opponent, OSRS-video
+    style. Presentation only: the overhead bars stay, the fight
+    strip stays; this is a readout, not a panel (clear-screen rule). */
+ #dueltop{position:fixed;top:calc(6px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:14;display:none;gap:10px;align-items:stretch;pointer-events:none;font-family:inherit}
+ #dueltop.open{display:flex}
+ .dtside{width:158px;background:rgba(24,18,10,.82);border:1px solid #c9a227;border-radius:8px;padding:4px 7px 6px;box-shadow:inset 0 1px 0 rgba(255,255,255,.14)}
+ .dtname{font-size:11px;font-weight:800;color:#ffe9a8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
+ .dtbar{position:relative;height:13px;margin-top:3px;background:#5a1410;border:1px solid rgba(0,0,0,.65);border-radius:4px;overflow:hidden}
+ .dtfill{position:absolute;inset:0;width:100%;background:#2fae4e;transition:width .25s}
+ .dtfill.low{background:#d83a26}
+ .dtnum{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:900;color:#fff;text-shadow:0 1px 2px #000}
+ .dtvs{align-self:center;font-size:13px;color:#ffd75e;text-shadow:0 1px 3px #000}
+ @media (max-width:560px){ .dtside{width:118px} .dtname{font-size:10px} }
  #duelnomove{font-weight:800;color:#ffb3b3;font-size:12px;background:#3a1c1c;border:1px solid #8e2f32;border-radius:999px;padding:4px 9px;white-space:nowrap}
  #duelbar .t{font-weight:900;color:#e3c766;text-align:center;font-size:14px;margin-bottom:5px}
  .hprow{display:flex;align-items:center;gap:7px;font-size:12px;margin:3px 0}
@@ -420,6 +454,7 @@
 <div id="paneldock">
  <div id="dockhead">
   <button id="gearbtn" title="Show / hide the panel tabs"><span class="gbic">🎛️</span><span class="gblbl">Menu</span></button>
+  <button id="helpbtn" title="Help — learn the game, task by task"><span class="gbic">❓</span><span class="gblbl">Help</span></button>
   <button id="railgrab" class="railchip" title="Grab mode: drag the panel tabs where you want them, then toggle off to lock them">✋ Grab</button>
   <button id="railmenutap" class="railchip" title="Menu tap: taps on players, monsters, nodes and piles open their menu instead of acting">🖱️ Menu tap: Off</button>
   <button id="railcam" class="railchip" title="Camera view: third person / first person">🎥 3rd</button>
@@ -474,7 +509,8 @@
   <button class="fchip sty" data-style="defensive">🛡️ Defensive</button>
   <button class="fchip sty" data-style="controlled">⚖️ Controlled</button>
  </div>
- <div id="duelhint" style="display:none">⚔️ Tap your opponent to attack!</div>
+ <div id="duelhint" style="display:none">⚔️ Tap your opponent to attack — once they swing at you, you fight back!</div>
+ <div id="dueltop"><div class="dtside"><div class="dtname" id="dtmyname">You</div><div class="dtbar"><div class="dtfill" id="dtmyfill"></div><div class="dtnum" id="dtmynum">99/99</div></div></div><div class="dtvs">⚔️</div><div class="dtside"><div class="dtname" id="dtoppname">Opponent</div><div class="dtbar"><div class="dtfill" id="dtoppfill"></div><div class="dtnum" id="dtoppnum">99/99</div></div></div></div>
  <button class="fchip atk" id="atkchip" style="display:none" title="Attack — the same tap as tapping your opponent">⚔️ Attack</button>
  <div id="duelnomove" style="display:none">🚫 No Movement</div>
  <div id="duelprayers">
@@ -568,6 +604,7 @@
 <div class="modal" id="fcstartmodal"><div class="sheet" id="fcstartsheet"></div></div>
 <div class="modal" id="fcendmodal"><div class="sheet" id="fcendsheet"></div></div>
 <div class="modal" id="puzzlemodal"><div class="sheet" id="puzzlesheet"></div></div>
+<div class="modal" id="signmodal"><div class="sheet" id="signsheet"></div></div>
 <div class="modal" id="lootmodal"><div class="sheet" id="lootsheet"></div></div>
 <div class="modal" id="fightoffermodal"><div class="sheet" id="fightoffersheet"></div></div>
 <div class="modal" id="certreqmodal"><div class="sheet" id="certreqsheet"></div></div>
@@ -731,7 +768,7 @@ if(typeof settings.shakeOn!=='boolean') settings.shakeOn=true; // Stage 37b: cam
 if(settings.tapMode==='walk'||settings.tapMode==='face'){ settings.groundTap=settings.tapMode; settings.tapMode='normal'; }
 if(settings.tapMode!=='menu') settings.tapMode='normal';
 if(settings.groundTap!=='face') settings.groundTap='walk';
-if(settings.camPov!=='first') settings.camPov='third'; // Stage 18: camera POV ('third' default / 'first')
+if(settings.camPov!=='first'&&settings.camPov!=='shoulder') settings.camPov='third'; // Stage 18: camera POV ('third' default / 'first'); Polish build: 'shoulder' (over-the-shoulder) joins the set — old saves hold only first/third and stay valid
 if(typeof settings.camPitch!=='number') settings.camPitch=0.92; // Stage 25: drag-tilt pitch persists in the settings store
 settings.camPitch=clamp(settings.camPitch,CAM_PITCH_MIN,CAM_PITCH_MAX);
 if(typeof settings.uiAlpha!=='number') settings.uiAlpha=0.78;
@@ -814,19 +851,25 @@ function applySettings(){
 }
 window.toggleRail=function(){ railOpen=!railOpen; try{ localStorage.setItem('nallystake_rail_open',railOpen?'1':'0'); }catch(e){} applyRailVisibility(); };
 $('gearbtn').onclick=()=>toggleRail();
+$('helpbtn').onclick=()=>togglePanel('help'); // Polish build: ❓ Help — always findable beside the Menu toggle
 window.setCamSpeed=function(v){ settings.camSpeed=clamp(parseFloat(v)||1.5,0.25,3); const el=$('camspeedval'); if(el) el.textContent=settings.camSpeed+'×'; saveSettings(); };
 window.setGroundTap=function(m){ settings.groundTap=(m==='face')?'face':'walk'; saveSettings(); renderDock(); };
 /* Stage 18: menu-tap mode (Part B) + camera POV (Part E) setters.
    Both persist in the settings store and refresh their dock chips. */
 window.setTapMode=function(m){ settings.tapMode=(m==='menu')?'menu':'normal'; saveSettings(); renderMenuTapChip(); if(dockPanel==='settings') renderDock(); };
-window.setCamPov=function(v){ settings.camPov=(v==='first')?'first':'third'; saveSettings(); renderCamChip(); if(dockPanel==='settings') renderDock(); };
+window.setCamPov=function(v){ settings.camPov=(v==='first'||v==='shoulder')? v : 'third'; saveSettings(); renderCamChip(); if(dockPanel==='settings') renderDock(); };
 /* Stage 37b: fight-feel toggles, same setter shape as the camera
    ones — persisted in the settings store, panel re-renders in sync. */
 window.setSoundOn=function(v){ settings.soundOn=!!v; saveSettings(); if(settings.soundOn) sfxClick(); if(dockPanel==='settings') renderDock(); };
 window.setShakeOn=function(v){ settings.shakeOn=!!v; saveSettings(); if(dockPanel==='settings') renderDock(); };
-window.toggleCamPov=function(){ setCamPov(settings.camPov==='first'?'third':'first'); };
+/* Polish build: the POV cycle is third → over-the-shoulder →
+   first → third, one tap per step on the 🎥 chip. */
+window.toggleCamPov=function(){ setCamPov(settings.camPov==='third'?'shoulder':settings.camPov==='shoulder'?'first':'third'); };
 function renderMenuTapChip(){ const b=$('railmenutap'); if(!b) return; const on=settings.tapMode==='menu'; b.textContent=on?'🖱️ Menu tap: On':'🖱️ Menu tap: Off'; b.classList.toggle('on',on); }
-function renderCamChip(){ const b=$('railcam'); if(!b) return; const fp=settings.camPov==='first'; b.textContent=fp?'🎥 1st':'🎥 3rd'; b.classList.toggle('on',fp); b.title=fp?'Camera: first person — tap for third person':'Camera: third person — tap for first person'; }
+/* Polish build: one name per POV, shared by the 🎥 chip, the
+   Settings seg, the Camera sets rows and their toasts. */
+function povName(p){ return p==='first'? '👀 First person' : p==='shoulder'? '🎯 Over the shoulder' : '🎥 Third person'; }
+function renderCamChip(){ const b=$('railcam'); if(!b) return; const p=settings.camPov; b.textContent=p==='first'?'🎥 1st':p==='shoulder'?'🎥 Shoulder':'🎥 3rd'; b.classList.toggle('on',p!=='third'); b.title=`Camera: ${povName(p)} — tap to cycle (third → shoulder → first)`; }
 /* Stage 37: camera quick sets — three slots in the settings
    store, each holding a whole camera bundle {pov, pitch, speed}.
    (The ⭐ Quick 1/2 buttons are ITEM shortcuts — unrelated, and
@@ -839,7 +882,7 @@ window.saveCamSet=function(n){
  const s=camSetsArr();
  s[n]={pov:settings.camPov, pitch:Math.round(camPitch*100)/100, speed:settings.camSpeed};
  saveSettings();
- toast(`📸 Camera set ${n+1} saved: ${settings.camPov==='first'?'👀 First person':'🎥 Third person'} · tilt ${s[n].pitch.toFixed(2)} · speed ${settings.camSpeed}×`);
+ toast(`📸 Camera set ${n+1} saved: ${povName(settings.camPov)} · tilt ${s[n].pitch.toFixed(2)} · speed ${settings.camSpeed}×`);
  if(dockPanel==='settings') renderDock();
 };
 window.useCamSet=function(n){
@@ -848,9 +891,9 @@ window.useCamSet=function(n){
  settings.camSpeed=clamp(+s.speed||1.5,0.25,3);
  camPitch=clamp(typeof s.pitch==='number'? s.pitch : CAM_PITCH_LEVEL,CAM_PITCH_MIN,CAM_PITCH_MAX);
  settings.camPitch=camPitch;
- setCamPov(s.pov==='first'?'first':'third'); // saves settings + refreshes the 🎥 chip and this panel
+ setCamPov(s.pov); // saves settings + refreshes the 🎥 chip and this panel (setCamPov validates: shoulder/first/third pass, anything else lands on third — old saved sets stay valid)
  saveSettings();
- toast(`📸 Camera set ${n+1}: ${settings.camPov==='first'?'👀 First person':'🎥 Third person'} · tilt ${camPitch.toFixed(2)} · speed ${settings.camSpeed}×`);
+ toast(`📸 Camera set ${n+1}: ${povName(settings.camPov)} · tilt ${camPitch.toFixed(2)} · speed ${settings.camSpeed}×`);
 };
 window.setUiAlpha=function(v){ settings.uiAlpha=clamp(parseFloat(v)||0.78,0.3,1); saveSettings(); };
 window.setBtnVisible=function(p,vis){ settings.hidden[p]=!vis; saveSettings(); };
@@ -1401,6 +1444,7 @@ const SHOP_SPOTS=[ // server coords (Stage 13: old spots x2 — must match the s
 const BOARD_POS={x:984,y:450};
 const STAKE_SIGN_POS={x:180,y:780}; // Stage 17: Stake Board sign, south-west plaza (server 180,780 — clear of the SW gate trigger at x<=20,y>=860)
 const TELEPORT_SIGN_POS={x:880,y:470}; // Stage 25: teleport sign beside the bank (server 880,470 = world (8,2)) — clear of the bank chest, the spawn point and the Duel Board (984,450); tapping it opens the Teleport panel
+const NALLY_SIGN_POS={x:855,y:510}; // Polish build: the Derek Nally sign, a few steps south-east of the spawn (800,450), facing it — clear of the bank chest, the south path, the armour-shop path and the teleport sign (880,470); tapping it opens the read panel and notifies Muse (sign_read)
 let stakeSparkles=[]; // sign sparkle meshes, pulsed in animate()
 let stakeBoard={offers:[]}; // latest stake_board payload
 let stakeMatch=null; // {matchId,opponent,stake,pot,readyMine,readyOpponent} while matched
@@ -1518,6 +1562,71 @@ function roofTexture(){
    cave floors, camp grounds, rocks, tree canopies, the dais —
    get the same textured treatment the plaza already had. The
    rock material is built once and shared by every rock mesh. */
+/* Polish build: the Derek Nally sign face — dark planks, a gold
+   crown, and the name painted into the board itself (canvas
+   texture, never an HTML overlay). Drawn once at 1024x640 and
+   reused on the sign's front board. The lettering is a warm gold
+   with a deep carved shadow, in the carved-sign style of Derek's
+   reference picture. */
+function signFaceTexture(){
+ const cv=document.createElement('canvas'); cv.width=1024; cv.height=640; const x=cv.getContext('2d');
+ x.fillStyle='#4a3220'; x.fillRect(0,0,1024,640);
+ const rows=5, rh=640/rows;
+ for(let i=0;i<rows;i++){
+   const g=x.createLinearGradient(0,i*rh,0,(i+1)*rh);
+   g.addColorStop(0,'#5a3d24'); g.addColorStop(0.5,'#4a3220'); g.addColorStop(1,'#3a2716');
+   x.fillStyle=g; x.fillRect(0,i*rh,1024,rh);
+   x.fillStyle='rgba(0,0,0,.45)'; x.fillRect(0,i*rh,1024,3);
+   x.strokeStyle='rgba(0,0,0,.16)'; x.lineWidth=2;
+   for(let k=0;k<7;k++){ const gy=i*rh+14+((k*47+i*31)%(rh-24)); x.beginPath(); x.moveTo(24,gy); x.bezierCurveTo(300,gy+7,700,gy-7,1000,gy+4); x.stroke(); }
+ }
+ x.strokeStyle='#241708'; x.lineWidth=26; x.strokeRect(13,13,998,614);
+ x.strokeStyle='#8a6b3a'; x.lineWidth=5; x.strokeRect(30,30,964,580);
+ // iron nails in the corners
+ x.fillStyle='#1c1c22';
+ for(const [nx,ny] of [[52,52],[972,52],[52,588],[972,588]]){ x.beginPath(); x.arc(nx,ny,13,0,7); x.fill(); x.fillStyle='#3d3d48'; x.beginPath(); x.arc(nx-4,ny-4,4,0,7); x.fill(); x.fillStyle='#1c1c22'; }
+ // the gold crown, top centre: band, five points, red jewels
+ const cx=512, cy=120;
+ x.fillStyle='#e8c96a'; x.strokeStyle='#7a5c1e'; x.lineWidth=5;
+ x.beginPath(); x.moveTo(cx-118,cy+52); x.lineTo(cx-118,cy-6); x.lineTo(cx-70,cy+22); x.lineTo(cx-40,cy-44); x.lineTo(cx,cy+16); x.lineTo(cx+40,cy-44); x.lineTo(cx+70,cy+22); x.lineTo(cx+118,cy-6); x.lineTo(cx+118,cy+52); x.closePath(); x.fill(); x.stroke();
+ x.fillStyle='#f5dd8e'; x.fillRect(cx-118,cy+52,236,20); x.strokeRect(cx-118,cy+52,236,20);
+ x.fillStyle='#c22f2f';
+ for(const jx of [cx-76,cx, cx+76]){ x.beginPath(); x.arc(jx,cy+62,11,0,7); x.fill(); x.strokeStyle='#7a5c1e'; x.lineWidth=3; x.stroke(); }
+ for(const [px,py] of [[cx-118,cy-6],[cx-40,cy-44],[cx,cy+16],[cx+40,cy-44],[cx+118,cy-6]]){ x.fillStyle='#f5dd8e'; x.beginPath(); x.arc(px,py,9,0,7); x.fill(); x.strokeStyle='#7a5c1e'; x.lineWidth=3; x.stroke(); }
+ // the name, carved: deep shadow first, gold face on top
+ x.textAlign='center'; x.textBaseline='middle';
+ x.font='700 158px Georgia, "Times New Roman", serif';
+ x.fillStyle='rgba(0,0,0,.78)'; x.fillText('Derek',cx+5,300+6); x.fillText('Nally',cx+5,462+6);
+ const lg=x.createLinearGradient(0,210,0,560); lg.addColorStop(0,'#f5dd8e'); lg.addColorStop(0.55,'#e8c96a'); lg.addColorStop(1,'#c49a3a');
+ x.fillStyle=lg; x.fillText('Derek',cx,300); x.fillText('Nally',cx,462);
+ x.font='italic 44px Georgia, serif'; x.fillStyle='rgba(0,0,0,.7)'; x.fillText('~ est. Nallystake ~',cx+3,583+3);
+ x.fillStyle='#d8b95e'; x.fillText('~ est. Nallystake ~',cx,583);
+ const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; return t;
+}
+/* Polish build: the castle banner — deep-red field, gold border
+   and fringe, two crossed swords. Hung on the plaza walls. */
+function bannerTexture(){
+ const cv=document.createElement('canvas'); cv.width=256; cv.height=384; const x=cv.getContext('2d');
+ const g=x.createLinearGradient(0,0,0,384); g.addColorStop(0,'#8e2f32'); g.addColorStop(1,'#6d1f22');
+ x.fillStyle=g; x.fillRect(0,0,256,384);
+ x.strokeStyle='#c9a227'; x.lineWidth=10; x.strokeRect(10,10,236,340);
+ x.strokeStyle='rgba(0,0,0,.25)'; x.lineWidth=3; x.strokeRect(24,24,208,312);
+ function sword(x1,y1,x2,y2){
+   x.strokeStyle='#d9dee6'; x.lineWidth=13; x.lineCap='round';
+   x.beginPath(); x.moveTo(x1,y1); x.lineTo(x2,y2); x.stroke();
+   const ang=Math.atan2(y2-y1,x2-x1), gx2=x2-Math.cos(ang)*52, gy2=y2-Math.sin(ang)*52;
+   x.strokeStyle='#c9a227'; x.lineWidth=10;
+   x.beginPath(); x.moveTo(gx2-Math.sin(ang)*26,gy2+Math.cos(ang)*26); x.lineTo(gx2+Math.sin(ang)*26,gy2-Math.cos(ang)*26); x.stroke();
+   x.strokeStyle='#5a4028'; x.lineWidth=11;
+   x.beginPath(); x.moveTo(gx2,gy2); x.lineTo(x2,y2); x.stroke();
+   x.fillStyle='#e8c96a'; x.beginPath(); x.arc(x2,y2,10,0,7); x.fill();
+ }
+ sword(52,84,204,268); sword(204,84,52,268);
+ x.fillStyle='#c9a227'; x.beginPath(); x.arc(128,150,13,0,7); x.fill();
+ x.fillStyle='#e8c96a';
+ for(let i=0;i<8;i++) x.fillRect(14+i*30,352,16,22); // gold fringe
+ const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; return t;
+}
 function rockTexture(rx,ry){
  const c=document.createElement('canvas'); c.width=c.height=128; const g=c.getContext('2d');
  g.fillStyle='#6e6a60'; g.fillRect(0,0,128,128);
@@ -1591,10 +1700,41 @@ function shadowify(root){
 }
 /* Flickering brazier lights on the tournament dais (Stage 8). */
 let flickerLights=[];
+/* OSRS-basis duel presentation (Derek, 2026-11-22): low-poly
+   SPECTATORS behind barrier rails — the crowd from his duel
+   video, watching the tournament dais and the duel arenas.
+   Static dressing only: no behaviour, no collision, no labels.
+   Flat colours and plain boxes on purpose — the classic
+   low-poly read is the target now, not detail. */
+const CROWD_TORSO=[0xb03a2e,0x2e5fb0,0x3f8f3f,0xc9a227,0x7a4a9e,0xb06a2e,0x4a7a8c,0x8c4a56];
+const CROWD_SKIN=[0xe8c39a,0xc68863,0x8a5a3b,0xf0d0b0];
+function spectatorFigure(parent,x,z,rotY,i){
+ const g=new THREE.Group(); g.position.set(x,0,z); g.rotation.y=rotY; (parent||scene).add(g);
+ const torso=CROWD_TORSO[i%CROWD_TORSO.length], skin=CROWD_SKIN[(i*2+1)%CROWD_SKIN.length];
+ if(g.scale) g.scale.setScalar(0.96+((i*37)%14)/100); // deterministic height variety
+ box(0.24,0.95,0.24,0x333a45,-0.15,0.475,0,g); box(0.24,0.95,0.24,0x333a45,0.15,0.475,0,g); // legs
+ box(0.68,1.02,0.38,torso,0,1.46,0,g); // torso
+ box(0.17,0.82,0.17,torso,-0.43,1.42,0,g); box(0.17,0.82,0.17,torso,0.43,1.42,0,g); // arms
+ box(0.42,0.44,0.42,skin,0,2.19,0,g); // head
+ if(i%3===0) box(0.5,0.1,0.5,0x5a4020,0,2.45,0,g); // every third wears a flat cap
+ return g;
+}
+/* A barrier rail: posts + two horizontal bars — the crowd
+   barriers from the video. Scenery, like every fence here. */
+function barrierRun(parent,x1,z1,x2,z2){
+ const len=Math.hypot(x2-x1,z2-z1), ang=Math.atan2(x2-x1,z2-z1);
+ const n=Math.max(2,Math.round(len/2.2));
+ for(let i=0;i<=n;i++){ const tt=i/n; box(0.14,1.05,0.14,0x6e5636,x1+(x2-x1)*tt,0.525,z1+(z2-z1)*tt,parent); }
+ for(const ry of [0.62,0.98]){ const r=box(0.07,0.09,len,0x8a6d3b,(x1+x2)/2,ry,(z1+z2)/2,parent); r.rotation.y=ang; }
+}
+function crowdRow(parent,x1,z1,x2,z2,faceAng,seed){
+ const len=Math.hypot(x2-x1,z2-z1), n=Math.max(2,Math.round(len/1.35));
+ for(let i=0;i<n;i++){ const tt=(i+0.5)/n; spectatorFigure(parent,x1+(x2-x1)*tt,z1+(z2-z1)*tt,faceAng,seed+i); }
+}
 function buildPlaza(root){
  const scene=root; // build into the plaza area group (box()/add calls below target it)
  // ground: dark grass (subtle noise texture) — Stage 13: 160x90 world units
- const grass=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:noiseTexture('#3a5230',['#324628','#425c34','#2c4024'],16,10)}));
+ const grass=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:noiseTexture('#47703a',['#3d6331','#527a42','#35592b'],16,10)})); // Polish build: richer sunlit green (was #3a5230)
  grass.rotation.x=-Math.PI/2; grass.receiveShadow=true; scene.add(grass);
  // cobblestone-paved centre
  const stone=new THREE.Mesh(new THREE.PlaneGeometry(84,54),new THREE.MeshLambertMaterial({map:stoneTexture(18,12)}));
@@ -1664,6 +1804,48 @@ function buildPlaza(root){
  tplabel.innerHTML=`<div class="nname">🗺️ Teleports — tap to travel</div>`;
  $('labels').appendChild(tplabel);
  worldLabels.push({el:tplabel,x:sx2w(TELEPORT_SIGN_POS.x),y:3.9,z:sy2w(TELEPORT_SIGN_POS.y),area:'plaza',kind:'static'});
+ // 👑 THE DEREK NALLY SIGN (Polish build) — Derek (2026-11-22):
+ // "In the plaza add a sign that is like this [his picture: big
+ // wooden hanging sign, crown, 'Derek Nally'] — it should help
+ // players learn more about the game. When it is read you should
+ // be notified and login the game yourself as Muse and show the
+ // new player around." Two stout posts, a crossbar, and a board
+ // hanging from chains a few steps south-east of the spawn, its
+ // face turned to the spawn point so it is the first thing a new
+ // player sees. The face is a canvas texture (signFaceTexture):
+ // dark planks, a gold crown, the name painted into the wood —
+ // never an HTML overlay. Tapping it opens the read panel
+ // (openSignPanel) and sends sign_read; the server records the
+ // read for Muse's tour list (/api/tour-requests).
+ const signG=new THREE.Group(); signG.position.set(sx2w(NALLY_SIGN_POS.x),0,sy2w(NALLY_SIGN_POS.y)); scene.add(signG);
+ signG.rotation.y=Math.atan2(sx2w(800)-sx2w(NALLY_SIGN_POS.x),sy2w(450)-sy2w(NALLY_SIGN_POS.y)); // face the spawn point (800,450)
+ const signAct={type:'sign'};
+ const postM=new THREE.MeshLambertMaterial({map:woodTexture('#5a4028')});
+ for(const px of [-2.35,2.35]){
+   const post=boxM(0.42,4.4,0.42,postM,px,2.2,0,signG); post.rotation.y=0.12;
+   box(0.62,0.2,0.62,0x3a2a18,px,4.42,0,signG); // post caps
+   box(0.6,0.24,0.6,0x3a2a18,px,0.12,0,signG);  // post feet
+ }
+ boxM(5.6,0.4,0.46,postM,0,4.28,0,signG); // the crossbar the board hangs from
+ // a small gold crown on the crossbar, echoing the painted one
+ const crownG=new THREE.Group(); crownG.position.set(0,4.62,0); signG.add(crownG);
+ const crownMat=new THREE.MeshLambertMaterial({color:0xe8c96a,emissive:0x6a5210});
+ box(1.06,0.3,0.3,0xe8c96a,0,0,0,crownG).material=crownMat;
+ for(let i=-2;i<=2;i++){ const spike=new THREE.Mesh(new THREE.ConeGeometry(0.11,0.34,5),crownMat); spike.position.set(i*0.24,0.3,0); crownG.add(spike); }
+ const cgem=new THREE.Mesh(new THREE.SphereGeometry(0.09,8,6),new THREE.MeshLambertMaterial({color:0xc22f2f,emissive:0x4a0d0d})); cgem.position.set(0,0.02,0.19); crownG.add(cgem);
+ // the hanging board: dark plank box, painted face proud on both sides
+ const signFaceTex=signFaceTexture();
+ boxM(4.7,3.1,0.16,new THREE.MeshLambertMaterial({map:woodTexture('#4a3220')}),0,2.35,0,signG,signAct);
+ const faceF=new THREE.Mesh(new THREE.PlaneGeometry(4.42,2.76),new THREE.MeshBasicMaterial({map:signFaceTex})); faceF.position.set(0,2.35,0.095); signG.add(faceF);
+ const faceB=new THREE.Mesh(new THREE.PlaneGeometry(4.42,2.76),new THREE.MeshLambertMaterial({map:signFaceTex})); faceB.position.set(0,2.35,-0.095); faceB.rotation.y=Math.PI; signG.add(faceB);
+ for(const chx of [-1.7,1.7]){ // short chain links from crossbar to board
+   for(let i=0;i<3;i++){ const link=new THREE.Mesh(new THREE.TorusGeometry(0.09,0.028,6,10),new THREE.MeshLambertMaterial({color:0x2b2b33})); link.position.set(chx,3.98-i*0.17,0); link.rotation.y=(i%2)? Math.PI/2 : 0; signG.add(link); }
+ }
+ shadowify(signG);
+ const signlabel=document.createElement('div'); signlabel.className='plabel';
+ signlabel.innerHTML=`<div class="nname" style="color:#ffe9a8">📖 Read Sign — Derek Nally</div>`;
+ $('labels').appendChild(signlabel);
+ worldLabels.push({el:signlabel,x:sx2w(NALLY_SIGN_POS.x),y:5.35,z:sy2w(NALLY_SIGN_POS.y),area:'plaza',kind:'static'});
  // 💀 PK NOOB + THE DITCH (Stage 30) — PK Noob stands north-east
  // (server 1150,120), clear of the dais, the mods and the gates;
  // the ditch crossing runs along the north edge's east stretch
@@ -1777,6 +1959,62 @@ function buildPlaza(root){
  fenceRun(-10,-36.5,10,-36.5); // back
  fenceRun(-10,-36.5,-10,-25.5); fenceRun(10,-36.5,10,-25.5); // sides
  fenceRun(-10,-25.5,-2.5,-25.5); fenceRun(2.5,-25.5,10,-25.5); // front, centre gap
+ // Polish build: CASTLE WALLS on the fence line (Derek's picture:
+ // a stone castle plaza). Stone segments with crenellations stand
+ // on the north edge and part-way down both sides, swallowing the
+ // fence on those stretches. Every gate and road stays OPEN —
+ // walls only stand where a fence run already stood between two
+ // gate posts, and the Wilderness ditch crossing (world x 22..76)
+ // keeps its open stretch: the world stays walk-connected.
+ const wallStoneMat=new THREE.MeshLambertMaterial({map:stoneTexture(6,1)});
+ function castleWall(x1,z1,x2,z2){
+   const len=Math.hypot(x2-x1,z2-z1), midx=(x1+x2)/2, midz=(z1+z2)/2, ang=Math.atan2(x2-x1,z2-z1);
+   const w=boxM(0.9,3.0,len,wallStoneMat,midx,1.5,midz,scene); w.rotation.y=ang;
+   const n=Math.max(2,Math.floor(len/1.7));
+   for(let i=0;i<=n;i++){ const tt=i/n, bx=x1+(x2-x1)*tt, bz=z1+(z2-z1)*tt; const mer=boxM(0.95,0.55,0.55,wallStoneMat,bx,3.27,bz,scene); mer.rotation.y=ang; }
+   return {midx,midz,len,ang};
+ }
+ const wallSegs=[castleWall(-74.5,-45,-61.5,-45),castleWall(-34.5,-45,-6,-45),castleWall(6,-45,21,-45),castleWall(80,-44,80,-21),castleWall(-80,-38,-80,-21)];
+ // red crossed-swords banners on the plaza face of the north walls
+ const bannerTex=bannerTexture();
+ for(const seg of [wallSegs[0],wallSegs[1],wallSegs[2]]){
+   for(const off of [-seg.len/4,seg.len/4]){
+     const bx=seg.midx+off, bz=seg.midz+0.52;
+     const rod=box(2.0,0.09,0.09,0x3a2a18,bx,3.05,bz,scene);
+     const ban=new THREE.Mesh(new THREE.PlaneGeometry(1.7,2.55),new THREE.MeshLambertMaterial({map:bannerTex,side:THREE.DoubleSide}));
+     ban.position.set(bx,1.72,bz); scene.add(ban);
+   }
+ }
+ // OSRS-basis (Derek, 2026-11-22): a CROWD behind the dais fence,
+ // watching the tournament dais like the crowd in his duel video
+ // — rows along the back and both sides, two clusters flanking
+ // the front gap (the mod ladder fights just south of here, in
+ // view of the front rows). Static low-poly figures behind the
+ // fence line; the fence gap and every path stay clear.
+ crowdRow(scene,-9.5,-38.6,9.5,-38.6,0,0); // back row, facing the dais
+ crowdRow(scene,-11.6,-35.5,-11.6,-27,Math.PI/2,20); // west side, facing in
+ crowdRow(scene,11.6,-35.5,11.6,-27,-Math.PI/2,40); // east side, facing in
+ crowdRow(scene,-9.8,-23.4,-4.2,-23.4,Math.PI,60); // front-left cluster
+ crowdRow(scene,4.2,-23.4,9.8,-23.4,Math.PI,70); // front-right cluster
+ // crossed-swords banners flanking the dais front gap
+ for(const bx of [-3.6,3.6]){
+   box(0.12,3.2,0.12,0x3a2a18,bx,1.6,-24.8,scene);
+   const ban=new THREE.Mesh(new THREE.PlaneGeometry(1.5,2.2),new THREE.MeshLambertMaterial({map:bannerTex,side:THREE.DoubleSide}));
+   ban.position.set(bx,1.85,-24.8); scene.add(ban);
+ }
+ // a burning brazier beside the Derek Nally sign (the dais
+ // brazier pattern: stone bowl, stand, two flame cones, a real
+ // flickering light)
+ {
+   const bx=sx2w(NALLY_SIGN_POS.x)+3.3, bz=sy2w(NALLY_SIGN_POS.y)+1.5;
+   const bowl=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.3,0.5,10),new THREE.MeshLambertMaterial({color:0x55504a})); bowl.position.set(bx,1.25,bz); scene.add(bowl);
+   box(0.16,1.0,0.16,0x3a3a41,bx,0.5,bz,scene);
+   const flame=new THREE.Mesh(new THREE.ConeGeometry(0.42,1.1,7),new THREE.MeshBasicMaterial({color:0xff7b24})); flame.position.set(bx,1.95,bz); scene.add(flame);
+   const flame2=new THREE.Mesh(new THREE.ConeGeometry(0.22,0.7,7),new THREE.MeshBasicMaterial({color:0xffd75e})); flame2.position.set(bx,1.9,bz); scene.add(flame2);
+   const pl=new THREE.PointLight(0xff9a3c,0.85,20); pl.position.set(bx,2.3,bz); scene.add(pl);
+   flickerLights.push({light:pl,flame,flame2,phase:Math.random()*10});
+   shadowify(bowl);
+ }
  // Stage 25: dirt paths — the plaza's spokes. The bank / spawn is
  // the hub (world 0,0); every gate, shop and sign gets a path.
  pathStrip(scene,0,2,0,-27,3.4); // north: bank -> dais steps, through the fence gap
@@ -2417,10 +2655,40 @@ function buildArena(root){
  arenaFloorMat=new THREE.MeshLambertMaterial({map:noiseTexture('#d8c491',['#c9b37e','#e8d9a8','#bfa96e'],16,10)});
  const floor=new THREE.Mesh(new THREE.PlaneGeometry(160,90),arenaFloorMat);
  floor.rotation.x=-Math.PI/2; S.add(floor);
- rockWallRun(S,-80,-45,80,-45); rockWallRun(S,-80,45,80,45);
- rockWallRun(S,-80,-45,-80,45); rockWallRun(S,80,-45,80,45);
+ // Polish build (Derek's RuneScape duel photo, 2026-11-22): the
+ // arena is a stone-walled pit like the photo — the old single
+ // row of flat grey rocks (rockWallRun, still used by the other
+ // areas) read plain next to its castle wall. Stone-textured
+ // walls with a cap row ring the sand instead, plaza-castle
+ // style; the sand floor, corner posts and torches are unchanged.
+ const arenaStoneMat=new THREE.MeshLambertMaterial({map:stoneTexture(8,1)});
+ function arenaWallRun(x1,z1,x2,z2){
+   const len=Math.hypot(x2-x1,z2-z1), midx=(x1+x2)/2, midz=(z1+z2)/2, ang=Math.atan2(x2-x1,z2-z1);
+   const w=boxM(0.9,2.3,len,arenaStoneMat,midx,1.15,midz,S); w.rotation.y=ang;
+   const n=Math.max(2,Math.floor(len/3.2));
+   for(let i=0;i<=n;i++){ const tt=i/n, bx=x1+(x2-x1)*tt, bz=z1+(z2-z1)*tt; const cap=boxM(1.0,0.42,1.5,arenaStoneMat,bx,2.51,bz,S); cap.rotation.y=ang; }
+ }
+ arenaWallRun(-80,-45,80,-45); arenaWallRun(-80,45,80,45);
+ arenaWallRun(-80,-45,-80,45); arenaWallRun(80,-45,80,45);
  for(const [px,pz] of [[-76,-41],[76,-41],[-76,41],[76,41]]) boxM(0.6,3.2,0.6,new THREE.MeshLambertMaterial({map:stoneTexture(1,2)}),px,1.6,pz,S); // corner posts
  buildTorch(S,-40,-40); buildTorch(S,40,-40); buildTorch(S,-40,40); buildTorch(S,40,40);
+ // OSRS-basis (Derek, 2026-11-22): the duel crowd — a barrier rail
+ // along the north wall with low-poly spectators behind it, in
+ // the background of the default fight view, plus crossed-swords
+ // banners on the north wall. Static dressing; the fight floor
+ // and both duel spawn spots stay completely clear. Present in
+ // every arena variant (it hangs on the shared root, not the
+ // per-variant decor).
+ barrierRun(S,-46,-38.5,46,-38.5);
+ crowdRow(S,-44,-41.4,44,-41.4,0,100);
+ {
+   const bTex=bannerTexture();
+   for(const bx of [-20,20]){
+     const rod=box(2.0,0.09,0.09,0x3a2a18,bx,3.0,-44.4,S);
+     const ban=new THREE.Mesh(new THREE.PlaneGeometry(1.7,2.55),new THREE.MeshLambertMaterial({map:bTex,side:THREE.DoubleSide}));
+     ban.position.set(bx,1.68,-44.4); S.add(ban);
+   }
+ }
  arenaDecor={ember:[],azure:[],violet:[]};
  // ember: glowing lava cracks (positions x2; crack lengths are sizes and stay)
  for(const [lx,lz,lw] of [[-24,12,7],[20,-16,9],[0,28,6],[-40,-24,5]]){
@@ -3147,7 +3415,18 @@ function buildWeaponInto(a,id){
  // too — the server keeps the shield slot empty while one is
  // wielded, so nothing renders on the left arm but Torag's twin).
  const d0=catalog[id];
- if(d0&&d0.twoHanded){ wg.scale.set(1.18,1.18,1.18); wg.rotation.z=-0.30; wg.rotation.x=0.10; }
+ if(d0&&d0.twoHanded){ if(wg.scale) wg.scale.set(1.18,1.18,1.18); wg.rotation.z=-0.30; wg.rotation.x=0.10; }
+ /* Polish build (Derek, 2026-11-22: "I want the sword to look
+   like you are holding a sword"): every wielded weapon is built
+   1.35x bigger, on top of the two-handed 1.18 — the Stage 43 grip
+   fix centred the grip on the fist, but at the (new, wider)
+   default camera the blade still read as a toy against the leg.
+   The scale is around the group origin — the fist — so the grip
+   stays exactly on the hand and the blade simply reaches
+   further; the mesh scaled here is the mesh applySwing swings.
+   Guarded like every other scale in this file: the headless gear
+   test's THREE stub has no scale on its objects. */
+ if(wg.scale){ const ws2=(d0&&d0.twoHanded)? 1.35*1.18 : 1.35; wg.scale.set(ws2,ws2,ws2); }
  if(shape==='sword'){
    // Stage 43: grip centred ON the fist (the group origin is the
    // hand) — guard just above the fist, blade beyond it. Before,
@@ -3306,6 +3585,7 @@ function syncGear(a,p){
  // --- feet: boots over the foot spheres (Stage 37: longer, with a shade toe cap)
  if(w&&w.feet){ const c=gearColorFor(w.feet), sh=shadeOf(c); for(const f of [A.footL,A.footR]){ box(0.21,0.17,0.38,c,0,-0.90,0.05,f); box(0.21,0.10,0.10,sh,0,-0.93,0.20,f); } }
  // --- weapon in the right hand (+ Torag's twin in the left)
+ a.hasWeapon=!!(w&&w.weapon); // Polish build: poseWalk holds a wielded weapon in a ready grip (see WEAPON_READY there)
  if(w&&w.weapon) buildWeaponInto(a,w.weapon);
  // --- shield on the left arm
  if(w&&w.shield){
@@ -3323,12 +3603,16 @@ function syncGear(a,p){
  // --- cape on the back
  if(w&&w.cape){
    const c=w.cape==='fire_cape'? 0xe25822 : gearColorFor(w.cape);
-   const cape=box(0.60,1.16,0.05,c,0,1.33,-0.31,A.cape); cape.rotation.x=0.1;
-   // Stage 42: a flared, darker lower panel and gold clasps at
-   // the shoulders, so the cape hangs like cloth instead of one
-   // flat board.
-   const capeLow=box(0.68,0.52,0.045,shadeOf(c),0,0.60,-0.415,A.cape); capeLow.rotation.x=0.24;
-   box(0.09,0.09,0.06,0xc9a227,-0.24,1.87,0.29,A.cape); box(0.09,0.09,0.06,0xc9a227,0.24,1.87,0.29,A.cape);
+   // Polish build: the cape is a curved shell now, not a flat
+   // slab — a partial cylinder hugging the back, narrow at the
+   // shoulders and flaring toward the hem, tilted so the hem
+   // swings clear of the legs. (The Stage 42 flat panel + flared
+   // lower board read as two boards at the new default zoom.)
+   const shell=new THREE.Mesh(new THREE.CylinderGeometry(0.315,0.50,1.30,6,1,true,Math.PI-0.98,1.96),new THREE.MeshLambertMaterial({color:c,side:THREE.DoubleSide})); // 6 facets over the arc: crisp low-poly (OSRS basis, Derek 2026-11-22)
+   shell.position.set(0,1.26,-0.05); shell.rotation.x=0.08; A.cape.add(shell);
+   const hem=new THREE.Mesh(new THREE.CylinderGeometry(0.505,0.53,0.07,12,1,true,Math.PI-0.98,1.96),new THREE.MeshLambertMaterial({color:shadeOf(c),side:THREE.DoubleSide})); // shade hem band, as on the other pieces
+   hem.position.set(0,0.645,-0.102); hem.rotation.x=0.08; A.cape.add(hem);
+   box(0.09,0.09,0.06,0xc9a227,-0.24,1.87,0.29,A.cape); box(0.09,0.09,0.06,0xc9a227,0.24,1.87,0.29,A.cape); // gold clasps at the shoulders (Stage 42, kept)
  }
  // --- gauntlets + amulet
  if(w&&w.hands){ const c=gearColorFor(w.hands); for(const an of [A.armL,A.armR]){ const gm=new THREE.Mesh(new THREE.SphereGeometry(0.115,10,8),mat(c)); if(gm.scale) gm.scale.set(1,1.3,1); gm.position.set(0,-0.70,0); an.add(gm); } } // Stage 43: rounded gauntlets (scaled spheres), not cubes; scale guarded for the gear test's THREE stub
@@ -3450,6 +3734,10 @@ function easeRot(a,target,dt){
    2π / 2.7 ≈ 2.3 keeps the feet planted instead of skating, at
    walk pace and run pace alike (phase is driven by distance, so
    the stride rate follows the actual speed on its own). */
+/* Polish build: the weapon arm's rest angle with a weapon in
+   hand — raised forward in a ready grip (about 36 degrees), so a
+   wielded weapon presents instead of hanging flat by the leg. */
+const WEAPON_READY=-0.62;
 function poseWalk(a,dist,dt){
  if(!a.legL) return; // only knights have articulated limbs
  a.phase=(a.phase||0)+dist*2.3;
@@ -3462,7 +3750,17 @@ function poseWalk(a,dist,dt){
  // Stage 26: the weapon arm EASES back into the walk counter-swing
  // after a swing ends instead of snapping to the cycle value, so
  // walk → swing → walk blends instead of clicking off and on.
- if(a.armR&&!a.swingStart) a.armR.rotation.x+=(s*0.42*m-a.armR.rotation.x)*Math.min(1,dt*14);
+ // Polish build (Derek, 2026-11-22): with a weapon in hand the
+ // arm's rest line is a READY GRIP — raised forward (WEAPON_READY)
+ // with the blade presented — not flat against the leg, and the
+ // walk counter-swing swings around that line at reduced
+ // amplitude, so the weapon reads as held standing, walking and
+ // at the new wider default zoom. Bare hands keep the plain
+ // counter-swing to zero.
+ if(a.armR&&!a.swingStart){
+   const readyTgt=(a.hasWeapon? WEAPON_READY : 0) + s*0.42*m*(a.hasWeapon? 0.45 : 1);
+   a.armR.rotation.x+=(readyTgt-a.armR.rotation.x)*Math.min(1,dt*14);
+ }
  // Stage 42: knees and elbows bend on the limbs' lower pivots, so
  // the stride reads jointed like the app version's knights. A knee
  // flexes only while its leg travels back-to-front (the
@@ -3478,7 +3776,7 @@ function poseWalk(a,dist,dt){
  if(lowL) lowL.rotation.x+=(kL-lowL.rotation.x)*Math.min(1,dt*18);
  if(lowR) lowR.rotation.x+=(kR-lowR.rotation.x)*Math.min(1,dt*18);
  const eBase=-0.10-0.06*m;
- const eL=eBase-0.13*Math.max(0,-s)*m, eR=eBase-0.13*Math.max(0,s)*m;
+ const eL=eBase-0.13*Math.max(0,-s)*m, eR=eBase-0.13*Math.max(0,s)*m-(a.hasWeapon? 0.38 : 0); // Polish build: a wielded weapon adds a forearm bend, so the blade tips forward off the raised arm instead of hanging straight down its line
  const lowAL=a.armL&&a.armL.userData?a.armL.userData.lower:null, lowAR=a.armR&&a.armR.userData?a.armR.userData.lower:null;
  if(lowAL) lowAL.rotation.x+=(eL-lowAL.rotation.x)*Math.min(1,dt*14);
  if(lowAR&&!a.swingStart) lowAR.rotation.x+=(eR-lowAR.rotation.x)*Math.min(1,dt*14); // applySwing owns the weapon forearm mid-chop
@@ -3876,7 +4174,7 @@ function openModSheet(id){
  else if(n.stake>(me?me.gold:0)/2) action=`<p style="color:#b3261e">⚠️ <b>This stake is most of your gold — lose and you're nearly broke.</b></p><div class="btns"><button class="act" onclick="modDuelStart('${n.id}')">⚔️ Stake duel — ${n.stake}g</button></div>`;
  else action=`<div class="btns"><button class="act" onclick="modDuelStart('${n.id}')">⚔️ Stake duel — ${n.stake}g</button></div>`;
  $('modnpcsheet').innerHTML=`<h3>⭐ ${esc(n.name)} · Tier ${n.tier} moderator</h3>
- <p class="note" style="color:#4a3826">Stake duel: <b>${n.stake}g</b> each — winner takes <b>${n.stake*2}g</b>. Equal stats (40) like a player duel; your gear, style and Dragon Slash count. Tap ${esc(n.name)} to attack — there's no auto-retaliate. Walking away forfeits your stake, and mod fights never touch your duel record or rating.</p>
+ <p class="note" style="color:#4a3826">Stake duel: <b>${n.stake}g</b> each — winner takes <b>${n.stake*2}g</b>. Equal stats (40) like a player duel; your gear, style and Dragon Slash count. Tap ${esc(n.name)} to attack — and once they swing at you, you fight back automatically. Walking away forfeits your stake, and mod fights never touch your duel record or rating.</p>
  <p>Your Tier ${n.tier} wins: <b>${wins} / 3</b>${wins>=3?' — tier complete! 🎉':''}</p>
  ${action}
  <div class="btns"><button class="ghost" onclick="closeModal('modnpcmodal')">Close</button></div>`;
@@ -4512,9 +4810,10 @@ function flinchForOutcome(victim,attacker,outcome,dmg){
    hooks in the shared fight helpers, so every fight kind the
    client renders (player duels, mod duels, NPC / Barrows, Fight
    Caves, Wilderness pairs, casts) gets it from the same code.
-   NOT ported, deliberately: the app's auto-engage at "Fight!" and
-   its auto-swinging — online duels stay tap-to-engage with no
-   auto-retaliate (Stage 12, Derek's explicit rule); the app's
+   NOT ported, deliberately: the app's auto-engage at "Fight!"
+   (online, engagement still needs your tap — or, since Derek's
+   2026-11-22 reversal of his Stage 12 tap-only rule, an incoming
+   swing: being swung at auto-engages you, server-side); the app's
    tap-a-frozen-foe bonus swing — swings here are server-tick
    authoritative, a client tap cannot mint one. */
 /* -- sound: the app's voices, synthesised (WebAudio, no files) -- */
@@ -4913,22 +5212,40 @@ function updateLabels(now){
 }
 
 /* ================= controls & movement ================= */
-let camYaw=0.7, camDist=21;
-/* Stage 31: camera-behind-facing (Derek: "make the camera face the
-   direction your guys facing"). Third person only: while my knight
-   is moving (stick, tap-to-move, a fight approach) or in a fight,
-   camYaw eases toward the yaw that puts the camera directly behind
-   his facing — camera forward is -(sin,cos)(camYaw) and his facing
-   is (sin,cos)(localRot), so the behind-facing yaw is localRot+PI.
-   The ease is exponential at CAM_BEHIND_RATE (about 63% of the gap
-   closed in ~0.45s — a swing-around, never a snap). Dragging the
-   view or working the camera stick still wins outright: manual
-   input stamps lastCamInputAt and the ease stays out of the way
-   for a 1.2s settle after it, so looking around mid-walk is never
-   fought — start moving again after that and the camera comes
-   back behind him. First person is untouched (camYaw has no
-   effect there), and camPitch keeps its Stage 25 clamp/persist. */
-const CAM_BEHIND_RATE=2.2; // 1/s
+/* Polish build (Derek, 2026-11-22): the default third-person
+   distance is 30 (was 21) so a fresh login sees more of the
+   world, and the zoom-out ceiling rises with it (the pinch /
+   wheel clamps below run 10..64). camDist is session state —
+   it is not persisted — so the new default is simply what every
+   page load starts from; a player's pinch/wheel still owns it
+   for the session. otsDist is the over-the-shoulder distance,
+   adjusted by the same pinch/wheel while that view is active. */
+let camYaw=0.7, camDist=30;
+let otsDist=8;
+/* Fair-duel pair framing state (Polish build): the eased anchor
+   midpoint / fit distance and the 0..1 blend — see the
+   third-person branch of animate(). Zero blend = the classic
+   follow, exactly. */
+let pairBlend=0, pairMX=0, pairMZ=0, pairFit=30;
+/* Field of view per view (Polish build): third person keeps the
+   long-standing 55; over-the-shoulder widens a touch (62); first
+   person widens properly (78, was the shared 55 — Derek: "if in
+   1st person it should be zoomed out some"). Applied in animate()
+   whenever the view changes. */
+const FOV_THIRD=55, FOV_SHOULDER=62, FOV_FIRST=78;
+/* The camera STAYS WHERE THE PLAYER PUT IT (Derek, 2026-11-22:
+   "when player moves the camera should stay where it is"). The
+   Stage 31 camera-behind-facing ease (camYaw easing toward
+   localRot+PI while moving / fighting) and the Stage 37b fight
+   pair-framing lean are REMOVED: camYaw and camPitch change only
+   on player input — drag rotate/tilt, the camera stick. One
+   fairness exception, also Derek's (2026-11-22 18:45, "I want it
+   to be fair so I can see my opponent"): DURING a duel the
+   third-person anchor/distance ease to frame the pair (see
+   pairBlend in animate) — the angle still never moves on its
+   own. The character's own turning (localRot / TURN_RATE) is not
+   camera and is untouched. lastCamInputAt is still stamped by
+   the input handlers (kept for the input bookkeeping below). */
 let lastCamInputAt=0;
 let camPitch=clamp(settings.camPitch,CAM_PITCH_MIN,CAM_PITCH_MAX); // camera elevation angle (right stick / drag-tilt adjust it; Stage 25: restored from settings)
 /* Stage 25: pitch changes persist in the settings store, debounced —
@@ -5015,11 +5332,11 @@ addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
    if(!pts.has(e.pointerId)) return;
    const prev=pts.get(e.pointerId); pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
    if(pts.size===2){ const [a,b]=[...pts.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y);
-     if(pinchD>0) camDist=clamp(camDist*pinchD/d,10,42); pinchD=d; dragged=true; clearHold(); return; }
+     if(pinchD>0){ if(settings.camPov==='shoulder') otsDist=clamp(otsDist*pinchD/d,5,13); else camDist=clamp(camDist*pinchD/d,10,64); } pinchD=d; dragged=true; clearHold(); return; }
    const dx=e.clientX-prev.x, dy=e.clientY-prev.y;
    if(Math.hypot(e.clientX-downX,e.clientY-downY)>9){ dragged=true; clearHold(); } // camera drag cancels a pending hold
    if(dragged && (e.pointerType==='mouse' ? e.buttons===1 : true)){
-     lastCamInputAt=performance.now(); // Stage 31: manual camera control — the behind-facing ease pauses
+     lastCamInputAt=performance.now(); // manual camera control stamp (the camera never eases on its own — Polish build)
      // Stage 37 fix: in first person the gaze follows my knight's
      // facing, so horizontal drag leaves camYaw alone — it keeps
      // exactly the angle third person left it at, instead of
@@ -5047,7 +5364,7 @@ addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=0; });
    if(!dragged && Date.now()-downAt<400) handleTap(e.clientX,e.clientY);
  }
  el.addEventListener('pointerup',up); el.addEventListener('pointercancel',up);
- el.addEventListener('wheel',e=>{ if(grabMode) return; e.preventDefault(); camDist=clamp(camDist+e.deltaY*0.02,10,42); },{passive:false});
+ el.addEventListener('wheel',e=>{ if(grabMode) return; e.preventDefault(); if(settings.camPov==='shoulder') otsDist=clamp(otsDist+e.deltaY*0.01,5,13); else camDist=clamp(camDist+e.deltaY*0.02,10,64); },{passive:false});
 })();
 function handleTap(cx,cy){
  if(grabMode) return; // Stage 23: Grab is modal — world taps do nothing while arranging
@@ -5075,6 +5392,7 @@ function handleTap(cx,cy){
      if(act.type==='players'){ openPanel('players'); return; }
      if(act.type==='stakeboard'){ openStakeBoard(); return; }
      if(act.type==='teleportsign'){ openPanel('teleport'); return; } // Stage 25: the sign by the bank opens the Teleport panel
+     if(act.type==='sign'){ openSignPanel(); return; } // Polish build: the Derek Nally sign opens its read panel (and tells the server)
    }
  }
  // Stage 18: Menu tap mode — a quick tap on a player, NPC/monster,
@@ -5770,21 +6088,12 @@ function animate(){
    applyDodge(a,now); // Stage 32
    applyFightStance(a,now,dt,!!(modDuel&&modDuel.npcId===mid)); // Stage 32: my mod-duel opponent gets the stance layer
  }
- // Stage 31: camera-behind-facing — while I'm moving or in a
- // fight, ease camYaw behind my facing (see the CAM_BEHIND_RATE
- // note at the camYaw declaration). Runs after the avatar loop so
- // it reads this frame's fight-eased localRot: standing in a fight
- // my facing is the line to my opponent, so the fight frames
- // itself. Manual camera input (drag / stick) suppresses the ease
- // for a 1.2s settle; Grab mode and first person are excluded.
- if(settings.camPov!=='first'&&!grabMode&&me&&avatars[me.username]){
-   const camMoving=Math.hypot(myVel.x,myVel.z)>0.05||!!tapTarget;
-   const camFighting=!!(duel||modDuel||npcFight||wildFight||fcRun);
-   if((camMoving||camFighting)&&now-lastCamInputAt>1200){
-     let cd=(localRot+Math.PI)-camYaw; cd=Math.atan2(Math.sin(cd),Math.cos(cd));
-     camYaw+=cd*(1-Math.exp(-CAM_BEHIND_RATE*dt));
-   }
- }
+ // Polish build (Derek, 2026-11-22): the Stage 31 camera-behind-
+ // facing ease that used to sit here is REMOVED — "when player
+ // moves the camera should stay where it is". Nothing in this
+ // frame moves camYaw or the camera anchor on its own any more;
+ // they change only on drag / stick / pinch / wheel input. (The
+ // Stage 37b fight pair-framing lean is removed with it, below.)
  // Brazier flames flicker (tournament dais)
  for(const f of flickerLights){
    f.light.intensity=0.75+0.3*Math.sin(now*0.021+f.phase*7)+0.12*Math.sin(now*0.047+f.phase*3);
@@ -5822,6 +6131,11 @@ function animate(){
  // camera follows local player
  const a=me?avatars[me.username]:null;
  const fx=a?a.group.position.x:0, fz=a?a.group.position.z:0;
+ // Polish build: field of view follows the view — first person
+ // runs wide (78), over-the-shoulder a touch wide (62), third
+ // person the long-standing 55.
+ const wantFov=settings.camPov==='first'? FOV_FIRST : settings.camPov==='shoulder'? FOV_SHOULDER : FOV_THIRD;
+ if(camera.fov!==wantFov){ camera.fov=wantFov; camera.updateProjectionMatrix(); }
  if(settings.camPov==='first'&&a){
    // Stage 18: first person — the camera sits at my knight's head
    // (head sphere rides at y≈1.94 on the group) and looks along his
@@ -5840,21 +6154,50 @@ function animate(){
    const lp=camPitch-CAM_PITCH_LEVEL, clp=Math.cos(lp);
    camera.position.set(fx+Math.sin(rot)*0.35,hy,fz+Math.cos(rot)*0.35);
    camera.lookAt(fx+Math.sin(rot)*clp*10,hy-Math.sin(lp)*10,fz+Math.cos(rot)*clp*10);
+ } else if(settings.camPov==='shoulder'&&a){
+   if(a) a.group.visible=true;
+   // Polish build: OVER THE SHOULDER — the camera sits in close
+   // behind my knight (otsDist, pinch/wheel-adjustable 5..13),
+   // shifted toward his sword-arm (right) side by OTS_SIDE, with
+   // the aim point shifted less, so he stands at the frame's edge
+   // and the view runs past the weapon shoulder. camYaw / camPitch
+   // work exactly as in third person (drag / stick), the pitch
+   // clamp is shared, and — per Derek's camera-stays rule — the
+   // offset follows only the player's own camera input.
+   const OTS_SIDE=1.9;
+   const rx=Math.cos(camYaw), rz=-Math.sin(camYaw); // view-right in world xz
+   const sp=Math.sin(camPitch), cp=Math.cos(camPitch);
+   camera.position.set(fx+Math.sin(camYaw)*cp*otsDist+rx*OTS_SIDE, 1.55+sp*otsDist*0.5, fz+Math.cos(camYaw)*cp*otsDist+rz*OTS_SIDE);
+   camera.lookAt(fx+rx*OTS_SIDE*0.45,1.75,fz+rz*OTS_SIDE*0.45);
  } else {
    if(a) a.group.visible=true;
-   // Stage 37b: in a fight the camera frames the PAIR, not just me —
-   // the app's duel camera leans its target 14% toward the foe so
-   // both fighters stay in frame when I back off or kite. Only the
-   // anchor leans; camDist / pitch / the behind-facing ease are
-   // exactly as they were.
-   let cfx=fx, cfz=fz;
-   const foa=fightOppAvatar();
-   if(foa&&foa.group){ cfx=fx*0.86+foa.group.position.x*0.14; cfz=fz*0.86+foa.group.position.z*0.14; }
-   const cx=cfx+Math.sin(camYaw)*Math.cos(camPitch)*camDist;
-   const cz=cfz+Math.cos(camYaw)*Math.cos(camPitch)*camDist;
-   const cy=Math.sin(camPitch)*camDist;
-   camera.position.set(cx,cy,cz);
-   camera.lookAt(cfx,1.1,cfz);
+   // FAIR-DUEL pair framing (Derek, 2026-11-22 18:45: "I want it
+   // to be fair so I can see my opponent"): during a duel — a
+   // player duel (incl. Stake Board and mod-run fights) or a mod
+   // ladder duel — third person frames the PAIR. The camera ANGLE
+   // stays entirely the player's (camYaw / camPitch are never
+   // touched — the stay-put rule still governs rotation); the
+   // ANCHOR eases to the pair's midpoint and the DISTANCE eases
+   // out — never in past the player's chosen distance, never past
+   // the 64 max zoom — until both fighters fit, breathing back to
+   // the normal follow as they close or the fight ends. This
+   // replaces the Stage 37b 14% lean (removed earlier today):
+   // symmetric pair-fit instead of a lean. First person and
+   // over-the-shoulder do NOT pair-fit — a close view is the
+   // player's choice. If the pair separates beyond what 64 can
+   // frame, midpoint-at-max-zoom is the best effort.
+   const foeA=(duel||modDuel)? fightOppAvatar() : null;
+   if(foeA&&foeA.group){
+     pairMX=(fx+foeA.group.position.x)/2; pairMZ=(fz+foeA.group.position.z)/2;
+     const sep=Math.hypot(foeA.group.position.x-fx,foeA.group.position.z-fz);
+     const tanH=Math.tan(camera.fov*Math.PI/360)*camera.aspect;
+     pairFit=clamp((sep/2+3)/Math.max(0.2,tanH),camDist,64);
+   }
+   pairBlend+=((foeA?1:0)-pairBlend)*Math.min(1,dt*2.5);
+   if(!foeA&&pairBlend<0.01) pairBlend=0;
+   const ax=fx+(pairMX-fx)*pairBlend, az=fz+(pairMZ-fz)*pairBlend, ad=camDist+(pairFit-camDist)*pairBlend;
+   camera.position.set(ax+Math.sin(camYaw)*Math.cos(camPitch)*ad, Math.sin(camPitch)*ad, az+Math.cos(camYaw)*Math.cos(camPitch)*ad);
+   camera.lookAt(ax,1.1,az);
  }
  // Stage 37b: camera shake — a heavy hit on me (addShake, from the
  // outcome hooks) knocks the camera for a few frames, then decays.
@@ -5881,12 +6224,12 @@ function initThree(){
  renderer.shadowMap.type=THREE.PCFSoftShadowMap;
  $('scene').appendChild(renderer.domElement);
  scene=new THREE.Scene();
- scene.background=new THREE.Color(0x232830); // dark slate sky
- scene.fog=new THREE.Fog(0x232830,85,175); // Stage 13: pushed out modestly for the bigger world — distant scenery fades instead of popping
+ scene.background=new THREE.Color(0x8fc3ea); // Polish build: bright daytime sky (was dark slate 0x232830 — Derek's picture is sunlit)
+ scene.fog=new THREE.Fog(0x9ec7e8,90,185); // matched to the bright sky; distances as Stage 13
  camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.1,300);
  raycaster=new THREE.Raycaster();
- scene.add(new THREE.AmbientLight(0xffe2b8,0.5)); // warmer, dimmer fill
- const sun=new THREE.DirectionalLight(0xffd9a0,1.0); sun.position.set(30,50,20);
+ scene.add(new THREE.AmbientLight(0xfff1d6,0.62)); // Polish build: warmer, brighter daylight fill (was 0xffe2b8, 0.5)
+ const sun=new THREE.DirectionalLight(0xffe9bb,1.12); sun.position.set(30,50,20);
  sun.castShadow=true;
  sun.shadow.mapSize.set(2048,2048);
  // Stage 13: the world is 160x90 world units now — a fixed shadow box
@@ -5924,7 +6267,7 @@ initThree();
 
 /* ================= dock panels (Interface Overhaul) ================= */
 let dockPanel=null, shopTab='Potion', shopMode='buy', bankQty='1', selStack=null, selIdx=-1, packSorted=false; // Stage 29: selIdx = the backpack slot selStack was tapped in (exact-spot equip swaps)
-const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',spellbook:'📖 Spellbook',players:'👥 Players online',admin:'👑 Admin',tools:'🛠️ Admin Tools',skills:'📊 Skills',goals:'📋 Goals & Log',smithy:'🔥 Emberfall Smithy',teleport:'🌀 Teleport',settings:'🎛️ Settings'};
+const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',spellbook:'📖 Spellbook',players:'👥 Players online',admin:'👑 Admin',tools:'🛠️ Admin Tools',skills:'📊 Skills',goals:'📋 Goals & Log',smithy:'🔥 Emberfall Smithy',teleport:'🌀 Teleport',settings:'🎛️ Settings',help:'❓ Help'};
 function togglePanel(name){ dockPanel===(name)? closeDock() : openPanel(name); }
 function openPanel(name){ dockPanel=name; selStack=null; selIdx=-1; if(name!=='shop') shopNotice=''; if(name==='backpack') packSorted=false; $('dockpanel').classList.add('open'); renderDock();
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.toggle('on',b.dataset.panel===name));
@@ -5966,6 +6309,7 @@ function renderDock(){
  if(dockPanel==='smithy') b.innerHTML=pSmithy();
  if(dockPanel==='teleport') b.innerHTML=pTeleport();
  if(dockPanel==='settings') b.innerHTML=pSettings();
+ if(dockPanel==='help') b.innerHTML=pHelp();
  if(dockPanel==='bank') applyBankFilter();
  if(dockPanel==='tools') initToolCanvas(); // Stage 8: restore the drawing canvas after every tools render
  if(dockPanel==='backpack') wireBpCells(); // Stage 9+10 §8: tap / hold / drag gestures
@@ -6772,6 +7116,72 @@ function pTeleport(){
  h+=`<div class="rowline"><span class="ic">💀</span><span class="grow"><b>The Wilderness</b><br><span class="sub">North ditch crossing (east stretch) or this obelisk teleport · PvP, skulls, death drops loot · NO teleporting out above level 20</span></span>${here('wilderness')||here('purewild')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('wilderness')">Teleport</button>`}</div>`;
  return h;
 }
+/* ---- Help (Polish build) ----
+   Derek (2026-11-22): "Add a button for help to walk player
+   through a new task." The ❓ Help button beside the 🎛️ Menu
+   toggle opens this panel: a list of tasks; tapping one expands
+   its steps in plain words, and a step that is a place carries a
+   "Take me there" button wired to the same doTravel flow the
+   Teleport panel uses. Every number below is a server constant
+   (goblin drops 2–8g, logs sell 4g, seaweed 2g, STARTER_REWARD
+   25, the mod ladder 100/200/400 with 3 wins to unlock, the
+   Fight Caves 500g + fire cape clear, Barrows/wild rules) — if
+   the game retunes, retune this text with it. */
+const HELP_TASKS=[
+ {id:'tour', ic:'🤝', name:'Get a tour from Muse', sub:'The plaza sign · a guided walk-around', steps:[
+   {t:'Find the big wooden sign by the spawn, just south-east of the bank — it has a crown and Derek Nally\u2019s name on it.'},
+   {t:'Tap the sign and read it. It teaches the whole game in about a minute.'},
+   {t:'Reading it tells Muse. He logs in, comes to find you, and shows you around in person — the bank, the shops, the duelling, all of it.'},
+   {t:'While you wait, this Help panel walks you through every task below, step by step.'}]},
+ {id:'duel', ic:'⚔️', name:'Win your first duel', sub:'Challenge a player · agree rules · tap to attack', steps:[
+   {t:'Stand in the plaza and tap any player — or one of the duelists by the Stake Board — and choose ⚔️ Challenge.', go:'plaza'},
+   {t:'Set your stake (or tick Free Play to practise for nothing) and the rules. Both of you must confirm the SAME terms before anything starts.'},
+   {t:'When the countdown ends, TAP your opponent to attack first — or wait for their first swing: once they swing at you, you fight back automatically, blow for blow, until the duel ends.'},
+   {t:'Your attack style is on the bottom bar: Accurate, Aggressive, Defensive or Controlled. Defensive can block a hit outright.'},
+   {t:'Win and you take the pot. Lose and you lose your stake — that\u2019s duelling.'}]},
+ {id:'gold', ic:'💰', name:'Make your first gold', sub:'Goblins, logs, seaweed and starter goals', steps:[
+   {t:'You start with 100 gold and a Nooby sword in your backpack. Gold lives in your backpack as a coin stack.'},
+   {t:'Goblins at the Goblin Camp (east gate) drop 2–8 gold a kill, plus the odd item.', go:'goblins'},
+   {t:'Chop logs anywhere and sell them to a shop for 4 gold each. Seaweed along the Fishing Cove shore sells for 2 gold.', go:'cove'},
+   {t:'The five starter goals in the 📋 Goals tab pay 25 gold each — 125 gold for your first steps: win a duel, kill a monster, gather something, use the bank, visit a new area.'}]},
+ {id:'mod', ic:'🛡️', name:'Beat a mod', sub:'The stake ladder south of the dais', steps:[
+   {t:'Three moderators stand in a row south of the Tournament Dais in the plaza: Mod Ash, Mod Blair and Mod Vega.', go:'plaza'},
+   {t:'Mod Ash is Tier 1: a 100 gold stake. Win and you take the 200 gold pot.'},
+   {t:'Win 3 fights in a tier to unlock the next: Mod Blair is 200 gold (Tier 2), Mod Vega is 400 gold (Tier 3).'},
+   {t:'Mod fights are fair fights — same stats both sides. Tap to attack first, or let them swing: once they swing at you, you fight back automatically. They never touch your duel rating.'}]},
+ {id:'caves', ic:'🌋', name:'Enter the Fight Caves', sub:'63 waves · TzTok-Jad · the fire cape', steps:[
+   {t:'Head through the plaza\u2019s north gate to the Fight Caves.', go:'fightcaves'},
+   {t:'Inside, your hitpoints are a pool equal to your Hitpoints level for the whole run — train Hitpoints to last longer.'},
+   {t:'Survive the waves: 63 of them, harder every one. Bring food and prayer potions, and watch which Deflect prayer each monster needs.'},
+   {t:'TzTok-Jad waits on wave 63. Beat him and the fire cape is yours — plus 500 gold.'}]},
+ {id:'barrows', ic:'⚰️', name:'Run Barrows', sub:'Six brothers · tunnels · the chest', steps:[
+   {t:'Go to the Barrows through the plaza\u2019s south gate.', go:'barrows'},
+   {t:'Tap a burial mound to enter its crypt, then search the sarcophagus to wake the brother inside. Kill all six if you can.'},
+   {t:'One crypt per run is the tunnel entrance instead — its sarcophagus takes you DOWN. In the tunnels, solve the puzzle door to reach the chest room.'},
+   {t:'Loot the chest: more brothers killed means more rolls and better odds. Your kills carry over between trips until the chest is looted — then the run resets.'}]},
+ {id:'wild', ic:'💀', name:'Stay alive in the Wilderness', sub:'Levels, skulls and death drops', steps:[
+   {t:'Cross the ditch on the plaza\u2019s north edge (east stretch) — or teleport to the obelisk.', go:'wilderness'},
+   {t:'The deeper north you go, the higher the Wilderness level. A player within that many combat levels of you can attack you — and you them.'},
+   {t:'Attack someone first and you are SKULLED 💀. Die unskulled and you keep your 3 most valuable backpack stacks and all your worn gear. Die skulled and you drop EVERYTHING.'},
+   {t:'There is no teleporting out above level 20 — walk back south to the ditch. Other players hunt here, and so do the PKers.'}]},
+];
+let helpOpenId=null;
+window.helpTask=function(id){ helpOpenId=(helpOpenId===id)? null : id; renderDock(); };
+window.helpGo=function(to){ doTravel(to); }; // doTravel closes the dock itself
+function pHelp(){
+ let h=`<p class="note" style="margin-bottom:8px">New here? Pick a task and I'll walk you through it, step by step. For a tour in person, read the big sign by the plaza spawn — reading it tells Muse, and he'll come and show you around.</p>`;
+ for(const t of HELP_TASKS){
+   const open=helpOpenId===t.id;
+   h+=`<div class="rowline helptask ${open?'sel':''}" onclick="helpTask('${t.id}')"><span class="ic">${t.ic}</span><span class="grow"><b>${t.name}</b><br><span class="sub">${t.sub}</span></span><span class="sub">${open?'▾':'▸'}</span></div>`;
+   if(open){
+     h+=`<div class="helpsteps"><ol>${t.steps.map(s=>`<li>${s.t}</li>`).join('')}</ol>`;
+     const goes=t.steps.filter(s=>s.go);
+     if(goes.length) h+=`<div class="btns">${goes.map(s=>`<button class="act" onclick="helpGo('${s.go}')">📍 Take me there</button>`).join('')}</div>`;
+     h+=`</div>`;
+   }
+ }
+ return h;
+}
 /* ---- Settings ---- */
 const PANEL_LIST=[['backpack','🎒 Backpack'],['worn','🗡️ Worn items'],['shop','🏪 Shops'],['bank','🏦 Bank'],['exchange','💱 Gold Exchange'],['prayers','🙏 Prayers'],['spellbook','📖 Spellbook'],['players','👥 Players'],['admin','👑 Admin'],['tools','🛠️ Admin Tools'],['skills','📊 Skills'],['smithy','🔥 Smithy'],['teleport','🌀 Teleport'],['settings','🎛️ Settings']];
 function pSettings(){
@@ -6781,13 +7191,13 @@ function pSettings(){
  h+=`<p class="note" style="margin:2px 0 8px">Walk: tapping the ground walks there. Face: tapping just turns your knight to face that spot.</p>`;
  h+=`<div class="setrow"><span class="grow">🖱️ Menu tap mode</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.tapMode==='normal'?'on':''}" onclick="setTapMode('normal')">👆 Normal</button><button class="${settings.tapMode==='menu'?'on':''}" onclick="setTapMode('menu')">🖱️ Menu</button></div>`;
  h+=`<p class="note" style="margin:2px 0 8px">Menu: tapping a player, monster, gathering spot or dropped pile opens its menu — the same one a long-press opens — and tapping a backpack item opens its sheet. Normal: taps act straight away. Ground taps walk in both modes. The 🖱️ chip under the 🎛️ button toggles this too.</p>`;
- h+=`<div class="setrow"><span class="grow">🎥 Camera view</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.camPov==='third'?'on':''}" onclick="setCamPov('third')">🎥 Third person</button><button class="${settings.camPov==='first'?'on':''}" onclick="setCamPov('first')">👀 First person</button></div>`;
- h+=`<p class="note" style="margin:2px 0 8px">First person puts the camera at your knight's head, looking the way he faces — a different feel for fights. The 🎥 chip under the 🎛️ button switches it too.</p>`;
+ h+=`<div class="setrow"><span class="grow">🎥 Camera view</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.camPov==='third'?'on':''}" onclick="setCamPov('third')">🎥 Third person</button><button class="${settings.camPov==='shoulder'?'on':''}" onclick="setCamPov('shoulder')">🎯 Over shoulder</button><button class="${settings.camPov==='first'?'on':''}" onclick="setCamPov('first')">👀 First person</button></div>`;
+ h+=`<p class="note" style="margin:2px 0 8px">Third person watches from behind, zoomed out so you see plenty of the world. Over the shoulder sits in close behind your sword arm, with a wider view for fights. First person puts the camera at your knight's head, looking the way he faces. The camera stays where you put it — drag or use the stick to move it. The 🎥 chip under the 🎛️ button cycles all three.</p>`;
  h+=`<div class="setrow"><span class="grow">🔊 Fight sounds<br><span class="note">Swings, hits, blocks, spells, countdown beeps — the app's fight sounds, made on the spot (no files)</span></span></div><div class="seg" style="margin-top:-2px"><button class="${settings.soundOn?'on':''}" onclick="setSoundOn(true)">🔊 On</button><button class="${settings.soundOn?'':'on'}" onclick="setSoundOn(false)">🔇 Off</button></div>`;
  h+=`<div class="setrow"><span class="grow">📳 Camera shake<br><span class="note">The camera knocks when a heavy hit (12+) lands on you in a fight</span></span></div><div class="seg" style="margin-top:-2px"><button class="${settings.shakeOn?'on':''}" onclick="setShakeOn(true)">📳 On</button><button class="${settings.shakeOn?'':'on'}" onclick="setShakeOn(false)">Off</button></div>`;
  h+=`<div class="setrow"><span class="grow">📸 Camera sets<br><span class="note">Save the camera as it is now — view, tilt &amp; speed — and flip back in one tap, even mid-fight</span></span></div>`;
  camSetsArr().forEach((s,i)=>{
-   h+=`<div class="setrow"><span class="grow">Set ${i+1}${s?`<br><span class="note">${s.pov==='first'?'👀 First person':'🎥 Third person'} · tilt ${(+s.pitch).toFixed(2)} · speed ${s.speed}×</span>`:`<br><span class="note">Empty</span>`}</span>${s?`<button class="act" onclick="useCamSet(${i})">📸 Use</button>`:''}<button class="ghost" onclick="saveCamSet(${i})">💾 Save</button></div>`;
+   h+=`<div class="setrow"><span class="grow">Set ${i+1}${s?`<br><span class="note">${povName(s.pov)} · tilt ${(+s.pitch).toFixed(2)} · speed ${s.speed}×</span>`:`<br><span class="note">Empty</span>`}</span>${s?`<button class="act" onclick="useCamSet(${i})">📸 Use</button>`:''}<button class="ghost" onclick="saveCamSet(${i})">💾 Save</button></div>`;
  });
  h+=`<div class="setrow"><span class="grow">🔅 Interface transparency<br><span class="note">Sticks, panels &amp; buttons</span></span><input type="range" min="0.3" max="1" step="0.02" value="${settings.uiAlpha}" oninput="setUiAlpha(this.value)"></div>`;
  h+=`<h4 style="margin:10px 0 5px;color:#e3c766">Menu buttons (⚙)</h4>`;
@@ -7422,6 +7832,26 @@ function followTick(){
    until I'm engaged — tapped, or one of my swings shows in a tick. */
 let duelEngaged=false;
 function renderDuelHint(){ const h=$('duelhint'); if(h) h.style.display=(duel&&!duelEngaged)?'block':'none'; syncAtkChip(); }
+/* OSRS-basis top duel HP bars (Derek, 2026-11-22): presentation
+   only — fed by the same tick numbers as the overhead bars. Duel
+   and mod-fight HP pools are 99 (the duelTickUI / modDuelUI
+   overhead bars divide by 99 too). */
+function duelTopShow(oppName){
+ const t=$('dueltop'); if(!t) return;
+ $('dtmyname').textContent=me?me.username:'You';
+ $('dtoppname').textContent=oppName||'Opponent';
+ duelTopUpdate(99,99);
+ t.classList.add('open');
+}
+function duelTopUpdate(hpYou,hpOpp){
+ const f1=$('dtmyfill'), f2=$('dtoppfill'); if(!f1||!f2) return;
+ const p1=Math.max(0,Math.min(100,hpYou/99*100)), p2=Math.max(0,Math.min(100,hpOpp/99*100));
+ f1.style.width=p1+'%'; f2.style.width=p2+'%';
+ f1.classList.toggle('low',hpYou<=30); f2.classList.toggle('low',hpOpp<=30);
+ $('dtmynum').textContent=Math.max(0,Math.ceil(hpYou))+'/99';
+ $('dtoppnum').textContent=Math.max(0,Math.ceil(hpOpp))+'/99';
+}
+function duelTopHide(){ const t=$('dueltop'); if(t) t.classList.remove('open'); }
 /* ================= Stage 12: combat clarity =================
    Overhead HP bars (green → yellow → red as they drop) on my duel
    opponent and on my current NPC-fight target, driven by the fight
@@ -7468,6 +7898,32 @@ function setDuelCountdown(v){
 }
 function clearDuelCountdown(){ duelCountdownLeft=null; lastCdTxt=''; cdHide(); }
 /* ================= Stage 17: Stake Board UI ================= */
+/* Polish build: the Derek Nally sign's read panel. Opening it
+   sends sign_read — the server stamps profile.signReadAt and
+   answers in chat; Muse picks readers up from
+   /api/tour-requests and comes to show them around. The sheet
+   is a modal like the others (one panel at a time — the
+   clear-screen rule holds), and its Help button hands over to
+   the dock's Help panel for the step-by-step tasks. */
+function openSignPanel(){
+ send({type:'sign_read'});
+ const s=$('signsheet');
+ s.innerHTML=`<h3>👑 Welcome to Nallystake!</h3>
+ <p class="note" style="margin-bottom:8px">From <b>Derek Nally</b> — this is my game: a medieval world of duels, staking and adventure. Everything you need is in the plaza around you. Here's the short version:</p>
+ <div class="kv"><span>⚔️ Duels & staking</span><b>Tap any player and choose Challenge — agree the rules, then tap to attack. Winner takes the pot. Post your own stake on the ⚔️ Stake Board (south-west).</b></div>
+ <div class="kv"><span>🏦 Bank</span><b>The chest right here at spawn. Store gold and gear safely — what you carry into the Wilderness can be lost.</b></div>
+ <div class="kv"><span>🏪 Shops</span><b>Weapons and armour around the plaza; the 💱 Gold Exchange trades player-to-player.</b></div>
+ <div class="kv"><span>🛡️ Beat a mod</span><b>Mod Ash (100g), Blair (200g) and Vega (400g) stand south of the dais. Three wins in a tier unlocks the next.</b></div>
+ <div class="kv"><span>📊 Skills</span><b>Fourteen skills to train — combat, gathering, smithing, magic and more. The 📋 Goals tab pays 25g for each of your first steps.</b></div>
+ <div class="kv"><span>🌋 Fight Caves</span><b>North gate. 63 waves, TzTok-Jad at the end, a fire cape for the winner.</b></div>
+ <div class="kv"><span>⚰️ Barrows</span><b>South gate. Six brothers in their crypts, tunnels below, a chest of loot.</b></div>
+ <div class="kv"><span>💀 Wilderness</span><b>Across the north ditch: players can fight players. Skulled attackers drop everything — go careful.</b></div>
+ <div class="kv"><span>👥 The people</span><b>Not everyone here is a player — nine knights live in this world full-time. They trade, duel, train and build the city. Talk to them; they're friendly. Mostly.</b></div>
+ <div class="kv"><span>❓ Help</span><b>The ❓ Help button beside the 🎛️ Menu walks you through every task above, step by step, with "Take me there" buttons.</b></div>
+ <div class="kv"><span>🤝 Tours</span><b>Reading this sign told Muse — he keeps an eye out for new readers, logs in, and shows you around in person.</b></div>
+ <div class="btns" style="margin-top:10px"><button class="act" onclick="closeModal('signmodal');openPanel('help')">❓ Open Help</button><button class="ghost" onclick="closeModal('signmodal')">Close</button></div>`;
+ $('signmodal').classList.add('open');
+}
 function openStakeBoard(){
  send({type:'stake_board_get'});
  renderStakeBoard();
@@ -7536,6 +7992,7 @@ function startDuelUI(m){
  chalTerms=null; chalNotice=false; stopIncomingTimer(); closeModal('challengemodal'); closeModal('incomingmodal');
  duel={id:m.duelId,opponent:m.opponent,pot:m.pot,hpYou:99,hpOpponent:99,energyYou:Math.floor(me?me.specialEnergy||0:0),escrow:m.escrowItems||[],arena:m.arena||null,rules:m.rules||null,freePlay:!!m.freePlay};
  duelEngaged=false; renderDuelHint();
+ duelTopShow(m.opponent); // OSRS-basis top HP bars
  // Stage 12: countdown overlay (locks my movement until FIGHT!) and
  // the opponent's overhead HP bar, full at the start.
  if(typeof m.countdownTicks==='number') setDuelCountdown(m.countdownTicks); else clearDuelCountdown();
@@ -7603,6 +8060,7 @@ function renderDuelBar(){
 function duelTickUI(m){
  if(!duel) return;
  duel.hpYou=m.hpYou; duel.hpOpponent=m.hpOpponent; duel.energyYou=m.energyYou;
+ duelTopUpdate(m.hpYou,m.hpOpponent); // OSRS-basis top HP bars
  if(me) me.specialEnergy=m.energyYou;
  setDuelCountdown(m.countdownLeft); // Stage 12: drives the 3·2·1 overlay + the move lock
  const oppAv=avatars[duel.opponent]; if(oppAv) setHpBar(oppAv,duel.hpOpponent/99,duel.hpOpponent,99); // opponent's overhead bar + number
@@ -7672,6 +8130,7 @@ function endDuelUI(m){
    beginDeathHold(); // both fighters watch the fall before the plaza switch
  }
  duelEngaged=false; renderDuelHint();
+ duelTopHide(); // OSRS-basis top HP bars off
  clearDuelCountdown(); // Stage 12: overlay off, movement unlocked
  if(wasDuel){ const oppAv=avatars[wasDuel.opponent]; if(oppAv) hideHpBar(oppAv); const myAv=me?avatars[me.username]:null; if(myAv) hideHpBar(myAv); } // both overhead bars off
  $('duelflee').style.display='none';
@@ -7864,6 +8323,7 @@ function modDuelUI(m){
    cancelUse(true);
    closeModal('modnpcmodal');
    modDuel={npcId:m.npcId,name:m.name||'Mod',tier:m.tier||1,stake:m.stake||0,pot:m.pot||0,hpYou:m.hpYou||99,hpNpc:m.hpNpc||99,energyYou:Math.floor(m.energyYou||0)};
+   duelTopShow(m.name||'Mod'); // OSRS-basis top HP bars
    modDuelEngaged=false;
    // The countdown overlay + movement lock are the duel ones (the
    // server freezes the challenger during the count, like a duel).
@@ -7883,6 +8343,7 @@ function modDuelUI(m){
  if(m.phase==='tick'){
    if(!modDuel) return;
    modDuel.hpYou=m.hpYou; modDuel.hpNpc=m.hpNpc; modDuel.energyYou=m.energyYou;
+   duelTopUpdate(m.hpYou,m.hpNpc); // OSRS-basis top HP bars
    if(me) me.specialEnergy=m.energyYou;
    setDuelCountdown(m.countdownLeft);
    const ma=modAvatars[m.npcId];
@@ -7932,6 +8393,7 @@ function modDuelUI(m){
  }
  if(m.phase==='end'){
    modDuel=null; modDuelEngaged=false;
+   duelTopHide(); // OSRS-basis top HP bars off
    clearDuelCountdown();
    if(m.result==='loss'){ const myAv=me?avatars[me.username]:null; if(myAv) startDeathFall(myAv); } // Stage 32: a lost mod duel knocks me down (the player_fell broadcast covers the plaza's view)
    const ma=modAvatars[m.npcId]; if(ma) hideHpBar(ma);
