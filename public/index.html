@@ -1564,6 +1564,7 @@ const TELEPORT_SIGN_POS={x:880,y:470}; // Stage 25: teleport sign beside the ban
 const NALLY_SIGN_POS={x:855,y:510}; // Polish build: the Derek Nally sign, a few steps south-east of the spawn (800,450), facing it — clear of the bank chest, the south path, the armour-shop path and the teleport sign (880,470); tapping it opens the read panel and notifies Muse (sign_read)
 let stakeSparkles=[]; // sign sparkle meshes, pulsed in animate()
 let fishSparkles=[]; // Feel-fixes: fishing-spot shimmer sparkles, pulsed in animate() like the Stake Board's
+let fishRipples=[]; // Fishfix: expanding ripple rings on ACTIVE fishing spots, pulsed in animate(); rebuilt with the node props like fishSparkles
 let stakeBoard={offers:[]}; // latest stake_board payload
 let stakeMatch=null; // {matchId,opponent,stake,pot,readyMine,readyOpponent} while matched
 let renderer, scene, camera, raycaster, sunLight=null;
@@ -4852,13 +4853,28 @@ function makeNodeProp(n){
    // Board sparkle pattern). Depleted spots keep only the flat
    // ring, so live water reads at a glance. Dressing only — the
    // spot's position and fishing mechanics are untouched.
+   // Fishfix (2026-11-23): the first pass still read as nothing in
+   // live play — the motes were Stake Board-sized (r=0.11, viewed
+   // from ~2 units there but 30–45 units here ≈ 3px, a third of
+   // them flickered off at any instant) and the halo was a static
+   // pale ring that merged into the base bullseye. Now: a wider,
+   // brighter halo; two expanding ripple rings per spot (surface
+   // motion is what carries at distance); and six bigger motes
+   // (r=0.30, white/gold) that NEVER flicker off and never pulse
+   // below 0.8 scale. Depleted spots still keep only the dim flat
+   // ring, so active vs used-up reads at a glance.
    if(!n.depleted){
-     const halo=new THREE.Mesh(new THREE.RingGeometry(1.15,1.5,24),new THREE.MeshBasicMaterial({color:0xdff2ff,transparent:true,opacity:0.55,side:THREE.DoubleSide}));
-     halo.rotation.x=-Math.PI/2; halo.position.y=0.1; g.add(halo);
-     for(let i=0;i<4;i++){
-       const sm=new THREE.Mesh(new THREE.OctahedronGeometry(0.11),new THREE.MeshBasicMaterial({color:i%2? 0xffffff:0x9fd8ff}));
-       const a=(i/4)*Math.PI*2+0.6;
-       sm.position.set(Math.cos(a)*0.55,0.45+ (i%3)*0.35,Math.sin(a)*0.55);
+     const halo=new THREE.Mesh(new THREE.RingGeometry(1.25,2.0,28),new THREE.MeshBasicMaterial({color:0xeaf7ff,transparent:true,opacity:0.85,side:THREE.DoubleSide}));
+     halo.rotation.x=-Math.PI/2; halo.position.y=0.12; g.add(halo);
+     for(let i=0;i<2;i++){
+       const rip=new THREE.Mesh(new THREE.RingGeometry(0.95,1.25,28),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.75,side:THREE.DoubleSide}));
+       rip.rotation.x=-Math.PI/2; rip.position.y=0.13; g.add(rip);
+       fishRipples.push({mesh:rip,phase:i*0.5+Math.random()*0.2,area:curArea});
+     }
+     for(let i=0;i<6;i++){
+       const sm=new THREE.Mesh(new THREE.OctahedronGeometry(0.30),new THREE.MeshBasicMaterial({color:i%2? 0xffffff:0xffe9a8}));
+       const a=(i/6)*Math.PI*2+0.6;
+       sm.position.set(Math.cos(a)*0.8,0.7+ (i%3)*0.5,Math.sin(a)*0.8);
        g.add(sm);
        fishSparkles.push({mesh:sm,phase:Math.random()*10,baseY:sm.position.y,area:curArea});
      }
@@ -4892,6 +4908,7 @@ function rebuildNodes(){
  const area=curArea, root=areaGroups[area];
  nodeProps={};
  fishSparkles=fishSparkles.filter(s=>s.area!==area); // this area's old sparkles go with its old node props
+ fishRipples=fishRipples.filter(s=>s.area!==area); // Fishfix: same for the ripple rings
  // drop this area's old node labels (other areas' labels stay, hidden by area)
  worldLabels=worldLabels.filter(wl=>{ if(wl.kind==='node'&&wl.area===area){ wl.el.remove(); return false; } return true; });
  if(!root||!scene) return;
@@ -6814,12 +6831,23 @@ function animate(){
  }
  // Feel-fixes: fishing-spot shimmer — the same twinkle as the Stake
  // Board sparkles, slower, so live water catches the eye.
+ // Fishfix: the motes are 30–45 units from the camera in real play,
+ // so the visible-flicker is GONE (a third of them were off at any
+ // instant) and the scale pulse never drops below 0.8.
  for(const s of fishSparkles){
-   const sc=0.7+0.5*Math.abs(Math.sin(now*0.004+s.phase*7));
+   const sc=0.8+0.5*Math.abs(Math.sin(now*0.004+s.phase*7));
    s.mesh.scale.set(sc,sc,sc);
-   s.mesh.visible=Math.sin(now*0.006+s.phase*5)>-0.5;
    s.mesh.rotation.y+=0.03;
-   s.mesh.position.y=s.baseY+0.12*Math.sin(now*0.0025+s.phase*3);
+   s.mesh.position.y=s.baseY+0.18*Math.sin(now*0.0025+s.phase*3);
+ }
+ // Fishfix: expanding ripple rings — each loops scale 1→1.9 while
+ // fading out over ~2.2s; two per spot, half a period apart, so a
+ // ring is always mid-expansion on every active spot.
+ for(const s of fishRipples){
+   const t=((now*0.00045)+s.phase)%1;
+   const rs=1+t*0.9;
+   s.mesh.scale.set(rs,rs,rs);
+   s.mesh.material.opacity=0.75*(1-t);
  }
  updateLiveSplats(now);
  updateTapSplats(now); // Visual pass: fade the tap splats (~600ms)
