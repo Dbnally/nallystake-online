@@ -343,6 +343,20 @@ for (const [id, name, sellOnly, extra] of [
 // the fixed shop buy-back here is 2g, in line with the other
 // sell-only resources (raw shrimps 3g, logs 4g).
 ITEMS.seaweed = { name: 'Seaweed', icon: '🥬', kind: 'resource', sellOnly: 2, noStack: true };
+// Farm life (Derek, 2026-11-23): the plaza farm's produce — every
+// piece builds a skill, per his standing drop law. Wool is spun
+// into yarn by the crafting chain that follows this build (for now
+// it stacks, banks and sells like any resource); cowhide sells to
+// the shops until its leather work arrives (no tanning invented
+// here); raw beef cooks on a fire exactly like raw fish (see
+// COOKABLE) into cooked beef. The bones are a NEW item — the
+// existing `bones` id is the Dragon bones Exchange good and is NOT
+// touched: these bury for Prayer XP (see the 'bury' handler).
+ITEMS.wool = { name: 'Wool', icon: '🧶', kind: 'resource', sellOnly: 6, desc: 'Soft wool from a plaza sheep. Spin it into yarn at a spinning wheel — the crafters are coming to town.' };
+ITEMS.cowhide = { name: 'Cowhide', icon: '🐄', kind: 'resource', sellOnly: 12, desc: 'A cowhide from a plaza cow. Shops buy it as-is; leather work comes later.' };
+ITEMS.animal_bones = { name: 'Bones', icon: '🦴', kind: 'resource', sellOnly: 3, desc: 'Bones from a farm animal. Bury them for Prayer XP.' };
+ITEMS.raw_beef = { name: 'Raw beef', icon: '🥩', kind: 'resource', sellOnly: 5, desc: 'Raw beef from a plaza cow. Cook it on a fire.' };
+ITEMS.cooked_beef = { name: 'Cooked beef', icon: '🍖', kind: 'food', heal: 12, sellOnly: 9, desc: 'Cooked beef. Eat it to heal.' };
 // Stage 3: Emberfall ores + smelted bars. Sell-only resources, like
 // Stage 2's. (The eighth bar, gold, is the `bars` Exchange good above.)
 for (const [id, name, sellOnly] of [
@@ -2333,8 +2347,35 @@ for (const area of ['wilderness', 'purewild']) {
     npcs.set(id, { id, ...def, area, x, y, spawnX: x, spawnY: y, hp: def.maxHp, alive: true, respawnAt: 0, fightId: null });
   });
 }
+// Farm life (Derek, 2026-11-23): the PLAZA FARM — sheep and cows
+// in a fenced pasture on the plaza's open south-west ground
+// (pasture fence at server x 525-715, y 755-825; crop rows just
+// north of it, y 705-750). The spot is clear of every fixture,
+// gate trigger (all on the world edges), path and Stage 40
+// protected radius: the nearest fixture is the Food & Supplies
+// stall ~180 units away, the plaza spawn/bank ~280. Nothing
+// existing moves; the Lumbridge-inspired town build inherits
+// this spot as its farm dressing. The animals are ordinary
+// shared NPCs standing in the plaza: they wander and graze
+// inside the pasture (the `pasture` bounds, stepped by the
+// respawn sweep's farm branch), are fought through attack_npc /
+// npcTick exactly like a goblin, fight back weakly (maxHit 1),
+// and drop skill-building produce (see rollNpcDrops).
+const FARM_PASTURE = { minX: 540, maxX: 700, minY: 762, maxY: 818 }; // wander bounds, inset from the fence line
+const SHEEP_DEF = { kind: 'sheep', name: 'Sheep', combatLevel: 1, maxHp: 5, maxHit: 1, acc: 0.45, attackType: 'melee', respawnMs: 8000 };
+const COW_DEF = { kind: 'cow', name: 'Cow', combatLevel: 2, maxHp: 8, maxHit: 1, acc: 0.5, attackType: 'melee', respawnMs: 10000 };
+const SHEEP_SPAWNS = [[565, 780], [610, 800], [660, 782], [690, 808]];
+const COW_SPAWNS = [[585, 808], [645, 792], [680, 775]];
+SHEEP_SPAWNS.forEach(([x, y], i) => {
+  const id = 'sheep' + (i + 1);
+  npcs.set(id, { id, ...SHEEP_DEF, area: 'plaza', x, y, spawnX: x, spawnY: y, hp: SHEEP_DEF.maxHp, alive: true, respawnAt: 0, fightId: null, pasture: FARM_PASTURE, wx: x, wy: y, wUntil: 0 });
+});
+COW_SPAWNS.forEach(([x, y], i) => {
+  const id = 'cow' + (i + 1);
+  npcs.set(id, { id, ...COW_DEF, area: 'plaza', x, y, spawnX: x, spawnY: y, hp: COW_DEF.maxHp, alive: true, respawnAt: 0, fightId: null, pasture: FARM_PASTURE, wx: x, wy: y, wUntil: 0 });
+});
 // The areas whose live NPC roster rides on npc_state messages.
-const NPC_AREAS = ['goblins', 'magic', 'range', 'wilderness', 'purewild'];
+const NPC_AREAS = ['goblins', 'magic', 'range', 'wilderness', 'purewild', 'plaza'];
 const npcFights = new Map(); // id -> { id, playerKey, npcId, hpYou, maxHpYou, specialQueued, done, timer, tickCount, nextSwingYou, nextSwingNpc }
 // Pseudo-profile so goblins can be the defender in the duel rollHit():
 // no style block, no worn gear, no armour reduction.
@@ -3808,6 +3849,9 @@ function combatXpGains(style, dmg) {
 //     25% / steel 20% / mithril 12% / adamant 8% / rune 5%) and a
 //     drop shape roll — 55% arrows only (5-15), 30% arrowheads only
 //     (1-3), 15% both — plus 3-8 gold.
+//   Sheep / Cow (Farm life): produce only, no coins — sheep give
+//     1-2 wool + 1 bones; cows give 1 cowhide + 1-2 raw beef +
+//     1 bones. Every piece builds a skill (Derek's drop law).
 function rollNpcDrops(profile, npc) {
   const kind = npc ? npc.kind : 'goblin';
   if (kind === 'wizard') {
@@ -3856,6 +3900,30 @@ function rollNpcDrops(profile, npc) {
     if (what < 0.55 || what >= 0.85) give(`${tier}_arrow`, 5 + Math.floor(Math.random() * 11)); // 5-15 arrows
     if (what >= 0.55) give(`${tier}_arrowhead`, 1 + Math.floor(Math.random() * 3)); // 1-3 arrowheads
     return { gold, items };
+  }
+  if (kind === 'sheep' || kind === 'cow') {
+    // Farm life (Derek, 2026-11-23): his standing drop law — the
+    // produce IS the drop, and every piece builds a skill: wool
+    // spins into yarn (the coming crafting chain), cowhide sells
+    // toward leather work, raw beef cooks, bones bury for Prayer
+    // XP. No coin drop: the produce sells at the shops instead
+    // (wool 6g, cowhide 12g, beef 5g, bones 3g). Backpack first,
+    // bank on overflow, like every other drop table here.
+    const items = [];
+    const give = (item, qty) => {
+      const leftover = addStacks(profile.backpack, item, qty, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(profile.bank, item, leftover);
+      items.push({ item, qty });
+    };
+    if (kind === 'sheep') {
+      give('wool', 1 + Math.floor(Math.random() * 2)); // 1-2 wool
+      give('animal_bones', 1);
+    } else {
+      give('cowhide', 1);
+      give('raw_beef', 1 + Math.floor(Math.random() * 2)); // 1-2 beef
+      give('animal_bones', 1);
+    }
+    return { gold: 0, items };
   }
   const gold = 2 + Math.floor(Math.random() * 7);
   addGold(profile, gold); // Stage 16: the coins land on the coin stack
@@ -4149,8 +4217,22 @@ setInterval(() => {
   const now = Date.now();
   for (const npc of npcs.values()) {
     if (!npc.alive && now >= npc.respawnAt) { npc.alive = true; npc.hp = npc.maxHp; npc.x = npc.spawnX; npc.y = npc.spawnY; touched.add(npc.area); continue; }
-    if (npc.alive && !npc.fightId && !((npc.frozenUntil || 0) > now) && (npc.x !== npc.spawnX || npc.y !== npc.spawnY)) {
+    if (npc.alive && !npc.fightId && !((npc.frozenUntil || 0) > now) && !npc.pasture && (npc.x !== npc.spawnX || npc.y !== npc.spawnY)) {
       if (stepToward(npc, npc.spawnX, npc.spawnY, APPROACH_STEP)) touched.add(npc.area);
+    }
+    // Farm life: pasture animals GRAZE — they amble slowly (6
+    // units a second, well under a player's walk) toward a wander
+    // point inside the fence, pause there a few seconds, then pick
+    // another. A fight can drag one out of the pasture; the wander
+    // points are always inside, so it ambles back in afterwards.
+    if (npc.alive && npc.pasture && !npc.fightId && !((npc.frozenUntil || 0) > now)) {
+      if (now < (npc.wUntil || 0)) { /* grazing pause */ }
+      else if (Math.hypot(npc.wx - npc.x, npc.wy - npc.y) < 4) {
+        const p = npc.pasture;
+        npc.wx = p.minX + Math.random() * (p.maxX - p.minX);
+        npc.wy = p.minY + Math.random() * (p.maxY - p.minY);
+        npc.wUntil = now + 2500 + Math.random() * 3500; // graze 2.5-6s before ambling on
+      } else if (stepToward(npc, npc.wx, npc.wy, 6)) touched.add(npc.area);
     }
   }
   for (const a of touched) broadcastNpcState(a);
@@ -6177,7 +6259,13 @@ setInterval(() => {
 const COOKABLE = {
   raw_trout: { cooked: 'cooked_trout', xp: 70 },
   raw_shrimps: { cooked: 'cooked_shrimps', xp: 30 },
+  raw_beef: { cooked: 'cooked_beef', xp: 50 }, // Farm life: between shrimps and trout, like its heal (12)
 };
+// Farm life: burying bones. One farm-animal bone = 5 Prayer XP
+// (a beginner drip — a fresh account needs ~13 bones per early
+// level; the Dragon bones Exchange good is NOT buryable, it is a
+// trade good). Only `animal_bones` buries (see the 'bury' handler).
+const BURY_XP = { animal_bones: 5 };
 // Shared per-player action cooldown for gather / cook / light_fire.
 // Returns true (and does NOT stamp) when the player is acting too fast.
 // `ms` lets a caller use a shorter/longer gap (Stage 3 pickaxes shorten
@@ -7261,6 +7349,21 @@ wss.on('connection', (ws, req) => {
       save(key);
       me.actSkill = 'cooking'; me.actAt = Date.now(); // Stage 7C: activity marker
       send(ws, { type: 'cook_result', ok: !burnt, item: resultItem, xp });
+      return sendProfile(key);
+    }
+    // ----- Farm life: bury bones for Prayer XP -----
+    if (m.type === 'bury') {
+      const item = String(m.item || '');
+      const xp = BURY_XP[item];
+      if (!xp) return send(ws, { type: 'error', message: 'You can\'t bury that.' });
+      if (me.duelId || me.npcFightId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
+      if (stackQty(profile.backpack, item) < 1) return send(ws, { type: 'error', message: `No ${ITEMS[item].name} in your backpack.` });
+      if (actionOnCooldown(me)) return send(ws, { type: 'error', message: 'Too fast — one action at a time.' });
+      removeStacks(profile.backpack, item, 1);
+      addXp(key, { prayer: xp });
+      save(key);
+      me.actSkill = 'prayer'; me.actAt = Date.now(); // Stage 7C: activity marker
+      send(ws, { type: 'bury_result', ok: true, item, xp });
       return sendProfile(key);
     }
 
