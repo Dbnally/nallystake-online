@@ -46,8 +46,13 @@
     The 🎛️ toggle hides the chips + tab bar (the persisted
     nallystake_rail_open choice); an open panel box stays open,
     exactly as collapsing the old rail never closed an open panel. */
- #paneldock{position:fixed;right:6px;top:190px;z-index:40;width:min(344px,88vw);display:flex;flex-direction:column;gap:6px;pointer-events:none}
- #dockhead{display:flex;gap:6px;align-items:flex-start;pointer-events:none}
+ #paneldock{position:fixed;right:6px;top:190px;z-index:40;width:min(344px,88vw);display:flex;flex-direction:column;gap:6px;pointer-events:none;max-height:calc(100dvh - 190px - 100px - env(safe-area-inset-bottom,0px))}
+ #dockhead{display:flex;gap:6px;align-items:center;pointer-events:none;flex:none}
+ /* Panel-open fit (2026-11-23): with the dock capped above the
+    bottom strip, an open panel keeps its full body and the TAB
+    GRID takes the squeeze instead — it scrolls internally only
+    while a panel is open; with no panel open it never scrolls. */
+ #paneldock.panelopen #docktabs{min-height:0;overflow-y:auto;flex:1 1 auto}
  #dockhead>*{pointer-events:auto}
  #dockhead .railchip{flex:1}
  /* Navigation pass: every tab carries its name under its icon —
@@ -87,10 +92,64 @@
  /* the tab bar: every panel one tap away, wrapped in the dock.
     While Grab is on the bar is .locked: no touch scrolling gestures,
     arranging only. */
- #docktabs{display:none;flex-wrap:wrap;gap:6px;background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:12px;padding:6px;pointer-events:auto}
+ #docktabs{display:none;flex-direction:column;flex-wrap:wrap;gap:8px;background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:12px;padding:6px;pointer-events:auto}
  #docktabs.open{display:flex}
  #docktabs.locked{touch-action:none}
  #docktabs .rbtn{flex:none}
+ /* Interface simplification (Derek, 2026-11-23): the 15 tabs sit
+    in four labelled groups — Play / World / People / System — so
+    the dock reads as four short lists instead of one scatter of
+    buttons. A group is a plain wrapping row under a small quiet
+    header; headers are text only, never interactive, and always
+    shown (no collapse state). A group header hides only when
+    every tab in its group is hidden (see syncDockGroupHeads). */
+ .dockgroup{display:flex;flex-wrap:wrap;gap:6px}
+ .dockgroup .ghead{flex:0 0 100%;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#b8a888;line-height:1.1;margin-left:2px}
+ /* ============ Trial B (Derek 2026-11-23): grouped action buttons + smart prompts + side cluster ============
+    Trial A is the default CSS state: every B-only artefact below is
+    inert (labels display:none, quick-chip wrappers display:contents,
+    cluster hidden, prompt line hidden) so A renders exactly as
+    settled. body.ifaceB switches the presentation live. In B the
+    bottom bar / fight strips carry labelled groups in the spec
+    order Fight · Protect · Supplies · Actions · Pack — with Pack +
+    Protect homed in the fixed side cluster (#sidecluster), so the
+    strips show Fight · Supplies · Actions and the cluster carries
+    Pack · Protect, always in the same right-edge gutter. */
+ .blab{display:none}
+ .bwrap{display:contents}
+ body.ifaceB .blab{display:inline-flex;align-items:center;font-size:9.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#b8a888;white-space:nowrap;padding:0 2px}
+ body.ifaceB .bwrap{display:contents}
+ /* B group order inside the strips (flex order; A never sets order) */
+ body.ifaceB #duelstyles,body.ifaceB #fcstyles,body.ifaceB #bbstyles{order:11}
+ body.ifaceB #duelprayers,body.ifaceB #fcprayers,body.ifaceB #bbprayers{order:21}
+ body.ifaceB #atkchip,body.ifaceB #fcatkchip{order:41}
+ body.ifaceB #duelflee{order:43}
+ body.ifaceB .blab[data-grp="fight"]{order:10}
+ body.ifaceB .blab[data-grp="protect"]{order:20}
+ body.ifaceB .blab[data-grp="supplies"]{order:30}
+ body.ifaceB .bwrap[data-grp="supplies"]{order:31}
+ body.ifaceB .blab[data-grp="actions"]{order:40}
+ body.ifaceB .bwrap[data-grp="actions"]{order:42}
+ /* In B, Pack + Protect leave the strips — the side cluster is their home */
+ body.ifaceB #bbpack,body.ifaceB #bbprayers,body.ifaceB #duelpack,body.ifaceB #duelprayers,body.ifaceB #fcpack,body.ifaceB #fcprayers,body.ifaceB .blab[data-grp="pack"],body.ifaceB .blab[data-grp="protect"]{display:none}
+ /* Side cluster: fixed right-edge gutter, one column, always reachable */
+ #sidecluster{display:none}
+ body.ifaceB #sidecluster{display:flex;flex-direction:column;gap:6px;position:fixed;right:6px;top:242px;width:52px;z-index:46}
+ body.ifaceB #paneldock{right:64px;width:min(300px,calc(100vw - 76px))}
+ .scbtn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:rgba(34,26,19,.92);border:2px solid #4a3a28;border-radius:10px;color:#e8d9b0;min-height:50px;padding:4px 2px;cursor:pointer;font-family:inherit;box-sizing:border-box}
+ .scbtn .sic{font-size:19px;line-height:1}
+ .scbtn .slb{font-size:8.5px;font-weight:800;letter-spacing:.04em;color:#d8c9a3;line-height:1}
+ .scbtn.on{border-color:#c9a227;background:#3a2c1c;box-shadow:0 0 10px #c9a22766}
+ /* Smart prompt: one line above the strip + a pulse on the real button */
+ #promptline{display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:calc(100px + env(safe-area-inset-bottom,0px));z-index:44;background:rgba(23,19,16,.92);border:1px solid #c9a227;border-radius:999px;color:#ffe9a8;font-size:12.5px;font-weight:800;padding:6px 14px;pointer-events:none;white-space:nowrap;max-width:92vw;overflow:hidden;text-overflow:ellipsis}
+ #promptline.open{display:block}
+ @keyframes promptPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.13)}}
+ .promptpulse{animation:promptPulse .7s ease-in-out infinite!important;border-color:#ffd75e!important;box-shadow:0 0 14px 3px #ffd75e88!important}
+ /* Bank + Worn panels (both trials): compact, items-first */
+ .bankpanel .cell,.wornpanel .cell{min-height:52px}
+ .bankpanel h4,.wornpanel h4{margin:6px 0 4px;color:#e3c766}
+ .bankpanel .seg button,.bankpanel .tabs button{min-height:36px}
+ .cell .cap{font-size:8.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#b8a888;line-height:1}
  /* Placed-button fix: a tab dragged out of the dock lives in this
     full-screen layer (the #spellbtns pattern) — OUTSIDE #docktabs,
     so the 🎛️ toggle hiding the tab bar (display:none) can never
@@ -101,15 +160,15 @@
  #placedtabs .rbtn{pointer-events:auto;touch-action:none}
  /* the panel box: fixed in the dock, in place — the active tab's
     content lives here, under its title bar, and scrolls internally */
- #dockpanel{width:100%;box-sizing:border-box;background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:12px;padding:10px;display:none;pointer-events:auto}
- #dockpanel.open{display:block}
+ #dockpanel{width:100%;box-sizing:border-box;background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:12px;padding:10px 6px;display:none;pointer-events:auto;min-height:0;flex-direction:column;flex:none}
+ #dockpanel.open{display:flex}
  #dockpanel h3{margin:2px 0 8px;color:#e3c766;font-size:16px;display:flex;justify-content:space-between;align-items:center}
  #dockpanel h3 .x{background:none;border:0;color:#e8d9b0;font-size:18px;cursor:pointer;padding:6px 10px;min-height:38px;min-width:38px;border-radius:8px;box-sizing:border-box}
  /* Navigation pass: the "‹ Tabs" back button sits beside the ✕ in
     every panel header — one tap from any panel back to the tab
     grid (see backToTabs). */
  #dockpanel h3 #dockback{margin-left:auto;font-size:13px;font-weight:800;color:#e3c766}
- #dockbody{max-height:max(140px,calc(100dvh - 430px));overflow-y:auto}
+ #dockbody{max-height:max(140px,calc(100dvh - 560px));overflow-y:auto;min-height:0}
  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
  .cell{background:#221a13;border:1px solid #4a3a28;border-radius:8px;min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:3px;position:relative}
  .cell.sel{border-color:#c9a227;background:#3a2c1c}
@@ -329,6 +388,17 @@
  #bbstyles,#bbprayers,#duelstyles,#fcstyles{display:contents}
  .fchip.sty.on{border-color:#c9a227;background:#3a2c1c;box-shadow:0 0 10px #c9a22766;color:#ffd75e}
  .fchip.pack.on{border-color:#c9a227;background:#3a2c1c;box-shadow:0 0 10px #c9a22766;color:#ffd75e}
+ /* Interface simplification (Derek, 2026-11-23): the context
+    prompt chip — ONE small hint, centred just above the bottom
+    bar, shown only while the player stands at the bank chest or
+    a shop stall (see updatePromptChip). It is a hint, not a
+    button: pointer-events:none, and the tap on the chest/stall
+    itself does the action, exactly as it always has. It never
+    shows during a fight — the fight strip owns this edge of the
+    screen (clear-screen combat rule) — and never stacks: it is
+    the only chip of its kind. */
+ #promptchip{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(100px + env(safe-area-inset-bottom,0px));z-index:44;background:rgba(23,19,16,.9);border:2px solid #c9a227;border-radius:999px;padding:7px 14px;font-size:13px;font-weight:700;color:#e8d9b0;display:none;pointer-events:none;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+ #promptchip.open{display:block}
  @keyframes fcflash{from{border-color:#ff3b30;background:#5a1408;box-shadow:0 0 6px #ff3b30}to{border-color:#e3c766;background:#7a2a08;box-shadow:0 0 18px #ff7b24}}
  #jadwarn{position:fixed;top:26%;left:50%;transform:translateX(-50%);z-index:56;width:min(430px,92vw);background:rgba(90,16,4,.94);border:3px solid #ff7b24;border-radius:14px;padding:14px 12px;text-align:center;display:none;cursor:pointer;box-shadow:0 0 30px #ff5a1f88;animation:fcflash .28s ease-in-out infinite alternate}
  #jadwarntxt{font-size:21px;font-weight:900;color:#f0dfae;text-shadow:0 2px 4px #000}
@@ -377,7 +447,7 @@
  .parchment .ghost{background:rgba(43,33,24,.12);color:#2b2118;border-color:#7a6748}
  .parchment input[type=number]{background:#f4ead0;color:#2b2118}
  /* Stage 18: the chips under the master toggle (Grab / Menu tap / Camera) */
- .railchip{width:46px;min-height:40px;border-radius:10px;border:2px solid #7a6748;background:linear-gradient(180deg,#3a2f22,#241c13);color:#e8d9b0;font-size:10px;font-weight:700;cursor:pointer;padding:2px 0;line-height:1.25}
+ .railchip{width:46px;height:46px;min-height:40px;box-sizing:border-box;border-radius:10px;border:2px solid #7a6748;background:linear-gradient(180deg,#3a2f22,#241c13);color:#e8d9b0;font-size:10px;font-weight:700;cursor:pointer;padding:2px 0;line-height:1.25}
  .railchip.on{background:#2e7d32;color:#eaffea;border-color:#66bb6a}
  body.grabbing #docktabs .rbtn,body.grabbing #placedtabs .rbtn{cursor:grab;outline:2px dashed rgba(102,187,106,.65);outline-offset:-2px}
  /* Stage 23: Grab mode is modal — a standing hint while it's on */
@@ -460,21 +530,33 @@
   <button id="railcam" class="railchip" title="Camera view: third person / first person">🎥 3rd</button>
  </div>
  <div id="docktabs">
-  <button class="rbtn" data-panel="backpack" title="Backpack"><span class="tic">🎒</span><span class="tlbl">Backpack</span></button>
-  <button class="rbtn" data-panel="worn" title="Worn items"><span class="tic">🗡️</span><span class="tlbl">Worn</span></button>
-  <button class="rbtn" data-panel="shop" title="Shops"><span class="tic">🏪</span><span class="tlbl">Shops</span></button>
-  <button class="rbtn" data-panel="bank" title="Bank of Gielinor"><span class="tic">🏦</span><span class="tlbl">Bank</span></button>
-  <button class="rbtn" data-panel="exchange" title="Gold Exchange"><span class="tic">💱</span><span class="tlbl">Exchange</span></button>
-  <button class="rbtn" data-panel="prayers" title="Prayers"><span class="tic">🙏</span><span class="tlbl">Prayers</span></button>
-  <button class="rbtn" data-panel="spellbook" title="Spellbook"><span class="tic">📖</span><span class="tlbl">Spells</span></button>
-  <button class="rbtn" data-panel="players" title="Players"><span class="tic">👥</span><span class="tlbl">Players</span></button>
-  <button class="rbtn" data-panel="admin" title="Admin"><span class="tic">👑</span><span class="tlbl">Admin</span></button>
-  <button class="rbtn" data-panel="tools" id="toolsbtn" title="Admin tools" style="display:none"><span class="tic">🛠️</span><span class="tlbl">Tools</span></button>
-  <button class="rbtn" data-panel="skills" title="Skills"><span class="tic">📊</span><span class="tlbl">Skills</span></button>
-  <button class="rbtn" data-panel="goals" title="Starter goals & collection log"><span class="tic">📋</span><span class="tlbl">Goals</span></button>
-  <button class="rbtn" data-panel="smithy" title="Smithy"><span class="tic">🔥</span><span class="tlbl">Smithy</span></button>
-  <button class="rbtn" data-panel="teleport" title="Teleport"><span class="tic">🌀</span><span class="tlbl">Teleport</span></button>
-  <button class="rbtn" data-panel="settings" title="Settings"><span class="tic">🎛️</span><span class="tlbl">Settings</span></button>
+  <div class="dockgroup" data-group="play">
+   <div class="ghead">Play</div>
+   <button class="rbtn" data-panel="backpack" title="Backpack"><span class="tic">🎒</span><span class="tlbl">Backpack</span></button>
+   <button class="rbtn" data-panel="worn" title="Worn items"><span class="tic">🗡️</span><span class="tlbl">Worn</span></button>
+   <button class="rbtn" data-panel="skills" title="Skills"><span class="tic">📊</span><span class="tlbl">Skills</span></button>
+   <button class="rbtn" data-panel="prayers" title="Prayers"><span class="tic">🙏</span><span class="tlbl">Prayers</span></button>
+   <button class="rbtn" data-panel="spellbook" title="Spellbook"><span class="tic">📖</span><span class="tlbl">Spells</span></button>
+  </div>
+  <div class="dockgroup" data-group="world">
+   <div class="ghead">World</div>
+   <button class="rbtn" data-panel="shop" title="Shops"><span class="tic">🏪</span><span class="tlbl">Shops</span></button>
+   <button class="rbtn" data-panel="bank" title="Bank of Gielinor"><span class="tic">🏦</span><span class="tlbl">Bank</span></button>
+   <button class="rbtn" data-panel="exchange" title="Gold Exchange"><span class="tic">💱</span><span class="tlbl">Exchange</span></button>
+   <button class="rbtn" data-panel="smithy" title="Smithy"><span class="tic">🔥</span><span class="tlbl">Smithy</span></button>
+   <button class="rbtn" data-panel="teleport" title="Teleport"><span class="tic">🌀</span><span class="tlbl">Teleport</span></button>
+  </div>
+  <div class="dockgroup" data-group="people">
+   <div class="ghead">People</div>
+   <button class="rbtn" data-panel="players" title="Players"><span class="tic">👥</span><span class="tlbl">Players</span></button>
+   <button class="rbtn" data-panel="goals" title="Starter goals & collection log"><span class="tic">📋</span><span class="tlbl">Goals</span></button>
+  </div>
+  <div class="dockgroup" data-group="system">
+   <div class="ghead">System</div>
+   <button class="rbtn" data-panel="admin" title="Admin"><span class="tic">👑</span><span class="tlbl">Admin</span></button>
+   <button class="rbtn" data-panel="tools" id="toolsbtn" title="Admin tools" style="display:none"><span class="tic">🛠️</span><span class="tlbl">Tools</span></button>
+   <button class="rbtn" data-panel="settings" title="Settings"><span class="tic">🎛️</span><span class="tlbl">Settings</span></button>
+  </div>
  </div>
  <div id="dockpanel"><h3><span id="docktitle">Panel</span><button class="x" id="dockback" title="Back to the panel tabs">‹ Tabs</button><button class="x" id="dockx">✕</button></h3><div id="dockbody"></div></div>
 </div>
@@ -503,6 +585,7 @@
  <div id="duellast" class="note fightinfo" style="text-align:center"></div>
  <span class="fchip ctx" id="duelctx">⚔️ Duel</span>
  <button class="fchip pack" id="duelpack" title="Backpack">🎒</button>
+ <span class="blab" data-grp="fight">Fight</span>
  <div id="duelstyles">
   <button class="fchip sty" data-style="accurate">🎯 Accurate</button>
   <button class="fchip sty" data-style="aggressive">💪 Aggressive</button>
@@ -511,6 +594,7 @@
  </div>
  <div id="duelhint" style="display:none">⚔️ Tap your opponent to attack — once they swing at you, you fight back!</div>
  <div id="dueltop"><div class="dtside"><div class="dtname" id="dtmyname">You</div><div class="dtbar"><div class="dtfill" id="dtmyfill"></div><div class="dtnum" id="dtmynum">99/99</div></div></div><div class="dtvs">⚔️</div><div class="dtside"><div class="dtname" id="dtoppname">Opponent</div><div class="dtbar"><div class="dtfill" id="dtoppfill"></div><div class="dtnum" id="dtoppnum">99/99</div></div></div></div>
+ <span class="blab" data-grp="actions">Actions</span>
  <button class="fchip atk" id="atkchip" style="display:none" title="Attack — the same tap as tapping your opponent">⚔️ Attack</button>
  <div id="duelnomove" style="display:none">🚫 No Movement</div>
  <div id="duelprayers">
@@ -525,6 +609,7 @@
 <div id="fcbar">
  <div class="t" id="fctitle">🌋 Fight Caves</div>
  <button class="fchip pack" id="fcpack" title="Backpack">🎒</button>
+ <span class="blab" data-grp="fight">Fight</span>
  <div id="fcstyles">
   <button class="fchip sty" data-style="accurate">🎯 Accurate</button>
   <button class="fchip sty" data-style="aggressive">💪 Aggressive</button>
@@ -534,6 +619,7 @@
  <div class="hprow fightinfo"><span class="nm">You</span><div class="hpbar"><div id="fchpyou" style="width:100%"></div></div><span id="fchpyouv">0</span></div>
  <div class="hprow fightinfo"><span class="nm" id="fctargetname">Target</span><div class="hpbar"><div id="fchptarget" style="width:100%"></div></div><span id="fchptargetv"></span></div>
  <div id="fclast" class="note fightinfo" style="text-align:center"></div>
+ <span class="blab" data-grp="actions">Actions</span>
  <button class="fchip atk" id="fcatkchip" style="display:none" title="Attack your current cave target">⚔️ Attack</button>
  <div id="fcprayers">
   <button class="fcpray" id="fcpray-melee">🛡️ Deflect Melee</button>
@@ -544,8 +630,18 @@
  <div><button class="fchip" id="fcleavebtn" title="Leave the caves">🏃 Leave</button></div>
 </div>
 
+<div id="promptchip"></div>
+<div id="promptline"></div>
+<div id="sidecluster">
+ <button class="scbtn sc-pack" id="scpack" title="Backpack — one tap, opens at the side"><span class="sic">🎒</span><span class="slb">Pack</span></button>
+ <button class="scbtn sc-pray" data-prayer="melee" title="Deflect Melee"><span class="sic">🛡️</span><span class="slb">Melee</span></button>
+ <button class="scbtn sc-pray" data-prayer="missiles" title="Deflect Missiles"><span class="sic">🏹</span><span class="slb">Missiles</span></button>
+ <button class="scbtn sc-pray" data-prayer="magic" title="Deflect Magic"><span class="sic">🔮</span><span class="slb">Magic</span></button>
+</div>
+
 <div id="bottombar">
  <button class="fchip pack" id="bbpack" title="Backpack">🎒 Backpack</button>
+ <span class="blab" data-grp="fight">Fight</span>
  <div id="bbstyles">
   <button class="fchip sty" data-style="accurate">🎯 Accurate</button>
   <button class="fchip sty" data-style="aggressive">💪 Aggressive</button>
@@ -756,7 +852,7 @@ const SETTINGS_KEY='nallystake_settings_v1';
    the saved setting. */
 const CAM_PITCH_MIN=0.25, CAM_PITCH_MAX=1.35;
 const CAM_PITCH_LEVEL=0.92; // Stage 37: the pitch that means a level gaze in first person (the saved default)
-let settings={camSpeed:1.5,camPitch:0.92,groundTap:'walk',tapMode:'normal',camPov:'third',uiAlpha:0.78,run:true,hidden:{},soundOn:true,shakeOn:true};
+let settings={camSpeed:1.5,camPitch:0.92,groundTap:'walk',tapMode:'normal',camPov:'third',uiAlpha:0.78,run:true,hidden:{},soundOn:true,shakeOn:true,iface:'B'};
 try{ const s=JSON.parse(localStorage.getItem(SETTINGS_KEY)||'null'); if(s&&typeof s==='object') settings=Object.assign(settings,s); }catch(e){}
 if(typeof settings.camSpeed!=='number') settings.camSpeed=1.5;
 if(typeof settings.soundOn!=='boolean') settings.soundOn=true; // Stage 37b: fight sounds (app parity), on unless turned off
@@ -830,12 +926,23 @@ function clearLocalFightState(){
  $('duelflee').style.display='none';
  const jw=$('jadwarn'); if(jw) jw.style.display='none';
 }
+/* Interface simplification: a group header hides when every tab
+   in its group is hidden (the Settings hidden-tab choices, the
+   admin-only Tools tab), so a header never floats over an empty
+   row. Re-synced wherever tab visibility is decided. */
+function syncDockGroupHeads(){
+ document.querySelectorAll('#docktabs .dockgroup').forEach(g=>{
+   const anyVisible=[...g.querySelectorAll('.rbtn')].some(b=>b.style.display!=='none');
+   const h=g.querySelector('.ghead'); if(h) h.style.display=anyVisible?'':'none';
+ });
+}
 function applyRailVisibility(){
  const rs=$('docktabs'); if(rs) rs.classList.toggle('open',railOpen);
  const gb=$('gearbtn'); if(gb){ const gi=gb.querySelector('.gbic'); if(gi) gi.textContent=railOpen?'✕':'🎛️'; } // Navigation pass: swap only the glyph — the "Menu" label span stays
  for(const id of ['railgrab','railmenutap','railcam']){ const c=$(id); if(c) c.style.display=railOpen?'':'none'; } // Stage 18: the chips follow the tab bar
  document.querySelectorAll('#docktabs .rbtn, #placedtabs .rbtn').forEach(b=>{ b.style.display=settings.hidden[b.dataset.panel]?'none':''; }); // Placed-button fix: the Settings hidden-tab rule covers placed tabs too
  refreshToolsBtn();
+ syncDockGroupHeads();
 }
 /* Stage 7D: the 🛠️ Tools button exists only for admins/owners (and
    still obeys the Settings visibility toggle). Re-checked whenever the
@@ -844,6 +951,7 @@ function applyRailVisibility(){
 function refreshToolsBtn(){
  const tb=$('toolsbtn'); if(!tb) return;
  tb.style.display=(isAdminOrOwner()&&!settings.hidden.tools)?'':'none';
+ syncDockGroupHeads();
 }
 function applySettings(){
  document.documentElement.style.setProperty('--uia',settings.uiAlpha);
@@ -858,6 +966,13 @@ window.setGroundTap=function(m){ settings.groundTap=(m==='face')?'face':'walk'; 
    Both persist in the settings store and refresh their dock chips. */
 window.setTapMode=function(m){ settings.tapMode=(m==='menu')?'menu':'normal'; saveSettings(); renderMenuTapChip(); if(dockPanel==='settings') renderDock(); };
 window.setCamPov=function(v){ settings.camPov=(v==='first'||v==='shoulder')? v : 'third'; saveSettings(); renderCamChip(); if(dockPanel==='settings') renderDock(); };
+/* Interface trial (Derek 2026-11-23): A = grouped dock + classic
+   bottom bar; B = grouped action buttons + smart prompts + the
+   side Pack/Protect cluster. B is the default; a saved choice in
+   this same settings object wins. The swap is presentation only —
+   applyIfaceMode just flips a body class. */
+window.setIfaceMode=function(v){ settings.iface=(v==='A')?'A':'B'; saveSettings(); applyIfaceMode(); if(dockPanel==='settings') renderDock(); };
+function applyIfaceMode(){ document.body.classList.toggle('ifaceB',settings.iface!=='A'); }
 /* Stage 37b: fight-feel toggles, same setter shape as the camera
    ones — persisted in the settings store, panel re-renders in sync. */
 window.setSoundOn=function(v){ settings.soundOn=!!v; saveSettings(); if(settings.soundOn) sfxClick(); if(dockPanel==='settings') renderDock(); };
@@ -4025,8 +4140,9 @@ function renderWildBar(){
  syncBarPrayers(false);
  syncCombatControls(); // bottom-bar build: the strip's style/backpack chips track the same server state
  const consum=(me?me.backpack:[]).filter(s=>catalog[s.item]&&(catalog[s.item].kind==='food'||catalog[s.item].kind==='potion'));
- let h=`<button class="fchip spec" id="specbtn" title="Dragon Slash">⚡ ${wildFight.energyYou}%</button>`;
+ let h=`<span class="bwrap" data-grp="actions"><button class="fchip spec" id="specbtn" title="Dragon Slash">⚡ ${wildFight.energyYou}%</button></span><span class="blab" data-grp="supplies">Supplies</span><span class="bwrap" data-grp="supplies">`;
  for(const s of consum) h+=`<button class="fchip" title="${esc(nameOf(s.item))}" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ×${s.qty}</button>`;
+ h+='</span>';
  $('duelquick').innerHTML=h;
  const sb=$('specbtn');
  sb.classList.toggle('ready',wildFight.energyYou>=50);
@@ -5925,6 +6041,8 @@ function animate(){
  }
  if(now-lastMapDraw>150){ lastMapDraw=now; drawMinimap(); }
  stepMovement(dt);
+ updatePromptChip(); // Interface simplification: the bank/shop context hint follows the player's spot (cheap distance checks; DOM touched only on a change)
+ updateSmartPrompt(); // Trial B: smart prompts ride the same tick (inert in A)
  // Stage 32: the respawn hold expires — replay the held area/state
  // messages so the scene switches to the plaza now the fall played.
  if(deathHoldUntil&&now>=deathHoldUntil){ deathHoldUntil=0; releaseHeldMsgs(); }
@@ -6269,12 +6387,12 @@ initThree();
 let dockPanel=null, shopTab='Potion', shopMode='buy', bankQty='1', selStack=null, selIdx=-1, packSorted=false; // Stage 29: selIdx = the backpack slot selStack was tapped in (exact-spot equip swaps)
 const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',spellbook:'📖 Spellbook',players:'👥 Players online',admin:'👑 Admin',tools:'🛠️ Admin Tools',skills:'📊 Skills',goals:'📋 Goals & Log',smithy:'🔥 Emberfall Smithy',teleport:'🌀 Teleport',settings:'🎛️ Settings',help:'❓ Help'};
 function togglePanel(name){ dockPanel===(name)? closeDock() : openPanel(name); }
-function openPanel(name){ dockPanel=name; selStack=null; selIdx=-1; if(name!=='shop') shopNotice=''; if(name==='backpack') packSorted=false; $('dockpanel').classList.add('open'); renderDock();
+function openPanel(name){ dockPanel=name; selStack=null; selIdx=-1; if(name!=='shop') shopNotice=''; if(name==='backpack') packSorted=false; $('dockpanel').classList.add('open'); $('paneldock').classList.add('panelopen'); renderDock();
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.toggle('on',b.dataset.panel===name));
  if(name==='admin') refreshAdminLists();
  if(name==='players'&&boardRows===null) fetchBoards(); // Stage 20: boards load on open
  if(name==='tools'&&isAdminOrOwner()) send({type:'ref_lists'}); }
-function closeDock(){ dockPanel=null; $('dockpanel').classList.remove('open');
+function closeDock(){ dockPanel=null; $('dockpanel').classList.remove('open'); $('paneldock').classList.remove('panelopen');
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.remove('on')); }
 document.querySelectorAll('.rbtn').forEach(b=>b.onclick=()=>{ if(b._suppressClickUntil&&Date.now()<b._suppressClickUntil) return; togglePanel(b.dataset.panel); });
 $('dockx').onclick=closeDock;
@@ -6484,18 +6602,34 @@ const SLOT_DEFS=[
 ];
 const SLOTS=SLOT_DEFS.map(s=>s[0]);
 function pWorn(){
- let h='';
+ // Panel rules (Derek 2026-11-23): worn pieces sit in the SAME
+ // slot squares as backpack items (.grid/.cell, one system), each
+ // captioned with its slot name; the panel leads with the player's
+ // items — worn grid first, then a tap-to-wear/use backpack grid.
+ // Tap-to-unequip is unchanged (Stage 29: one tap takes it off).
+ let h=`<div class="wornpanel"><div class="grid" id="worngrid">`;
  for(const [slot,label,emptyIcon] of SLOT_DEFS){
    const it=me.worn[slot];
-   // Stage 29: tapping the worn item itself takes it off in one tap
-   // (the app version's rule) — the Unequip button stays as the
-   // labelled alternative. The server refuses when the pack is full.
-   const tapOff=it? ` onclick="send({type:'unequip',slot:'${slot}'})" style="cursor:pointer" title="Tap to take off"` : '';
-   h+=`<div class="rowline"><span class="ic"${tapOff}>${it?itemIconHTML(it,24):emptyIcon}</span><span class="grow"${tapOff}><b>${label}</b><br><span class="sub">${it?esc(nameOf(it)):'Empty'}</span></span>${it?`<button class="act" onclick="send({type:'unequip',slot:'${slot}'})">Unequip</button>`:''}</div>`;
+   h+= it? `<div class="cell worn" data-slot="${slot}" onclick="send({type:'unequip',slot:'${slot}'})" style="cursor:pointer" title="Tap to take off"><span class="cap">${label}</span><span class="ic">${itemIconHTML(it,24)}</span><span class="nm">${esc(nameOf(it))}</span></div>`
+        : `<div class="cell empty worn" data-slot="${slot}"><span class="cap">${label}</span><span class="ic">${emptyIcon}</span><span class="nm">Empty</span></div>`;
  }
- h+=`<p class="note">Tap a worn item to take it off — it moves to an empty backpack slot. Worn gear boosts your duels: weapons raise accuracy / max hit, armour cuts damage taken (full set +5% extra, capped at 45%). The cape slot holds your Fight Caves fire cape 🔥.</p>`;
+ h+=`</div>`;
+ h+=`<p class="note" style="margin-top:6px">Tap a worn piece to take it off — it moves to an empty backpack slot. Worn gear boosts your duels: weapons raise accuracy / max hit, armour cuts damage taken (full set +5% extra, capped at 45%). The cape slot holds your Fight Caves fire cape 🔥.</p>`;
+ h+=`<h4>🎒 Backpack — tap to wear / use</h4>`;
+ h+= me.backpack.length? `<div class="grid">${me.backpack.map((s,i)=>`<div class="cell" onclick="wornPackTap(${i})"><span class="q">${s.qty>1?s.qty:''}</span><span class="ic">${itemIconHTML(s.item,24,s.qty)}</span><span class="nm">${esc(nameOf(s.item))}</span></div>`).join('')}</div>` : `<p class="note">Backpack is empty.</p>`;
+ h+=`</div>`;
  return h;
 }
+/* Worn panel backpack tap — the same branches as the Quick slots:
+   food/potions are used, gear equips from its exact backpack spot
+   (the server swaps the old piece back into that spot). */
+window.wornPackTap=function(i){
+ const s=me&&me.backpack[i]; if(!s) return;
+ const d=catalog[s.item]; if(!d) return;
+ if(d.kind==='food'||d.kind==='potion') send({type:'use',item:s.item});
+ else if(d.slot) send({type:'equip',item:s.item,slot:i});
+ else toast(`${iconOf(s.item)} ${nameOf(s.item)} — open the 🎒 Backpack panel for this one.`);
+};
 /* ---- Shops ---- */
 window.setShopTab=function(t){ shopTab=t; renderDock(); };
 window.setShopMode=function(m){ shopMode=m; renderDock(); };
@@ -6554,14 +6688,17 @@ function applyBankFilter(){
  });
 }
 function pBank(){
- let h=`<div class="note">Quantity:</div><div class="seg">${['1','5','10','x','all'].map(q=>`<button class="${bankQty===q?'on':''}" onclick="setBankQty('${q}')">${q==='all'?'All':q==='x'?`X (${bankXQty})`:q}</button>`).join('')}</div>`;
- h+=`<div class="note" style="margin:4px 0">Bank value: <b style="color:#e3c766">${bankValue()}g</b> · priced at shop buy-back. Your 🪙 gold coins are an item too — they stack here or in your backpack, and spending draws from both.</div>`;
- h+=`<div class="tabs">${BANK_TABS.map(([id,lb])=>`<button class="${bankTab===id?'on':''}" onclick="setBankTab('${id}')">${lb}</button>`).join('')}</div>`;
- h+=`<input placeholder="🔍 Search items…" value="${esc(bankSearch)}" oninput="bankSearchInput(this.value)" style="width:100%;box-sizing:border-box;margin-bottom:8px">`;
- h+=`<h4 style="margin:8px 0 5px;color:#e3c766">Backpack — tap to deposit</h4>`;
+ // Panel rules (Derek 2026-11-23): the player's own items sit at
+ // the TOP — the backpack grid leads, then the quantity/category/
+ // search controls, then the bank storage, value note last.
+ let h=`<div class="bankpanel"><h4 style="margin-top:0">🎒 Your backpack — tap to deposit</h4>`;
  h+= me.backpack.length? `<div class="grid">${me.backpack.map(s=>bankCell(s,`send({type:'bank_deposit',item:'${s.item}',qty:${qtyFor(s.qty)}})`)).join('')}</div>` : `<p class="note">Backpack is empty.</p>`;
- h+=`<h4 style="margin:10px 0 5px;color:#e3c766">Bank — tap to withdraw</h4>`;
+ h+=`<div class="note" style="margin-top:8px">Quantity:</div><div class="seg">${['1','5','10','x','all'].map(q=>`<button class="${bankQty===q?'on':''}" onclick="setBankQty('${q}')">${q==='all'?'All':q==='x'?`X (${bankXQty})`:q}</button>`).join('')}</div>`;
+ h+=`<div class="tabs" style="margin-top:6px">${BANK_TABS.map(([id,lb])=>`<button class="${bankTab===id?'on':''}" onclick="setBankTab('${id}')">${lb}</button>`).join('')}</div>`;
+ h+=`<input placeholder="🔍 Search items…" value="${esc(bankSearch)}" oninput="bankSearchInput(this.value)" style="width:100%;box-sizing:border-box;margin:6px 0 2px">`;
+ h+=`<h4>🏦 Bank — tap to withdraw</h4>`;
  h+= me.bank.length? `<div class="grid">${me.bank.map(s=>bankCell(s,`send({type:'bank_withdraw',item:'${s.item}',qty:${qtyFor(s.qty)}})`)).join('')}</div>` : `<p class="note">Bank is empty.</p>`;
+ h+=`<div class="note" style="margin-top:6px">Bank value: <b style="color:#e3c766">${bankValue()}g</b> · priced at shop buy-back. Your 🪙 gold coins are an item too — they stack here or in your backpack, and spending draws from both.</div></div>`;
  return h;
 }
 /* ---- Gold Exchange ---- */
@@ -7186,6 +7323,7 @@ function pHelp(){
 const PANEL_LIST=[['backpack','🎒 Backpack'],['worn','🗡️ Worn items'],['shop','🏪 Shops'],['bank','🏦 Bank'],['exchange','💱 Gold Exchange'],['prayers','🙏 Prayers'],['spellbook','📖 Spellbook'],['players','👥 Players'],['admin','👑 Admin'],['tools','🛠️ Admin Tools'],['skills','📊 Skills'],['smithy','🔥 Smithy'],['teleport','🌀 Teleport'],['settings','🎛️ Settings']];
 function pSettings(){
  let h=`<div class="setrow"><span class="grow">🎨 Appearance<br><span class="note">Change how your knight looks</span></span><button class="act" onclick="closeDock();openAppearance()">🎨 Appearance</button></div>`;
+ h+=`<div class="setrow"><span class="grow">🧭 Interface: A / B<br><span class="note">Two layouts on trial — pick the one that feels simpler. A: classic bottom bar. B: grouped action buttons, smart prompts, and the side Pack + Protect cluster</span></span></div><div class="seg" style="margin-top:-2px"><button class="${settings.iface==='A'?'on':''}" onclick="setIfaceMode('A')">A — Classic</button><button class="${settings.iface!=='A'?'on':''}" onclick="setIfaceMode('B')">B — Grouped</button></div>`;
  h+=`<div class="setrow"><span class="grow">📷 Camera drag speed<br><span class="note">Screen-drag rotation &amp; tilt, camera stick</span></span><input type="range" min="0.25" max="3" step="0.25" value="${settings.camSpeed}" oninput="setCamSpeed(this.value)"><b id="camspeedval" style="color:#e3c766;min-width:34px;text-align:right">${settings.camSpeed}×</b></div>`;
  h+=`<div class="setrow"><span class="grow">👆 Ground tap mode</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.groundTap==='walk'?'on':''}" onclick="setGroundTap('walk')">🚶 Walk</button><button class="${settings.groundTap==='face'?'on':''}" onclick="setGroundTap('face')">🧭 Face</button></div>`;
  h+=`<p class="note" style="margin:2px 0 8px">Walk: tapping the ground walks there. Face: tapping just turns your knight to face that spot.</p>`;
@@ -8049,8 +8187,9 @@ function renderDuelBar(){
  // joystick out (the server ignores duelists' moves anyway).
  const nmEl=$('duelnomove'); if(nmEl) nmEl.style.display=R.noMovement?'block':'none';
  const joyEl=$('joy'); if(joyEl) joyEl.style.opacity=R.noMovement?'0.35':'';
- let h=`<button class="fchip spec${R.noSpecial?' ruledis':''}" id="specbtn" title="Dragon Slash">⚡ ${duel.energyYou}%</button>`;
+ let h=`<span class="bwrap" data-grp="actions"><button class="fchip spec${R.noSpecial?' ruledis':''}" id="specbtn" title="Dragon Slash">⚡ ${duel.energyYou}%</button></span><span class="blab" data-grp="supplies">Supplies</span><span class="bwrap" data-grp="supplies">`;
  for(const s of consum){ const dis=(R.noFood&&catalog[s.item].kind==='food')||(R.noPotions&&catalog[s.item].kind==='potion'); h+=`<button class="fchip${dis?' ruledis':''}" title="${esc(nameOf(s.item))}" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ×${s.qty}</button>`; }
+ h+='</span>';
  $('duelquick').innerHTML=h;
  const sb=$('specbtn');
  sb.classList.toggle('ready',duel.energyYou>=50);
@@ -8179,8 +8318,9 @@ function renderNpcBar(){
  $('duelctx').textContent=`${kindIcon} ${npcFight.name}`;
  syncBarPrayers(false);
  const consum=(me?me.backpack:[]).filter(s=>catalog[s.item]&&(catalog[s.item].kind==='food'||catalog[s.item].kind==='potion'));
- let h=`<button class="fchip spec" id="specbtn" title="Dragon Slash">⚡ ${npcFight.energyYou}%</button>`;
+ let h=`<span class="bwrap" data-grp="actions"><button class="fchip spec" id="specbtn" title="Dragon Slash">⚡ ${npcFight.energyYou}%</button></span><span class="blab" data-grp="supplies">Supplies</span><span class="bwrap" data-grp="supplies">`;
  for(const s of consum) h+=`<button class="fchip" title="${esc(nameOf(s.item))}" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ×${s.qty}</button>`;
+ h+='</span>';
  $('duelquick').innerHTML=h;
  const sb=$('specbtn');
  sb.classList.toggle('ready',npcFight.energyYou>=50);
@@ -8308,8 +8448,9 @@ function renderModDuelBar(){
  $('duelctx').textContent=`⭐ ${modDuel.name} · Tier ${modDuel.tier}`;
  syncBarPrayers(false);
  const consum=(me?me.backpack:[]).filter(s=>catalog[s.item]&&(catalog[s.item].kind==='food'||catalog[s.item].kind==='potion'));
- let h=`<button class="fchip spec" id="specbtn" title="Dragon Slash">⚡ ${modDuel.energyYou}%</button>`;
+ let h=`<span class="bwrap" data-grp="actions"><button class="fchip spec" id="specbtn" title="Dragon Slash">⚡ ${modDuel.energyYou}%</button></span><span class="blab" data-grp="supplies">Supplies</span><span class="bwrap" data-grp="supplies">`;
  for(const s of consum) h+=`<button class="fchip" title="${esc(nameOf(s.item))}" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ×${s.qty}</button>`;
+ h+='</span>';
  $('duelquick').innerHTML=h;
  const sb=$('specbtn');
  sb.classList.toggle('ready',modDuel.energyYou>=50);
@@ -8446,8 +8587,9 @@ function renderFcBar(){
  for(const pr of ['melee','missiles','magic']){ const b=$('fcpray-'+pr); if(b) b.classList.toggle('on',!!me&&me.activePrayer===pr); }
  syncCombatControls(); // bottom-bar build: the strip's style/backpack chips track the same server state
  const consum=(me?me.backpack:[]).filter(s=>catalog[s.item]&&(catalog[s.item].kind==='food'||catalog[s.item].kind==='potion'));
- let h=`<button class="fchip spec" id="fcspecbtn" title="Dragon Slash">⚡ ${Math.floor(fcRun.energyYou||0)}%</button>`;
+ let h=`<span class="bwrap" data-grp="actions"><button class="fchip spec" id="fcspecbtn" title="Dragon Slash">⚡ ${Math.floor(fcRun.energyYou||0)}%</button></span><span class="blab" data-grp="supplies">Supplies</span><span class="bwrap" data-grp="supplies">`;
  for(const s of consum) h+=`<button class="fchip" title="${esc(nameOf(s.item))}" onclick="send({type:'use',item:'${s.item}'})">${iconOf(s.item)} ×${s.qty}</button>`;
+ h+='</span>';
  $('fcquick').innerHTML=h;
  const sb=$('fcspecbtn');
  sb.classList.toggle('ready',(fcRun.energyYou||0)>=50);
@@ -8625,15 +8767,128 @@ function syncCombatControls(){
  document.querySelectorAll('.fchip.sty').forEach(b=>b.classList.toggle('on',!!me&&me.style===b.dataset.style));
  for(const pr of ['melee','missiles','magic']){ const b=$('bbpray-'+pr); if(b) b.classList.toggle('on',!!me&&me.activePrayer===pr); }
  document.querySelectorAll('.fchip.pack').forEach(b=>b.classList.toggle('on',dockPanel==='backpack'));
+ document.querySelectorAll('.sc-pray').forEach(b=>b.classList.toggle('on',!!me&&me.activePrayer===b.dataset.prayer));
+ const scp=$('scpack'); if(scp) scp.classList.toggle('on',dockPanel==='backpack');
 }
 for(const pr of ['melee','missiles','magic']){ const b=$('bbpray-'+pr); if(b) b.onclick=()=>send({type:'prayer',prayer:pr}); }
 document.querySelectorAll('.fchip.sty').forEach(b=>b.onclick=()=>{ if(me&&me.style!==b.dataset.style) send({type:'style',style:b.dataset.style}); });
 document.querySelectorAll('.fchip.pack').forEach(b=>b.onclick=()=>togglePanel('backpack'));
+document.querySelectorAll('.sc-pray').forEach(b=>b.onclick=()=>send({type:'prayer',prayer:b.dataset.prayer}));
+{ const scp=$('scpack'); if(scp) scp.onclick=()=>togglePanel('backpack'); }
 /* The fight strips open/close from many fight handlers; watching
    their class keeps the bottom bar's turn in the slot automatic —
    no fight code path needs to know this bar exists. */
 for(const id of ['duelbar','fcbar']){ const el=$(id); if(el&&window.MutationObserver) new MutationObserver(syncBottomBar).observe(el,{attributes:true,attributeFilter:['class']}); }
 syncBottomBar();
+
+/* ================= context prompt chip (Interface simplification, Derek 2026-11-23) =================
+   ONE small hint chip, centred just above the bottom bar, shown
+   only when the next action is obvious: the player is standing at
+   the bank chest or at a shop stall in the plaza. It is a hint,
+   not a button — #promptchip is pointer-events:none, and the tap
+   on the chest/stall itself opens the bank/shop, exactly as it
+   always has (handleTap's 'bank'/'shop' interactives). The logic
+   is a plain distance check against BANK_POS / SHOP_SPOTS on the
+   frame loop (called from animate, right after stepMovement).
+   Hard rules: it NEVER shows during any fight — duel, mod duel,
+   NPC fight, Fight Caves or Wilderness (the clear-screen combat
+   rule: the fight strip owns this edge of the screen); it never
+   shows while arranging the interface (Grab mode); it never
+   shows when the bank/shop panel is already open (that action is
+   done, not next); and it hides the moment the player walks out
+   of range. It is the only chip of its kind — nothing stacks. */
+const PROMPT_RANGE=80;
+let promptChipText='';
+function updatePromptChip(){
+ let want='';
+ if(me&&myPos&&curArea==='plaza'&&!grabMode&&!(duel||modDuel||npcFight||fcRun||wildFight)){
+   if(dockPanel!=='bank'&&Math.hypot(myPos.x-BANK_POS.x,myPos.y-BANK_POS.y)<=PROMPT_RANGE) want='🧰 Tap the chest to bank';
+   else if(dockPanel!=='shop'){ for(const s of SHOP_SPOTS){ if(Math.hypot(myPos.x-s.x,myPos.y-s.y)<=PROMPT_RANGE){ want='🛒 Tap the stall to shop'; break; } } }
+ }
+ if(want===promptChipText) return;
+ promptChipText=want;
+ const el=$('promptchip'); if(!el) return;
+ el.textContent=want;
+ el.classList.toggle('open',!!want);
+}
+
+/* ================= Trial B smart prompts (GROUPED_BUTTONS_SMART_PROMPTS) =================
+   B mode only. When a button's moment comes, the REAL button gets
+   .promptpulse and #promptline shows one short reason above the
+   strip. Advise only — nothing in this section ever sends a game
+   message; using the button, or tapping anywhere, dismisses that
+   trigger for the rest of the fight (no nagging), and a new fight
+   resets the seen set. Prompts never fire for a button the
+   fight's rules ban (No Prayer / No Potions / No Food / No
+   Special, or Pure Wild's no-prayer/no-food) — those buttons are
+   greyed .ruledis or area-blocked, and suggesting one would be a
+   trap. Priority, most urgent first: Jad telegraph → Dharok
+   enrage → low HP eat → prayer empty → fight-start Deflect →
+   Dragon Slash ready. Runs on the frame tick beside the hint chip. */
+let promptFightKey='', promptSeen=new Set(), promptCur=null, promptFightStart=0;
+function fightKeyNow(){
+ if(duel) return 'duel:'+(duel.opponent||'');
+ if(modDuel) return 'mod:'+(modDuel.npcId||modDuel.name||'');
+ if(npcFight) return 'npc:'+(npcFight.npcId||npcFight.name||'');
+ if(fcRun) return 'fc:'+(fcRun.wave||0);
+ if(wildFight) return 'wild:'+(wildFight.oppName||'');
+ return '';
+}
+function promptBanned(kind){
+ if(curArea==='purewild') return kind==='prayer'||kind==='potion'||kind==='food';
+ if(duel&&duel.rules){ const R=duel.rules; if(kind==='prayer') return !!R.noPrayer; if(kind==='potion') return !!R.noPotions; if(kind==='food') return !!R.noFood; if(kind==='special') return !!R.noSpecial; }
+ return false;
+}
+function myHpFrac(){
+ if(duel) return duel.hpYou/99;
+ if(modDuel) return modDuel.hpYou/99;
+ if(npcFight) return npcFight.hpYou/Math.max(1,npcFight.maxHpYou);
+ if(fcRun) return fcRun.hpYou/Math.max(1,fcRun.maxHpYou);
+ if(wildFight) return wildFight.hpYou/Math.max(1,wildFight.maxHpYou);
+ return 1;
+}
+function quickChips(){ const q=$(fcRun?'fcquick':'duelquick'); return q? [...q.querySelectorAll('button')] : []; }
+function chipForItem(item){ return quickChips().find(b=>(b.getAttribute('onclick')||'').includes("item:'"+item+"'"))||null; }
+function bestFoodChip(){
+ let best=null,bestHeal=-1;
+ for(const b of quickChips()){ const m=/item:'([^']+)'/.exec(b.getAttribute('onclick')||''); if(!m) continue; const d=catalog[m[1]]; if(d&&d.kind==='food'&&(d.heal||0)>bestHeal){ bestHeal=d.heal||0; best=b; } }
+ return best;
+}
+function deflectBtnEl(style){ return document.querySelector('.sc-pray[data-prayer="'+style+'"]'); }
+function smartPromptCandidate(){
+ if(fcRun&&jadWarnStyle){ const k='jad:'+jadWarnStyle+':'+(fcRun.wave||0); const b=deflectBtnEl(jadWarnStyle); if(b&&!promptSeen.has(k)&&!promptBanned('prayer')) return {key:k,els:[b],line:jadWarnStyle==='magic'?'🧙 Jad casts — Deflect Magic!':jadWarnStyle==='missiles'?'🏹 Jad shoots — Deflect Missiles!':'⚔️ Jad swings — Deflect Melee!'}; }
+ if(npcFight&&/dharok/i.test(npcFight.name||'')&&npcFight.hpNpc/Math.max(1,npcFight.maxHpNpc)<0.25&&!promptSeen.has('dharok')){
+   const els=[]; const d=deflectBtnEl('melee'); if(d&&!promptBanned('prayer')) els.push(d); const f=bestFoodChip(); if(f&&!promptBanned('food')) els.push(f);
+   if(els.length) return {key:'dharok',els,line:"He's enraged and hitting harder — prayer up, eat early"};
+ }
+ if(myHpFrac()<0.30&&!promptSeen.has('food')){ const f=bestFoodChip(); if(f&&!promptBanned('food')&&!f.classList.contains('ruledis')) return {key:'food',els:[f],line:"You're badly hurt — eat now"}; }
+ if(me&&me.prayerPoints<=0&&!promptSeen.has('prayerpot')){ const p=chipForItem('prayer_potion'); if(p&&!promptBanned('potion')&&!promptBanned('prayer')&&!p.classList.contains('ruledis')) return {key:'prayerpot',els:[p],line:'Prayer is empty — drink a prayer potion'}; }
+ if(npcFight&&performance.now()-promptFightStart<6000&&!promptSeen.has('start')){
+   const st=npcFight.kind==='wizard'?'magic':npcFight.kind==='ranger'?'missiles':/ahrim/i.test(npcFight.name||'')?'magic':/karil/i.test(npcFight.name||'')?'missiles':'melee';
+   const b=deflectBtnEl(st);
+   if(b&&!promptBanned('prayer')) return {key:'start',els:[b],line:st==='magic'?'He casts magic — Deflect Magic!':st==='missiles'?'He shoots — Deflect Missiles!':'Melee fighter — Deflect Melee stops him cold'};
+ }
+ const sb=$(fcRun?'fcspecbtn':'specbtn');
+ if(sb&&sb.classList.contains('ready')&&!promptSeen.has('spec')&&!promptBanned('special')&&!sb.classList.contains('ruledis')) return {key:'spec',els:[sb],line:'Dragon Slash is ready'};
+ return null;
+}
+function clearPromptPulse(){ document.querySelectorAll('.promptpulse').forEach(el=>el.classList.remove('promptpulse')); }
+function hidePromptLine(){ const line=$('promptline'); if(line){ line.classList.remove('open'); line.textContent=''; } }
+function dismissSmartPrompt(){ if(!promptCur) return; promptSeen.add(promptCur.key); promptCur=null; clearPromptPulse(); hidePromptLine(); }
+function updateSmartPrompt(){
+ if(settings.iface==='A'||!me){ if(promptCur){ promptCur=null; clearPromptPulse(); hidePromptLine(); } return; }
+ const key=fightKeyNow();
+ if(!key){ promptFightKey=''; promptSeen=new Set(); if(promptCur){ promptCur=null; clearPromptPulse(); hidePromptLine(); } return; }
+ if(key!==promptFightKey){ promptFightKey=key; promptSeen=new Set(); promptCur=null; promptFightStart=performance.now(); clearPromptPulse(); hidePromptLine(); }
+ const cand=smartPromptCandidate();
+ if(!cand){ if(promptCur){ promptCur=null; clearPromptPulse(); hidePromptLine(); } return; }
+ if(promptCur&&promptCur.key===cand.key) return;
+ clearPromptPulse();
+ promptCur=cand;
+ cand.els.forEach(el=>el.classList.add('promptpulse'));
+ const line=$('promptline'); if(line){ line.textContent=cand.line; line.classList.add('open'); }
+}
+document.addEventListener('pointerdown',()=>{ if(promptCur) dismissSmartPrompt(); },true);
 $('fcleavebtn').onclick=()=>send({type:'fc_leave'});
 $('jadwarn').onclick=()=>{ if(jadWarnStyle){ send({type:'prayer',prayer:jadWarnStyle}); } $('jadwarn').style.display='none'; };
 
@@ -8643,6 +8898,7 @@ $('chat').addEventListener('keydown',e=>{ if(e.key==='Enter') $('sendchat').clic
 $('chathead').onclick=()=>{ const b=$('chatbox'); b.classList.toggle('closed'); $('chatchev').textContent=b.classList.contains('closed')?'▸':'▾'; if(!b.classList.contains('closed')) clearUnread(); };
 logLine('Welcome to nallystake online. Create an account or sign in to enter the plaza.');
 applySettings();
+applyIfaceMode();
 renderQuickButtons();
 // While a piece is on the anvil, refresh the Smithy panel once a second so
 // the heat bar visibly cools (the server fades heat 1 point per 2 seconds).
@@ -9438,13 +9694,21 @@ function loadBtnPos(){ try{ return JSON.parse(localStorage.getItem(BTN_POS_KEY)|
    #docktabs in its authored order. An un-placed tab returns to
    its own spot in that order, not to the end of the bar. */
 const DOCK_TAB_ORDER=[...document.querySelectorAll('#docktabs .rbtn')].map(b=>b.dataset.panel);
+/* Interface simplification: the dock's four tab groups (the
+   .dockgroup wrappers in #docktabs). A tab's home is its own
+   group: dockTabHome returns a placed tab to its group, at its
+   canonical spot in DOCK_TAB_ORDER among that group's tabs. */
+const DOCK_GROUPS={play:['backpack','worn','skills','prayers','spellbook'],world:['shop','bank','exchange','smithy','teleport'],people:['players','goals'],system:['admin','tools','settings']};
+function dockGroupOf(panel){ for(const g in DOCK_GROUPS) if(DOCK_GROUPS[g].includes(panel)) return g; return null; }
 function dockTabHome(b){
- const tabs=$('docktabs'); if(!tabs||b.parentElement===tabs) return;
+ const tabs=$('docktabs'); if(!tabs) return;
+ const grp=tabs.querySelector('.dockgroup[data-group="'+dockGroupOf(b.dataset.panel)+'"]')||tabs;
+ if(b.parentElement===grp) return;
  const my=DOCK_TAB_ORDER.indexOf(b.dataset.panel);
- for(const sib of tabs.querySelectorAll('.rbtn')){
-   if(DOCK_TAB_ORDER.indexOf(sib.dataset.panel)>my){ tabs.insertBefore(b,sib); return; }
+ for(const sib of grp.querySelectorAll('.rbtn')){
+   if(DOCK_TAB_ORDER.indexOf(sib.dataset.panel)>my){ grp.insertBefore(b,sib); return; }
  }
- tabs.appendChild(b);
+ grp.appendChild(b);
 }
 function applyBtnPositions(){
  const pos=loadBtnPos();
