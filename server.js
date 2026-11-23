@@ -1866,6 +1866,19 @@ const server = http.createServer(async (req, res) => {
     }).sort((a, b) => (b.totalXp - a.totalXp) || (b.totalLevel - a.totalLevel) || a.username.localeCompare(b.username)).slice(0, 20);
     return json(res, 200, { hiscores: rows });
   }
+  // Polish build: the sign-read tour list. Profiles whose
+  // signReadAt (stamped by the sign_read message) is within the
+  // last 7 days, newest first, each flagged online if the account
+  // is in the live online map right now. Muse polls this to know
+  // who to log in and show around.
+  if (req.method === 'GET' && url.pathname === '/api/tour-requests') {
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const requests = Object.entries(db.users)
+      .filter(([, u]) => u.profile && u.profile.signReadAt && u.profile.signReadAt >= cutoff)
+      .map(([k, u]) => ({ username: u.profile.username, at: u.profile.signReadAt, online: online.has(k) }))
+      .sort((a, b) => b.at - a.at);
+    return json(res, 200, { requests });
+  }
   // static files
   const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
   const full = path.join(PUBLIC, file);
@@ -2201,13 +2214,13 @@ const APPROACH_STEP = 34; // units per tick for a closing monster
 //     movement is frozen (move messages from either duelist are
 //     ignored) and nobody can swing, but engagement taps ARE
 //     accepted. Both fighters start UN-engaged: {type:'duel_attack'}
-//     is the ONLY way a duelist engages — first swing on the next
-//     tick after the countdown (or on the next tick, once the
-//     countdown is past), then one swing per MELEE_SPEED ticks.
-//     Derek's clarified rule: "players have to tap attack to
-//     retaliate" — being hit, connected or not, NEVER engages a
-//     duelist; a fighter who never taps never swings. Duel rolls
-//     are also EQUALISED: both fighters roll with effective
+//     engages a duelist — first swing on the next tick after the
+//     countdown (or on the next tick, once the countdown is past),
+//     then one swing per MELEE_SPEED ticks. Derek's rule was
+//     tap-only from 2026-11-16 until 2026-11-22, when he REVERSED
+//     it ("I don't fight back in a duel — and I want to."): being
+//     swung at now auto-engages a duelist too (see the duel tick).
+//     Duel rolls are also EQUALISED: both fighters roll with effective
 //     Attack/Strength/Defence = DUEL_LEVEL whatever their trained
 //     levels (weapons, armour, styles, specials and XP awards stay
 //     individual). (The countdown replaced the original 3-tick
@@ -3244,8 +3257,10 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
     // Stage 12: swing timers in duel ticks. tickCount counts every
     // tick of the duel (closing ticks included). Both fighters
     // start UN-engaged — their timers sit at Infinity — until they
-    // tap to attack ({type:'duel_attack'}); nothing else engages
-    // them (no auto-retaliate in duels).
+    // tap to attack ({type:'duel_attack'}) OR their opponent
+    // swings at them: being swung at auto-engages (Derek,
+    // 2026-11-22 — reversing his 2026-11-16 no-auto-retaliate
+    // rule; see the AUTO-ENGAGE note in the tick).
     tickCount: 0,
     engaged: { [aKey]: false, [bKey]: false },
     nextSwingAt: { [aKey]: Infinity, [bKey]: Infinity },
@@ -3341,10 +3356,9 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
     // ranged 3, magic 5 ticks). The due time is an absolute duel
     // tick, so a fighter who was out of reach when their timer came
     // due swings on the first tick they are back in THEIR range —
-    // the timer never gets pushed forward by distance. An
-    // UN-engaged fighter never swings: engagement comes ONLY from
-    // their own duel_attack tap (Derek: "players have to tap
-    // attack to retaliate" — being hit never engages them). On a
+    // the timer never gets pushed forward by distance. Engagement
+    // comes from a fighter's own duel_attack tap OR from being
+    // swung at (auto-engage, Derek 2026-11-22 — see below). On a
     // tick where a fighter does not swing, their hit field is null
     // (exactly like a closing tick) and a queued special STAYS
     // queued: Dragon Slash only ever fires riding a real swing.
@@ -3395,6 +3409,22 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
     };
     const aSw = trySwing(aKey, a, b, outA, styleA);
     const bSw = trySwing(bKey, b, a, outB, styleB);
+    // AUTO-ENGAGE (Derek, 2026-11-22 18:44 — REVERSING his
+    // 2026-11-16 no-auto-retaliate rule: "I don't fight back in a
+    // duel — and I want to."): being SWUNG AT engages a fighter.
+    // The moment a fighter's swing resolves against their
+    // opponent (hit, miss or blocked — the opponent committed),
+    // the opponent starts fighting back: engaged, first return
+    // swing armed for the next tick (exactly how a duel_attack
+    // tap arms it), then normal weapon speed from there via
+    // trySwing. A fighter whose wielded style is banned by the
+    // agreed rules is NOT auto-engaged (the duel_attack rule —
+    // they must swap weapons first). Tap-to-attack still engages
+    // first, before any swing. Bots engage through the same flag
+    // (botAct's duel_attack mutation), so a bot-vs-player duel
+    // never double-engages: the guard is the engaged flag itself.
+    if (aSw.swung && !duel.engaged[bKey] && !(duel.rules && duel.rules['no' + cap(styleB)])) { duel.engaged[bKey] = true; duel.nextSwingAt[bKey] = tick + 1; }
+    if (bSw.swung && !duel.engaged[aKey] && !(duel.rules && duel.rules['no' + cap(styleA)])) { duel.engaged[aKey] = true; duel.nextSwingAt[aKey] = tick + 1; }
     // Stage 27: a fighter's incoming damage is the opponent's swing
     // total (main + Accurate bonus) PLUS whatever their OWN swing
     // had deflected back onto them by the opponent's prayer.
@@ -3453,9 +3483,9 @@ function startDuel(aKey, bKey, stake, itemsA = [], itemsB = [], official = null,
 // exactly, fought IN PLACE in the plaza against the standing mod:
 //   - 99 HP pools, COUNTDOWN_TICKS countdown (movement frozen,
 //     engagement taps accepted), per-fighter swing timers at the
-//     wielded weapon's speed, tap-to-engage with NO auto-retaliate
-//     (the player engages only via {type:'mod_duel_attack'}; the
-//     mod engages itself the moment the countdown ends).
+//     wielded weapon's speed, tap-to-engage OR auto-engage when
+//     the mod swings at the player (Derek, 2026-11-22 — the duel
+//     rule; the mod engages itself the moment the countdown ends).
 //   - Rolls are the shared rollStyleAttack at DUEL_LEVEL for BOTH
 //     sides — the player's gear, style, special and XP are personal
 //     exactly as in a player duel; the mod fights from a synthetic
@@ -3525,7 +3555,8 @@ function startModDuel(key, def) {
     hpYou: 99, hpNpc: 99,
     // Swing timers mirror the duel engine: the player starts
     // UN-engaged (timer at Infinity) until their mod_duel_attack
-    // tap; the mod engages itself — its first swing is armed for
+    // tap — or until the mod's first swing at them auto-engages
+    // them (Derek, 2026-11-22); the mod engages itself — its first swing is armed for
     // the first live tick after the countdown.
     tickCount: 0, engaged: false, nextSwingYou: Infinity, nextSwingNpc: COUNTDOWN_TICKS + 1,
     specialQueued: false, done: false, timer: null,
@@ -3634,6 +3665,12 @@ function modDuelTick(fight) {
       fight.hpNpc -= npcDeflected;
     }
   }
+  // AUTO-ENGAGE (Derek, 2026-11-22 — the duel rule, here too):
+  // the mod swinging at the player engages the player — hit, miss
+  // or blocked, the swing itself is the trigger. The first return
+  // swing arms for the next tick (the mod_duel_attack arming),
+  // then normal weapon speed via the block above.
+  if (npcHit !== null && !fight.engaged) { fight.engaged = true; fight.nextSwingYou = tick + 1; }
   send(sess.ws, {
     type: 'mod_duel', phase: 'tick', npcId: def.id,
     hpYou: Math.max(0, fight.hpYou), maxHpYou: 99, hpNpc: Math.max(0, fight.hpNpc), maxHpNpc: 99,
@@ -6597,6 +6634,17 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
+    if (m.type === 'sign_read') {
+      // Polish build: a player read the Derek Nally sign in the
+      // plaza. Stamp the read on their profile (persisted) — Muse
+      // watches /api/tour-requests and logs in to show readers
+      // around. Answer in chat so the reader knows a tour is
+      // coming. (Bots never send this: no bot path taps signs.)
+      profile.signReadAt = Date.now();
+      save(key);
+      return send(ws, { type: 'chat', from: 'Game', text: "📖 Thanks for reading! Muse has been notified — he'll come and show you around when he's next in game." });
+    }
+
     if (m.type === 'travel') {
       const to = String(m.to || '');
       if (!AREAS[to]) return send(ws, { type: 'error', message: 'Unknown destination.' });
@@ -7667,10 +7715,10 @@ wss.on('connection', (ws, req) => {
     // ----- Special attack (Dragon Slash) -----
     if (m.type === 'duel_attack') {
       // Stage 12: tap-to-attack. A duel fighter starts UN-engaged
-      // and never swings until they tap their opponent (this
-      // message) — the ONLY way to engage: being hit never wakes a
-      // duelist (no auto-retaliate; "players have to tap attack to
-      // retaliate"). Taps are accepted during the countdown;
+      // and swings once they tap their opponent (this message) —
+      // or once their opponent swings at them (auto-engage in the
+      // duel tick, Derek 2026-11-22, reversing the 2026-11-16
+      // tap-only rule). Taps are accepted during the countdown;
       // engaging arms the swing timer: the first swing lands on
       // the next tick after the duel's 5-tick countdown — or on
       // the next tick, if the countdown is long past. Tapping
@@ -7711,10 +7759,12 @@ wss.on('connection', (ws, req) => {
       return;
     }
     if (m.type === 'mod_duel_attack') {
-      // Tap-to-engage, exactly the duel rule: the ONLY way the
-      // challenger starts swinging — being hit never engages them.
-      // Taps are accepted during the countdown; the first swing
-      // arms for the tick after the countdown (or the next tick).
+      // Tap-to-engage, the duel rule: the challenger starts
+      // swinging on their own tap — or automatically once the mod
+      // swings at them (auto-engage in the mod tick, Derek
+      // 2026-11-22). Taps are accepted during the countdown; the
+      // first swing arms for the tick after the countdown (or the
+      // next tick).
       const fight = me.modDuelId ? modDuels.get(me.modDuelId) : null;
       if (!fight) return send(ws, { type: 'error', message: 'You are not in a mod duel.' });
       if (!fight.engaged) {
@@ -9857,8 +9907,10 @@ function botDuelDrive(bot) {
   const oppKey = duel.a === key ? duel.b : duel.a;
   const opp = online.get(oppKey);
   const myStyle = attackStyleOf(profile);
-  // Engage: exactly the duel_attack handler's mutation — tap to
-  // attack is the ONLY way in, for bots as for players.
+  // Engage: exactly the duel_attack handler's mutation. Bots tap
+  // in proactively, as a player would; since 2026-11-22 being
+  // swung at also auto-engages (the duel tick), and the engaged
+  // guard below keeps the two from ever double-arming a swing.
   if (!(duel.rules && duel.rules['no' + cap(myStyle)]) && !duel.engaged[key]) {
     duel.engaged[key] = true;
     duel.nextSwingAt[key] = Math.max(COUNTDOWN_TICKS, duel.tickCount) + 1;
