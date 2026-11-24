@@ -806,6 +806,7 @@
 <div class="modal" id="ctxmodal"><div class="sheet" id="ctxsheet"></div></div>
 <div class="modal" id="appmodal"><div class="sheet parchment" id="appsheet"></div></div>
 <div class="modal" id="activitymodal"><div class="sheet parchment" id="activitysheet"></div></div>
+<div class="modal" id="castleoffermodal"><div class="sheet parchment" id="castleoffersheet"></div></div>
 
 <div id="toast"></div>
 <div id="grabhint">✋ Grab mode — drag the buttons where you want them. Everything else is paused — tap ✋ Grab again to lock.</div>
@@ -1304,6 +1305,31 @@ function maybeShowActivityPicker(){
  </div>`;
  $('activitymodal').classList.add('open');
 }
+/* ============ Beginner Castle login offer (2026-11-24) ============
+   Derek: new players should be OFFERED the castle start at login
+   rather than having to discover it through the Teleport pop-up.
+   The server decides who is offered (welcome.castleOffer: a
+   beginner who has never answered) and remembers the answer
+   (profile.castleOfferSeen) — this side only shows the pop-up and
+   reports the tap. Shown once per page session at most; when it
+   shows, it takes the activity picker's place for this login. */
+let castleOfferShown=false;
+function maybeShowCastleOffer(offer){
+ if(!offer||castleOfferShown||!me) return false;
+ castleOfferShown=true;
+ $('castleoffersheet').innerHTML=`<h3 style="text-align:center;color:#5d4028;margin-top:0">🏰 Start at the Beginner Castle?</h3>
+ <p class="note" style="text-align:center;color:#4a3826">Cook, bank upstairs, and train in the Rat Cave — all in one place.</p>
+ <div class="actpick">
+  <button class="act" onclick="pickCastleOffer(true)">🏰 Start at the Castle<span class="sub">Begin in the castle courtyard — cooking range in the centre wing, bank upstairs, rats under the trap door</span></button>
+  <button class="act" onclick="pickCastleOffer(false)">🏙️ Stay at the Plaza<span class="sub">Start here as usual — the castle waits through the south gate whenever you want it</span></button>
+ </div>`;
+ $('castleoffermodal').classList.add('open');
+ return true;
+}
+window.pickCastleOffer=function(accept){
+ closeModal('castleoffermodal');
+ send({type:'castleOffer',accept:!!accept});
+};
 window.pickActivity=function(act){
  closeModal('activitymodal');
  if(!me) return;
@@ -1465,7 +1491,8 @@ function onMsg(m){
  // Week 2 (D11): a welcome is a fresh server session — it never has
  // a live fight, so any local fight state is stale (see
  // clearLocalFightState) and is dropped before anything renders.
- if(m.type==='welcome'){ welcomed=true; quickAttempt=false; wasInGame=true; const wasReconnect=reconnecting; stopReconnect(); reconnectMs=1000; clearLocalFightState(); if(wasReconnect){ toast('✅ Reconnected.'); logLine('✅ Reconnected.'); } if(railFirstRun&&!navHintDone){ navHintDone=true; railFirstRun=false; try{ localStorage.setItem('nallystake_rail_open','1'); }catch(e){} logLine('👋 New here? Everything lives in the dock, top right — the 🎛️ Menu button shows or hides the panel tabs (🎒 Backpack, 🌀 Teleport, 📊 Skills and more).'); } flushChatOutbox(); pushGuidedSetting(); me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); maybeShowActivityPicker(); }
+ if(m.type==='welcome'){ welcomed=true; quickAttempt=false; wasInGame=true; const wasReconnect=reconnecting; stopReconnect(); reconnectMs=1000; clearLocalFightState(); if(wasReconnect){ toast('✅ Reconnected.'); logLine('✅ Reconnected.'); } if(railFirstRun&&!navHintDone){ navHintDone=true; railFirstRun=false; try{ localStorage.setItem('nallystake_rail_open','1'); }catch(e){} logLine('👋 New here? Everything lives in the dock, top right — the 🎛️ Menu button shows or hides the panel tabs (🎒 Backpack, 🌀 Teleport, 📊 Skills and more).'); } flushChatOutbox(); pushGuidedSetting(); me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); if(!maybeShowCastleOffer(m.castleOffer)) maybeShowActivityPicker(); }
+ if(m.type==='castle_sign'){ renderCastleDir(m.title,m.lines); }
  if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(Array.isArray(m.spells)) spellList=m.spells; if(dockPanel==='shop') renderDock(); renderQuickButtons(); renderSpellBtns(); for(const av of Object.values(avatars)) av.gearSig=null; }
  if(m.type==='exchange_prices'){ goods={}; for(const g of (m.goods||[])) goods[g.id]=g; if(dockPanel==='exchange') renderDock(); drawMinimap(); }
  if(m.type==='state'){ onStateMsg(m); }
@@ -4186,6 +4213,23 @@ function buildCastle(root){
  buildFountain(S,-16,7); buildFountain(S,16,7);
  // the beginner sign by the spawn
  signPost(S,7,26,['🏰 BEGINNER CASTLE — start here','🐀 Train: the trap door by the west fountain']);
+ // the DIRECTORY sign (Derek, 2026-11-24) — out by the approach
+ // path, east side, just inside the south gateway (world (6.5,34)
+ // = server (865,790)): a standing board that tells a new player
+ // where EVERY castle area is. Built like the plaza's teleport
+ // sign (post + board + title sprite); its board and post are tap
+ // targets in castleInteractives with act {type:'castledir'},
+ // routed in handleTap to the read panel (openCastleDir), whose
+ // words the server answers canonically (castle_sign_read).
+ {
+   const dg=new THREE.Group(); dg.position.set(6.5,0,34); S.add(dg);
+   const dirAct={type:'castledir'};
+   const post=box(0.22,2.9,0.22,0x5a4020,0,1.45,0,dg); post.userData.act=dirAct; castleInteractives.push(post);
+   const board=boxM(3.6,2.0,0.12,new THREE.MeshLambertMaterial({map:woodTexture('#74552a')}),0,2.3,0,dg); board.userData.act=dirAct; castleInteractives.push(board);
+   box(3.8,0.14,0.14,0xd4af37,0,3.36,0,dg); box(3.8,0.14,0.14,0xd4af37,0,1.24,0,dg); // gold trim
+   const dsp=textSprite('🏰 WHERE EVERYTHING IS','#ffe9bb','rgba(23,19,12,0.9)'); dsp.position.set(0,4.05,0); dg.add(dsp);
+   shadowify(dg);
+ }
  // the trap door to the Rat Cave — off the path's west side (your
  // RIGHT as you exit the castle), just past the west fountain
  {
@@ -7538,6 +7582,10 @@ function handleTap(cx,cy){
      const wp=new THREE.Vector3(); ih.object.getWorldPosition(wp); spawnTapSplat(wx2s(wp.x),wz2s(wp.z),true);
      tapTrapdoor(); return;
    }
+   if(ih && ih.object.userData.act && ih.object.userData.act.type==='castledir'){
+     const wp=new THREE.Vector3(); ih.object.getWorldPosition(wp); spawnTapSplat(wx2s(wp.x),wz2s(wp.z),true);
+     openCastleDir(); return;
+   }
  }
  if(curArea==='castleup'){
    const ih=raycaster.intersectObjects(castleUpBankMeshes,false)[0];
@@ -10411,6 +10459,33 @@ function clearDuelCountdown(){ duelCountdownLeft=null; lastCdTxt=''; cdHide(); }
    is a modal like the others (one panel at a time — the
    clear-screen rule holds), and its Help button hands over to
    the dock's Help panel for the step-by-step tasks. */
+/* Beginner Castle directory sign (2026-11-24): the read panel for
+   the sign out by the castle path. Opens instantly with the local
+   copy and asks the server for the canonical read
+   (castle_sign_read → 'castle_sign'), which re-renders the same
+   words from CASTLE_DIR_SIGN — one text, two hands. The sheet is
+   the shared sign modal, like the Derek Nally sign's panel. */
+const CASTLE_DIR_TITLE='🏰 Beginner Castle — Where Everything Is';
+const CASTLE_DIR_LINES=[
+ '🍳 Centre wing — the Cooking range. Cook your food here before a fight.',
+ '⬆ Left & right wings — ladders up to the Bank. The upstairs floor spans both wings, so either ladder meets at the bank.',
+ '🐀 Trap door — just off the path on your right as you exit the castle, by the west fountain. It opens onto the ladder down to the Rat Cave.',
+ 'In the cave: climb down (nothing waits by the ladder), walk south, turn east, then head north — that\'s the Rats.',
+ 'From the rats: the south-west branch leads to Skeletons — they drop a weapon enchantment (an extra hit every 3rd swing).',
+ 'The east path is the hard one: Zombies, the safe rock to regroup behind, and the 👑 Big Zombie at the end — he drops the Big Two-Hander.',
+];
+function renderCastleDir(title,lines){
+ const s=$('signsheet');
+ s.innerHTML=`<h3>${esc(title||CASTLE_DIR_TITLE)}</h3>
+ <p class="note" style="margin-bottom:8px">Everything at the Beginner Castle, and where it lives:</p>
+ ${(lines&&lines.length?lines:CASTLE_DIR_LINES).map(l=>`<div class="kv"><span>•</span><b>${esc(l)}</b></div>`).join('')}
+ <div class="btns" style="margin-top:10px"><button class="ghost" onclick="closeModal('signmodal')">Close</button></div>`;
+ $('signmodal').classList.add('open');
+}
+function openCastleDir(){
+ renderCastleDir(CASTLE_DIR_TITLE,CASTLE_DIR_LINES);
+ send({type:'castle_sign_read'});
+}
 function openSignPanel(){
  send({type:'sign_read'});
  const s=$('signsheet');
