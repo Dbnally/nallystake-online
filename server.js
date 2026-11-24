@@ -1723,6 +1723,10 @@ function ensureV2(p) {
     const total = stackQty(p.backpack, 'gold') + stackQty(p.bank, 'gold');
     if (p.gold !== total) p.gold = total; // the number is now just the mirror
   }
+  // Beginner Castle offer (2026-11-24): has this account already
+  // been offered the castle start at login? Missing = never
+  // offered. Only ever set by the castleOffer answer — never reset.
+  if (typeof p.castleOfferSeen !== 'boolean') { p.castleOfferSeen = false; changed = true; }
   // Starter build migration: existing accounts receive exactly ONE
   // Nooby sword, once. The noobyV flag is the whole rule: new
   // profiles are born with it set (their sword rides in the starter
@@ -2531,6 +2535,26 @@ const AREAS = {
   castle: { name: 'Beginner Castle', spawn: { x: 800, y: 720 } },
   castleup: { name: 'Castle Upper Floor', spawn: { x: 800, y: 720 } },
   ratcave: { name: 'Rat Cave', spawn: { x: 270, y: 170 } }, // spawn = the foot of the ladder, in the empty entry room
+};
+// Beginner Castle directory sign (2026-11-24): the signpost out by
+// the approach path at the castle — east side of the path, just
+// inside the courtyard gateway, by the fountains (client world
+// (6.5,34) = server (865,790)). The client builds the 3D sign and
+// its read panel from the same words; this server copy is the
+// canonical read (castle_sign_read answers with it), so a read can
+// be verified without a renderer. One sign, one place — the words
+// tell a new player where EVERY castle area is.
+const CASTLE_DIR_SIGN = {
+  id: 'castle_directory', area: 'castle', x: 865, y: 790,
+  title: '🏰 Beginner Castle — Where Everything Is',
+  lines: [
+    '🍳 Centre wing — the Cooking range. Cook your food here before a fight.',
+    '⬆ Left & right wings — ladders up to the Bank. The upstairs floor spans both wings, so either ladder meets at the bank.',
+    '🐀 Trap door — just off the path on your right as you exit the castle, by the west fountain. It opens onto the ladder down to the Rat Cave.',
+    'In the cave: climb down (nothing waits by the ladder), walk south, turn east, then head north — that\'s the Rats.',
+    'From the rats: the south-west branch leads to Skeletons — they drop a weapon enchantment (an extra hit every 3rd swing).',
+    'The east path is the hard one: Zombies, the safe rock to regroup behind, and the 👑 Big Zombie at the end — he drops the Big Two-Hander.',
+  ],
 };
 const NPC_RANGE = 150; // server units — attack / stay-in-combat range (15 tiles at 10 units/tile)
 
@@ -7390,7 +7414,16 @@ wss.on('connection', (ws, req) => {
   // Stage 13: the login scatter is the old 100..600 x 100..350 box x2.
   online.set(key, { ws, profile, x: restore ? Math.max(0, Math.min(WORLD_W, restore.x)) : 200 + Math.random() * 1000, y: restore ? Math.max(0, Math.min(WORLD_H, restore.y)) : 200 + Math.random() * 500, area: restore ? restore.area : 'plaza', duelId: null, modDuelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsPuzzleShown: false, barrowsCrypt: restore ? restore.barrowsCrypt : null, barrowsHp: restore ? restore.barrowsHp : null, barrowsDoorRolled: restore ? restore.barrowsDoorRolled : false, accDrain: restore ? restore.accDrain : 0, strDrain: restore ? restore.strDrain : 0, runDrainedUntil: restore ? restore.runDrainedUntil : 0, actSkill: null, actAt: 0, castReadyAt: 0, frozenUntil: 0, wildPairs: null, wildTarget: null, skulled: false, teleblockUntil: 0, wildHp: null, wildMaxHp: 0 }); // Stage 30: wild* = Wilderness session state (skull, teleblock, wild HP pool) — session-only, never saved // Stage 24: castReadyAt = placed-button cast cooldown; frozenUntil = Freeze root expiry. Stage 28: barrowsCrypt = which brother's crypt the player is in; barrowsHp = the tunnel HP pool; accDrain/strDrain/runDrainedUntil = the app's brother drains
   const sess = online.get(key);
-  send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot(sess.area), area: sess.area });
+  // Beginner Castle offer (2026-11-24): the welcome carries ONE
+  // extra flag — should this login be offered the castle start?
+  // Beginners only (a brand-new account, or melee average under 8
+  // — the castle_start Guide step's own trigger), and only until
+  // they answer once (profile.castleOfferSeen, set by the
+  // castleOffer message). Pure display data: nothing about the
+  // session waits on the answer, so test suites and bot logins
+  // (which never read it) are completely unaffected.
+  const castleOffer = !profile.castleOfferSeen && guideMeleeAvg(profile) < 8;
+  send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot(sess.area), area: sess.area, castleOffer });
   if (sess.area === 'plaza') {
     send(ws, modNpcsMsg()); // Stage 22: the three plaza moderators + their busy flags
     send(ws, modLadderMsg(profile)); // Stage 22: stake-ladder progress
@@ -7705,6 +7738,50 @@ wss.on('connection', (ws, req) => {
       send(ws, { type: 'chat', from: 'Game', text: `🧭 You go to ${target.profile.username} — ${AREAS[toArea].name}.` });
       broadcastState();
       return;
+    }
+
+    if (m.type === 'castleOffer') {
+      // Beginner Castle offer (2026-11-24): the login offer's
+      // answer. Either button sets castleOfferSeen for good (the
+      // offer shows ONCE). Accepting is a one-time start placement
+      // at the castle courtyard spawn — the same spot the castle
+      // Teleport entry uses — with the same per-area state push a
+      // travel sends. It is NOT a new teleport: the walkable route
+      // and the Teleport row are untouched, and a player who is
+      // mid-anything (a fight, a duel, a stake match) is simply
+      // marked as answered and stays where they are.
+      const accept = m.accept === true;
+      profile.castleOfferSeen = true;
+      save(key);
+      let moved = false;
+      if (accept && me.area !== 'castle' && !me.duelId && !me.modDuelId && !me.npcFightId && !me.barrowsFightId && !me.fcRunId && !stakeMatchForKey(key)) {
+        me.area = 'castle';
+        me.x = AREAS.castle.spawn.x; me.y = AREAS.castle.spawn.y;
+        completeStarterGoal(key, 'visit_area');
+        send(ws, { type: 'area', area: 'castle' });
+        if (NPC_AREAS.includes('castle')) send(ws, npcStateMsg('castle'));
+        send(ws, nodesMsg('castle'));
+        send(ws, firesMsg('castle'));
+        send(ws, pilesMsg('castle'));
+        send(ws, seaweedMsg('castle'));
+        send(ws, sandMsg('castle'));
+        send(ws, alliesMsg('castle'));
+        send(ws, objectsMsg('castle'));
+        send(ws, { type: 'chat', from: 'Game', text: '🏰 Welcome to the Beginner Castle! Cook in the centre wing, bank upstairs (ladders in either wing) — and the trap door by the west fountain drops you into the Rat Cave.' });
+        broadcastState();
+        moved = true;
+      }
+      return send(ws, { type: 'castleOfferDone', accepted: accept, area: me.area, moved });
+    }
+
+    if (m.type === 'castle_sign_read') {
+      // Beginner Castle directory sign (2026-11-24): a player in
+      // the castle tapped the directory sign out by the path. The
+      // answer is the sign itself — title + where everything is —
+      // from the server's canonical CASTLE_DIR_SIGN, so the read
+      // is identical for every reader (and testable headlessly).
+      if (me.area !== 'castle') return send(ws, { type: 'error', message: 'That sign stands at the Beginner Castle.' });
+      return send(ws, { type: 'castle_sign', id: CASTLE_DIR_SIGN.id, title: CASTLE_DIR_SIGN.title, lines: CASTLE_DIR_SIGN.lines });
     }
 
     if (m.type === 'sign_read') {
