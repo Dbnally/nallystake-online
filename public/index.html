@@ -202,7 +202,7 @@
  input,select{background:#171310;color:#e8d9b0;border:1px solid #7a6748;border-radius:6px;padding:7px;font-size:14px}
  input[type=number]{width:76px}
  /* joystick */
- #joy{position:fixed;left:18px;bottom:86px;width:112px;height:112px;border-radius:50%;background:rgba(23,19,16,.55);border:2px solid rgba(201,162,39,.85);z-index:30;touch-action:none;opacity:var(--uia)}
+ #joy{position:fixed;left:18px;bottom:100px;width:112px;height:112px;border-radius:50%;background:rgba(23,19,16,.55);border:2px solid rgba(201,162,39,.85);z-index:30;touch-action:none;opacity:var(--uia)} /* Stage 45: bottom 86 -> 100 — the rim sat 6px under every fight strip (the strips' slot starts at bottom:92) */
  #knob{position:absolute;left:50%;top:50%;width:50px;height:50px;border-radius:50%;background:rgba(201,162,39,.75);border:2px solid #7a6748;transform:translate(-50%,-50%)}
  #camstick{position:fixed;right:16px;bottom:196px;width:104px;height:104px;border-radius:50%;background:rgba(23,19,16,.55);border:2px solid rgba(201,162,39,.8);z-index:30;touch-action:none;opacity:var(--uia)}
  #camknob{position:absolute;left:50%;top:50%;width:46px;height:46px;border-radius:50%;background:rgba(176,141,79,.75);border:2px solid #6e5a3e;transform:translate(-50%,-50%)}
@@ -268,7 +268,7 @@
     name + bar + number for you and your opponent, OSRS-video
     style. Presentation only: the overhead bars stay, the fight
     strip stays; this is a readout, not a panel (clear-screen rule). */
- #dueltop{position:fixed;top:calc(6px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:14;display:none;gap:10px;align-items:stretch;pointer-events:none;font-family:inherit}
+ #dueltop{position:fixed;top:calc(40px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:14;display:none;gap:10px;align-items:stretch;pointer-events:none;font-family:inherit} /* Stage 45: top 6 -> 40 — the bars sat UNDER the top bar (on a phone, whose top bar wraps two rows tall, they were hidden completely) */
  #dueltop.open{display:flex}
  .dtside{width:158px;background:rgba(24,18,10,.82);border:1px solid #c9a227;border-radius:8px;padding:4px 7px 6px;box-shadow:inset 0 1px 0 rgba(255,255,255,.14)}
  .dtname{font-size:11px;font-weight:800;color:#ffe9a8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
@@ -503,6 +503,90 @@
  .appseg{padding:7px 14px;border-radius:9px;border:2px solid #7a6748;background:rgba(43,33,24,.12);color:#2b2118;font-weight:700;cursor:pointer}
  .appseg.sel{background:linear-gradient(180deg,#8e2f32,#5d1d20);color:#ffe9a8;border-color:#c9a227}
  .appseg.dis{opacity:.4;pointer-events:none}
+ /* ============ Stage 45: the no-overlap pass (Derek, 2026-11-23:
+    "make the interface easier to use so nothing is over lapping")
+    Layout only — no control is removed, nothing changes what
+    anything does. Every position below was measured at 390x844 in
+    a real browser before and after. The phone screen is zoned:
+    top bar / a left stack under it (duel bars, use-chip, toast,
+    grab hint — none of them touches the minimap, which owns the
+    top-right from x=203) / the dock on the right, capped so it
+    never reaches the bottom controls / prompts above the strip,
+    shifted off the joystick / quick buttons + status chips in the
+    free left column above the joystick / the chat, which when open
+    lifts clear of the fight-strip slot entirely. ============ */
+ #topbar .note{white-space:nowrap}
+ /* The open chat lifts above the strip slot, so a fight strip can
+    never paint over the chat's log or input row (Derek's standing
+    rule: the bottom bar and the chat stay visible and usable). */
+ #chatbox:not(.closed){bottom:calc(100px + env(safe-area-inset-bottom,0px))}
+ /* While the chat is open the two hint chips step aside entirely. */
+ body:has(#chatbox:not(.closed)) #promptchip.open,body:has(#chatbox:not(.closed)) #promptline.open{display:none}
+ /* The two prompt lines share one slot; when both fire, the smart
+    prompt stacks above the context chip instead of on top of it. */
+ #promptchip.open + #promptline{bottom:calc(142px + env(safe-area-inset-bottom,0px))}
+ /* The reconnect bar hangs under the top bar, not on top of it. */
+ #connbar{top:calc(40px + env(safe-area-inset-top,0px))}
+ @media (min-width:701px){
+   /* Desktop/tablet: an open dock panel also stops above the OPEN
+      chat, not just above the strip slot. */
+   body:has(#chatbox:not(.closed)) #paneldock{max-height:calc(100dvh - 190px - 286px - env(safe-area-inset-bottom,0px))}
+ }
+ @media (max-width:900px){
+   /* Grab-mode hint: pinned to the free left column, out of the
+      minimap's band (it was centred across the map at 94vw). */
+   #grabhint{left:8px;transform:none;max-width:188px;top:calc(184px + env(safe-area-inset-top,0px));text-align:left}
+ }
+ @media (max-width:760px){
+   /* Duel HP bars: under the top bar in the free left band, narrow
+      enough to clear the minimap beside them. */
+   #dueltop{left:2px;transform:none}
+   #dueltop .dtside{width:86px}
+   #dueltop .dtname{font-size:9.5px}
+ }
+ @media (max-width:700px){
+   /* Top bar: a single row. The "gold only" note and the W/L
+      readout give up their space at phone width (both are passive
+      readouts — the record lives on the duel-end screen and the
+      Players panel); the name truncates instead of wrapping the
+      whole bar two rows tall onto the minimap. */
+   #topbar{gap:6px;padding:5px 8px;font-size:12px}
+   #topbar .note,#hudwl{display:none}
+   #hudname{max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+   /* The left stack under the top bar: use-chip at 88, toast at
+      132, reconnect bar at 40 — all clear of the minimap (x>=203)
+      and of each other. */
+   #usechip{left:8px;transform:none;top:calc(88px + env(safe-area-inset-top,0px))}
+   #toast{left:8px;transform:none;max-width:188px;top:calc(132px + env(safe-area-inset-top,0px));text-align:left}
+   #connbar{left:8px;transform:none;max-width:188px}
+   /* Area bars: narrowed to clear the minimap they used to cover
+      (the stake-wait bar covered it entirely). The Barrows bar
+      scrolls internally past 268px, and while it is open the dock
+      drops below it instead of sliding underneath. */
+   #barrowsbar{width:min(320px,calc(100vw - 202px));max-height:268px;overflow-y:auto}
+   #stakewaitbar{left:8px;right:auto;width:min(320px,calc(100vw - 202px))}
+   body:has(#barrowsbar.open) #paneldock{top:320px}
+   /* Quick buttons + status chips: out from under the chat and
+      the camera stick, into the free left column above the
+      joystick. The chips cap at 118px wide (their text wraps) so
+      they end before the camera stick starts (x=270). */
+   #quickbar{left:18px;bottom:284px}
+   #followchip{bottom:348px;max-width:118px;flex-wrap:wrap}
+   #wildchip{bottom:414px;max-width:118px}
+   /* Prompt lines: above the strip as before but higher, narrower
+      and shifted right, off the joystick they used to clip. */
+   #promptchip,#promptline{bottom:calc(140px + env(safe-area-inset-bottom,0px));max-width:200px;white-space:normal;text-align:center;transform:translateX(calc(-50% + 42px))}
+   #promptchip.open + #promptline{bottom:calc(182px + env(safe-area-inset-bottom,0px))}
+   /* The dock stops higher on a phone, so even a fully-open tab
+      grid or panel never reaches the camera stick, the chips or
+      the quick buttons; the tab grid scrolls inside the cap, and
+      with a panel open it steps aside (the panel header's own
+      "‹ Tabs" button brings it back). */
+   #paneldock{max-height:calc(100dvh - 190px - 316px - env(safe-area-inset-bottom,0px))}
+   #docktabs{min-height:0;overflow-y:auto}
+   #paneldock.panelopen #docktabs{display:none}
+   #dockbody{max-height:calc(100dvh - 190px - 316px - 118px)}
+ }
 </style></head><body>
 <div id="scene"></div>
 <div id="labels"></div>
@@ -2005,6 +2089,224 @@ function buildFarm(S){
    farmWorkers.push({g,armR,labelRef,name:fd.name,row:fd.row-0.5,x:fd.x0,lo:fd.lo,hi:fd.hi,dir:1,speed:fd.speed,phase:fd.phase,state:'work',target:fd.x0,until:1+fd.phase});
  }
 }
+/* ================= Stage 45: LIVING WORLD — Stage 1 =================
+   Derek's master prompt (2026-11-23), applied to nallystake-online
+   IN STAGES: this stage is terrain, grass, trees, sky and lighting
+   ONLY — no interiors, pick-up physics, weather system, fire or
+   day/night cycle (those are later stages). One coherent WIND runs
+   through everything built here: the same gust value bends the
+   grass (shader), sways the tree canopies and bushes (animate) and
+   drifts the clouds, all along the same wind direction — Derek's
+   "visible wind" ask (2026-11-23), the outdoor twin of Frostfall's
+   drifting snow. Performance-first for mobile: the grass is ONE
+   InstancedBufferGeometry draw call per ground chunk, chunks hide
+   beyond ~80 units, blades alpha-fade out by ~68 units, and no new
+   shadow system is added (the existing player-following sun does
+   the work). Nothing below moves a door, gateway, fixture, spawn
+   or walkable route: grass/flowers/bushes are sampled AROUND the
+   existing stone, paths, farm, houses and water. Frostfall
+   (winter) is EXCLUDED — it keeps its snow look; buildWinterWorld
+   never calls the grass builder. */
+const WIND45={x:0.83,z:0.55}; // the one wind direction (world xz), shared by grass, trees, clouds — and Frostfall's snow drifts +x too
+function windGust45(t){ return 0.7+0.3*Math.sin(t*0.45)+0.16*Math.sin(t*1.31+1.7); } // the one gust curve (~0.24..1.16), read by every Stage 45 system
+function rng45(seed){ let a=seed>>>0; return function(){ a|=0; a=(a+0x6D2B79F5)|0; let t=Math.imul(a^(a>>>15),1|a); t=(t+Math.imul(t^(t>>>7),61|t))^t; return ((t^(t>>>14))>>>0)/4294967296; }; } // deterministic scatter — every client grows the same meadow
+let grassChunks45=[]; // {mesh,area,cx,cz} — instanced grass chunks, distance-culled in animate()
+let grassUniforms45=[]; // shader uniform sets ticked in animate() (uTime/uGust/uCam)
+let windSway45=[]; // {o,phase,amp,bx,bz,area} — tree canopies + bushes swaying in the same wind
+let skyClouds45=null; // {group,puffs:[{m,v}]} — drifting cloud groups, built once in initThree
+function swayRegister45(o,phase,amp,area){ if(!o) return o; windSway45.push({o,phase:phase||0,amp:amp||0.03,bx:o.rotation.x,bz:o.rotation.z,area:area||null}); return o; }
+function sampleGround45(opts,count,seed){
+ const rnd=rng45(seed), pts=[];
+ const rects=opts.rects||[], circles=opts.circles||[], segs=opts.segments||[];
+ const dirt=opts.dirtRect||null, dirtKeep=(opts.dirtKeep===undefined?0.1:opts.dirtKeep);
+ function blocked(x,z){
+   for(const r of rects) if(x>=r[0]&&z>=r[1]&&x<=r[2]&&z<=r[3]) return true;
+   for(const c of circles){ const dx=x-c[0],dz=z-c[1]; if(dx*dx+dz*dz<c[2]*c[2]) return true; }
+   for(const s of segs){
+     const vx=s[2]-s[0], vz=s[3]-s[1], L2=vx*vx+vz*vz||1;
+     let t=((x-s[0])*vx+(z-s[1])*vz)/L2; t=Math.max(0,Math.min(1,t));
+     const dx=x-(s[0]+vx*t), dz=z-(s[1]+vz*t), w=s[4]||2.2;
+     if(dx*dx+dz*dz<w*w) return true;
+   }
+   return false;
+ }
+ let tries=0;
+ while(pts.length<count&&tries<count*6){
+   tries++;
+   const x=-78+rnd()*156, z=-43+rnd()*86;
+   if(blocked(x,z)) continue;
+   if(dirt&&x>=dirt[0]&&z>=dirt[1]&&x<=dirt[2]&&z<=dirt[3]&&rnd()>dirtKeep) continue; // sparse inside worn dirt, thick outside it
+   pts.push([x,z,rnd()]);
+ }
+ return pts;
+}
+function grassTuftGeometry45(){
+ const pos=[],hh=[];
+ function blade(rot,ox,oz,ht,wd){
+   const c=Math.cos(rot), pts=[[-wd,0],[wd,0],[wd*0.16,ht],[-wd*0.16,ht]], hs=[0,0,1,1], idx=[0,1,2,0,2,3];
+   for(const i of idx){ pos.push(ox+pts[i][0]*c, pts[i][1], oz+pts[i][0]*Math.sin(rot)); hh.push(hs[i]); }
+ }
+ blade(0.2,0,0,0.62,0.085); blade(2.3,0.05,0.03,0.50,0.075); blade(4.2,-0.05,0.02,0.72,0.08); // a 3-blade tuft
+ const g=new THREE.BufferGeometry();
+ g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+ g.setAttribute('aH',new THREE.Float32BufferAttribute(hh,1));
+ return g;
+}
+function grassMaterial45(colA,colB){
+ const uniforms={uTime:{value:0},uGust:{value:1},uCam:{value:new THREE.Vector3()},uFog:{value:new THREE.Color(0x9ec7e8)},uColA:{value:new THREE.Color(colA)},uColB:{value:new THREE.Color(colB)}};
+ const mat=new THREE.ShaderMaterial({uniforms,transparent:true,side:THREE.DoubleSide,
+  vertexShader:[
+   'attribute float aH;','attribute vec3 iPos;','attribute float iScale;','attribute float iPhase;','attribute float iTint;',
+   'uniform float uTime; uniform float uGust; uniform vec3 uCam;',
+   'varying float vH; varying float vTint; varying float vDist; varying float vFog;',
+   'void main(){ vH=aH; vTint=iTint;',
+   ' float ang=iPhase*6.2831; float ca=cos(ang); float sa=sin(ang);',
+   ' vec3 p=position; p.xz=mat2(ca,-sa,sa,ca)*p.xz; p*=iScale;',
+   ' vec3 wp=iPos+p;',
+   ' float wave=sin(uTime*2.1+iPhase*37.0+wp.x*0.12+wp.z*0.07)*0.5+0.5;',
+   ' float sway=(0.35+0.65*wave)*0.17*uGust*aH*aH;',
+   ' wp.x+='+WIND45.x.toFixed(2)+'*sway; wp.z+='+WIND45.z.toFixed(2)+'*sway;',
+   ' wp.x+=sin(uTime*3.7+iPhase*53.0)*0.02*aH;',
+   ' vec4 mv=modelViewMatrix*vec4(wp,1.0);',
+   ' vDist=distance(uCam,wp); vFog=-mv.z;',
+   ' gl_Position=projectionMatrix*mv; }'].join('\n'),
+  fragmentShader:[
+   'uniform vec3 uColA; uniform vec3 uColB; uniform vec3 uFog;',
+   'varying float vH; varying float vTint; varying float vDist; varying float vFog;',
+   'void main(){',
+   ' vec3 col=mix(uColA,uColB,clamp(vH*0.75+vTint*0.35,0.0,1.0));',
+   ' float alpha=1.0-smoothstep(46.0,68.0,vDist);',
+   ' if(alpha<0.02) discard;',
+   ' col=mix(col,uFog,smoothstep(90.0,185.0,vFog));',
+   ' gl_FragColor=vec4(col,alpha); }'].join('\n')});
+ grassUniforms45.push(uniforms);
+ return mat;
+}
+/* Living grass for one area: instanced tufts in grid chunks
+   (26x22 world units) so frustum + distance culling keep a phone
+   GPU honest — at most the chunks around the player ever draw. */
+function buildLivingGrass45(root,area,opts){
+ const pts=sampleGround45(opts,opts.count,opts.seed);
+ if(!pts.length) return 0;
+ const base=grassTuftGeometry45();
+ const mat=grassMaterial45(opts.colA,opts.colB);
+ const cells={};
+ for(const p of pts){
+   const key=Math.floor((p[0]+80)/26)+':'+Math.floor((p[1]+45)/22);
+   (cells[key]=cells[key]||[]).push(p);
+ }
+ let made=0;
+ for(const key of Object.keys(cells)){
+   const list=cells[key];
+   const geo=new THREE.InstancedBufferGeometry();
+   geo.setAttribute('position',base.getAttribute('position'));
+   geo.setAttribute('aH',base.getAttribute('aH'));
+   const ip=new Float32Array(list.length*3), isc=new Float32Array(list.length), iph=new Float32Array(list.length), itn=new Float32Array(list.length);
+   let cx=0,cz=0;
+   list.forEach((p,i)=>{ ip[i*3]=p[0]; ip[i*3+1]=0.02; ip[i*3+2]=p[1]; isc[i]=0.8+p[2]*0.55; iph[i]=p[2]; itn[i]=(p[0]*0.37+p[1]*0.91)%1; cx+=p[0]; cz+=p[1]; });
+   cx/=list.length; cz/=list.length;
+   geo.setAttribute('iPos',new THREE.InstancedBufferAttribute(ip,3));
+   geo.setAttribute('iScale',new THREE.InstancedBufferAttribute(isc,1));
+   geo.setAttribute('iPhase',new THREE.InstancedBufferAttribute(iph,1));
+   geo.setAttribute('iTint',new THREE.InstancedBufferAttribute(itn,1));
+   geo.instanceCount=list.length;
+   geo.boundingSphere=new THREE.Sphere(new THREE.Vector3(cx,0.4,cz),20);
+   const mesh=new THREE.Mesh(geo,mat);
+   mesh.frustumCulled=true; mesh.userData.stage45='living-grass';
+   root.add(mesh);
+   grassChunks45.push({mesh,area,cx,cz});
+   made+=list.length;
+ }
+ return made;
+}
+/* Flower field: instanced heads + stems sharing one scatter, so a
+   meadow costs two draw calls per area. */
+function buildFlowers45(root,area,opts){
+ const pts=sampleGround45(opts,opts.count,opts.seed+7);
+ if(!pts.length) return;
+ const cols=[0xd94f6a,0xffffff,0xffd75e,0x8a7ab8,0xff8fa3,0xfff3a0];
+ const headGeo=new THREE.SphereGeometry(0.10,7,6);
+ const headMat=new THREE.MeshLambertMaterial({color:0xffffff});
+ const heads=new THREE.InstancedMesh(headGeo,headMat,pts.length);
+ const stemGeo=new THREE.CylinderGeometry(0.025,0.03,0.34,5);
+ const stems=new THREE.InstancedMesh(stemGeo,new THREE.MeshLambertMaterial({color:0x2c7a35}),pts.length);
+ const m4=new THREE.Matrix4(), col=new THREE.Color();
+ pts.forEach((p,i)=>{
+   m4.makeTranslation(p[0],0.36,p[1]); heads.setMatrixAt(i,m4); heads.setColorAt(i,col.setHex(cols[i%cols.length]));
+   m4.makeTranslation(p[0],0.17,p[1]); stems.setMatrixAt(i,m4);
+ });
+ heads.userData.stage45='flowers'; stems.userData.stage45='flowers';
+ root.add(heads); root.add(stems);
+}
+/* Bushes: low foliage blobs that sway with the trees (registered
+   into the same wind list), scattered on the same exclusions. */
+function buildBushes45(root,area,opts){
+ const pts=sampleGround45(opts,opts.count,opts.seed+13);
+ const mats=[foliageMat('#2c5e26',['#24501e','#38702f','#1e4519']),foliageMat('#3d5e22',['#33511c','#4a7029','#2c4a18'])];
+ pts.forEach((p,i)=>{
+   const b=new THREE.Mesh(new THREE.IcosahedronGeometry(0.5+p[2]*0.35,0),mats[i%2]);
+   b.position.set(p[0],0.38,p[1]); b.scale.y=0.75; b.castShadow=true;
+   root.add(b);
+   swayRegister45(b,p[0]*0.41+p[1]*0.23,0.035,area);
+ });
+}
+/* Dirt patches: worn bare-earth discs on the grass near (never on)
+   the paths, for ground richness — flat dressing at plaza height. */
+function buildDirtPatches45(root,opts){
+ const pts=sampleGround45(opts,opts.count,opts.seed+29);
+ const mat=new THREE.MeshLambertMaterial({map:dirtTexture(1,1),transparent:true,opacity:0.55});
+ pts.forEach((p,i)=>{
+   const d=new THREE.Mesh(new THREE.CircleGeometry(1.1+p[2]*1.7,12),mat);
+   d.rotation.x=-Math.PI/2; d.rotation.z=p[2]*3;
+   d.position.set(p[0],0.012+i*0.0004,p[1]); d.receiveShadow=true;
+   root.add(d);
+ });
+}
+/* Distant scenery: a far ground disc out to the fog + a ring of
+   low hills and blue mountain silhouettes, so outdoor areas feel
+   like they sit in a bigger world. Pure backdrop — bases sunk
+   below ground, well outside every area bound and route. */
+function buildHorizon45(root,tint,seed){
+ const disc=new THREE.Mesh(new THREE.CircleGeometry(175,36),new THREE.MeshLambertMaterial({map:noiseTexture('#3f612c',['#355528','#4a7038','#2f4d24'],24,24),color:tint}));
+ disc.rotation.x=-Math.PI/2; disc.position.y=-0.08; disc.userData.noShadow45=true; root.add(disc);
+ const rnd=rng45(seed);
+ const hillMat=new THREE.MeshLambertMaterial({color:0x51743f});
+ const mtnMat=new THREE.MeshLambertMaterial({color:0x6f87a0});
+ for(let i=0;i<11;i++){
+   const a=(i/11)*Math.PI*2+rnd()*0.4, dist=128+rnd()*30, h=15+rnd()*13;
+   const m=new THREE.Mesh(new THREE.ConeGeometry(16+rnd()*13,h,7),mtnMat);
+   m.position.set(Math.cos(a)*dist,h/2-3.5,Math.sin(a)*dist); m.userData.noShadow45=true; root.add(m);
+ }
+ for(let i=0;i<8;i++){
+   const a=(i/8)*Math.PI*2+0.3+rnd()*0.35, dist=100+rnd()*16, h=7+rnd()*6;
+   const m=new THREE.Mesh(new THREE.ConeGeometry(13+rnd()*9,h,7),hillMat);
+   m.position.set(Math.cos(a)*dist,h/2-2.5,Math.sin(a)*dist); m.userData.noShadow45=true; root.add(m);
+ }
+}
+/* The sky's moving part: soft cloud groups drifting on the same
+   wind. Built once (scene-level, not per-area) in initThree;
+   fog:false so they stay visible above the fogged horizon. */
+function buildSky45(){
+ const grp=new THREE.Group();
+ const mat=new THREE.MeshLambertMaterial({color:0xffffff,transparent:true,opacity:0.88,fog:false,emissive:0x666666});
+ const puffs=[], rnd=rng45(4545);
+ for(let i=0;i<13;i++){
+   const c=new THREE.Group();
+   const n=3+Math.floor(rnd()*3);
+   for(let j=0;j<n;j++){
+     const s=new THREE.Mesh(new THREE.SphereGeometry(2.2+rnd()*2.6,10,8),mat);
+     s.position.set(j*2.6-n*1.2+rnd()*1.2,rnd()*0.7,rnd()*2.4-1.2);
+     s.scale.y=0.34; c.add(s);
+   }
+   c.position.set(-170+rnd()*340,30+rnd()*14,-140+rnd()*190);
+   const sc=1.1+rnd()*1.3; c.scale.set(sc,sc,sc);
+   grp.add(c);
+   puffs.push({m:c,v:0.8+rnd()*0.7});
+ }
+ scene.add(grp);
+ skyClouds45={group:grp,puffs};
+ return grp;
+}
 function buildPlaza(root){
  const scene=root; // build into the plaza area group (box()/add calls below target it)
  // ground: dark grass (subtle noise texture) — Stage 13: 160x90 world units
@@ -2344,6 +2646,7 @@ function buildPlaza(root){
    cone.position.set(tx,3.1,tz); cone.castShadow=true; scene.add(cone);
    const cone2=new THREE.Mesh(new THREE.ConeGeometry(1.15,2.2,7),foliageMat('#33702c',['#2a6124','#3d7f35','#24501e']));
    cone2.position.set(tx,4.6,tz); cone2.castShadow=true; scene.add(cone2);
+   swayRegister45(cone,tx*0.37+tz*0.19,0.020,'plaza'); swayRegister45(cone2,tx*0.29+tz*0.23,0.030,'plaza'); // Stage 45: plaza canopies sway in the shared wind
  }
  // a few rocks / bushes for feel (x2 + extras, as above)
  for(const [rx,rz] of [[-36,16],[36,-18],[48,24],[-48,-24],[12,-36],[-12,34],[-56,-32],[56,34],[30,-28],[-30,28],[70,-4],[-70,6]]){
@@ -2351,6 +2654,20 @@ function buildPlaza(root){
    rock.position.set(rx,0.4,rz); scene.add(rock);
  }
  buildFarm(scene); // Farm life: the plaza farm (crop rows + pasture + working farmers)
+ // Stage 45 (Living World S1): living grass / flowers / bushes /
+ // dirt patches / horizon for the plaza — sampled AROUND the
+ // cobblestone centre (rect), every dirt path (segments), the
+ // farm (rect), the houses (circles) and the dais ring (rect).
+ const PLAZA_EX45={
+  rects:[[-42,-27,42,27],[-29,24,-7,39],[-13,-40,13,-22]],
+  circles:[[-64,-18,5.5],[64,-18,5.5],[38,40,5.5],[-30,41,5.5],[24,-41,5.5]],
+  segments:[[0,2,0,-27,2.4],[9,-27,9,-43,2.2],[0,2,0,44,2.4],[-2,0,-79,0,2.4],[2,0,79,0,2.4],[0,0,-44,-21,2.2],[0,0,44,-21,2.2],[0,0,44,21,2.2],[0,0,-44,21,2.2],[-14,-16,14,-16,2.0],[-6,6,-60,31,2.2],[-60,31,-77,42,2.0],[-16,14,-48,43,2.2],[-44,-21,-48,-43,2.2],[-48,-43,-77,-43,2.0],[44,-21,77,-41,2.2],[44,21,77,41,2.2],[0,0,7.5,1.9,1.8]],
+ };
+ buildLivingGrass45(scene,'plaza',{...PLAZA_EX45,count:2400,seed:4501,colA:0x2f5b24,colB:0x74b34e});
+ buildFlowers45(scene,'plaza',{...PLAZA_EX45,count:130,seed:4501});
+ buildBushes45(scene,'plaza',{...PLAZA_EX45,count:13,seed:4501});
+ buildDirtPatches45(scene,{...PLAZA_EX45,count:16,seed:4501});
+ buildHorizon45(scene,0xffffff,4501);
 }
 function buildGoblinCamp(root){
  const S=root;
@@ -2399,11 +2716,19 @@ function buildGoblinCamp(root){
    box(0.35,1.4,0.35,0x5a4020,tx,0.7,tz,S);
    const cone=new THREE.Mesh(new THREE.ConeGeometry(1.7,3.4,7),foliageMat('#3d5e22',['#33511c','#4a7029','#2c4a18']));
    cone.position.set(tx,3.1,tz); S.add(cone);
+   swayRegister45(cone,tx*0.31+tz*0.27,0.026,'goblins'); // Stage 45: camp canopies sway too
  }
  for(const [rx,rz] of [[-32,10],[36,-10],[-54,-16],[22,30],[58,8],[-64,28]]){
    const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.7),rockMat());
    rock.position.set(rx,0.4,rz); S.add(rock);
  }
+ // Stage 45: living grass around the camp's worn dirt (sparse
+ // inside it), flowers, bushes, horizon.
+ const GOB_EX45={dirtRect:[-48,-31,48,31],dirtKeep:0.12,circles:[[-28,-18,3.6],[18,22,3.6],[42,-24,3.6],[4,6,2.2]]};
+ buildLivingGrass45(S,'goblins',{...GOB_EX45,count:1500,seed:4502,colA:0x2c5222,colB:0x6da347});
+ buildFlowers45(S,'goblins',{...GOB_EX45,count:70,seed:4502});
+ buildBushes45(S,'goblins',{...GOB_EX45,count:10,seed:4502});
+ buildHorizon45(S,0xd8e2cc,4502);
 }
 /* ---- Stage 19 scenes: Wizard Grounds + Ranger Camp ---- */
 function buildWizardGrounds(root){
@@ -2450,6 +2775,13 @@ function buildWizardGrounds(root){
  buildGateway(S,0,45,0,'🧙 WIZARD GROUNDS',{banner:'#5d5480',color:'#cdbcf2'});
  runeStone(S,-9,11,'ᚨ'); runeStone(S,9,11,'ᚱ'); runeStone(S,-15,-3,'ᛗ'); runeStone(S,15,-3,'ᚦ'); runeStone(S,0,-13,'ᚹ');
  glowCrystal(S,-24,30,0xb79cff); glowCrystal(S,26,-10,0x7ec8ff,0.8);
+ // Stage 45: sparse mystic tufts on the violet ground — kept out
+ // of the centre circle (r16) and away from the tower; tinted
+ // teal-violet so the grounds keep their dusky identity.
+ const MAGIC_EX45={circles:[[0,0,17],[0,-30,6]]};
+ buildLivingGrass45(S,'magic',{...MAGIC_EX45,count:500,seed:4505,colA:0x1f3038,colB:0x4a8a72});
+ buildFlowers45(S,'magic',{...MAGIC_EX45,count:40,seed:4505});
+ buildHorizon45(S,0x8a86b8,4505);
 }
 function buildRangerCamp(root){
  const S=root;
@@ -2520,7 +2852,15 @@ function buildRangerCamp(root){
    box(0.35,1.4,0.35,0x5a4020,tx,0.7,tz,S);
    const cone=new THREE.Mesh(new THREE.ConeGeometry(1.7,3.4,7),foliageMat('#3d5e22',['#33511c','#4a7029','#2c4a18']));
    cone.position.set(tx,3.1,tz); S.add(cone);
+   swayRegister45(cone,tx*0.33+tz*0.21,0.026,'range'); // Stage 45
  }
+ // Stage 45: living grass (sparse over the range's worn dirt,
+ // thicker beyond it), flowers, bushes, horizon.
+ const RANGE_EX45={dirtRect:[-55,-30,55,30],dirtKeep:0.15,circles:[[58,-30,3.8],[0,-27,3],[-30,18,1.6]]};
+ buildLivingGrass45(S,'range',{...RANGE_EX45,count:1400,seed:4504,colA:0x33591f,colB:0x7fb04f});
+ buildFlowers45(S,'range',{...RANGE_EX45,count:70,seed:4504});
+ buildBushes45(S,'range',{...RANGE_EX45,count:10,seed:4504});
+ buildHorizon45(S,0xe2eed6,4504);
 }
 /* ---- Stage 2 scene helpers ---- */
 function rockWallRun(root,x1,z1,x2,z2){
@@ -2803,6 +3143,14 @@ function buildFishingCove(root){
  box(0.25,0.9,0.25,0x5a4020,38,0.1,-25,S); box(0.25,0.9,0.25,0x5a4020,38,0.1,-23,S);
  barrelProp(S,20,-8); barrelProp(S,21.4,30);
  box(1.05,1.05,1.05,0x8a6d3f,-70,0.53,-14,S); box(0.85,0.85,0.85,0x9a7a4a,-70,1.48,-14,S);
+ // Stage 45: living grass on the cove's land side only — the lake
+ // rect (world x +26..+80) and both docks are excluded, so no
+ // blade grows on water or planks.
+ const COVE_EX45={rects:[[26,-45,80,45],[25,-2,45,2],[24,-26,40,-22]],circles:[[-16,12,1.8],[-40,10,2.4]]};
+ buildLivingGrass45(S,'cove',{...COVE_EX45,count:1300,seed:4503,colA:0x2c5222,colB:0x6da347});
+ buildFlowers45(S,'cove',{...COVE_EX45,count:80,seed:4503});
+ buildBushes45(S,'cove',{...COVE_EX45,count:9,seed:4503});
+ buildHorizon45(S,0xdcead2,4503);
 }
 function buildMine(root){
  const S=root;
@@ -3293,6 +3641,13 @@ function buildWilderness(root,pure){
  bonePile(S,sx2w(880),sy2w(300)); bonePile(S,sx2w(420),sy2w(560));
  deadTree(S,sx2w(240),sy2w(430),1.1); deadTree(S,sx2w(1300),sy2w(200),0.9);
  shadowify(S);
+ // Stage 45: dry, scorched tufts for the wild — the living-grass
+ // system in dead colours, kept off the ditch (south edge), the
+ // lava pools and the obelisk landing. Both wild variants get
+ // their own scatter (area name passed through).
+ const WILD_EX45={rects:[[-80,40,80,45]],circles:[[sx2w(430),sy2w(120),2.6],[sx2w(1150),sy2w(70),2.6],[sx2w(700),sy2w(830),2.2]]};
+ buildLivingGrass45(S,areaName,{...WILD_EX45,count:1100,seed:pure?4507:4506,colA:0x3a2c1c,colB:0x7a6238});
+ buildHorizon45(S,pure?0x8a6a60:0xa89880,pure?4507:4506);
 }
 function buildWaiting(root){
  const S=root;
@@ -4102,57 +4457,66 @@ function buildWeaponInto(a,id){
    Guarded like every other scale in this file: the headless gear
    test's THREE stub has no scale on its objects. */
  if(wg.scale){ const ws2=(d0&&d0.twoHanded)? 1.35*1.18 : 1.35; wg.scale.set(ws2,ws2,ws2); }
+ /* Stage 45 (Derek, 2026-11-23: "holding the sword at the end"):
+   every melee weapon is now held BY THE END of its grip — the fist
+   (the group origin) closes on the very bottom of the handle, with
+   only a small pommel cap below the hand; the guard sits on top of
+   the grip and the blade/head beyond it. Stage 43 centred the grip
+   on the fist, which left half the handle dangling unheld below
+   the hand; this re-base moves each shape's grip run to start at
+   the fist and everything above it shifts up by the same amount,
+   so shapes, sizes and tier colours are unchanged. */
  if(shape==='sword'){
-   // Stage 43: grip centred ON the fist (the group origin is the
-   // hand) — guard just above the fist, blade beyond it. Before,
-   // the whole sword sat ~0.28 too low: the fist closed on the
-   // blade and the grip dangled unheld below the hand.
-   box(0.11,0.95,0.18,c,0,0.64,0,wg); // blade in the tier's colour (Stage 37: wider + longer, so it reads at distance)
-   box(0.34,0.08,0.22,gold,0,0.16,0,wg); // crossguard
-   box(0.09,0.24,0.09,grip,0,0,0,wg); // grip
+   box(0.11,0.95,0.18,c,0,0.77,0,wg); // blade in the tier's colour (Stage 37: wider + longer, so it reads at distance)
+   box(0.34,0.08,0.22,gold,0,0.29,0,wg); // crossguard
+   box(0.09,0.24,0.09,grip,0,0.13,0,wg); // grip — its END is in the fist
+   box(0.13,0.07,0.13,gold,0,-0.03,0,wg); // pommel cap below the fist
  } else if(shape==='scimitar'){
    const curve=new THREE.Mesh(new THREE.TorusGeometry(0.46,0.055,8,20,1.8),new THREE.MeshLambertMaterial({color:c}));
-   curve.position.set(-0.18,0.58,0); curve.rotation.z=2.25; wg.add(curve); // the swept curved blade
-   box(0.26,0.07,0.18,gold,0,0.14,0,wg); // small guard (Stage 43: grip on the fist, as the sword)
-   box(0.09,0.22,0.09,grip,0,0,0,wg); // grip
+   curve.position.set(-0.18,0.70,0); curve.rotation.z=2.25; wg.add(curve); // the swept curved blade
+   box(0.26,0.07,0.18,gold,0,0.26,0,wg); // small guard
+   box(0.09,0.22,0.09,grip,0,0.12,0,wg); // grip — end in the fist
+   box(0.12,0.06,0.12,gold,0,-0.03,0,wg); // pommel cap
  } else if(shape==='blade'){
-   box(0.14,0.52,0.2,c,0,0.40,0,wg); // short, broad blade — reads as a dagger/blade, not a sword
-   box(0.22,0.06,0.16,gold,0,0.12,0,wg); // small guard (Stage 43: grip on the fist, as the sword)
-   box(0.08,0.2,0.08,grip,0,0,0,wg); // grip
+   box(0.14,0.52,0.2,c,0,0.51,0,wg); // short, broad blade — reads as a dagger/blade, not a sword
+   box(0.22,0.06,0.16,gold,0,0.23,0,wg); // small guard
+   box(0.08,0.2,0.08,grip,0,0.11,0,wg); // grip — end in the fist
+   box(0.11,0.06,0.11,gold,0,-0.025,0,wg); // pommel cap
  } else if(shape==='greataxe'){
-   box(0.08,1.3,0.08,grip,0,0.3,0,wg); // long haft
-   box(0.52,0.36,0.06,c,0,0.78,0,wg); // broad double head
-   box(0.3,0.2,0.06,c,0,0.78,0,wg);
+   box(0.08,1.3,0.08,grip,0,0.62,0,wg); // long haft — butt end in the fist
+   box(0.52,0.36,0.06,c,0,1.10,0,wg); // broad double head
+   box(0.3,0.2,0.06,c,0,1.10,0,wg);
  } else if(shape==='spear'){
-   box(0.06,1.5,0.06,grip,0,0.42,0,wg); // shaft
-   const tip=new THREE.Mesh(new THREE.ConeGeometry(0.09,0.32,8),new THREE.MeshLambertMaterial({color:c})); tip.position.y=1.32; wg.add(tip);
+   box(0.06,1.5,0.06,grip,0,0.73,0,wg); // shaft — butt end in the fist
+   const tip=new THREE.Mesh(new THREE.ConeGeometry(0.09,0.32,8),new THREE.MeshLambertMaterial({color:c})); tip.position.y=1.63; wg.add(tip);
  } else if(shape==='hammers'){
    const one=(parent)=>{ const h=new THREE.Group(); h.position.set(0,-0.74,0.05); parent.add(h);
-     box(0.07,0.62,0.07,grip,0,0.12,0,h); box(0.24,0.22,0.24,c,0,0.46,0,h); };
+     box(0.07,0.62,0.07,grip,0,0.30,0,h); box(0.24,0.22,0.24,c,0,0.64,0,h); };
    // the group above already sits at the right hand — build the main
    // hammer in place and a twin at the left hand
-   box(0.07,0.62,0.07,grip,0,0.12,0,wg); box(0.24,0.22,0.24,c,0,0.46,0,wg);
+   box(0.07,0.62,0.07,grip,0,0.30,0,wg); box(0.24,0.22,0.24,c,0,0.64,0,wg);
    one(A.armL);
  } else if(shape==='flail'){
-   box(0.07,0.5,0.07,grip,0,0.05,0,wg); // handle
+   box(0.07,0.5,0.07,grip,0,0.24,0,wg); // handle — end in the fist
    const chain=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.34,6),new THREE.MeshLambertMaterial({color:0x8a8f96}));
-   chain.position.set(0.13,0.42,0); chain.rotation.z=-0.7; wg.add(chain);
-   const ball=new THREE.Mesh(new THREE.SphereGeometry(0.13,10,8),new THREE.MeshLambertMaterial({color:c})); ball.position.set(0.26,0.56,0); wg.add(ball);
+   chain.position.set(0.13,0.61,0); chain.rotation.z=-0.7; wg.add(chain);
+   const ball=new THREE.Mesh(new THREE.SphereGeometry(0.13,10,8),new THREE.MeshLambertMaterial({color:c})); ball.position.set(0.26,0.75,0); wg.add(ball);
  } else if(shape==='greatsword'){
-   box(0.09,1.18,0.16,c,0,0.72,0,wg); // long broad blade in the tier's colour
-   box(0.38,0.08,0.22,gold,0,0.10,0,wg); // wide crossguard (Stage 43: grip on the fist, as the sword)
-   box(0.1,0.34,0.1,grip,0,-0.05,0,wg); // two-hand grip
+   box(0.09,1.18,0.16,c,0,0.99,0,wg); // long broad blade in the tier's colour
+   box(0.38,0.08,0.22,gold,0,0.37,0,wg); // wide crossguard
+   box(0.1,0.34,0.1,grip,0,0.16,0,wg); // two-hand grip — its end is in the fist
+   box(0.14,0.07,0.14,gold,0,-0.045,0,wg); // pommel cap
  } else if(shape==='axe'){
-   box(0.07,1.0,0.07,grip,0,0.26,0,wg); // haft
-   box(0.46,0.38,0.06,c,0.18,0.68,0,wg); // crescent head (Stage 37: bigger, so the axe reads as an axe)
-   box(0.1,0.12,0.06,c,0,0.78,0,wg); // top spike base
+   box(0.07,1.0,0.07,grip,0,0.48,0,wg); // haft — butt end in the fist
+   box(0.46,0.38,0.06,c,0.18,0.90,0,wg); // crescent head (Stage 37: bigger, so the axe reads as an axe)
+   box(0.1,0.12,0.06,c,0,1.00,0,wg); // top spike base
  } else if(shape==='hammer2h'){
-   box(0.08,1.05,0.08,grip,0,0.28,0,wg); // long haft
-   box(0.3,0.26,0.3,c,0,0.82,0,wg); // heavy head
+   box(0.08,1.05,0.08,grip,0,0.51,0,wg); // long haft — butt end in the fist
+   box(0.3,0.26,0.3,c,0,1.05,0,wg); // heavy head
  } else if(shape==='scythe'){
-   box(0.06,1.4,0.06,grip,0,0.4,0,wg); // long haft
+   box(0.06,1.4,0.06,grip,0,0.68,0,wg); // long haft — butt end in the fist
    const blade=new THREE.Mesh(new THREE.TorusGeometry(0.44,0.035,8,20,1.9),new THREE.MeshLambertMaterial({color:c}));
-   blade.position.set(0.3,1.06,0); blade.rotation.z=-0.5; wg.add(blade); // curved moon blade
+   blade.position.set(0.3,1.34,0); blade.rotation.z=-0.5; wg.add(blade); // curved moon blade
  } else if(shape==='wand'){
    box(0.05,0.55,0.05,0x6e4f2a,0,0.1,0,wg); // short rod
    const orb=new THREE.Mesh(new THREE.SphereGeometry(0.105,10,8),new THREE.MeshLambertMaterial({color:c})); orb.position.y=0.46; wg.add(orb); // tier-coloured tip
@@ -4185,6 +4549,11 @@ function buildWeaponInto(a,id){
    const orbC=STAFF_ORBS[id]||c;
    wg.traverse(o=>{ if(o.isMesh&&o.material&&o.material.isMeshLambertMaterial){ const hx=hexOf(o.material); if(hx===orbC||hx===c) o.material=crystalMat(hx); } });
  }
+ // Stage 45: applySwing's overhead chop adds a wrist snap on the
+ // weapon group itself, so it needs the live group + the rotation
+ // it was built with (two-handers carry a base tilt). syncGear
+ // clears this whenever the anchors are rebuilt.
+ a.weaponGroup=wg; wg.userData.baseRotX=wg.rotation.x;
 }
 function syncGear(a,p){
  if(!a.gearAnchors) return;
@@ -4194,6 +4563,7 @@ function syncGear(a,p){
  a.gearSig=sig;
  const A=a.gearAnchors;
  for(const k of Object.keys(A)){ while(A[k].children.length) A[k].remove(A[k].children[0]); }
+ a.weaponGroup=null; // Stage 45: the old weapon group was just removed with the anchor's children; buildWeaponInto re-registers the new one below
  const mat=c=>new THREE.MeshLambertMaterial({color:c});
  // (bxM mirrors boxM locally: test/gear.js extracts syncGear without boxM in scope.)
  const bxM=(w,h,d,mm,x,y,z,parent)=>{ const ms=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mm); ms.position.set(x,y,z); if(parent) parent.add(ms); return ms; };
@@ -6181,22 +6551,38 @@ function applyDeathFall(a,now){
  }
  a.pivot.rotation.x=ang;
 }
-/* Swing pose: the weapon-arm pivot chops from raised to struck over
-   ~120ms, then recovers over ~200ms. Entries with no arm pivot (most
-   cave monsters) rock their whole mesh forward a little instead. For
-   knights this runs AFTER the walk cycle each frame, so a swing
+/* Swing pose. Stage 45 (Derek, 2026-11-23: "swings it over head"):
+   on a jointed knight the melee swing is an OVERHEAD chop in three
+   beats — (1) wind-up: the shoulder sweeps the arm up while the
+   elbow folds the forearm back, cocking the weapon up and back
+   OVER THE HEAD; (2) the chop: the arm whips down in front, the
+   elbow driving through while a wrist snap on the weapon group
+   (baseRotX + snap) tips the blade forward so it leads the stroke
+   and lands pointing down at the target; (3) a short recovery.
+   Same 320ms envelope, same start trigger (startSwing/startSwingAt
+   on the hit message) as the swing it replaces, so the hit moment
+   the combat code uses is unchanged — presentation only. Entries
+   without a jointed forearm (goblins, cave monsters, mod NPCs)
+   keep the previous raise-and-lower / rock-forward motion exactly.
+   For knights this runs AFTER the walk cycle each frame, so a swing
    overrides the arm's counter-swing while it plays. */
 function applySwing(a,now){
  if(!a||!a.swingStart) return;
  const t=(now-a.swingStart)/320;
- if(t>=1){ a.swingStart=0; if(a.armR){ a.armR.rotation.x=0; const l0=a.armR.userData?a.armR.userData.lower:null; if(l0) l0.rotation.x=0; } else if(a.group) a.group.rotation.x=0; return; }
+ if(t>=1){ a.swingStart=0; if(a.armR){ a.armR.rotation.x=0; const l0=a.armR.userData?a.armR.userData.lower:null; if(l0) l0.rotation.x=0; } else if(a.group) a.group.rotation.x=0; if(a.weaponGroup) a.weaponGroup.rotation.x=a.weaponGroup.userData.baseRotX||0; return; }
+ const lowR=a.armR&&a.armR.userData?a.armR.userData.lower:null;
+ if(a.armR&&lowR){
+   let sh, el, wr=0;
+   if(t<0.375){ const p=t/0.375, e=1-Math.pow(1-p,3); sh=-2.30*e; el=1.80*e; wr=-0.35*e; } // cocked: blade up-back over the head
+   else if(t<0.60){ const p=(t-0.375)/0.225, e=p*p; sh=-2.30+1.50*e; el=1.80+0.15*e; wr=-0.35+1.50*e; } // the chop whips down in front
+   else { const p=(t-0.60)/0.40, e=p*p*(3-2*p); sh=-0.80*(1-e); el=1.95*(1-e); wr=1.15*(1-e); } // recovery
+   a.armR.rotation.x=sh; lowR.rotation.x=el;
+   if(a.weaponGroup) a.weaponGroup.rotation.x=(a.weaponGroup.userData.baseRotX||0)+wr;
+   return;
+ }
  const ang= t<0.375 ? -2.05*(t/0.375) : -2.05*(1-(t-0.375)/0.625);
  if(a.armR) a.armR.rotation.x=ang;
  else if(a.group) a.group.rotation.x=-ang*0.10;
- // Stage 42: on a jointed knight the forearm trails the chop
- // (a whip of extra bend in the swing's own direction), so the
- // stroke reads as shoulder + elbow, not one stiff board.
- const lowR=a.armR&&a.armR.userData?a.armR.userData.lower:null;
  if(lowR) lowR.rotation.x=ang*0.22;
 }
 /* ---- Stage 8: closing / walk-to-hit ---- */
@@ -7342,6 +7728,34 @@ function animate(){
    }
    snowFall.pts.geometry.attributes.position.needsUpdate=true;
  }
+ // Stage 45: the living-world wind tick — ONE gust value (the
+ // same curve Frostfall's snow swells on, at outdoor scale) feeds
+ // every Stage 1 system at once: the grass shader bends, the tree
+ // canopies and bushes sway, and the clouds drift — all along
+ // WIND45's direction, so the whole world breathes together.
+ // Grass chunks for other areas are skipped (their group is
+ // hidden anyway); chunks of THIS area hide beyond ~80 units.
+ {
+   const t45=now/1000, gust45=windGust45(t45);
+   for(const u of grassUniforms45){ u.uTime.value=t45; u.uGust.value=gust45; if(camera) u.uCam.value.copy(camera.position); }
+   for(const c of grassChunks45){
+     if(c.area!==curArea) continue;
+     c.mesh.visible=Math.hypot(c.cx-camera.position.x,c.cz-camera.position.z)<80;
+   }
+   for(const s of windSway45){
+     if(s.area&&s.area!==curArea) continue;
+     s.o.rotation.z=s.bz+Math.sin(t45*1.25+s.phase)*s.amp*gust45;
+     s.o.rotation.x=s.bx+Math.cos(t45*1.02+s.phase)*s.amp*0.6*gust45;
+   }
+   if(skyClouds45){
+     for(const p of skyClouds45.puffs){
+       p.m.position.x+=WIND45.x*p.v*gust45*dt;
+       p.m.position.z+=WIND45.z*p.v*gust45*dt*0.4;
+       if(p.m.position.x>185) p.m.position.x=-185;
+       if(p.m.position.z>165) p.m.position.z=-165;
+     }
+   }
+ }
  updateLiveSplats(now);
  updateTapSplats(now); // Visual pass: fade the tap splats (~600ms)
  updateFlashes(now); // Stage 37b: expire hit flashes (~160ms)
@@ -7494,6 +7908,7 @@ function initThree(){
  camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.1,300);
  raycaster=new THREE.Raycaster();
  scene.add(new THREE.AmbientLight(0xfff1d6,0.62)); // Polish build: warmer, brighter daylight fill (was 0xffe2b8, 0.5)
+ scene.add(new THREE.HemisphereLight(0xcfe8ff,0x47703a,0.32)); // Stage 45: sky/ground bounce so grass and canopies lift from above and below — balances the existing sun, no second shadow light
  const sun=new THREE.DirectionalLight(0xffe9bb,1.12); sun.position.set(30,50,20);
  sun.castShadow=true;
  sun.shadow.mapSize.set(2048,2048);
@@ -7528,12 +7943,14 @@ function initThree(){
    envTex.dispose(); pmrem.dispose();
  }catch(e){ METAL_ENV_READY=false; }
  buildAreas();
+ buildSky45(); // Stage 45: drifting clouds over every area (scene-level, not per-area)
  // Static scenery: grounds receive shadows, solid props cast them.
  // (Scenery Lambert keeps envMapIntensity 0 — the env map is for
  // the metal gear, not for washing the whole world in sheen.)
  for(const a of Object.values(areaGroups)) a.traverse(o=>{
    if(!o.isMesh) return;
    if(o.geometry&&o.geometry.type==='PlaneGeometry'){ o.receiveShadow=true; }
+   else if(o.userData&&o.userData.noShadow45){ o.castShadow=false; o.receiveShadow=false; } // Stage 45: horizon backdrop never casts
    else if(o.material&&o.material.isMeshLambertMaterial){ o.castShadow=true; o.receiveShadow=true; o.material.envMapIntensity=0; }
  });
  addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
