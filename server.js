@@ -310,6 +310,7 @@ for (const [tier, buy, color] of [
 const GOODS = [
   { id: 'bones', name: 'Dragon bones', base: 40, min: 20, max: 80 },
   { id: 'herbs', name: 'Ranarr herbs', base: 25, min: 10, max: 60 },
+  { id: 'snapdragon', name: 'Snapdragon herbs', base: 30, min: 12, max: 70 }, // Tree Guardian chain (2026-11-24): the second herblore herb — hobgoblin drops, Exchange-traded like ranarr
   { id: 'gems', name: 'Cut gems', base: 120, min: 60, max: 240 },
   { id: 'bars', name: 'Gold bars', base: 90, min: 45, max: 180 },
   { id: 'runes', name: 'Nature runes', base: 15, min: 5, max: 40 },
@@ -425,6 +426,20 @@ for (const gem of GEM_TIERS) {
   ITEMS[`${gem}_amulet`] = { name: `${gd.name} amulet`, icon: '📿', kind: 'armour', slot: 'amulet', color: gd.color, sellOnly: 90 * Math.pow(2, tierIdx), gem, accBonus: 0.02, desc: `A ${gd.name.toLowerCase()} amulet on a yarn string. Enchant it with the Enchant ${gd.name} spell to wake its power.` };
   ITEMS[`${gem}_amulet_enchanted`] = { name: `${gd.name} amulet (enchanted)`, icon: '📿', kind: 'armour', slot: 'amulet', color: gd.color, sellOnly: 160 * Math.pow(2, tierIdx), gem, ...AMULET_ENCHANT_BONUS[gem], desc: `A ${gd.name.toLowerCase()} amulet humming with magic — its enchantment boosts you while you wear it.` };
 }
+// Tree Guardian maker + herblore chain (Derek, 2026-11-24): sand
+// scooped at the Fishing Cove shore (in a bucket) + seaweed, worked
+// at the Emberfall furnace WITH your Tree Guardian beside you,
+// becomes molten glass; the glass blows into vials and a lantern;
+// a vial + a herb mixes into a potion (ranarr -> Prayer potion,
+// snapdragon -> Restore potion). The bucket is a cheap shop tool
+// and is NOT consumed by scooping or glassmaking — it comes back
+// empty each time. Prices are sell-back values in line with the
+// other made chains (flagged choices, Derek can retune).
+ITEMS.bucket = { name: 'Bucket', icon: '🪣', kind: 'tool', buy: 5, shop: 'Food & Supplies', desc: 'An empty bucket. Scoop sand with it at the Fishing Cove shore, beside the seaweed.' };
+ITEMS.bucket_of_sand = { name: 'Bucket of sand', icon: '🪣', kind: 'resource', sellOnly: 3, desc: 'A bucket brimming with cove sand. Worked with seaweed at a furnace, it becomes glass.' };
+ITEMS.molten_glass = { name: 'Molten glass', icon: '🔸', kind: 'resource', sellOnly: 15, desc: 'A glowing blob of fresh glass — seaweed and sand, melted together. Your guardian keeps it workable; blow it into a vial or a lantern at the furnace.' };
+ITEMS.glass_vial = { name: 'Glass vial', icon: '🧪', kind: 'resource', sellOnly: 8, desc: 'An empty hand-blown glass vial. Mix it with a herb to make a potion.' };
+ITEMS.glass_lantern = { name: 'Glass lantern', icon: '🏮', kind: 'resource', sellOnly: 25, desc: 'A hand-blown glass lantern. Place it in the world from your backpack — it stays there until you take it back or smash it (or an admin removes it).' };
 // Stage 3: Emberfall ores + smelted bars. Sell-only resources, like
 // Stage 2's. (The eighth bar, gold, is the `bars` Exchange good above.)
 for (const [id, name, sellOnly] of [
@@ -963,6 +978,7 @@ const PROP_DEFS = [
   { kind: 'flowers', label: 'Flowers', icon: '🌸' },
   { kind: 'light', label: 'Stage light', icon: '💡' },
   { kind: 'chest', label: 'Chest', icon: '🧰' },
+  { kind: 'glass_lantern', label: 'Glass lantern', icon: '🏮' }, // Tree Guardian chain (2026-11-24): the guardian-made placeable — rides this same registry/persistence
 ];
 const PROP_KINDS = PROP_DEFS.map((p) => p.kind);
 // The catalog-shaped view of a custom def (same fields catalogList
@@ -2432,6 +2448,18 @@ GOBLIN_SPAWNS.forEach(([x, y], i) => {
   const id = 'goblin' + (i + 1);
   npcs.set(id, { id, ...GOBLIN_DEF, area: 'goblins', x, y, spawnX: x, spawnY: y, hp: GOBLIN_DEF.maxHp, alive: true, respawnAt: 0, fightId: null });
 });
+// Tree Guardian chain (Derek, 2026-11-24): HOBGOBLINS — the Goblin
+// Camp's bigger, meaner residents (his plan: they carry the herblore
+// herbs). Roughly double a goblin: lvl 12, 22 HP, max hit 4. Same
+// shared-NPC framework, fought through attack_npc / npcTick; their
+// drops are the two potion herbs (see rollNpcDrops), per Derek's
+// standing drop law — kills drop things that build skills.
+const HOBGOBLIN_DEF = { kind: 'hobgoblin', name: 'Hobgoblin', combatLevel: 12, maxHp: 22, maxHit: 4, acc: 0.56, attackType: 'melee', respawnMs: 12000 };
+const HOBGOBLIN_SPAWNS = [[520, 580], [940, 260], [1140, 470], [660, 200]];
+HOBGOBLIN_SPAWNS.forEach(([x, y], i) => {
+  const id = 'hobgoblin' + (i + 1);
+  npcs.set(id, { id, ...HOBGOBLIN_DEF, area: 'goblins', x, y, spawnX: x, spawnY: y, hp: HOBGOBLIN_DEF.maxHp, alive: true, respawnAt: 0, fightId: null });
+});
 // ---------- Stage 19 NPCs: Wizards (magic) + Rangers (ranged) ----------
 // Same shared-NPC framework as the goblins (own spawn tables, own
 // respawns), one hunting ground each. Both attack from range —
@@ -2634,6 +2662,7 @@ function specSceneBundle(w, t) {
   send(w.ws, specRetype(firesMsg(t.area), 'spec_fires'));
   send(w.ws, specRetype(pilesMsg(t.area), 'spec_piles'));
   send(w.ws, specRetype(seaweedMsg(t.area), 'spec_seaweed'));
+  send(w.ws, specRetype(sandMsg(t.area), 'spec_sand')); // Tree Guardian chain: cove sand piles ride the watch too
   send(w.ws, specRetype(alliesMsg(t.area), 'spec_allies'));
   send(w.ws, specRetype(objectsMsg(t.area), 'spec_objects'));
   if (t.area === 'plaza') send(w.ws, specRetype(modNpcsMsg(), 'spec_mod_npcs'));
@@ -2679,6 +2708,7 @@ function endSpectate(key, reason) {
   send(w.ws, firesMsg(w.area));
   send(w.ws, pilesMsg(w.area));
   send(w.ws, seaweedMsg(w.area));
+  send(w.ws, sandMsg(w.area)); // Tree Guardian chain
   send(w.ws, alliesMsg(w.area));
   send(w.ws, objectsMsg(w.area));
   if (w.area === 'plaza') { send(w.ws, modNpcsMsg()); send(w.ws, modLadderMsg(w.profile)); }
@@ -4262,6 +4292,25 @@ function rollNpcDrops(profile, npc) {
       give('animal_bones', 1);
     }
     return { gold: 0, items };
+  }
+  if (kind === 'hobgoblin') {
+    // Tree Guardian chain (2026-11-24): the herblore carriers.
+    // 4-10 gold always; one herb roll — 30% ranarr, 25% snapdragon,
+    // 45% no herb. Both herbs feed the guardian's potion mixing
+    // (and trade on the Exchange), so every herb drop builds a
+    // skill or a purse. Backpack first, bank on overflow.
+    const gold = 4 + Math.floor(Math.random() * 7); // 4-10
+    addGold(profile, gold);
+    const items = [];
+    const give = (item, qty) => {
+      const leftover = addStacks(profile.backpack, item, qty, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(profile.bank, item, leftover);
+      items.push({ item, qty });
+    };
+    const r = Math.random();
+    if (r < 0.30) give('herbs', 1);
+    else if (r < 0.55) give('snapdragon', 1);
+    return { gold, items };
   }
   const gold = 2 + Math.floor(Math.random() * 7);
   addGold(profile, gold); // Stage 16: the coins land on the coin stack
@@ -5847,6 +5896,42 @@ setInterval(() => {
   if (touched) broadcastSeaweed('cove');
 }, 1000);
 
+// ---------- Sand piles (Tree Guardian chain, 2026-11-24) ----------
+// Piles of shore sand along the Fishing Cove, beside the seaweed
+// clumps (same shore, a little further from the waterline). Tap
+// one with an empty Bucket in your backpack to scoop it into a
+// Bucket of sand — the glassmaking half of the guardian's chain.
+// Same session-only pattern as the seaweed: scooped piles smooth
+// back over ~30s later.
+const SAND_RESPAWN_MS = 30000;
+const sandPiles = new Map(); // id -> { id, area, x, y, present, respawnAt }
+[
+  [905, 180], [935, 330], [890, 470], [930, 620], [900, 760], [975, 520],
+].forEach(([x, y], i) => {
+  const id = 'sand' + (i + 1);
+  sandPiles.set(id, { id, area: 'cove', x, y, present: true, respawnAt: 0 });
+});
+function sandMsg(area) {
+  return {
+    type: 'sand', area,
+    piles: [...sandPiles.values()].filter((p) => p.area === area)
+      .map((p) => ({ id: p.id, x: p.x, y: p.y, present: p.present })),
+  };
+}
+function broadcastSand(area) {
+  const msg = sandMsg(area);
+  for (const p of online.values()) if (p.area === area) send(p.ws, msg);
+}
+// Scooped piles build back up on their respawn timer.
+setInterval(() => {
+  const now = Date.now();
+  let touched = false;
+  for (const p of sandPiles.values()) {
+    if (!p.present && p.respawnAt && now >= p.respawnAt) { p.present = true; p.respawnAt = 0; touched = true; }
+  }
+  if (touched) broadcastSand('cove');
+}, 1000);
+
 // ---------- Stage 30: the Wilderness (PvP, skulling, PKers, Pure Wild) ----------
 // Derek's settled rules, ported from the app version's Wilderness
 // (built there 2026-11-17/18) onto this game's real-multiplayer
@@ -6623,6 +6708,23 @@ const BURY_XP = { animal_bones: 5 };
 const SPIN_WHEEL_POS = { x: 728, y: 727 };
 const SPIN_RANGE = 150;
 const SPIN_XP = 8;
+// Tree Guardian maker chain (Derek, 2026-11-24): the geography in
+// one place — there is ONE furnace in the world, the Emberfall
+// furnace (client prop at world (62,26) = server (1420,710)), and
+// it is where glass is worked, WITH your Tree Guardian standing
+// beside you (the guardian is the maker; the furnace is his
+// workplace as much as the smiths'). Potion mixing needs only the
+// guardian — he carries that bench with him. Crafting XP per step,
+// in line with the amulet chain's scale (spin 8 / string 6 /
+// amulet 20+): melting is the skilled step, blowing is quick
+// handwork, mixing pays by the potion's worth.
+const FURNACE_POS = { x: 1420, y: 710 };
+const FURNACE_RANGE = 150;
+const GLASS_MAKE_XP = 10;
+const GLASS_BLOW_XP = { vial: 8, lantern: 12 };
+const MIX_POTION_XP = { herbs: 12, snapdragon: 14 }; // ranarr -> Prayer potion, snapdragon -> Restore potion
+const MIX_POTION_OUT = { herbs: 'prayer_potion', snapdragon: 'restore_potion' };
+const LANTERN_MAX_PER_PLAYER = 12; // guardian-made lanterns one player may have standing in the world
 // Shared per-player action cooldown for gather / cook / light_fire.
 // Returns true (and does NOT stamp) when the player is acting too fast.
 // `ms` lets a caller use a shorter/longer gap (Stage 3 pickaxes shorten
@@ -6938,6 +7040,7 @@ wss.on('connection', (ws, req) => {
     send(ws, nodesMsg(sess.area));
     send(ws, firesMsg(sess.area));
     send(ws, seaweedMsg(sess.area)); // Stage 29: cove clumps
+    send(ws, sandMsg(sess.area)); // Tree Guardian chain: cove sand piles
     if (sess.area === 'barrows' || sess.area === 'barrows_tunnels' || sess.area === 'barrows_crypt') send(ws, barrowsStateMsg(sess));
     send(ws, { type: 'chat', from: 'Game', text: `🔄 Reconnected — you're back where you left off: ${AREAS[sess.area].name}.` });
   }
@@ -7223,6 +7326,7 @@ wss.on('connection', (ws, req) => {
       send(ws, firesMsg(toArea));
       send(ws, pilesMsg(toArea));
       send(ws, seaweedMsg(toArea));
+      send(ws, sandMsg(toArea)); // Tree Guardian chain
       send(ws, alliesMsg(toArea));
       send(ws, objectsMsg(toArea));
       if (toArea === 'barrows' || toArea === 'barrows_tunnels' || toArea === 'barrows_crypt') send(ws, barrowsStateMsg(me));
@@ -7312,6 +7416,7 @@ wss.on('connection', (ws, req) => {
       // Barrows areas bring the saved run state.
       send(ws, pilesMsg(to));
       send(ws, seaweedMsg(to)); // Stage 29: cove seaweed clumps (empty elsewhere)
+      send(ws, sandMsg(to)); // Tree Guardian chain: cove sand piles (empty elsewhere)
       send(ws, alliesMsg(to)); // Stage 6: guardians already standing there
       send(ws, objectsMsg(to)); // Stage 7D: placed objects in the new area
       if (to === 'barrows' || to === 'barrows_tunnels' || to === 'barrows_crypt') send(ws, barrowsStateMsg(me));
@@ -7660,6 +7765,29 @@ wss.on('connection', (ws, req) => {
       return sendProfile(key);
     }
 
+    // ----- Sand (Tree Guardian chain, 2026-11-24): scoop a cove
+    // pile into an empty Bucket. One bucket per pile; the pile
+    // smooths back over on the seaweed timer. -----
+    if (m.type === 'sand_collect') {
+      const pile = sandPiles.get(String(m.id || ''));
+      if (!pile || !pile.present) return send(ws, { type: 'error', message: 'That sand pile is gone.' });
+      if (me.area !== pile.area) return send(ws, { type: 'error', message: 'That sand is not here.' });
+      if (Math.hypot(me.x - pile.x, me.y - pile.y) > NPC_RANGE) return send(ws, { type: 'error', message: 'Too far away — walk closer to the sand.' });
+      if (stackQty(profile.backpack, 'bucket') < 1) return send(ws, { type: 'error', message: 'You need an empty Bucket to scoop sand — the Food & Supplies stall in the plaza sells one for 5g.' });
+      if (actionOnCooldown(me)) return send(ws, { type: 'error', message: 'Too fast — one action at a time.' });
+      removeStacks(profile.backpack, 'bucket', 1);
+      if (addStacks(profile.backpack, 'bucket_of_sand', 1, BACKPACK_MAX_STACKS) > 0) {
+        addStacks(profile.backpack, 'bucket', 1, BACKPACK_MAX_STACKS); // full pack: hand the bucket back, take nothing
+        return send(ws, { type: 'error', message: 'Backpack full (28 stacks).' });
+      }
+      pile.present = false;
+      pile.respawnAt = Date.now() + SAND_RESPAWN_MS;
+      save(key);
+      broadcastSand(pile.area);
+      send(ws, { type: 'sand_result', ok: true, item: 'bucket_of_sand' });
+      return sendProfile(key);
+    }
+
     // ----- Tree Guardians (Stage 6): awaken the nearest tree -----
     if (m.type === 'awaken_tree') {
       if (me.duelId) return send(ws, { type: 'error', message: 'You cannot awaken a tree during a duel.' });
@@ -7892,6 +8020,111 @@ wss.on('connection', (ws, req) => {
       save(key);
       me.actSkill = 'magic'; me.actAt = Date.now();
       send(ws, { type: 'enchant_result', ok: true, item: out, spell: spell.id, xp: spell.castXp || 0 });
+      return sendProfile(key);
+    }
+
+    // ----- Tree Guardian maker + herblore (Derek, 2026-11-24) -----
+    // The guardian is the maker: tap him (client) to open the
+    // making panel; these handlers are the work itself. Glass is
+    // worked at the ONE furnace (Emberfall) with the guardian
+    // beside you; potion mixing travels with him. Every step is a
+    // small handler in the spin/bury shape: validate, consume,
+    // grant, save, answer, push the profile.
+    if (m.type === 'glass_make' || m.type === 'glass_blow') {
+      if (me.duelId || me.npcFightId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
+      const ally = helperAlly(key, me.area);
+      if (!ally) return send(ws, { type: 'error', message: 'Your Tree Guardian must be standing with you to work glass — awaken a tree and bring him to the furnace.' });
+      if (me.area !== 'mine' || Math.hypot(me.x - FURNACE_POS.x, me.y - FURNACE_POS.y) > FURNACE_RANGE) return send(ws, { type: 'error', message: 'Glass is worked at the Emberfall furnace — take your Tree Guardian to the Mine & Smithy.' });
+      if (actionOnCooldown(me)) return send(ws, { type: 'error', message: 'Too fast — one action at a time.' });
+      if (m.type === 'glass_make') {
+        if (stackQty(profile.backpack, 'seaweed') < 1) return send(ws, { type: 'error', message: 'You need a piece of Seaweed — it washes up along the Fishing Cove shore.' });
+        if (stackQty(profile.backpack, 'bucket_of_sand') < 1) return send(ws, { type: 'error', message: 'You need a Bucket of sand — scoop shore sand at the Fishing Cove with an empty bucket.' });
+        removeStacks(profile.backpack, 'seaweed', 1);
+        removeStacks(profile.backpack, 'bucket_of_sand', 1);
+        const leftover = addStacks(profile.backpack, 'molten_glass', 1, BACKPACK_MAX_STACKS);
+        if (leftover > 0) addStacks(profile.bank, 'molten_glass', leftover); // full pack: bank it, never lose a melt
+        const backBucket = addStacks(profile.backpack, 'bucket', 1, BACKPACK_MAX_STACKS); // the bucket comes back empty
+        if (backBucket > 0) addStacks(profile.bank, 'bucket', backBucket);
+        addXp(key, { crafting: GLASS_MAKE_XP });
+        save(key);
+        me.actSkill = 'crafting'; me.actAt = Date.now();
+        send(ws, { type: 'glass_result', ok: true, item: 'molten_glass', xp: GLASS_MAKE_XP });
+        return sendProfile(key);
+      }
+      const make = String(m.make || '');
+      const out = make === 'vial' ? 'glass_vial' : make === 'lantern' ? 'glass_lantern' : null;
+      if (!out) return send(ws, { type: 'error', message: 'Blow the glass into a vial or a lantern.' });
+      if (stackQty(profile.backpack, 'molten_glass') < 1) return send(ws, { type: 'error', message: 'No Molten glass — melt seaweed and a bucket of sand at the furnace first.' });
+      removeStacks(profile.backpack, 'molten_glass', 1);
+      const leftover = addStacks(profile.backpack, out, 1, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(profile.bank, out, leftover);
+      addXp(key, { crafting: GLASS_BLOW_XP[make] });
+      save(key);
+      me.actSkill = 'crafting'; me.actAt = Date.now();
+      send(ws, { type: 'blow_result', ok: true, item: out, xp: GLASS_BLOW_XP[make] });
+      return sendProfile(key);
+    }
+    if (m.type === 'mix_potion') {
+      const herb = String(m.herb || '');
+      const out = MIX_POTION_OUT[herb];
+      if (!out) return send(ws, { type: 'error', message: 'That herb makes no potion your guardian knows.' });
+      if (me.duelId || me.npcFightId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
+      const ally = helperAlly(key, me.area);
+      if (!ally) return send(ws, { type: 'error', message: 'Your Tree Guardian must be standing with you to mix potions — awaken a tree first.' });
+      if (stackQty(profile.backpack, 'glass_vial') < 1) return send(ws, { type: 'error', message: 'You need an empty Glass vial — blow one from molten glass at the furnace.' });
+      if (stackQty(profile.backpack, herb) < 1) return send(ws, { type: 'error', message: `No ${ITEMS[herb].name} in your backpack — hobgoblins at the Goblin Camp drop them.` });
+      if (actionOnCooldown(me)) return send(ws, { type: 'error', message: 'Too fast — one action at a time.' });
+      removeStacks(profile.backpack, 'glass_vial', 1);
+      removeStacks(profile.backpack, herb, 1);
+      const leftover = addStacks(profile.backpack, out, 1, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(profile.bank, out, leftover);
+      addXp(key, { crafting: MIX_POTION_XP[herb] });
+      save(key);
+      me.actSkill = 'crafting'; me.actAt = Date.now();
+      send(ws, { type: 'mix_result', ok: true, item: out, xp: MIX_POTION_XP[herb] });
+      return sendProfile(key);
+    }
+    // Guardian-made lanterns: placed through the Stage 7D
+    // placed-objects persistence (profile.placedObjects +
+    // placedObjectsAll), so they survive relogs and restarts,
+    // show to everyone, and the existing admin remove_object
+    // tooling works on them. The owner can take theirs back or
+    // smash it (Derek: made things stay "unless someone decides
+    // to destroy it").
+    if (m.type === 'lantern_place') {
+      if (me.duelId || me.npcFightId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
+      if (isWildArea(me.area)) return send(ws, { type: 'error', message: 'A glass lantern would not last a minute in the Wilderness.' });
+      if (stackQty(profile.backpack, 'glass_lantern') < 1) return send(ws, { type: 'error', message: 'No Glass lantern in your backpack — blow one from molten glass at the furnace.' });
+      const mine = placedObjectsAll.filter((o) => o.ownerKey === key && o.kind === 'glass_lantern');
+      if (mine.length >= LANTERN_MAX_PER_PLAYER) return send(ws, { type: 'error', message: `You already have ${LANTERN_MAX_PER_PLAYER} lanterns standing in the world — take one back first.` });
+      if (actionOnCooldown(me)) return send(ws, { type: 'error', message: 'Too fast — one action at a time.' });
+      removeStacks(profile.backpack, 'glass_lantern', 1);
+      ensureV2(profile);
+      const entry = { id: `obj_${++objectSeq}`, area: me.area, kind: 'glass_lantern', x: Math.max(0, Math.min(WORLD_W, Math.round(me.x) + 24)), y: Math.round(me.y) };
+      profile.placedObjects.push(entry); // saved on MY profile (the Stage 7D storage pattern)
+      placedObjectsAll.push({ ...entry, by: profile.username, ownerKey: key });
+      save(key);
+      broadcastObjects(me.area);
+      send(ws, { type: 'lantern_result', action: 'placed', id: entry.id });
+      return sendProfile(key);
+    }
+    if (m.type === 'lantern_take' || m.type === 'lantern_smash') {
+      const id = String(m.id || '');
+      const idx = placedObjectsAll.findIndex((o) => o.id === id && o.kind === 'glass_lantern');
+      if (idx < 0) return send(ws, { type: 'error', message: 'That lantern is not standing here.' });
+      const obj = placedObjectsAll[idx];
+      if (obj.ownerKey !== key) return send(ws, { type: 'error', message: `That lantern isn't yours — ${obj.by} made it. Only they (or an admin) can remove it.` });
+      if (me.area !== obj.area || Math.hypot(me.x - obj.x, me.y - obj.y) > NPC_RANGE) return send(ws, { type: 'error', message: 'Walk closer to your lantern.' });
+      placedObjectsAll.splice(idx, 1);
+      ensureV2(profile);
+      profile.placedObjects = profile.placedObjects.filter((o) => o.id !== id);
+      if (m.type === 'lantern_take') {
+        const leftover = addStacks(profile.backpack, 'glass_lantern', 1, BACKPACK_MAX_STACKS);
+        if (leftover > 0) addStacks(profile.bank, 'glass_lantern', leftover);
+      }
+      save(key);
+      broadcastObjects(obj.area);
+      send(ws, { type: 'lantern_result', action: m.type === 'lantern_take' ? 'took' : 'smashed', id });
       return sendProfile(key);
     }
 
@@ -8819,6 +9052,7 @@ wss.on('connection', (ws, req) => {
       send(ws, firesMsg(target));
       send(ws, pilesMsg(target));
       send(ws, seaweedMsg(target));
+      send(ws, sandMsg(target)); // Tree Guardian chain
       send(ws, alliesMsg(target));
       send(ws, objectsMsg(target));
       enterWildState(key, target);
@@ -9366,6 +9600,7 @@ wss.on('connection', (ws, req) => {
       const npcs = [];
       const addNpc = (npcName, area) => npcs.push({ num: npcs.length + 1, name: npcName, area });
       addNpc(GOBLIN_DEF.name, 'goblins');
+      addNpc(HOBGOBLIN_DEF.name, 'goblins'); // Tree Guardian chain (2026-11-24)
       addNpc(WIZARD_DEF.name, 'magic'); // Stage 19
       addNpc(RANGER_DEF.name, 'range'); // Stage 19
       for (const b of Object.values(BARROWS_BROTHERS)) addNpc(b.name, 'barrows');
