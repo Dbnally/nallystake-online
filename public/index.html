@@ -37,22 +37,27 @@
  .orb.sp .fill{background:#c9a227}.orb.sp{background:#40340a}
  .orb.sp.ready{box-shadow:0 0 12px 3px #c9a227}
 .orb.run{background:#2b2118}.orb.run.on{background:#40340a;box-shadow:0 0 12px 3px #c9a227}
- /* panel dock (Interface Overhaul): the one-screen RS-style panel
-    cluster, docked at the right edge under the minimap. One unit:
-    a controls row (the master 🎛️ toggle + Grab / Menu tap / Camera
-    chips), a TAB BAR holding every panel tab, and the panel box
-    itself showing the active tab in place. No slide-in drawer, no
-    scrolling rail, no loop copies — the tabs wrap inside the dock.
-    The 🎛️ toggle hides the chips + tab bar (the persisted
-    nallystake_rail_open choice); an open panel box stays open,
-    exactly as collapsing the old rail never closed an open panel. */
- #paneldock{position:fixed;right:6px;top:190px;z-index:40;width:min(344px,88vw);display:flex;flex-direction:column;gap:6px;pointer-events:none;max-height:calc(100dvh - 190px - 100px - env(safe-area-inset-bottom,0px))}
- #dockhead{display:flex;gap:6px;align-items:center;pointer-events:none;flex:none}
- /* Panel-open fit (2026-11-23): with the dock capped above the
-    bottom strip, an open panel keeps its full body and the TAB
-    GRID takes the squeeze instead — it scrolls internally only
-    while a panel is open; with no panel open it never scrolls. */
- #paneldock.panelopen #docktabs{min-height:0;overflow-y:auto;flex:1 1 auto}
+ /* panel dock (Interface Overhaul) — Mobile layout (2026-11-24):
+    the dock is now ONE bottom SHEET. #paneldock is a centred sheet
+    (full width on a phone, capped 680px on wide screens) anchored
+    just above the bottom strip slot — bottom:100px clears the
+    strip and the closed chat header — and capped at 62dvh. Inside
+    it, the TAB GRID (the Menu: big labelled tiles in Play / World /
+    People / System groups) and the panel box take turns in the
+    same sheet space: a panel replaces the grid, and the header's
+    "‹ Menu" button brings the grid back. The controls row
+    (#dockhead: the ☰ Menu toggle + ❓ Help + Grab / Menu tap /
+    Camera chips) is fixed on the field under the minimap, always
+    visible, exactly where the old dock head sat. The ☰ toggle
+    hides the chips + tab grid (the persisted nallystake_rail_open
+    choice); an open panel box stays open. */
+ #paneldock{position:fixed;left:0;right:0;margin:0 auto;bottom:calc(100px + env(safe-area-inset-bottom,0px));z-index:40;width:min(680px,100vw);display:flex;flex-direction:column;gap:6px;pointer-events:none;max-height:62dvh;max-height:min(62dvh,max(160px,calc(100dvh - 342px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))))}
+ #dockhead{display:flex;gap:6px;align-items:center;pointer-events:none;flex:none;position:fixed;top:calc(190px + env(safe-area-inset-top,0px));right:6px;width:min(344px,88vw);z-index:46}
+ /* Panel-open fit (Mobile layout, 2026-11-24): inside the sheet
+    the panel takes the space and the tile grid steps aside
+    entirely — the panel header's "‹ Menu" button brings it back.
+    The panel body scrolls internally (see #dockbody). */
+ #paneldock.panelopen #docktabs{display:none}
  #dockhead>*{pointer-events:auto}
  #dockhead .railchip{flex:1}
  /* Navigation pass: every tab carries its name under its icon —
@@ -60,7 +65,7 @@
     from an emoji (the title attribute never shows on touch). The
     tab grows to 60×54 to fit icon + label; the bar still wraps
     inside the dock (5 per row at full dock width). */
- .rbtn{width:60px;height:54px;border-radius:10px;background:rgba(23,19,16,var(--uia));border:2px solid #7a6748;color:#e8d9b0;font-size:20px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px 1px;box-sizing:border-box}
+ .rbtn{width:60px;height:58px;border-radius:10px;background:rgba(23,19,16,var(--uia));border:2px solid #7a6748;color:#e8d9b0;font-size:20px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px 1px;box-sizing:border-box}
  .rbtn .tic{font-size:19px;line-height:1}
  .rbtn .tlbl{font-size:9px;font-weight:700;line-height:1;color:#d8c9a3;white-space:nowrap}
  .rbtn.on{border-color:#c9a227;background:#3a2c1c}
@@ -99,53 +104,44 @@
  /* Interface simplification (Derek, 2026-11-23): the 15 tabs sit
     in four labelled groups — Play / World / People / System — so
     the dock reads as four short lists instead of one scatter of
-    buttons. A group is a plain wrapping row under a small quiet
+    buttons. A group is a tile grid under a small quiet
     header; headers are text only, never interactive, and always
     shown (no collapse state). A group header hides only when
     every tab in its group is hidden (see syncDockGroupHeads). */
- .dockgroup{display:flex;flex-wrap:wrap;gap:6px}
- .dockgroup .ghead{flex:0 0 100%;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#b8a888;line-height:1.1;margin-left:2px}
- /* ============ Trial B (Derek 2026-11-23): grouped action buttons + smart prompts + side cluster ============
-    Trial A is the default CSS state: every B-only artefact below is
-    inert (labels display:none, quick-chip wrappers display:contents,
-    cluster hidden, prompt line hidden) so A renders exactly as
-    settled. body.ifaceB switches the presentation live. In B the
-    bottom bar / fight strips carry labelled groups in the spec
-    order Fight · Protect · Supplies · Actions · Pack — with Pack +
-    Protect homed in the fixed side cluster (#sidecluster), so the
-    strips show Fight · Supplies · Actions and the cluster carries
-    Pack · Protect, always in the same right-edge gutter. */
- .blab{display:none}
+ /* Mobile layout (2026-11-24): each group is a TILE GRID under its
+    word header — 3 tiles per row at phone width, more on a wide
+    sheet; the header spans the grid's full width. */
+ .dockgroup{display:grid;grid-template-columns:repeat(auto-fill,minmax(102px,1fr));gap:8px}
+ .dockgroup .ghead{grid-column:1/-1;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#b8a888;line-height:1.1;margin-left:2px}
+ /* ============ Grouped action buttons + smart prompts (the one layout) ============
+    Mobile layout (2026-11-24): the A/B interface trial is RETIRED.
+    This is THE layout at every screen size — group labels always
+    shown, the group order below always applied, and Pack + Protect
+    live in the strips themselves: the bottom bar always shows
+    🎒 Pack, the attack-style chips and the three Deflect chips
+    (Derek's settled bottom bar), and the fight strips carry the
+    same buttons plus their Supplies / Actions quick chips. The
+    old side cluster is gone; its Deflect buttons were duplicates
+    of the bar's own chips. */
+ .blab{display:inline-flex;align-items:center;font-size:9.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#b8a888;white-space:nowrap;padding:0 2px}
  .bwrap{display:contents}
- body.ifaceB .blab{display:inline-flex;align-items:center;font-size:9.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#b8a888;white-space:nowrap;padding:0 2px}
- body.ifaceB .bwrap{display:contents}
- /* B group order inside the strips (flex order; A never sets order) */
- body.ifaceB #duelstyles,body.ifaceB #fcstyles,body.ifaceB #bbstyles{order:11}
- body.ifaceB #duelprayers,body.ifaceB #fcprayers,body.ifaceB #bbprayers{order:21}
- body.ifaceB #atkchip,body.ifaceB #fcatkchip{order:41}
- body.ifaceB #duelflee{order:43}
- body.ifaceB .blab[data-grp="fight"]{order:10}
- body.ifaceB .blab[data-grp="protect"]{order:20}
- body.ifaceB .blab[data-grp="supplies"]{order:30}
- body.ifaceB .bwrap[data-grp="supplies"]{order:31}
- body.ifaceB .blab[data-grp="actions"]{order:40}
- body.ifaceB .bwrap[data-grp="actions"]{order:42}
- /* In B, Pack + Protect leave the strips — the side cluster is their home */
- body.ifaceB #bbpack,body.ifaceB #bbprayers,body.ifaceB #duelpack,body.ifaceB #duelprayers,body.ifaceB #fcpack,body.ifaceB #fcprayers,body.ifaceB .blab[data-grp="pack"],body.ifaceB .blab[data-grp="protect"]{display:none}
- /* Side cluster: fixed right-edge gutter, one column, always reachable */
- #sidecluster{display:none}
- body.ifaceB #sidecluster{display:flex;flex-direction:column;gap:6px;position:fixed;right:6px;top:242px;width:52px;z-index:46}
- body.ifaceB #paneldock{right:64px;width:min(300px,calc(100vw - 76px))}
- .scbtn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:rgba(34,26,19,.92);border:2px solid #4a3a28;border-radius:10px;color:#e8d9b0;min-height:50px;padding:4px 2px;cursor:pointer;font-family:inherit;box-sizing:border-box}
- .scbtn .sic{font-size:19px;line-height:1}
- .scbtn .slb{font-size:8.5px;font-weight:800;letter-spacing:.04em;color:#d8c9a3;line-height:1}
- .scbtn.on{border-color:#c9a227;background:#3a2c1c;box-shadow:0 0 10px #c9a22766}
+ /* Group order inside the strips (flex order) */
+ #duelstyles,#fcstyles,#bbstyles{order:11}
+ #duelprayers,#fcprayers,#bbprayers{order:21}
+ #atkchip,#fcatkchip{order:41}
+ #duelflee{order:43}
+ .blab[data-grp="fight"]{order:10}
+ .blab[data-grp="protect"]{order:20}
+ .blab[data-grp="supplies"]{order:30}
+ .bwrap[data-grp="supplies"]{order:31}
+ .blab[data-grp="actions"]{order:40}
+ .bwrap[data-grp="actions"]{order:42}
  /* Smart prompt: one line above the strip + a pulse on the real button */
  #promptline{display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:calc(100px + env(safe-area-inset-bottom,0px));z-index:44;background:rgba(23,19,16,.92);border:1px solid #c9a227;border-radius:999px;color:#ffe9a8;font-size:12.5px;font-weight:800;padding:6px 14px;pointer-events:none;white-space:nowrap;max-width:92vw;overflow:hidden;text-overflow:ellipsis}
  #promptline.open{display:block}
  @keyframes promptPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.13)}}
  .promptpulse{animation:promptPulse .7s ease-in-out infinite!important;border-color:#ffd75e!important;box-shadow:0 0 14px 3px #ffd75e88!important}
- /* Bank + Worn panels (both trials): compact, items-first */
+ /* Bank + Worn panels: compact, items-first */
  .bankpanel .cell,.wornpanel .cell{min-height:52px}
  .bankpanel h4,.wornpanel h4{margin:6px 0 4px;color:#e3c766}
  .bankpanel .seg button,.bankpanel .tabs button{min-height:36px}
@@ -160,15 +156,15 @@
  #placedtabs .rbtn{pointer-events:auto;touch-action:none}
  /* the panel box: fixed in the dock, in place — the active tab's
     content lives here, under its title bar, and scrolls internally */
- #dockpanel{width:100%;box-sizing:border-box;background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:12px;padding:10px 6px;display:none;pointer-events:auto;min-height:0;flex-direction:column;flex:none}
+ #dockpanel{width:100%;box-sizing:border-box;background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:12px;padding:10px 6px;display:none;pointer-events:auto;min-height:0;flex-direction:column;flex:1 1 auto}
  #dockpanel.open{display:flex}
  #dockpanel h3{margin:2px 0 8px;color:#e3c766;font-size:16px;display:flex;justify-content:space-between;align-items:center}
  #dockpanel h3 .x{background:none;border:0;color:#e8d9b0;font-size:18px;cursor:pointer;padding:6px 10px;min-height:38px;min-width:38px;border-radius:8px;box-sizing:border-box}
- /* Navigation pass: the "‹ Tabs" back button sits beside the ✕ in
-    every panel header — one tap from any panel back to the tab
-    grid (see backToTabs). */
+ /* Navigation pass: the "‹ Menu" back button sits beside the ✕ in
+    every panel header — one tap from any panel back to the Menu
+    tile grid (see backToTabs). */
  #dockpanel h3 #dockback{margin-left:auto;font-size:13px;font-weight:800;color:#e3c766}
- #dockbody{max-height:max(140px,calc(100dvh - 560px));overflow-y:auto;min-height:0}
+ #dockbody{max-height:calc(62dvh - 96px);overflow-y:auto;min-height:0;flex:1 1 auto}
  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
  .cell{background:#221a13;border:1px solid #4a3a28;border-radius:8px;min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:3px;position:relative}
  .cell.sel{border-color:#c9a227;background:#3a2c1c}
@@ -527,11 +523,13 @@
  #promptchip.open + #promptline{bottom:calc(142px + env(safe-area-inset-bottom,0px))}
  /* The reconnect bar hangs under the top bar, not on top of it. */
  #connbar{top:calc(40px + env(safe-area-inset-top,0px))}
- @media (min-width:701px){
-   /* Desktop/tablet: an open dock panel also stops above the OPEN
-      chat, not just above the strip slot. */
-   body:has(#chatbox:not(.closed)) #paneldock{max-height:calc(100dvh - 190px - 286px - env(safe-area-inset-bottom,0px))}
- }
+ /* Mobile layout (2026-11-24): with the chat OPEN, the Menu sheet
+    lifts clear above it — the chat stays visible and usable
+    (Derek's standing rule) — and its height cap shrinks to the
+    space left under the top chrome. Applies at every width: the
+    sheet is the one layout now. */
+ body:has(#chatbox:not(.closed)) #paneldock{bottom:calc(292px + env(safe-area-inset-bottom,0px));max-height:min(62dvh,calc(100dvh - 292px - 176px - env(safe-area-inset-bottom,0px)))}
+body:has(#chatbox:not(.closed)) #paneldock{max-height:min(62dvh,max(160px,calc(100dvh - 534px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))))}
  @media (max-width:900px){
    /* Grab-mode hint: pinned to the free left column, out of the
       minimap's band (it was centred across the map at 94vw). */
@@ -580,15 +578,31 @@
       and shifted right, off the joystick they used to clip. */
    #promptchip,#promptline{bottom:calc(140px + env(safe-area-inset-bottom,0px));max-width:120px;white-space:normal;text-align:center;transform:translateX(calc(-50% + 8px))}
    #promptchip.open + #promptline{bottom:calc(216px + env(safe-area-inset-bottom,0px))}
-   /* The dock stops higher on a phone, so even a fully-open tab
-      grid or panel never reaches the camera stick, the chips or
-      the quick buttons; the tab grid scrolls inside the cap, and
-      with a panel open it steps aside (the panel header's own
-      "‹ Tabs" button brings it back). */
-   #paneldock{max-height:calc(100dvh - 190px - 346px - env(safe-area-inset-bottom,0px))}
-   #docktabs{min-height:0;overflow-y:auto}
-   #paneldock.panelopen #docktabs{display:none}
-   #dockbody{max-height:calc(100dvh - 190px - 346px - 130px)}
+   /* Mobile layout (2026-11-24): the old top-dock caps are gone
+      with the dock — the sheet's own 62dvh cap and the panel
+      body's cap govern at phone width too, and the tile grid
+      scrolls inside the sheet (see the Mobile layout block). */
+ }
+ /* ============ Mobile layout (2026-11-24): tiles, targets, phone fit ============
+    The Menu tiles are big labelled targets — icon over word, 62px
+    tall, full grid-cell width. Only grid tiles stretch: a tab
+    dragged out of the dock (a placed tab) keeps the base .rbtn
+    size, so placed buttons look and behave exactly as before. */
+ #docktabs .rbtn{width:auto;height:62px}
+ #docktabs .rbtn .tic{font-size:24px}
+ #docktabs .rbtn .tlbl{font-size:11px}
+ /* The tile grid scrolls inside the sheet when the groups run
+    taller than the cap (short screens); the panel body has its
+    own scroll (see #dockbody). */
+ #docktabs{min-height:0;overflow-y:auto;flex-wrap:nowrap}
+ /* The ☰ Menu + ❓ Help field buttons: a full 52px-tall target. */
+ #gearbtn,#helpbtn{height:52px;min-width:52px}
+ /* Narrow screens: the minimap shrinks a step, so the top-right
+    block (map + orbs, with Menu/Help under it) stays compact and
+    nothing crowds the top bar. */
+ @media (max-width:640px){
+   #minimap{width:104px;height:59px}
+   #mapwrap{top:50px}
  }
 </style></head><body>
 <div id="scene"></div>
@@ -610,7 +624,7 @@
 
 <div id="paneldock">
  <div id="dockhead">
-  <button id="gearbtn" title="Show / hide the panel tabs"><span class="gbic">🎛️</span><span class="gblbl">Menu</span></button>
+  <button id="gearbtn" title="Menu — every panel in one sheet"><span class="gbic">☰</span><span class="gblbl">Menu</span></button>
   <button id="helpbtn" title="Help — learn the game, task by task"><span class="gbic">❓</span><span class="gblbl">Help</span></button>
   <button id="railgrab" class="railchip" title="Grab mode: drag the panel tabs where you want them, then toggle off to lock them">✋ Grab</button>
   <button id="railmenutap" class="railchip" title="Menu tap: taps on players, monsters, nodes and piles open their menu instead of acting">🖱️ Menu tap: Off</button>
@@ -646,7 +660,7 @@
    <button class="rbtn" data-panel="settings" title="Settings"><span class="tic">🎛️</span><span class="tlbl">Settings</span></button>
   </div>
  </div>
- <div id="dockpanel"><h3><span id="docktitle">Panel</span><button class="x" id="dockback" title="Back to the panel tabs">‹ Tabs</button><button class="x" id="dockx">✕</button></h3><div id="dockbody"></div></div>
+ <div id="dockpanel"><h3><span id="docktitle">Panel</span><button class="x" id="dockback" title="Back to the menu">‹ Menu</button><button class="x" id="dockx">✕</button></h3><div id="dockbody"></div></div>
 </div>
 <div id="placedtabs"></div>
 
@@ -685,6 +699,7 @@
  <span class="blab" data-grp="actions">Actions</span>
  <button class="fchip atk" id="atkchip" style="display:none" title="Attack — the same tap as tapping your opponent">⚔️ Attack</button>
  <div id="duelnomove" style="display:none">🚫 No Movement</div>
+ <span class="blab" data-grp="protect">Protect</span>
  <div id="duelprayers">
   <button class="fchip pray" id="duelpray-melee">🛡️ Deflect Melee</button>
   <button class="fchip pray" id="duelpray-missiles">🏹 Deflect Missiles</button>
@@ -709,6 +724,7 @@
  <div id="fclast" class="note fightinfo" style="text-align:center"></div>
  <span class="blab" data-grp="actions">Actions</span>
  <button class="fchip atk" id="fcatkchip" style="display:none" title="Attack your current cave target">⚔️ Attack</button>
+ <span class="blab" data-grp="protect">Protect</span>
  <div id="fcprayers">
   <button class="fcpray" id="fcpray-melee">🛡️ Deflect Melee</button>
   <button class="fcpray" id="fcpray-missiles">🏹 Deflect Missiles</button>
@@ -720,13 +736,6 @@
 
 <div id="promptchip"></div>
 <div id="promptline"></div>
-<div id="sidecluster">
- <button class="scbtn sc-pack" id="scpack" title="Backpack — one tap, opens at the side"><span class="sic">🎒</span><span class="slb">Pack</span></button>
- <button class="scbtn sc-pray" data-prayer="melee" title="Deflect Melee"><span class="sic">🛡️</span><span class="slb">Melee</span></button>
- <button class="scbtn sc-pray" data-prayer="missiles" title="Deflect Missiles"><span class="sic">🏹</span><span class="slb">Missiles</span></button>
- <button class="scbtn sc-pray" data-prayer="magic" title="Deflect Magic"><span class="sic">🔮</span><span class="slb">Magic</span></button>
-</div>
-
 <div id="bottombar">
  <button class="fchip pack" id="bbpack" title="Backpack">🎒 Backpack</button>
  <span class="blab" data-grp="fight">Fight</span>
@@ -736,6 +745,7 @@
   <button class="fchip sty" data-style="defensive">🛡️ Defensive</button>
   <button class="fchip sty" data-style="controlled">⚖️ Controlled</button>
  </div>
+ <span class="blab" data-grp="protect">Protect</span>
  <div id="bbprayers">
   <button class="fchip pray" id="bbpray-melee">🛡️ Deflect Melee</button>
   <button class="fchip pray" id="bbpray-missiles">🏹 Deflect Missiles</button>
@@ -1029,7 +1039,7 @@ function syncDockGroupHeads(){
 }
 function applyRailVisibility(){
  const rs=$('docktabs'); if(rs) rs.classList.toggle('open',railOpen);
- const gb=$('gearbtn'); if(gb){ const gi=gb.querySelector('.gbic'); if(gi) gi.textContent=railOpen?'✕':'🎛️'; } // Navigation pass: swap only the glyph — the "Menu" label span stays
+ const gb=$('gearbtn'); if(gb){ const gi=gb.querySelector('.gbic'); if(gi) gi.textContent=railOpen?'✕':'☰'; } // Mobile layout: swap only the glyph — the "Menu" label span stays
  for(const id of ['railgrab','railmenutap','railcam']){ const c=$(id); if(c) c.style.display=railOpen?'':'none'; } // Stage 18: the chips follow the tab bar
  document.querySelectorAll('#docktabs .rbtn, #placedtabs .rbtn').forEach(b=>{ b.style.display=settings.hidden[b.dataset.panel]?'none':''; }); // Placed-button fix: the Settings hidden-tab rule covers placed tabs too
  refreshToolsBtn();
@@ -1057,12 +1067,11 @@ window.setGroundTap=function(m){ settings.groundTap=(m==='face')?'face':'walk'; 
    Both persist in the settings store and refresh their dock chips. */
 window.setTapMode=function(m){ settings.tapMode=(m==='menu')?'menu':'normal'; saveSettings(); renderMenuTapChip(); if(dockPanel==='settings') renderDock(); };
 window.setCamPov=function(v){ settings.camPov=(v==='first'||v==='shoulder')? v : 'third'; saveSettings(); renderCamChip(); if(dockPanel==='settings') renderDock(); };
-/* Interface trial (Derek 2026-11-23): A = grouped dock + classic
-   bottom bar; B = grouped action buttons + smart prompts + the
-   side Pack/Protect cluster. B is the default; a saved choice in
-   this same settings object wins. The swap is presentation only —
-   applyIfaceMode just flips a body class. */
-window.setIfaceMode=function(v){ settings.iface=(v==='A')?'A':'B'; saveSettings(); applyIfaceMode(); if(dockPanel==='settings') renderDock(); };
+/* Mobile layout (2026-11-24): the A/B interface trial is retired —
+   there is one layout now (the Menu sheet + grouped strips), so
+   the old switcher is gone. The settings object's legacy iface
+   key is left in place, unread, so saved settings keep loading
+   exactly as before. */
 /* NPC build: the Guided path toggle. Stored in this settings
    object; the server needs the flag for bot behaviour, so it is
    pushed at login (welcome handler) and on every change via
@@ -1070,7 +1079,6 @@ window.setIfaceMode=function(v){ settings.iface=(v==='A')?'A':'B'; saveSettings(
    advice; asking a character or the ❓ Help button still answers. */
 window.setGuidedPath=function(v){ settings.guided=!!v; saveSettings(); pushGuidedSetting(); if(dockPanel==='settings') renderDock(); };
 function pushGuidedSetting(){ send({type:'set_guided',on:settings.guided!==false}); }
-function applyIfaceMode(){ document.body.classList.toggle('ifaceB',settings.iface!=='A'); }
 /* Stage 37b: fight-feel toggles, same setter shape as the camera
    ones — persisted in the settings store, panel re-renders in sync. */
 window.setSoundOn=function(v){ settings.soundOn=!!v; saveSettings(); if(settings.soundOn) sfxClick(); if(dockPanel==='settings') renderDock(); };
@@ -8245,7 +8253,7 @@ function animate(){
  stepMovement(dt);
  stepFlyFx(now); // Rat Cave: the Tree Guardian's spell bolt (2026-11-24)
  updatePromptChip(); // Interface simplification: the bank/shop context hint follows the player's spot (cheap distance checks; DOM touched only on a change)
- updateSmartPrompt(); // Trial B: smart prompts ride the same tick (inert in A)
+ updateSmartPrompt(); // smart prompts ride the same tick
  // Stage 32: the respawn hold expires — replay the held area/state
  // messages so the scene switches to the plaza now the fall played.
  if(deathHoldUntil&&now>=deathHoldUntil){ deathHoldUntil=0; releaseHeldMsgs(); }
@@ -9705,7 +9713,6 @@ function pHelp(){
 const PANEL_LIST=[['backpack','🎒 Backpack'],['worn','🗡️ Worn items'],['shop','🏪 Shops'],['bank','🏦 Bank'],['exchange','💱 Gold Exchange'],['prayers','🙏 Prayers'],['spellbook','📖 Spellbook'],['players','👥 Players'],['admin','👑 Admin'],['tools','🛠️ Admin Tools'],['skills','📊 Skills'],['smithy','🔥 Smithy'],['teleport','🌀 Teleport'],['settings','🎛️ Settings']];
 function pSettings(){
  let h=`<div class="setrow"><span class="grow">🎨 Appearance<br><span class="note">Change how your knight looks</span></span><button class="act" onclick="closeDock();openAppearance()">🎨 Appearance</button></div>`;
- h+=`<div class="setrow"><span class="grow">🧭 Interface: A / B<br><span class="note">Two layouts on trial — pick the one that feels simpler. A: classic bottom bar. B: grouped action buttons, smart prompts, and the side Pack + Protect cluster</span></span></div><div class="seg" style="margin-top:-2px"><button class="${settings.iface==='A'?'on':''}" onclick="setIfaceMode('A')">A — Classic</button><button class="${settings.iface!=='A'?'on':''}" onclick="setIfaceMode('B')">B — Grouped</button></div>`;
  h+=`<div class="setrow"><span class="grow">🧭 Guided path<br><span class="note">When on, the world's characters may volunteer your next step as you play. Turn it off and nobody pushes advice at you — asking anyone what to do, or the ❓ Help button, still answers any time.</span></span></div><div class="seg" style="margin-top:-2px"><button class="${settings.guided!==false?'on':''}" onclick="setGuidedPath(true)">On</button><button class="${settings.guided===false?'on':''}" onclick="setGuidedPath(false)">Off</button></div>`;
  h+=`<div class="setrow"><span class="grow">📷 Camera drag speed<br><span class="note">Screen-drag rotation &amp; tilt, camera stick</span></span><input type="range" min="0.25" max="3" step="0.25" value="${settings.camSpeed}" oninput="setCamSpeed(this.value)"><b id="camspeedval" style="color:#e3c766;min-width:34px;text-align:right">${settings.camSpeed}×</b></div>`;
  h+=`<div class="setrow"><span class="grow">👆 Ground tap mode</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.groundTap==='walk'?'on':''}" onclick="setGroundTap('walk')">🚶 Walk</button><button class="${settings.groundTap==='face'?'on':''}" onclick="setGroundTap('face')">🧭 Face</button></div>`;
@@ -11213,14 +11220,10 @@ function syncCombatControls(){
  document.querySelectorAll('.fchip.sty').forEach(b=>b.classList.toggle('on',!!me&&me.style===b.dataset.style));
  for(const pr of ['melee','missiles','magic']){ const b=$('bbpray-'+pr); if(b) b.classList.toggle('on',!!me&&me.activePrayer===pr); }
  document.querySelectorAll('.fchip.pack').forEach(b=>b.classList.toggle('on',dockPanel==='backpack'));
- document.querySelectorAll('.sc-pray').forEach(b=>b.classList.toggle('on',!!me&&me.activePrayer===b.dataset.prayer));
- const scp=$('scpack'); if(scp) scp.classList.toggle('on',dockPanel==='backpack');
 }
 for(const pr of ['melee','missiles','magic']){ const b=$('bbpray-'+pr); if(b) b.onclick=()=>send({type:'prayer',prayer:pr}); }
 document.querySelectorAll('.fchip.sty').forEach(b=>b.onclick=()=>{ if(me&&me.style!==b.dataset.style) send({type:'style',style:b.dataset.style}); });
 document.querySelectorAll('.fchip.pack').forEach(b=>b.onclick=()=>togglePanel('backpack'));
-document.querySelectorAll('.sc-pray').forEach(b=>b.onclick=()=>send({type:'prayer',prayer:b.dataset.prayer}));
-{ const scp=$('scpack'); if(scp) scp.onclick=()=>togglePanel('backpack'); }
 /* The fight strips open/close from many fight handlers; watching
    their class keeps the bottom bar's turn in the slot automatic —
    no fight code path needs to know this bar exists. */
@@ -11247,7 +11250,7 @@ const PROMPT_RANGE=80;
 let promptChipText='';
 function updatePromptChip(){
  let want='';
- if(me&&myPos&&curArea==='plaza'&&!grabMode&&!(duel||modDuel||npcFight||fcRun||wildFight)){
+ if(me&&myPos&&curArea==='plaza'&&!grabMode&&!railOpen&&!dockPanel&&!(duel||modDuel||npcFight||fcRun||wildFight)){ /* Mobile layout (2026-11-24): no hint chip over the open Menu sheet or a panel */
    if(dockPanel!=='bank'&&Math.hypot(myPos.x-BANK_POS.x,myPos.y-BANK_POS.y)<=PROMPT_RANGE) want='🧰 Tap the chest to bank';
    else if(dockPanel!=='shop'){ for(const s of SHOP_SPOTS){ if(Math.hypot(myPos.x-s.x,myPos.y-s.y)<=PROMPT_RANGE){ want='🛒 Tap the stall to shop'; break; } } }
  }
@@ -11258,8 +11261,8 @@ function updatePromptChip(){
  el.classList.toggle('open',!!want);
 }
 
-/* ================= Trial B smart prompts (GROUPED_BUTTONS_SMART_PROMPTS) =================
-   B mode only. When a button's moment comes, the REAL button gets
+/* ================= Smart prompts (GROUPED_BUTTONS_SMART_PROMPTS) =================
+   When a button's moment comes, the REAL button gets
    .promptpulse and #promptline shows one short reason above the
    strip. Advise only — nothing in this section ever sends a game
    message; using the button, or tapping anywhere, dismisses that
@@ -11300,7 +11303,16 @@ function bestFoodChip(){
  for(const b of quickChips()){ const m=/item:'([^']+)'/.exec(b.getAttribute('onclick')||''); if(!m) continue; const d=catalog[m[1]]; if(d&&d.kind==='food'&&(d.heal||0)>bestHeal){ bestHeal=d.heal||0; best=b; } }
  return best;
 }
-function deflectBtnEl(style){ return document.querySelector('.sc-pray[data-prayer="'+style+'"]'); }
+/* Mobile layout (2026-11-24): the side cluster is gone, so a
+   Deflect prompt pulses the Deflect button on the strip the
+   player is actually looking at — the Fight Caves strip during
+   a run, the duel strip during a duel / mod duel, otherwise the
+   bottom bar's own Deflect chip. Same buttons the player taps. */
+function deflectBtnEl(style){
+ if(fcRun){ const b=$('fcpray-'+style); if(b) return b; }
+ if(duel||modDuel){ const b=$('duelpray-'+style); if(b) return b; }
+ return $('bbpray-'+style);
+}
 function smartPromptCandidate(){
  if(fcRun&&jadWarnStyle){ const k='jad:'+jadWarnStyle+':'+(fcRun.wave||0); const b=deflectBtnEl(jadWarnStyle); if(b&&!promptSeen.has(k)&&!promptBanned('prayer')) return {key:k,els:[b],line:jadWarnStyle==='magic'?'🧙 Jad casts — Deflect Magic!':jadWarnStyle==='missiles'?'🏹 Jad shoots — Deflect Missiles!':'⚔️ Jad swings — Deflect Melee!'}; }
  if(npcFight&&/dharok/i.test(npcFight.name||'')&&npcFight.hpNpc/Math.max(1,npcFight.maxHpNpc)<0.25&&!promptSeen.has('dharok')){
@@ -11322,7 +11334,7 @@ function clearPromptPulse(){ document.querySelectorAll('.promptpulse').forEach(e
 function hidePromptLine(){ const line=$('promptline'); if(line){ line.classList.remove('open'); line.textContent=''; } }
 function dismissSmartPrompt(){ if(!promptCur) return; promptSeen.add(promptCur.key); promptCur=null; clearPromptPulse(); hidePromptLine(); }
 function updateSmartPrompt(){
- if(settings.iface==='A'||!me){ if(promptCur){ promptCur=null; clearPromptPulse(); hidePromptLine(); } return; }
+ if(!me){ if(promptCur){ promptCur=null; clearPromptPulse(); hidePromptLine(); } return; }
  const key=fightKeyNow();
  if(!key){ promptFightKey=''; promptSeen=new Set(); if(promptCur){ promptCur=null; clearPromptPulse(); hidePromptLine(); } return; }
  if(key!==promptFightKey){ promptFightKey=key; promptSeen=new Set(); promptCur=null; promptFightStart=performance.now(); clearPromptPulse(); hidePromptLine(); }
@@ -11344,7 +11356,6 @@ $('chat').addEventListener('keydown',e=>{ if(e.key==='Enter') $('sendchat').clic
 $('chathead').onclick=()=>{ const b=$('chatbox'); b.classList.toggle('closed'); $('chatchev').textContent=b.classList.contains('closed')?'▸':'▾'; if(!b.classList.contains('closed')) clearUnread(); };
 logLine('Welcome to nallystake online. Create an account or sign in to enter the plaza.');
 applySettings();
-applyIfaceMode();
 renderQuickButtons();
 // While a piece is on the anvil, refresh the Smithy panel once a second so
 // the heat bar visibly cools (the server fades heat 1 point per 2 seconds).
