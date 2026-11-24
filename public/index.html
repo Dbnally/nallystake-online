@@ -37,29 +37,58 @@
  .orb.sp .fill{background:#c9a227}.orb.sp{background:#40340a}
  .orb.sp.ready{box-shadow:0 0 12px 3px #c9a227}
 .orb.run{background:#2b2118}.orb.run.on{background:#40340a;box-shadow:0 0 12px 3px #c9a227}
- /* panel dock (Interface Overhaul) — Mobile layout (2026-11-24):
-    the dock is now ONE bottom SHEET. #paneldock is a centred sheet
-    (full width on a phone, capped 680px on wide screens) anchored
-    just above the bottom strip slot — bottom:100px clears the
-    strip and the closed chat header — and capped at 62dvh. Inside
-    it, the TAB GRID (the Menu: big labelled tiles in Play / World /
+ /* panel dock (Interface Overhaul) — Side-panel layout (2026-11-24,
+    Derek): the Menu is a VERTICAL panel on the RIGHT side of the
+    screen that scrolls up/down, its scrollbar on its right edge.
+    #paneldock is fixed to the right edge, starting below the
+    minimap/orbs block (top:190px, where the old controls row sat)
+    and stopping above the bottom strip slot — bottom:100px clears
+    the strip and the closed chat header (Derek's standing rule:
+    the bottom bar and chat stay visible and usable). Inside it,
+    the TAB GRID (the Menu: big labelled tiles in Play / World /
     People / System groups) and the panel box take turns in the
-    same sheet space: a panel replaces the grid, and the header's
-    "‹ Menu" button brings the grid back. The controls row
-    (#dockhead: the ☰ Menu toggle + ❓ Help + Grab / Menu tap /
-    Camera chips) is fixed on the field under the minimap, always
-    visible, exactly where the old dock head sat. The ☰ toggle
-    hides the chips + tab grid (the persisted nallystake_rail_open
-    choice); an open panel box stays open. */
- #paneldock{position:fixed;left:0;right:0;margin:0 auto;bottom:calc(100px + env(safe-area-inset-bottom,0px));z-index:40;width:min(680px,100vw);display:flex;flex-direction:column;gap:6px;pointer-events:none;max-height:62dvh;max-height:min(62dvh,max(160px,calc(100dvh - 342px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))))}
- #dockhead{display:flex;gap:6px;align-items:center;pointer-events:none;flex:none;position:fixed;top:calc(190px + env(safe-area-inset-top,0px));right:6px;width:min(344px,88vw);z-index:46}
- /* Panel-open fit (Mobile layout, 2026-11-24): inside the sheet
-    the panel takes the space and the tile grid steps aside
-    entirely — the panel header's "‹ Menu" button brings it back.
-    The panel body scrolls internally (see #dockbody). */
+    same side space: a panel replaces the grid, and the header's
+    "‹ Menu" button brings the grid back. The ☰ Menu button is
+    SMALL (38px) and lives alone in #dockhead in the top-right
+    corner immediately LEFT of the minimap, always visible. The
+    Grab / Menu tap / Camera chips moved out of #dockhead into a
+    slim row (#railchips) at the top of the side panel, above the
+    tile grid; they still follow the rail toggle exactly as
+    before. Below them sits the FIELD BUTTONS section (#fieldbtns):
+    the ❓ Help button and the quick buttons (quick sets, AWAKEN,
+    JUMP) are STORED in the Menu by default so the field stays
+    clean; while the Menu is open they can be dragged out onto the
+    field, and when the Menu closes whatever is left outside LOCKS
+    in place (see the field-buttons block in the script). The ☰
+    toggle hides the chips + field buttons + tab grid (the
+    persisted nallystake_rail_open choice); an open panel box
+    stays open. */
+ #paneldock{position:fixed;right:0;left:auto;margin:0;top:calc(190px + env(safe-area-inset-top,0px));bottom:calc(100px + env(safe-area-inset-bottom,0px));z-index:40;width:min(320px,88vw);display:flex;flex-direction:column;gap:6px;pointer-events:none}
+ #dockhead{display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none;flex:none;position:fixed;top:calc(44px + env(safe-area-inset-top,0px));right:142px;z-index:46}
+ #railchips{display:flex;gap:6px;align-items:center;pointer-events:none;flex:none}
+ #railchips>*{pointer-events:auto}
+ #railchips .railchip{flex:1}
+ /* Field buttons section (2026-11-24, Derek): Help + the quick
+    buttons are stored in the Menu. The section shows only while
+    the Menu is open (applyRailVisibility toggles .open, like the
+    chips follow the rail); a button dragged out of it lives in
+    the #placedtabs layer instead and stays on the field, locked,
+    when the Menu closes. */
+ #fieldbtns{display:none;flex-direction:column;gap:6px;background:rgba(23,19,16,var(--uia));border:2px solid #7a6748;border-radius:12px 0 0 12px;padding:6px;pointer-events:auto;flex:none}
+ #fieldbtns.open{display:flex}
+ #fieldbtns .fbhead{font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#b8a888;line-height:1.25}
+ #fieldbtns .fbhead .fbnote{display:block;font-size:10px;font-weight:600;letter-spacing:0;text-transform:none;color:#8f8168}
+ #fieldrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+ #fieldrow>button{touch-action:none}
+ #fieldrow #helpbtn{width:auto;min-width:38px;padding:0 10px;gap:4px}
+ #fieldrow #helpbtn .gblbl{display:inline}
+ #placedtabs .fbtn{pointer-events:auto;touch-action:none}
+ /* Panel-open fit: inside the side panel the panel takes the
+    space and the tile grid steps aside entirely — the panel
+    header's "‹ Menu" button brings it back. The panel body
+    scrolls internally (see #dockbody). */
  #paneldock.panelopen #docktabs{display:none}
  #dockhead>*{pointer-events:auto}
- #dockhead .railchip{flex:1}
  /* Navigation pass: every tab carries its name under its icon —
     a new player can read what a button does instead of guessing
     from an emoji (the title attribute never shows on touch). The
@@ -69,19 +98,26 @@
  .rbtn .tic{font-size:19px;line-height:1}
  .rbtn .tlbl{font-size:9px;font-weight:700;line-height:1;color:#d8c9a3;white-space:nowrap}
  .rbtn.on{border-color:#c9a227;background:#3a2c1c}
- /* Navigation pass: the master toggle is labelled "Menu" in words
-    (icon span + label span, so applyRailVisibility swaps only the
-    glyph 🎛️/✕ and the label survives). */
- #gearbtn{min-width:46px;height:46px;border-radius:10px;background:linear-gradient(135deg,#c9a227,#7a6748);border:2px solid #e3c766;color:#fff;font-size:22px;cursor:pointer;box-shadow:0 0 10px #c9a22755;flex:none;display:flex;align-items:center;justify-content:center;gap:4px;padding:0 9px;box-sizing:border-box}
- #gearbtn .gbic{font-size:20px;line-height:1}
- #gearbtn .gblbl{font-size:11px;font-weight:800;line-height:1}
- /* Polish build: the ❓ Help button sits beside the 🎛️ Menu toggle
-    in #dockhead and is NEVER hidden by the rail toggle (only the
-    three chips follow it) — help is always one tap away. Same
-    46px target and two-part glyph+label anatomy as the Menu button. */
- #helpbtn{min-width:46px;height:46px;border-radius:10px;background:linear-gradient(135deg,#3f6212,#2b2118);border:2px solid #a3c14a;color:#fff;font-size:22px;cursor:pointer;box-shadow:0 0 10px #a3c14a44;flex:none;display:flex;align-items:center;justify-content:center;gap:4px;padding:0 9px;box-sizing:border-box}
- #helpbtn .gbic{font-size:20px;line-height:1}
- #helpbtn .gblbl{font-size:11px;font-weight:800;line-height:1}
+ /* Navigation pass: the master toggle carries a "Menu" word span
+    beside its glyph span (applyRailVisibility swaps only the glyph
+    🎛️/✕ and the label span survives in the DOM). Side-panel
+    layout (2026-11-24, Derek): the button itself is a compact
+    38px corner square, so the word span is held in the DOM but
+    not displayed — the title attribute carries the name. */
+ #gearbtn{width:38px;min-width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#c9a227,#7a6748);border:2px solid #e3c766;color:#fff;font-size:18px;cursor:pointer;box-shadow:0 0 10px #c9a22755;flex:none;display:flex;align-items:center;justify-content:center;padding:0;box-sizing:border-box}
+ #gearbtn .gbic{font-size:18px;line-height:1}
+ #gearbtn .gblbl{display:none}
+ /* Polish build: the ❓ Help button carried the same two-part
+    glyph+label anatomy as the Menu toggle. Field-buttons layout
+    (2026-11-24, Derek): Help is now STORED in the Menu's Field
+    buttons section (#fieldrow), where its word label shows again
+    (see the #fieldrow #helpbtn overrides); dragged out onto the
+    field it keeps the compact 38px icon-only form. It is no
+    longer wired to the rail toggle's visibility pass — the
+    section it lives in follows the rail instead. */
+ #helpbtn{width:38px;min-width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#3f6212,#2b2118);border:2px solid #a3c14a;color:#fff;font-size:18px;cursor:pointer;box-shadow:0 0 10px #a3c14a44;flex:none;display:flex;align-items:center;justify-content:center;padding:0;box-sizing:border-box}
+ #helpbtn .gbic{font-size:18px;line-height:1}
+ #helpbtn .gblbl{display:none}
  /* Polish build: Help panel task rows — a task is a rowline whose
     steps expand under it; the current task is lit like a selection. */
  .helptask{cursor:pointer}
@@ -97,7 +133,7 @@
  /* the tab bar: every panel one tap away, wrapped in the dock.
     While Grab is on the bar is .locked: no touch scrolling gestures,
     arranging only. */
- #docktabs{display:none;flex-direction:column;flex-wrap:wrap;gap:8px;background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:12px;padding:6px;pointer-events:auto}
+ #docktabs{display:none;flex-direction:column;flex-wrap:wrap;gap:8px;background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:12px 0 0 12px;padding:6px;pointer-events:auto}
  #docktabs.open{display:flex}
  #docktabs.locked{touch-action:none}
  #docktabs .rbtn{flex:none}
@@ -109,9 +145,11 @@
     shown (no collapse state). A group header hides only when
     every tab in its group is hidden (see syncDockGroupHeads). */
  /* Mobile layout (2026-11-24): each group is a TILE GRID under its
-    word header — 3 tiles per row at phone width, more on a wide
-    sheet; the header spans the grid's full width. */
- .dockgroup{display:grid;grid-template-columns:repeat(auto-fill,minmax(102px,1fr));gap:8px}
+    word header; the header spans the grid's full width.
+    Side-panel layout (2026-11-24): the panel is ~320px wide, so
+    each group runs 2 tiles per row and the groups stack down the
+    panel's vertical scroll. */
+ .dockgroup{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
  .dockgroup .ghead{grid-column:1/-1;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#b8a888;line-height:1.1;margin-left:2px}
  /* ============ Grouped action buttons + smart prompts (the one layout) ============
     Mobile layout (2026-11-24): the A/B interface trial is RETIRED.
@@ -156,7 +194,7 @@
  #placedtabs .rbtn{pointer-events:auto;touch-action:none}
  /* the panel box: fixed in the dock, in place — the active tab's
     content lives here, under its title bar, and scrolls internally */
- #dockpanel{width:100%;box-sizing:border-box;background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:12px;padding:10px 6px;display:none;pointer-events:auto;min-height:0;flex-direction:column;flex:1 1 auto}
+ #dockpanel{width:100%;box-sizing:border-box;background:rgba(23,19,16,var(--uia));border:2px solid #c9a227;border-radius:12px 0 0 12px;padding:10px 6px;display:none;pointer-events:auto;min-height:0;flex-direction:column;flex:1 1 auto}
  #dockpanel.open{display:flex}
  #dockpanel h3{margin:2px 0 8px;color:#e3c766;font-size:16px;display:flex;justify-content:space-between;align-items:center}
  #dockpanel h3 .x{background:none;border:0;color:#e8d9b0;font-size:18px;cursor:pointer;padding:6px 10px;min-height:38px;min-width:38px;border-radius:8px;box-sizing:border-box}
@@ -164,7 +202,7 @@
     every panel header — one tap from any panel back to the Menu
     tile grid (see backToTabs). */
  #dockpanel h3 #dockback{margin-left:auto;font-size:13px;font-weight:800;color:#e3c766}
- #dockbody{max-height:calc(62dvh - 96px);overflow-y:auto;min-height:0;flex:1 1 auto}
+ #dockbody{overflow-y:auto;min-height:0;flex:1 1 auto}
  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
  .cell{background:#221a13;border:1px solid #4a3a28;border-radius:8px;min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:3px;position:relative}
  .cell.sel{border-color:#c9a227;background:#3a2c1c}
@@ -443,7 +481,7 @@
  .parchment .ghost{background:rgba(43,33,24,.12);color:#2b2118;border-color:#7a6748}
  .parchment input[type=number]{background:#f4ead0;color:#2b2118}
  /* Stage 18: the chips under the master toggle (Grab / Menu tap / Camera) */
- .railchip{width:46px;height:46px;min-height:40px;box-sizing:border-box;border-radius:10px;border:2px solid #7a6748;background:linear-gradient(180deg,#3a2f22,#241c13);color:#e8d9b0;font-size:10px;font-weight:700;cursor:pointer;padding:2px 0;line-height:1.25}
+ .railchip{height:32px;min-height:32px;box-sizing:border-box;border-radius:10px;border:2px solid #7a6748;background:linear-gradient(180deg,#3a2f22,#241c13);color:#e8d9b0;font-size:10px;font-weight:700;cursor:pointer;padding:2px 0;line-height:1.25}
  .railchip.on{background:#2e7d32;color:#eaffea;border-color:#66bb6a}
  body.grabbing #docktabs .rbtn,body.grabbing #placedtabs .rbtn{cursor:grab;outline:2px dashed rgba(102,187,106,.65);outline-offset:-2px}
  /* Stage 23: Grab mode is modal — a standing hint while it's on */
@@ -523,13 +561,12 @@
  #promptchip.open + #promptline{bottom:calc(142px + env(safe-area-inset-bottom,0px))}
  /* The reconnect bar hangs under the top bar, not on top of it. */
  #connbar{top:calc(40px + env(safe-area-inset-top,0px))}
- /* Mobile layout (2026-11-24): with the chat OPEN, the Menu sheet
-    lifts clear above it — the chat stays visible and usable
-    (Derek's standing rule) — and its height cap shrinks to the
-    space left under the top chrome. Applies at every width: the
-    sheet is the one layout now. */
- body:has(#chatbox:not(.closed)) #paneldock{bottom:calc(292px + env(safe-area-inset-bottom,0px));max-height:min(62dvh,calc(100dvh - 292px - 176px - env(safe-area-inset-bottom,0px)))}
-body:has(#chatbox:not(.closed)) #paneldock{max-height:min(62dvh,max(160px,calc(100dvh - 534px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))))}
+ /* Side-panel layout (2026-11-24): with the chat OPEN, the side
+    panel lifts clear above it — the chat stays visible and usable
+    (Derek's standing rule). The panel's top stays put; only its
+    bottom edge rises, and the inside keeps scrolling vertically.
+    Applies at every width: the side panel is the one layout now. */
+ body:has(#chatbox:not(.closed)) #paneldock{bottom:calc(292px + env(safe-area-inset-bottom,0px))}
  @media (max-width:900px){
    /* Grab-mode hint: pinned to the free left column, out of the
       minimap's band (it was centred across the map at 94vw). */
@@ -579,9 +616,10 @@ body:has(#chatbox:not(.closed)) #paneldock{max-height:min(62dvh,max(160px,calc(1
    #promptchip,#promptline{bottom:calc(140px + env(safe-area-inset-bottom,0px));max-width:120px;white-space:normal;text-align:center;transform:translateX(calc(-50% + 8px))}
    #promptchip.open + #promptline{bottom:calc(216px + env(safe-area-inset-bottom,0px))}
    /* Mobile layout (2026-11-24): the old top-dock caps are gone
-      with the dock — the sheet's own 62dvh cap and the panel
-      body's cap govern at phone width too, and the tile grid
-      scrolls inside the sheet (see the Mobile layout block). */
+      with the dock — the side panel's own top/bottom span and
+      the panel body's internal scroll govern at phone width too,
+      and the tile grid scrolls inside the panel (see the Mobile
+      layout block). */
  }
  /* ============ Mobile layout (2026-11-24): tiles, targets, phone fit ============
     The Menu tiles are big labelled targets — icon over word, 62px
@@ -591,18 +629,25 @@ body:has(#chatbox:not(.closed)) #paneldock{max-height:min(62dvh,max(160px,calc(1
  #docktabs .rbtn{width:auto;height:62px}
  #docktabs .rbtn .tic{font-size:24px}
  #docktabs .rbtn .tlbl{font-size:11px}
- /* The tile grid scrolls inside the sheet when the groups run
-    taller than the cap (short screens); the panel body has its
-    own scroll (see #dockbody). */
- #docktabs{min-height:0;overflow-y:auto;flex-wrap:nowrap}
- /* The ☰ Menu + ❓ Help field buttons: a full 52px-tall target. */
- #gearbtn,#helpbtn{height:52px;min-width:52px}
+ /* The tile grid scrolls vertically inside the side panel when
+    the groups run taller than the panel (its scrollbar rides the
+    panel's right edge); the panel body has its own scroll (see
+    #dockbody). No horizontal scrolling in the menu: the groups
+    are a fixed 2-column grid that fits the panel width. */
+ #docktabs{min-height:0;overflow-y:auto;overflow-x:hidden;flex-wrap:nowrap;flex:1 1 auto}
+ /* The ☰ Menu + ❓ Help corner buttons: compact 38px squares in
+    the top-right corner (Derek, 2026-11-24 — smaller, in the
+    corner). */
+ #gearbtn,#helpbtn{width:38px;min-width:38px;height:38px}
  /* Narrow screens: the minimap shrinks a step, so the top-right
-    block (map + orbs, with Menu/Help under it) stays compact and
+    block (map + orbs, with Menu/Help beside it) stays compact and
     nothing crowds the top bar. */
  @media (max-width:640px){
    #minimap{width:104px;height:59px}
    #mapwrap{top:50px}
+   /* the corner Menu button hugs the smaller minimap (104px wide
+      here), clear of the orbs row that spills left under it */
+   #dockhead{right:124px;top:calc(50px + env(safe-area-inset-top,0px))}
  }
 </style></head><body>
 <div id="scene"></div>
@@ -625,10 +670,21 @@ body:has(#chatbox:not(.closed)) #paneldock{max-height:min(62dvh,max(160px,calc(1
 <div id="paneldock">
  <div id="dockhead">
   <button id="gearbtn" title="Menu — every panel in one sheet"><span class="gbic">☰</span><span class="gblbl">Menu</span></button>
-  <button id="helpbtn" title="Help — learn the game, task by task"><span class="gbic">❓</span><span class="gblbl">Help</span></button>
+ </div>
+ <div id="railchips">
   <button id="railgrab" class="railchip" title="Grab mode: drag the panel tabs where you want them, then toggle off to lock them">✋ Grab</button>
   <button id="railmenutap" class="railchip" title="Menu tap: taps on players, monsters, nodes and piles open their menu instead of acting">🖱️ Menu tap: Off</button>
   <button id="railcam" class="railchip" title="Camera view: third person / first person">🎥 3rd</button>
+ </div>
+ <div id="fieldbtns">
+  <div class="fbhead">Field buttons<span class="fbnote">Stored here so the field stays clean. While the Menu is open, drag a button out onto the field to place it — it locks there when the Menu closes. Drag it back onto the Menu to store it again.</span></div>
+  <div id="fieldrow">
+   <button id="helpbtn" class="fbtn" title="Help — learn the game, task by task"><span class="gbic">❓</span><span class="gblbl">Help</span></button>
+   <button class="qbtn fbtn" id="quick1" title="Quick set 1"><span class="qic">＋</span><span class="qnum">1</span></button>
+   <button class="qbtn fbtn" id="quick2" title="Quick set 2"><span class="qic">＋</span><span class="qnum">2</span></button>
+   <button class="qbtn actbtn fbtn" id="awakenbtn" title="Awaken the nearest tree into a Tree Guardian">🌳<span class="qlbl">AWAKEN</span></button>
+   <button class="qbtn actbtn fbtn" id="jumpbtn" title="Jump — moving jumps flip in the direction you're travelling!">🤸<span class="qlbl">JUMP</span></button>
+  </div>
  </div>
  <div id="docktabs">
   <div class="dockgroup" data-group="play">
@@ -668,12 +724,7 @@ body:has(#chatbox:not(.closed)) #paneldock{max-height:min(62dvh,max(160px,calc(1
 
 <div id="camstick"><div id="camknob"></div><div class="sticklbl">📷 CAM</div></div>
 
-<div id="quickbar">
- <button class="qbtn" id="quick1" title="Quick set 1"><span class="qic">＋</span><span class="qnum">1</span></button>
- <button class="qbtn" id="quick2" title="Quick set 2"><span class="qic">＋</span><span class="qnum">2</span></button>
- <button class="qbtn actbtn" id="awakenbtn" title="Awaken the nearest tree into a Tree Guardian">🌳<span class="qlbl">AWAKEN</span></button>
- <button class="qbtn actbtn" id="jumpbtn" title="Jump — moving jumps flip in the direction you're travelling!">🤸<span class="qlbl">JUMP</span></button>
-</div>
+<div id="quickbar"><!-- Field-buttons layout (2026-11-24): the quick buttons moved into the Menu's #fieldrow (stored in the side panel by default; drag out to place them on the field). This row stays in the DOM, empty, for the styles and prompts that reference its slot. --></div>
 
 <div id="followchip"><span id="followtxt">🚶 Following</span><button class="ghost" id="followstop">✖ Stop</button></div>
 <div id="wildchip"><span id="wildtxt">💀 Wilderness level: 1</span></div>
@@ -1041,6 +1092,7 @@ function applyRailVisibility(){
  const rs=$('docktabs'); if(rs) rs.classList.toggle('open',railOpen);
  const gb=$('gearbtn'); if(gb){ const gi=gb.querySelector('.gbic'); if(gi) gi.textContent=railOpen?'✕':'☰'; } // Mobile layout: swap only the glyph — the "Menu" label span stays
  for(const id of ['railgrab','railmenutap','railcam']){ const c=$(id); if(c) c.style.display=railOpen?'':'none'; } // Stage 18: the chips follow the tab bar
+ const fbs=$('fieldbtns'); if(fbs) fbs.classList.toggle('open',railOpen); // Field buttons (2026-11-24): the stored-buttons section follows the rail like the chips
  document.querySelectorAll('#docktabs .rbtn, #placedtabs .rbtn').forEach(b=>{ b.style.display=settings.hidden[b.dataset.panel]?'none':''; }); // Placed-button fix: the Settings hidden-tab rule covers placed tabs too
  refreshToolsBtn();
  syncDockGroupHeads();
@@ -12365,7 +12417,8 @@ document.addEventListener('click',e=>{
    no scrolling and no copies — so there is nothing to sync or
    recentre, and a tab dragged out of the dock by Grab mode is simply
    the one real tab, placed. The 🎛️ gear and the Grab / Menu tap /
-   Camera chips live in #dockhead ABOVE #docktabs — they are not tabs
+   Camera chips live in #railchips at the top of the side panel,
+   ABOVE #docktabs — they are not tabs
    (the Grab chip must stay reachable while arranging, and the gear
    is the toggle that reveals the tab bar at all). */
 /* Placed-button fix: the return gesture's helpers. The dock only
@@ -12432,6 +12485,91 @@ document.querySelectorAll('#docktabs .rbtn').forEach(b=>{
  b.addEventListener('pointercancel',finish);
 });
 applyBtnPositions();
+/* ---- Field buttons (2026-11-24, Derek): Help + the quick buttons
+   (quick sets 1/2, AWAKEN, JUMP) are STORED in the Menu by default —
+   their home is the #fieldrow inside the side panel's #fieldbtns
+   section, so the field is clean. While the Menu is OPEN (railOpen)
+   a press-and-drag moves one: drag it out onto the field to place
+   it, drag a placed one to rearrange it, or drag it back onto the
+   open Menu to store it again. When the Menu CLOSES, every button
+   left outside LOCKS in place — still visible, still tappable for
+   its job, never draggable — so nothing gets knocked around during
+   play. (The dock tabs keep their own rule: they move only in ✋
+   Grab mode.) Positions ride the SAME BTN_POS_KEY store as the
+   placed tabs, under 'fb:<id>' keys so the two systems never
+   collide; a stored button simply has no 'fb:' entry. */
+const FIELD_BTNS=['helpbtn','quick1','quick2','awakenbtn','jumpbtn'];
+function fieldBtnHome(b){
+ const home=$('fieldrow'); if(!home) return;
+ if(b.parentElement!==home) home.appendChild(b);
+ b.classList.remove('fbplaced');
+ b.style.position=''; b.style.left=''; b.style.top=''; b.style.bottom=''; b.style.zIndex='';
+}
+function applyFieldBtnPositions(){
+ const pos=loadBtnPos();
+ const layer=$('placedtabs');
+ for(const id of FIELD_BTNS){
+   const b=$(id); if(!b) continue;
+   const p=pos['fb:'+id];
+   if(p){
+     if(layer&&b.parentElement!==layer) layer.appendChild(b);
+     b.classList.add('fbplaced');
+     b.style.position='fixed'; b.style.left=p.l+'px'; b.style.top=p.t+'px'; b.style.zIndex='60';
+   } else fieldBtnHome(b);
+ }
+}
+for(const id of FIELD_BTNS){
+ const b=$(id); if(!b) continue;
+ // A drag's release must not also fire the button's job: wrap the
+ // existing handler with the house _suppressClickUntil check (the
+ // same pattern the dock tabs' onclick uses).
+ if(b.onclick){ const orig=b.onclick; b.onclick=e=>{ if(b._suppressClickUntil&&Date.now()<b._suppressClickUntil) return; return orig(e); }; }
+ let pid=null,sx=0,sy=0,startL=0,startT=0,dragging=false;
+ b.addEventListener('pointerdown',e=>{
+   if(!railOpen||pid!==null) return; // Menu closed = locked: the press is a normal tap and fires the job
+   pid=e.pointerId; sx=e.clientX; sy=e.clientY; dragging=false;
+   b._suppressClickUntil=Date.now()+60000; // while arranging, a press never fires the job
+   try{ b.setPointerCapture(pid); }catch(err){}
+ });
+ b.addEventListener('pointermove',e=>{
+   if(!railOpen||pid===null||e.pointerId!==pid) return;
+   const dx=e.clientX-sx, dy=e.clientY-sy;
+   if(!dragging&&Math.hypot(dx,dy)>4){
+     dragging=true;
+     const r=b.getBoundingClientRect();
+     const layer=$('placedtabs'); if(layer&&b.parentElement!==layer) layer.appendChild(b);
+     b.classList.add('fbplaced');
+     b.style.position='fixed'; b.style.left=r.left+'px'; b.style.top=r.top+'px'; b.style.bottom='auto'; b.style.zIndex='70';
+     startL=r.left; startT=r.top;
+     setDockDropHighlight(true);
+   }
+   if(dragging){ b.style.left=(startL+e.clientX-sx)+'px'; b.style.top=(startT+e.clientY-sy)+'px'; }
+ });
+ const finish=e=>{
+   if(pid===null||(e.pointerId!==undefined&&e.pointerId!==pid)) return;
+   pid=null;
+   setDockDropHighlight(false);
+   if(dragging){
+     dragging=false;
+     const pos=loadBtnPos();
+     if(e.type==='pointerup'&&typeof e.clientX==='number'&&railOpen&&overDock(e.clientX,e.clientY)){
+       delete pos['fb:'+id]; // dropped back on the open Menu = stored again
+       try{ localStorage.setItem(BTN_POS_KEY,JSON.stringify(pos)); }catch(err){}
+       applyFieldBtnPositions();
+       toast('↩️ Button stored back in the Menu.');
+     } else {
+       const r=b.getBoundingClientRect();
+       pos['fb:'+id]={l:Math.round(r.left),t:Math.round(r.top)};
+       try{ localStorage.setItem(BTN_POS_KEY,JSON.stringify(pos)); }catch(err){}
+       applyFieldBtnPositions();
+     }
+   }
+   b._suppressClickUntil=Date.now()+350; // swallow the click this press produces
+ };
+ b.addEventListener('pointerup',finish);
+ b.addEventListener('pointercancel',finish);
+}
+applyFieldBtnPositions();
 /* Stage 18: the other two chips under the master toggle — Menu tap
    (Part B) and Camera POV (Part E) — wired to their settings. */
 $('railmenutap').onclick=()=>setTapMode(settings.tapMode==='menu'?'normal':'menu');
