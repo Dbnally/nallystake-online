@@ -1505,6 +1505,12 @@ function onMsg(m){
  if(m.type==='craft_result'){ toast(`📿 Crafted ${nameOf(m.item)}! (+${m.xp||0} 🧵 Crafting XP)`); const avC=me?avatars[me.username]:null; if(avC) spawnTextSplat(avC,`+${m.xp||0} 🧵 Crafting XP`,'good'); }
  if(m.type==='string_result'){ toast(`🧵 Strung it — ${nameOf(m.item)} is ready to wear! (+${m.xp||0} Crafting XP)`); }
  if(m.type==='enchant_result'){ toast(`✨ Enchanted! ${nameOf(m.item)} (+${m.xp||0} 🔮 Magic XP)`); const avE=me?avatars[me.username]:null; if(avE) spawnTextSplat(avE,'✨ Enchanted!','good'); }
+ if(m.type==='guardian_spell'){ // Rat Cave (2026-11-24): the Tree Guardian's bolt flies, then the drain floats over the boss
+   const ga=allyAvatars[m.allyId], ba=npcAvatars[m.npcId];
+   if(ga) spawnTextSplat(ga,'🌳✨','good');
+   spawnFlyBolt(ga,ba,()=>{ if(ba) spawnTextSplat(ba,`🛡️ Defence -${m.drain}`,''); });
+   toast(`🌳 Your guardian drains the Big Zombie's Defence by ${m.drain} — now ${m.defLevel}!`);
+ }
  /* Tree Guardian maker + herblore (2026-11-24): the making results */
  if(m.type==='sand_result'){ toast('🪣 Scooped a bucket of sand.'); logLine('🪣 +1 Bucket of sand'); }
  if(m.type==='glass_result'){ toast(`🔥 Your guardian works the furnace — molten glass! (+${m.xp||0} 🧵 Crafting XP)`); logLine(`🔥 +1 Molten glass (+${m.xp||0} Crafting XP)`); const avG=me?avatars[me.username]:null; if(avG) spawnTextSplat(avG,`+${m.xp||0} 🧵 Crafting XP`,'good'); refreshGuardianMaker(); }
@@ -2739,6 +2745,8 @@ function buildPlaza(root){
  buildGateway(scene,-80,0,Math.PI/2,'🎣 FISHING COVE',{banner:'#2e6db0'});
  buildGateway(scene,0,45,0,'⚰️ BARROWS',{banner:'#4a5548',color:'#b9d9a8'});
  buildGateway(scene,-48,45,0,'❄️ FROSTFALL',{banner:'#7ec8ff',color:'#dff2ff'}); // Stage 44: the Winter World's gate, south wall west stretch
+ buildGateway(scene,45,45,0,'🏰 BEGINNER CASTLE',{banner:'#8e2f32'}); // Beginner Castle (2026-11-24): south wall, east stretch — matches the checkGates trigger (x 1100-1480)
+ pathStrip(scene,31,26,45,44,3); // a worn path from the plaza's heart toward the castle gate
  buildGateway(scene,78,40.5,Math.PI/4,'🏋️ TRAINING CAVE',{banner:'#55565e'});
  buildGateway(scene,-78,40.5,-Math.PI/4,'🌲 GATHERING CAVE',{banner:'#3a5230'});
  buildGateway(scene,49,-45,0,'💀 THE WILDERNESS',{dark:true,color:'#ff8a7a'});
@@ -4120,6 +4128,212 @@ function buildWinterWorld(root){
    snowFall={pts,pos,speed,phase,count:COUNT};
  }
 }
+/* ===== Beginner Castle (Derek, voice call 2026-11-24) =====
+   The Lumbridge-inspired beginner start: a castle + courtyard
+   south of the keep, three wings inside (cook center, ladders in
+   both side wings), a shared upper floor with the bank, fountains
+   flanking the approach path, and — just off the path by the west
+   fountain, on your right as you EXIT the castle — a trap door
+   that opens onto the ladder down to the Rat Cave. The cave is a
+   bent corridor: empty entry room, a south leg, a sharp east turn,
+   then the rats. All links are the game's ordinary gate/travel
+   flow; the trap door is a tap interactive (castleInteractives). */
+let castleInteractives=[]; // trap door meshes (castle area tap targets)
+let castleUpBankMeshes=[]; // bank booth meshes (castleup tap targets)
+let trapLidPivot=null, trapLadderGrp=null, trapOpen=false, pendingTrapdoor=false;
+function cwall(root,x1,z1,x2,z2,h){
+ const len=Math.hypot(x2-x1,z2-z1); if(len<0.5) return;
+ const m=box(len,h||3,0.9,0x8d8d93,(x1+x2)/2,(h||3)/2,(z1+z2)/2,root);
+ m.rotation.y=Math.atan2(x2-x1,z2-z1)+Math.PI/2; return m;
+}
+function buildFountain(root,x,z){
+ const g=new THREE.Group(); g.position.set(x,0,z); root.add(g);
+ const basin=new THREE.Mesh(new THREE.CylinderGeometry(2.6,2.9,0.9,14),new THREE.MeshLambertMaterial({map:stoneTexture(2,1)})); basin.position.y=0.45; g.add(basin);
+ const rim=new THREE.Mesh(new THREE.CylinderGeometry(2.95,2.95,0.32,14),new THREE.MeshLambertMaterial({color:0x9a9aa2})); rim.position.y=0.95; g.add(rim);
+ const water=new THREE.Mesh(new THREE.CircleGeometry(2.5,18),new THREE.MeshLambertMaterial({color:0x3f8fd2})); water.rotation.x=-Math.PI/2; water.position.y=0.9; g.add(water);
+ const pillar=new THREE.Mesh(new THREE.CylinderGeometry(0.32,0.5,1.9,10),new THREE.MeshLambertMaterial({color:0x8d8d93})); pillar.position.y=1.4; g.add(pillar);
+ const bowl=new THREE.Mesh(new THREE.CylinderGeometry(1.05,0.75,0.35,12),new THREE.MeshLambertMaterial({color:0x9a9aa2})); bowl.position.y=2.35; g.add(bowl);
+ const fall=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.8,1.15,10,1,true),new THREE.MeshLambertMaterial({color:0x7ec8ff,transparent:true,opacity:0.5,side:THREE.DoubleSide})); fall.position.y=1.72; g.add(fall);
+ const drop=new THREE.Mesh(new THREE.SphereGeometry(0.16,8,8),new THREE.MeshLambertMaterial({color:0x9fd8ff})); drop.position.y=2.62; g.add(drop);
+ shadowify(g);
+}
+function buildLadderProp(root,x,z,rotY){
+ const g=new THREE.Group(); g.position.set(x,0,z); g.rotation.y=rotY||0; root.add(g);
+ const wood=0x74552a;
+ box(0.13,2.7,0.13,wood,-0.38,1.35,0,g); box(0.13,2.7,0.13,wood,0.38,1.35,0,g);
+ for(let i=0;i<5;i++) box(0.85,0.1,0.1,0x8a6a38,0,0.35+i*0.55,0,g);
+ g.rotation.x=-0.1; shadowify(g); return g;
+}
+function signPost(root,x,z,lines){
+ box(0.16,2.3,0.16,0x5a4020,x,1.15,z,root);
+ lines.forEach((txt,i)=>{
+   const sp=textSprite(txt,'#ffe9bb','rgba(23,19,12,0.88)'); sp.position.set(x,3.05-i*0.85,z); root.add(sp);
+ });
+}
+function buildCastle(root){
+ const S=root;
+ const grass=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:noiseTexture('#4a7038',['#42652f','#527a42','#3c5c2a'],16,10)}));
+ grass.rotation.x=-Math.PI/2; grass.receiveShadow=true; S.add(grass);
+ const court=new THREE.Mesh(new THREE.PlaneGeometry(124,84),new THREE.MeshLambertMaterial({map:stoneTexture(14,9),color:0xa8a8ae}));
+ court.rotation.x=-Math.PI/2; court.position.set(0,0.02,3); court.receiveShadow=true; S.add(court);
+ pathStrip(S,0,44,0,-6,3.4); // the approach: south gate -> castle door, fountains flanking it
+ // perimeter walls + the south gateway back to the plaza
+ cwall(S,-80,45,-5.5,45); cwall(S,5.5,45,80,45);
+ cwall(S,-80,-45,80,-45); cwall(S,-80,-45,-80,45); cwall(S,80,-45,80,45);
+ buildGateway(S,0,45,0,'🏰 BEGINNER CASTLE',{banner:'#8e2f32'});
+ buildLitTorch(S,-3.6,41.5); buildLitTorch(S,3.6,41.5);
+ // the fountains — one on EACH side of the approach path
+ buildFountain(S,-16,7); buildFountain(S,16,7);
+ // the beginner sign by the spawn
+ signPost(S,7,26,['🏰 BEGINNER CASTLE — start here','🐀 Train: the trap door by the west fountain']);
+ // the trap door to the Rat Cave — off the path's west side (your
+ // RIGHT as you exit the castle), just past the west fountain
+ {
+   const tx=-11, tz=11;
+   box(2.3,0.14,2.3,0x3a2a18,tx,0.05,tz,S); // dark hole surround
+   const hole=new THREE.Mesh(new THREE.PlaneGeometry(1.9,1.9),new THREE.MeshBasicMaterial({color:0x050505}));
+   hole.rotation.x=-Math.PI/2; hole.position.set(tx,0.13,tz); S.add(hole);
+   trapLadderGrp=new THREE.Group(); trapLadderGrp.position.set(tx,0,tz); S.add(trapLadderGrp);
+   box(0.1,1.7,0.1,0x74552a,-0.35,-0.8,0,trapLadderGrp); box(0.1,1.7,0.1,0x74552a,0.35,-0.8,0,trapLadderGrp);
+   for(let i=0;i<3;i++) box(0.75,0.09,0.09,0x8a6a38,0,-0.3-i*0.5,0,trapLadderGrp);
+   trapLadderGrp.visible=false;
+   trapLidPivot=new THREE.Group(); trapLidPivot.position.set(tx-0.95,0.14,tz); S.add(trapLidPivot);
+   const lid=box(1.9,0.13,1.9,0x6e4a1f,0.95,0,0,trapLidPivot);
+   box(0.5,0.07,0.12,0xd4af37,0.95,0.1,0.6,trapLidPivot); // brass handle strip
+   lid.userData.act={type:'trapdoor'}; castleInteractives.push(lid);
+   signPost(S,-8.2,14.5,['🐀 RAT CAVE','Tap the trap door ↓']);
+ }
+ // the keep: front wall at z=-6 with the castle door, two towers
+ cwall(S,-58,-6,-3,-6,4.2); cwall(S,3,-6,58,-6,4.2);
+ box(1,5.4,1,0x8d8d93,-3.4,2.7,-6,S); box(1,5.4,1,0x8d8d93,3.4,2.7,-6,S);
+ box(7.8,0.7,1.1,0x7a7a82,0,5.6,-6,S);
+ const doorSign=textSprite('🏰 THE CASTLE','#ffe9bb','rgba(23,19,12,0.88)'); doorSign.position.set(0,6.6,-6); S.add(doorSign);
+ for(const s of [-1,1]){
+   const tw=new THREE.Mesh(new THREE.CylinderGeometry(4.4,4.9,13,12),new THREE.MeshLambertMaterial({map:stoneTexture(3,4)}));
+   tw.position.set(s*56,6.5,-38); S.add(tw);
+   const roof=new THREE.Mesh(new THREE.ConeGeometry(5.4,4.6,12),new THREE.MeshLambertMaterial({color:0x8e2f32})); roof.position.set(s*56,15.3,-38); S.add(roof);
+   shadowify(tw);
+ }
+ // wing partitions: openings at the front, signs over them
+ cwall(S,-19,-45,-19,-15,3.6); cwall(S,19,-45,19,-15,3.6);
+ signPost(S,-38,-13,['🪜 LEFT WING — ladder up']);
+ signPost(S,0,-13,['🔥 CENTER WING — cooking']);
+ signPost(S,38,-13,['🪜 RIGHT WING — ladder up']);
+ // center wing: the cooking range (its permanent hearth fire is a
+ // server fire at server (800,220) = world (0,-23); the stone
+ // range is built around the campfire the fires system renders)
+ box(3.6,0.75,2.4,0x6e6e78,0,0.37,-23,S);
+ box(0.5,1.5,2.4,0x7a7a82,-1.85,0.75,-23,S); box(0.5,1.5,2.4,0x7a7a82,1.85,0.75,-23,S);
+ box(3.6,0.4,0.5,0x7a7a82,0,1.6,-24.1,S);
+ signPost(S,5.5,-21,['🔥 COOKING RANGE','Use raw food → tap the fire']);
+ // side wings: the ladders up to the bank floor
+ buildLadderProp(S,-38,-25,0); signPost(S,-34.5,-23,['🪜 Up to the Bank']);
+ buildLadderProp(S,38,-25,0); signPost(S,41.5,-23,['🪜 Up to the Bank']);
+ // courtyard dressing: pines + torches by the door
+ for(const [px,pz] of [[-70,30],[70,30],[-70,-2],[70,-2],[-30,38],[30,38]]){
+   const g=new THREE.Group(); g.position.set(px,0,pz); S.add(g);
+   const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.24,1.5,8),new THREE.MeshLambertMaterial({map:woodTexture('#4c3420')})); trunk.position.y=0.75; g.add(trunk);
+   const c1=new THREE.Mesh(new THREE.ConeGeometry(1.8,3.4,7),foliageMat('#2e4f3a',['#274430','#3a5f47','#223c2c'])); c1.position.y=3.0; g.add(c1);
+   const c2=new THREE.Mesh(new THREE.ConeGeometry(1.2,2.3,7),foliageMat('#35593f',['#2c4c35','#40684b','#274430'])); c2.position.y=4.5; g.add(c2);
+   shadowify(g);
+ }
+ buildLitTorch(S,-4.6,-9); buildLitTorch(S,4.6,-9);
+}
+function buildCastleUp(root){
+ const S=root;
+ // one shared upper floor spanning over both wings (Lumbridge-style)
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(116,39),new THREE.MeshLambertMaterial({map:stoneTexture(12,4),color:0xb0a89a}));
+ floor.rotation.x=-Math.PI/2; floor.position.set(0,0.02,-25.5); floor.receiveShadow=true; S.add(floor);
+ box(118,1.1,41,0x6e675e,0,-0.62,-25.5,S); // the floor slab's edge — you are UP
+ // parapets all round
+ cwall(S,-58,-45,58,-45,1.2); cwall(S,-58,-6,58,-6,1.2); cwall(S,-58,-45,-58,-6,1.2); cwall(S,58,-45,58,-6,1.2);
+ // roof beams overhead + banners
+ for(const bx of [-40,-13,13,40]) box(0.5,0.5,39,0x5a4020,bx,6.2,-25.5,S);
+ box(116,0.5,0.5,0x5a4020,0,6.2,-44.5,S); box(116,0.5,0.5,0x5a4020,0,6.2,-6.5,S);
+ const bTexUp=bannerTexture();
+ for(const bx of [-26,26]){
+   const ban=new THREE.Mesh(new THREE.PlaneGeometry(1.5,2.2),new THREE.MeshLambertMaterial({map:bTexUp,side:THREE.DoubleSide}));
+   ban.position.set(bx,4.6,-44.4); S.add(ban);
+ }
+ // the BANK: three booths along the north wall — tap a booth/chest
+ // to open the ordinary bank panel (the game's bank system)
+ const bankSign=textSprite('🏦 CASTLE BANK','#ffe9bb','rgba(23,19,12,0.9)'); bankSign.position.set(0,3.6,-40); S.add(bankSign);
+ for(const bx of [-20,0,20]){
+   const g=new THREE.Group(); g.position.set(bx,0,-40); S.add(g);
+   const counter=box(4.4,1.15,1.7,0x6e4a1f,0,0.57,0,g);
+   const band=box(4.5,0.22,1.8,0xd4af37,0,1.05,0,g);
+   const chest=box(2.2,1.2,1.5,0x6e4a1f,0,1.75,-0.1,g);
+   const lid2=box(2.35,0.4,1.65,0x59390f,0,2.45,-0.1,g);
+   castleUpBankMeshes.push(counter,band,chest,lid2);
+   shadowify(g);
+ }
+ const rug=new THREE.Mesh(new THREE.PlaneGeometry(30,3.2),new THREE.MeshLambertMaterial({color:0x8e2f32}));
+ rug.rotation.x=-Math.PI/2; rug.position.set(0,0.06,-25.5); S.add(rug);
+ // the two ladders back down, above their ground-floor twins
+ buildLadderProp(S,-38,-25,0); signPost(S,-34.5,-23,['🪜 Down — left wing']);
+ buildLadderProp(S,38,-25,0); signPost(S,41.5,-23,['🪜 Down — right wing']);
+ buildLitTorch(S,-52,-10); buildLitTorch(S,52,-10);
+}
+const RATCAVE_ROOMS_C=[ // mirrors the server-coords union in applyRatcaveCollision
+ {x0:150,x1:390,y0:60,y1:280},    // entry room (the ladder's foot — empty, safe)
+ {x0:210,x1:330,y0:280,y1:700},   // the south leg
+ {x0:210,x1:1010,y0:580,y1:700},  // the east leg (the sharp turn)
+ {x0:890,x1:1010,y0:260,y1:580},  // the north leg
+ {x0:690,x1:1210,y0:60,y1:260},   // the RAT CHAMBER (north end)
+ {x0:620,x1:720,y0:260,y1:320},   // the skeleton branch corridor (off the rat chamber's south-west)
+ {x0:390,x1:690,y0:320,y1:580},   // the SKELETON chamber
+ {x0:1210,x1:1380,y0:130,y1:230}, // the east branch corridor
+ {x0:1380,x1:1580,y0:40,y1:320},  // the ZOMBIE chamber (the hard path, far east)
+];
+function buildRatCave(root){
+ const S=root;
+ S.add(new THREE.AmbientLight(0xffd9a8,0.4));
+ const voidPlane=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshBasicMaterial({color:0x070708}));
+ voidPlane.rotation.x=-Math.PI/2; voidPlane.position.y=-0.06; S.add(voidPlane);
+ for(const r of RATCAVE_ROOMS_C){
+   const w=(r.x1-r.x0)/10, d=(r.y1-r.y0)/10;
+   const f=new THREE.Mesh(new THREE.PlaneGeometry(w,d),new THREE.MeshLambertMaterial({map:stoneTexture(Math.max(2,Math.round(w/8)),Math.max(2,Math.round(d/8))),color:0x777780}));
+   f.rotation.x=-Math.PI/2; f.position.set((r.x0+r.x1)/20-80,0,(r.y0+r.y1)/20-45); f.receiveShadow=true; S.add(f);
+ }
+ // rock walls around the union (gaps only where legs/branches join)
+ rockWallRun(S,-65,-39,-41,-39); rockWallRun(S,-65,-39,-65,-17); rockWallRun(S,-41,-39,-41,-17);
+ rockWallRun(S,-65,-17,-59,-17); rockWallRun(S,-47,-17,-41,-17);
+ rockWallRun(S,-59,-17,-59,25); rockWallRun(S,-47,-17,-47,13);
+ rockWallRun(S,-59,25,21,25); rockWallRun(S,-47,13,9,13);
+ rockWallRun(S,9,-19,9,13); rockWallRun(S,21,-19,21,13);
+ rockWallRun(S,-11,-39,41,-39); rockWallRun(S,-11,-39,-11,-19); rockWallRun(S,-8,-19,41,-19);
+ rockWallRun(S,41,-39,41,-32); rockWallRun(S,41,-22,41,-19);
+ rockWallRun(S,-18,-19,-18,-13); rockWallRun(S,-8,-19,-8,-13); rockWallRun(S,-18,-19,-11,-19);
+ rockWallRun(S,-41,-13,-18,-13); rockWallRun(S,-41,-13,-41,13); rockWallRun(S,-41,13,-11,13); rockWallRun(S,-11,-13,-11,13);
+ rockWallRun(S,41,-32,58,-32); rockWallRun(S,41,-22,58,-22);
+ rockWallRun(S,58,-41,78,-41); rockWallRun(S,78,-41,78,-13); rockWallRun(S,58,-13,78,-13);
+ rockWallRun(S,58,-41,58,-32); rockWallRun(S,58,-22,58,-13);
+ // the ladder back up, in the entry room (server 270,115)
+ buildLadderProp(S,-53,-33.5,0);
+ signPost(S,-49,-31,['🪜 Up to the castle']);
+ signPost(S,-53,-22,['🐀 Rats: SOUTH, then EAST,','then NORTH at the end →']);
+ // the rat chamber + branch signs (Derek's sign style: name what's ahead)
+ signPost(S,12,-21.5,['🐀 RAT CHAMBER — train here!','Bones + gold on every kill']);
+ signPost(S,38.5,-24,['🧟 EAST: ZOMBIES →','The hard path. Prayer-switch!']);
+ signPost(S,-4,-20.5,['🦴 Skeletons below ↓','They drop ✨ Enchantments']);
+ signPost(S,-26,0,['🦴 SKELETONS','✨ Enchantments drop here']);
+ signPost(S,60,-20,['🧟 ZOMBIES — the hard path','🪨 Hide BEHIND the big rock to rest']);
+ // torches along the way
+ buildTorch(S,-63,-37); buildTorch(S,-43,-37);
+ buildTorch(S,-57,10); buildTorch(S,0,23); buildTorch(S,11,-10);
+ buildLitTorch(S,0,-37); buildLitTorch(S,35,-21);
+ buildTorch(S,-39,-11); buildLitTorch(S,-13,11);
+ buildLitTorch(S,60,-39); buildTorch(S,76,-15);
+ // chamber dressing
+ bonePile(S,20,-30); bonePile(S,30,-25); bonePile(S,-30,5); bonePile(S,-15,-5);
+ spikeRock(S,62,-35,1.0); spikeRock(S,75,-38,0.9);
+ // THE SAFE ROCK (server 1500,180): a big obvious boulder — the
+ // pocket directly behind it (south side) is where zombies
+ // cannot hit you.
+ const bigRock=new THREE.Mesh(new THREE.DodecahedronGeometry(2.3),new THREE.MeshLambertMaterial({color:0x8a8a92}));
+ bigRock.position.set(70,1.1,-27); bigRock.scale.y=0.75; bigRock.castShadow=true; S.add(bigRock);
+ signPost(S,70,-23.5,['🪨 SAFE ROCK','Stand behind it to rest']);
+}
 function buildAreas(){
  areaGroups.plaza=new THREE.Group(); scene.add(areaGroups.plaza); buildPlaza(areaGroups.plaza);
  areaGroups.goblins=new THREE.Group(); scene.add(areaGroups.goblins); buildGoblinCamp(areaGroups.goblins);
@@ -4138,6 +4352,9 @@ function buildAreas(){
  areaGroups.wilderness=new THREE.Group(); scene.add(areaGroups.wilderness); buildWilderness(areaGroups.wilderness,false);
  areaGroups.purewild=new THREE.Group(); scene.add(areaGroups.purewild); buildWilderness(areaGroups.purewild,true);
  areaGroups.winter=new THREE.Group(); scene.add(areaGroups.winter); buildWinterWorld(areaGroups.winter); // Stage 44: Frostfall
+ areaGroups.castle=new THREE.Group(); scene.add(areaGroups.castle); buildCastle(areaGroups.castle); // Beginner Castle (2026-11-24)
+ areaGroups.castleup=new THREE.Group(); scene.add(areaGroups.castleup); buildCastleUp(areaGroups.castleup); // its upper floor (the bank)
+ areaGroups.ratcave=new THREE.Group(); scene.add(areaGroups.ratcave); buildRatCave(areaGroups.ratcave); // the Rat Cave under the trap door
  applyAreaVisibility();
 }
 function applyAreaVisibility(){
@@ -4169,6 +4386,8 @@ function setArea(a){
    // lost 'end' message can never strand the fight strip here.
    if(npcFight||duel||modDuel){ npcFight=null; duel=null; modDuel=null; $('duelbar').classList.remove('open'); $('duelflee').style.display='none'; }
    pendingMound=null; pendingPile=null; pendingSeaweed=null; pendingChest=null; pendingSpin=false;
+   // Beginner Castle (2026-11-24): the trap door starts shut again
+   pendingTrapdoor=false; trapOpen=false; if(trapLidPivot) trapLidPivot.rotation.z=0; if(trapLadderGrp) trapLadderGrp.visible=false;
    pendingSand=null; pendingUseFurnace=null; // Tree Guardian chain (2026-11-24)
    // Stage 30: leaving a wild area drops the local wild state
    // (PKer avatars, the wild fight bar, the HUD chip) — the server
@@ -4192,13 +4411,13 @@ function setArea(a){
  }
  drawMinimap();
 }
-const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_crypt:1,barrows_tunnels:1,arena:1,waiting:1,magic:1,range:1,wilderness:1,purewild:1,winter:1}; // Stage 30 adds the two wild variants; Stage 44 adds Frostfall (winter)
+const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_crypt:1,barrows_tunnels:1,arena:1,waiting:1,magic:1,range:1,wilderness:1,purewild:1,winter:1,castle:1,castleup:1,ratcave:1}; // Stage 30 adds the two wild variants; Stage 44 adds Frostfall (winter); Beginner Castle adds castle/castleup/ratcave (2026-11-24)
 // Stage 19: the areas with a live shared-NPC roster (npc_state).
 // Feel-fixes: the two Wilderness variants join the roster — the
 // shallow-wild skeleton pocket rides the same npc_state flow.
 // Farm life: the plaza joins — the farm's sheep and cows are
 // shared NPCs standing in the plaza pasture.
-const NPC_AREAS_CLIENT=['goblins','magic','range','wilderness','purewild','plaza'];
+const NPC_AREAS_CLIENT=['goblins','magic','range','wilderness','purewild','plaza','ratcave']; // Beginner Castle: the Rat Cave's giant rats ride npc_state too
 /* Knight armour (Stage 8 medieval theme): rounded bodies — sphere
    head under a steel helmet cap, tapered-cylinder torso, cylinder
    limbs on shoulder/hip pivots (the right shoulder pivot is the weapon
@@ -4588,6 +4807,7 @@ function weaponShape(id){
  // scythe), told apart by their id endings.
  if(id==='steel_crossbow') return 'crossbow';
  if(/_wand$/.test(id)) return 'wand';
+ if(id==='big_two_hander') return 'greatsword'; // Rat Cave (2026-11-24): the zombies' prize reads as a big two-hander
  if(/_greatsword$/.test(id)) return 'greatsword';
  if(/_battleaxe$/.test(id)) return 'axe';
  if(/_war_hammer$|_maul$/.test(id)) return 'hammer2h';
@@ -5224,10 +5444,71 @@ function makeCow(n){
  return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
    x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:1.8,hp:n.hp,maxHp:n.maxHp};
 }
+/* Beginner Castle Rat Cave (2026-11-24): the giant rat — a low
+   grey-brown body on the sheep rig's proportions, long tail,
+   pink ears; the head pivot is the swing arm. */
+function makeRat(n){
+ const g=new THREE.Group();
+ const furMat=new THREE.MeshLambertMaterial({color:0x7a6a58});
+ const darkMat=new THREE.MeshLambertMaterial({color:0x5d5044});
+ box(0.13,0.3,0.13,0x5d5044,-0.18,0.15,-0.12,g); box(0.13,0.3,0.13,0x5d5044,0.18,0.15,-0.12,g);
+ box(0.13,0.3,0.13,0x5d5044,-0.18,0.15,0.12,g); box(0.13,0.3,0.13,0x5d5044,0.18,0.15,0.12,g); // legs
+ const body=new THREE.Mesh(new THREE.SphereGeometry(0.46,12,10),furMat); body.scale.set(1.3,0.85,0.95); body.position.y=0.52; g.add(body);
+ const tail=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.02,0.95,6),new THREE.MeshLambertMaterial({color:0xc9a0a0})); tail.position.set(0,0.42,-0.72); tail.rotation.x=1.25; g.add(tail); // long pink tail
+ const armR=new THREE.Group(); armR.position.set(0,0.58,0.48); g.add(armR); // head pivot
+ const head=new THREE.Mesh(new THREE.SphereGeometry(0.21,10,8),darkMat); head.scale.set(0.85,0.85,1.3); head.position.set(0,0,0.16); armR.add(head);
+ const earG=new THREE.SphereGeometry(0.085,8,6), earM=new THREE.MeshLambertMaterial({color:0xc9a0a0});
+ const earL=new THREE.Mesh(earG,earM); earL.position.set(-0.15,0.16,0.05); armR.add(earL);
+ const earR=new THREE.Mesh(earG,earM); earR.position.set(0.15,0.16,0.05); armR.add(earR);
+ const eyeG=new THREE.SphereGeometry(0.035,8,8), eyeM=new THREE.MeshBasicMaterial({color:0xb02020});
+ const eyeL=new THREE.Mesh(eyeG,eyeM); eyeL.position.set(-0.08,0.05,0.38); armR.add(eyeL);
+ const eyeR=new THREE.Mesh(eyeG,eyeM); eyeR.position.set(0.08,0.05,0.38); armR.add(eyeR);
+ shadowify(g);
+ const sh=new THREE.Mesh(new THREE.CircleGeometry(0.5,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
+ sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
+ const label=document.createElement('div'); label.className='plabel';
+ label.innerHTML=`<div class="gname">${esc(n.name||'Giant rat')} · lvl ${n.combatLevel||2}</div><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
+ $('labels').appendChild(label);
+ return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
+   x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:1.0,hp:n.hp,maxHp:n.maxHp};
+}
+/* The cave zombies: shambling green-grey figures, arms reaching
+   forward. Their current style shows over the head — 🏹 while
+   they shoot, 🗡️ once they charge in (syncNpcs swaps the cue
+   from npc_state's style field). The Big Zombie is the same rig
+   at boss scale with a 👑 in his nameplate. */
+function makeZombie(n,boss){
+ const g=new THREE.Group();
+ const skinMat=new THREE.MeshLambertMaterial({color:0x7d9b5e});
+ const ragMat=new THREE.MeshLambertMaterial({color:0x5d5648});
+ box(0.2,0.5,0.2,0x4c463c,-0.16,0.25,0,g); box(0.2,0.5,0.2,0x4c463c,0.16,0.25,0,g); // legs
+ const body=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.38,0.7,10),ragMat); body.position.y=0.85; body.rotation.x=0.12; g.add(body); // hunched torso
+ box(0.15,0.55,0.15,0x7d9b5e,-0.42,0.95,0.18,g); box(0.15,0.55,0.15,0x7d9b5e,-0.42,0.95,0.18,g).rotation.x=-1.1; // left arm reaching forward
+ const armR=new THREE.Group(); armR.position.set(0.42,1.12,0.05); g.add(armR);
+ const armMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.075,0.085,0.55,8),skinMat); armMesh.position.set(0,-0.1,0.2); armMesh.rotation.x=-1.1; armR.add(armMesh); // right arm reaching (the swing pivot)
+ const club=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.09,0.6,7),new THREE.MeshLambertMaterial({color:0x6e4f2a})); club.position.set(0,-0.28,0.42); club.rotation.x=-0.5; armR.add(club); // crude club for the melee charge
+ const head=new THREE.Mesh(new THREE.SphereGeometry(0.26,12,10),skinMat); head.position.set(0,1.42,0.08); head.rotation.x=0.25; g.add(head);
+ const eyeG=new THREE.SphereGeometry(0.045,8,8), eyeM=new THREE.MeshBasicMaterial({color:0xf2e14c});
+ const eyeL=new THREE.Mesh(eyeG,eyeM); eyeL.position.set(-0.09,1.46,0.3); g.add(eyeL);
+ const eyeR=new THREE.Mesh(eyeG,eyeM); eyeR.position.set(0.09,1.46,0.3); g.add(eyeR);
+ if(boss) g.scale.setScalar(1.5);
+ shadowify(g);
+ const sh=new THREE.Mesh(new THREE.CircleGeometry(boss?0.85:0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
+ sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
+ const label=document.createElement('div'); label.className='plabel';
+ label.innerHTML=`<div class="gname">${boss?'👑 ':''}${esc(n.name||'Zombie')} · lvl ${n.combatLevel||16} <span class="zcue">🏹</span></div><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
+ $('labels').appendChild(label);
+ return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),zcue:label.querySelector('.zcue'),zstyle:'missiles',
+   x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:boss?2.9:1.95,hp:n.hp,maxHp:n.maxHp};
+}
 function makeNpcAvatar(n){
  if(n.kind==='wizard') return makeWizard(n);
  if(n.kind==='ranger') return makeRanger(n);
  if(n.kind==='skeleton') return makeSkeleton(n);
+ if(n.kind==='cave_skeleton') return makeSkeleton(n); // Rat Cave branch skeletons ride the skeleton rig
+ if(n.kind==='rat') return makeRat(n); // Beginner Castle Rat Cave (2026-11-24)
+ if(n.kind==='zombie') return makeZombie(n,false);
+ if(n.kind==='zombie_boss') return makeZombie(n,true);
  if(n.kind==='sheep') return makeSheep(n);
  if(n.kind==='cow') return makeCow(n);
  if(n.kind==='hobgoblin') return makeHobgoblin(n); // Tree Guardian chain (2026-11-24)
@@ -5279,6 +5560,7 @@ function syncNpcs(){
      a.hpFill.style.background=hpBarColor(n.hp/Math.max(1,n.maxHp));
      a.hpWrap.style.display=(n.hp<n.maxHp)?'block':'none';
      if(a.hpNum) a.hpNum.textContent=n.hp+'/'+n.maxHp;
+     if(a.zcue&&n.style&&a.zstyle!==n.style){ a.zstyle=n.style; a.zcue.textContent=n.style==='melee'?'🗡️':'🏹'; } // Rat Cave: zombie style cue (shooting vs charging)
    }
  }
  for(const id of Object.keys(npcAvatars)){
@@ -5999,6 +6281,47 @@ function checkPendingSpin(){
  if(!pendingSpin||!myPos) return;
  if(curArea!=='plaza'){ pendingSpin=false; return; }
  if(Math.hypot(myPos.x-SPIN_WHEEL_CLIENT.x,myPos.y-SPIN_WHEEL_CLIENT.y)<=140){ pendingSpin=false; tapTarget=null; send({type:'spin'}); }
+}
+/* Beginner Castle Rat Cave (2026-11-24): the trap door outside
+   the castle door (server 690,560 — off the path, exit-right).
+   Tapping it walks you over if far; up close it OPENS — the lid
+   flips on its hinge, the ladder shows — and you climb down. */
+const TRAPDOOR_CLIENT={x:690,y:560};
+function tapTrapdoor(){
+ if(!myPos||curArea!=='castle') return;
+ if(Math.hypot(myPos.x-TRAPDOOR_CLIENT.x,myPos.y-TRAPDOOR_CLIENT.y)<=120){ openTrapdoor(); }
+ else { pendingTrapdoor=true; tapTarget={x:TRAPDOOR_CLIENT.x,y:TRAPDOOR_CLIENT.y}; toast('🚶 Walking to the trap door…'); }
+}
+function checkPendingTrapdoor(){
+ if(!pendingTrapdoor||!myPos) return;
+ if(curArea!=='castle'){ pendingTrapdoor=false; return; }
+ if(Math.hypot(myPos.x-TRAPDOOR_CLIENT.x,myPos.y-TRAPDOOR_CLIENT.y)<=120){ pendingTrapdoor=false; tapTarget=null; openTrapdoor(); }
+}
+function openTrapdoor(){
+ if(trapOpen) return; trapOpen=true;
+ if(trapLidPivot) trapLidPivot.rotation.z=1.9; // lid flips up/back on its west-edge hinge
+ if(trapLadderGrp) trapLadderGrp.visible=true; // the ladder is revealed
+ toast('🪜 You open the trap door and climb down…');
+ gateCooldownUntil=Date.now()+2500;
+ setTimeout(()=>{ if(curArea==='castle') send({type:'travel',to:'ratcave',via:'gate'}); },700);
+}
+/* Tree Guardian boss spell (2026-11-24): a visible bolt of green
+   nature magic from the guardian to the boss. flyFx entries ride
+   the animate loop; on arrival the caller floats the drain. */
+const flyFx=[];
+function spawnFlyBolt(fromAv,toAv,onDone){
+ if(!fromAv||!toAv||!scene) { if(onDone) onDone(); return; }
+ const m=new THREE.Mesh(new THREE.SphereGeometry(0.22,10,8),new THREE.MeshBasicMaterial({color:0x7be495}));
+ m.position.set(fromAv.group.position.x,1.6,fromAv.group.position.z); scene.add(m);
+ flyFx.push({m,from:fromAv,to:toAv,born:performance.now(),dur:480,onDone});
+}
+function stepFlyFx(now){
+ for(let i=flyFx.length-1;i>=0;i--){
+   const f=flyFx[i], t=(now-f.born)/f.dur;
+   if(t>=1){ scene.remove(f.m); flyFx.splice(i,1); if(f.onDone) f.onDone(); continue; }
+   const a=f.from.group.position, b=f.to.group.position;
+   f.m.position.set(a.x+(b.x-a.x)*t, 1.6+Math.sin(t*Math.PI)*0.9, a.z+(b.z-a.z)*t);
+ }
 }
 /* ---- Visual pass (Derek, 2026-11-23): ground pieces ----
    The three-looks rule, third look: a dropped piece of GEAR lies
@@ -7206,6 +7529,20 @@ function handleTap(cx,cy){
      if(act.type==='spinwheel'){ tapSpinWheel(); return; } // Crafting chain: the farm spinning wheel (walks over first if far)
    }
  }
+ // Beginner Castle (2026-11-24): the trap door outside the castle
+ // door (opens into the ladder down to the Rat Cave) and the
+ // upper floor's bank booths.
+ if(curArea==='castle'){
+   const ih=raycaster.intersectObjects(castleInteractives,false)[0];
+   if(ih && ih.object.userData.act && ih.object.userData.act.type==='trapdoor'){
+     const wp=new THREE.Vector3(); ih.object.getWorldPosition(wp); spawnTapSplat(wx2s(wp.x),wz2s(wp.z),true);
+     tapTrapdoor(); return;
+   }
+ }
+ if(curArea==='castleup'){
+   const ih=raycaster.intersectObjects(castleUpBankMeshes,false)[0];
+   if(ih){ openPanel('bank'); return; }
+ }
  // Stage 18: Menu tap mode — a quick tap on a player, NPC/monster,
  // gathering node or drop pile opens the same context menu a
  // long-press opens, instead of the primary action. Anything else
@@ -7229,6 +7566,14 @@ function handleTap(cx,cy){
        return;
      }
    }
+ }
+ // Rat Cave (2026-11-24): tap YOUR Tree Guardian while fighting
+ // the Big Zombie — he fires his defence-drain spell at the boss.
+ if(curArea==='ratcave'&&npcFight&&npcFight.kind==='zombie_boss'&&me){
+   const mine=(alliesByArea[curArea]||[]).find(al=>al.owner===me.username);
+   const ga=mine?allyAvatars[mine.id]:null;
+   if(ga){ const s=projectTo(ga.group.position.x,1.4,ga.group.position.z);
+     if(s&&Math.hypot(s.x-cx,s.y-cy)<56){ spawnTapSplat(wx2s(ga.group.position.x),wz2s(ga.group.position.z),true); send({type:'guardian_spell'}); return; } }
  }
  // shared NPCs — goblins / wizards / rangers (tap to attack; walks over first if too far)
  if(NPC_AREAS_CLIENT.includes(curArea)){
@@ -7507,7 +7852,7 @@ function faceToward(pt){
 let gateCooldownUntil=0;
 function checkGates(){
  if(!myPos||!me||Date.now()<gateCooldownUntil) return;
- const go=(to,msg)=>{ gateCooldownUntil=Date.now()+2000; stopGather(); send({type:'travel',to,via:'gate'}); toast(msg); }; // Stage 30: gate crossings say so (the wild exit rule reads it)
+ const go=(to,msg,land)=>{ gateCooldownUntil=Date.now()+2000; stopGather(); send({type:'travel',to,via:'gate',...(land?{land}:{})}); toast(msg); }; // Stage 30: gate crossings say so (the wild exit rule reads it); Beginner Castle: `land` picks the server's fixed ladder landing
  if(curArea==='plaza'){
    // corners first, then edges (Stage 13: every trigger zone is the
    // old zone x2, matching the doubled gate visuals)
@@ -7530,6 +7875,22 @@ function checkGates(){
    // Stage 44: the Frostfall gate — south wall, west stretch (clear
    // of the Gathering Cave corner at x<=20 and the Barrows strip).
    if(myPos.y>=890&&myPos.x>=120&&myPos.x<=520){ go('winter','❄️ South gate → Frostfall, the Winter World…'); return; }
+   // Beginner Castle (2026-11-24): the south wall's EAST stretch —
+   // clear of the Barrows strip (600-1000) and the Training corner.
+   if(myPos.y>=890&&myPos.x>=1100&&myPos.x<=1480){ go('castle','🏰 South gate → Beginner Castle…'); return; }
+ }
+ else if(curArea==='castle'){
+   if(myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); return; }
+   // the wing ladders up (server-fixed spots in each wing)
+   if(Math.hypot(myPos.x-420,myPos.y-200)<=45){ go('castleup','🪜 Up the left-wing ladder…','left'); return; }
+   if(Math.hypot(myPos.x-1180,myPos.y-200)<=45){ go('castleup','🪜 Up the right-wing ladder…','right'); return; }
+ }
+ else if(curArea==='castleup'){
+   if(Math.hypot(myPos.x-420,myPos.y-200)<=45){ go('castle','🪜 Down the left-wing ladder…','left'); return; }
+   if(Math.hypot(myPos.x-1180,myPos.y-200)<=45){ go('castle','🪜 Down the right-wing ladder…','right'); return; }
+ }
+ else if(curArea==='ratcave'){
+   if(Math.hypot(myPos.x-270,myPos.y-115)<=45){ go('castle','🪜 Up the ladder → the castle…','cave'); return; }
  }
  else if(isWildClient()&&myPos.y>=890){ go('plaza','🚪 The ditch → back to safety…'); }
  else if(curArea==='barrows'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
@@ -7644,9 +8005,21 @@ function applyCoveCollision(){
  if(curArea!=='cove') return;
  if(myPos.x>COVE_WATER_X) myPos.x=COVE_WATER_X;
 }
+/* Beginner Castle Rat Cave (2026-11-24): the cave is a bent
+   corridor union, not an open room — the same axis-slide pattern
+   as the Barrows tunnels, against RATCAVE_ROOMS_C. */
+function applyRatcaveCollision(from){
+ if(curArea!=='ratcave') return;
+ const ok=(x,y)=>RATCAVE_ROOMS_C.some(r=>x>=r.x0+12&&x<=r.x1-12&&y>=r.y0+12&&y<=r.y1-12);
+ if(!ok(myPos.x,myPos.y)){
+   if(ok(myPos.x,from.y)) myPos.y=from.y;
+   else if(ok(from.x,myPos.y)) myPos.x=from.x;
+   else { myPos.x=from.x; myPos.y=from.y; }
+ }
+}
 function finishStep(moved){
  const a=avatars[me.username]; if(!a) return;
- if(moved&&stepFrom){ applyBarrowsCollision(stepFrom); applyCoveCollision(); } // Stage 28 + playtest fix
+ if(moved&&stepFrom){ applyBarrowsCollision(stepFrom); applyCoveCollision(); applyRatcaveCollision(stepFrom); } // Stage 28 + playtest fix; Rat Cave union (2026-11-24)
  a.x=sx2w(myPos.x); a.z=sy2w(myPos.y);
  if(moved){ a.bob+=0.35; }
  const now=performance.now();
@@ -7658,7 +8031,7 @@ function finishStep(moved){
    lastSend=now;
  }
  checkGates();
- if(moved){ checkPendingAttack(); checkPendingNode(); checkPendingSpin(); checkPendingFcAttack(); checkPendingMound(); checkPendingPile(); checkPendingSeaweed(); checkPendingSand(); checkPendingChest(); checkPendingUse(); checkPendingWildAttack(); checkPendingWildPker(); checkPendingUseFurnace(); } // checkPendingSand + checkPendingUseFurnace: Tree Guardian chain (2026-11-24)
+ if(moved){ checkPendingAttack(); checkPendingNode(); checkPendingSpin(); checkPendingFcAttack(); checkPendingMound(); checkPendingPile(); checkPendingSeaweed(); checkPendingSand(); checkPendingChest(); checkPendingUse(); checkPendingWildAttack(); checkPendingWildPker(); checkPendingUseFurnace(); checkPendingTrapdoor(); } // checkPendingSand + checkPendingUseFurnace: Tree Guardian chain (2026-11-24); checkPendingTrapdoor: Rat Cave (2026-11-24)
 }
 /* ================= minimap (rotating, player-centred) ================= */
 const MM_S=128/520; // minimap px per server unit (~520 units across — Stage 13 kept the same view window: the map is player-centred, so a bigger world just means more of it lies off-map; every feature below is drawn in the new 0..1600 x 0..900 server coords)
@@ -7677,13 +8050,13 @@ function drawMinimap(){
  g.save();
  g.translate(cx,cy); g.rotate(th); g.scale(MM_S,MM_S); g.translate(-myPos.x,-myPos.y);
  // ground + area features (drawn in server coords, rotated by the transform)
- const caveBg=(curArea==='training'||curArea==='gathering'||curArea==='mine'||curArea==='fightcaves');
+ const caveBg=(curArea==='training'||curArea==='gathering'||curArea==='mine'||curArea==='fightcaves'||curArea==='ratcave');
  g.fillStyle= curArea==='barrows'? '#333a2a'
    : (curArea==='barrows_tunnels'||curArea==='barrows_crypt')? '#0d0a12'
    : curArea==='waiting'? '#33302a'
    : curArea==='arena'? ARENA_VARIANTS[arenaVariant].css
    : isWildClient()? '#2a1a14'
-   : caveBg? (curArea==='fightcaves'? '#241a12' : '#2b2b30') : (curArea==='goblins')? '#55702f' : (curArea==='winter')? '#dfe9f2' : '#241d15'; g.fillRect(0,0,1600,900);
+   : caveBg? (curArea==='fightcaves'? '#241a12' : '#2b2b30') : (curArea==='goblins')? '#55702f' : (curArea==='winter')? '#dfe9f2' : (curArea==='castle')? '#4a6b35' : (curArea==='castleup')? '#3d3d44' : '#241d15'; g.fillRect(0,0,1600,900);
  if(curArea==='plaza'){
    g.fillStyle='#8a7a5f'; g.fillRect(800-420,450-270,840,540); // cobblestone centre
    g.fillStyle='#6e4a1f'; g.fillRect(800-140,140-50,280,100); // tournament dais (wood)
@@ -7822,6 +8195,7 @@ function animate(){
  }
  if(now-lastMapDraw>150){ lastMapDraw=now; drawMinimap(); }
  stepMovement(dt);
+ stepFlyFx(now); // Rat Cave: the Tree Guardian's spell bolt (2026-11-24)
  updatePromptChip(); // Interface simplification: the bank/shop context hint follows the player's spot (cheap distance checks; DOM touched only on a change)
  updateSmartPrompt(); // Trial B: smart prompts ride the same tick (inert in A)
  // Stage 32: the respawn hold expires — replay the held area/state
@@ -8482,6 +8856,8 @@ function pBackpack(){
      if(s.item==='glass_vial'||s.item==='herbs'||s.item==='snapdragon') h+=`<button class="act" onclick="openGuardianMaker()">🧪 Mix a potion — the guardian's making</button>`;
      if(s.item==='glass_lantern') h+=`<button class="act" onclick="send({type:'lantern_place'})">🏮 Place here — it stays in the world</button>`;
      if(d&&d.slot==='amulet'&&!s.item.endsWith('_enchanted')){ const esp=spellList.find(x=>x.tier==='enchant'&&x.gem===d.gem); h+=`<button class="act" onclick="send({type:'enchant_amulet',item:'${s.item}'})">✨ Enchant${esp?` — ${esc(esp.name)} (Magic ${esp.level}, ${esp.runes} ${esc(esp.element)} runes)`:''}</button>`; }
+     if(s.item==='weapon_enchantment') h+=`<button class="act" onclick="send({type:'apply_enchantment'})">✨ Apply to my worn weapon — an extra hit every 3rd swing</button>`;
+     if(d&&d.kind==='weapon'&&me&&me.enchantedWeapons&&me.enchantedWeapons[s.item]) h+=`<div class="sub" style="margin:4px 0">✨ This weapon is ENCHANTED — it lands an extra hit every third swing.</div>`;
      const smithM=s.item.startsWith('smith_')? s.item.match(/^smith_([a-z]+)_(?:sword|platebody)(?:_u(\d))?$/) : null;
      if(smithM&&(+ (smithM[2]||0))<4) h+=`<button class="act" onclick="send({type:'smith_upgrade',item:'${s.item}'})">⬆️ Upgrade (+1)</button>`;
      if(d&&d.kind==='arrowhead') h+=`<button class="act" onclick="send({type:'fletch',item:'${s.item}'})">🪵 Fletch (1 log + 1 head → 10 arrows)</button>`;
@@ -9195,6 +9571,7 @@ function pTeleport(){
  h+=`<div class="rowline"><span class="ic">🏹</span><span class="grow"><b>Ranger Camp</b><br><span class="sub">North gate (west stretch) · rangers drop arrows &amp; arrowheads</span></span>${here('range')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('range')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">💀</span><span class="grow"><b>The Wilderness</b><br><span class="sub">North ditch crossing (east stretch) or this obelisk teleport · PvP, skulls, death drops loot · NO teleporting out above level 20</span></span>${here('wilderness')||here('purewild')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('wilderness')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">❄️</span><span class="grow"><b>Frostfall — the Winter World</b><br><span class="sub">South gate (west stretch) · drifting snow, frost pines to chop, ice-crusted rocks to mine, a frozen pond</span></span>${here('winter')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('winter')">Teleport</button>`}</div>`;
+ h+=`<div class="rowline"><span class="ic">🏰</span><span class="grow"><b>Beginner Castle</b><br><span class="sub">South gate (east stretch) · the beginner start — cook in the center wing, bank upstairs, and the Rat Cave trap door by the west fountain</span></span>${here('castle')||here('castleup')||here('ratcave')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('castle')">Teleport</button>`}</div>`;
  return h;
 }
 /* ---- Help (Polish build) ----
@@ -9209,6 +9586,13 @@ function pTeleport(){
    Fight Caves 500g + fire cape clear, Barrows/wild rules) — if
    the game retunes, retune this text with it. */
 const HELP_TASKS=[
+ {id:'castle', ic:'🏰', name:'Start: the Beginner Castle & Rat Cave', sub:'The beginner start · cook, bank, train', steps:[
+   {t:'Head to the Beginner Castle — walk out the plaza\'s south gate (east stretch) or take the Teleport row. The courtyard sign marks the beginner start.', go:'castle'},
+   {t:'Ground floor, CENTER wing: the cooking range — use raw food on the fire to cook. LEFT and RIGHT wings each have a ladder up.'},
+   {t:'Upstairs is one big floor joining both wings — the CASTLE BANK is up there. Bank your loot between training trips.', go:'castleup'},
+   {t:'Back outside: walk out the castle door and look RIGHT of the path, by the west fountain — a trap door in the ground. Tap it: it opens into the ladder down to the RAT CAVE.'},
+   {t:'In the cave: down the ladder is quiet. Walk SOUTH, turn EAST, then NORTH into the rat chamber and train on the giant rats — every kill drops bones (bury them for Prayer XP) and a little gold.'},
+   {t:'When rats feel easy: the rat chamber branches — skeletons below (they drop ✨ Enchantments: apply one to your worn weapon for an extra hit every 3rd swing) and ZOMBIES east, the hard path (they shoot first — Deflect Missiles makes them charge in, slowly; hide behind the big rock to rest). The 👑 Big Zombie at the very end can drop the Big Two-Hander, which DOUBLES your max hit. Brought a Tree Guardian? Tap him during the boss fight and his spell drains the boss\'s Defence!'}]},
  {id:'tour', ic:'🤝', name:'Get a tour from Muse', sub:'The plaza sign · a guided walk-around', steps:[
    {t:'Find the big wooden sign by the spawn, just south-east of the bank — it has a crown and Derek Nally\u2019s name on it.'},
    {t:'Tap the sign and read it. It teaches the whole game in about a minute.'},
@@ -10299,7 +10683,7 @@ function renderNpcBar(){
  setLowHp($('hpyou'),npcFight.hpYou/Math.max(1,npcFight.maxHpYou)); // Stage 37b
  $('hpopp').style.width=clamp(npcFight.hpNpc/Math.max(1,npcFight.maxHpNpc)*100,0,100)+'%'; $('hpoppv').textContent=npcFight.hpNpc;
  const kindIcon=npcFight.kind==='barrows'?'💀':npcFight.kind==='wizard'?'🧙':npcFight.kind==='ranger'?'🏹':'🥊';
- $('duelctx').textContent=`${kindIcon} ${npcFight.name}`;
+ $('duelctx').textContent=`${kindIcon} ${npcFight.name}`+(npcFight.kind==='zombie_boss'?` · 🛡️ Defence ${npcFight.bossDef!=null?npcFight.bossDef:25}${npcFight.guardianSpellUsed?' · 🌳 spell spent':' · 🌳 tap your Tree Guardian!'}`:'');
  syncBarPrayers(false);
  const consum=(me?me.backpack:[]).filter(s=>catalog[s.item]&&(catalog[s.item].kind==='food'||catalog[s.item].kind==='potion'));
  let h=`<span class="bwrap" data-grp="actions"><button class="fchip spec" id="specbtn" title="Dragon Slash">⚡ ${npcFight.energyYou}%</button></span><span class="blab" data-grp="supplies">Supplies</span><span class="bwrap" data-grp="supplies">`;
@@ -10347,6 +10731,8 @@ function npcFightUI(m){
  if(m.phase==='tick'){
    if(!npcFight) return;
    npcFight.hpYou=m.hpYou; npcFight.maxHpYou=m.maxHpYou; npcFight.hpNpc=m.hpNpc; npcFight.maxHpNpc=m.maxHpNpc; npcFight.energyYou=m.energyYou;
+   if(typeof m.bossDef==='number') npcFight.bossDef=m.bossDef; // Rat Cave boss: live Defence level (the guardian drain shows here)
+   if(typeof m.guardianSpellUsed==='boolean') npcFight.guardianSpellUsed=m.guardianSpellUsed;
    if(me) me.specialEnergy=m.energyYou;
    applyClosing(m); // Stage 8: on a closing tick, walk into reach (moveTo)
    const ba=npcAvatars[m.npcId];
@@ -10368,6 +10754,7 @@ function npcFightUI(m){
    // Deflect prayer bounced back bursts blue (↩N) on it too and
    // flinches it — the bounce is real damage, not a block.
    if(m.youBonus>0) spawnBonusSplatOn(ba,m.youBonus);
+   if(m.youExtra) spawnTextSplat(ba,'✨ extra hit!','good'); // Rat Cave: the enchanted weapon's third-swing hit
    if(m.npcDeflected>0){ spawnDeflectSplatOn(ba,m.npcDeflected); startFlinch(ba,specYouAv(),false); }
    if(ba&&ba.isBrother){ ba.hp=m.hpNpc; ba.maxHp=m.maxHpNpc; }
    if(ba&&typeof m.npcFrozenUntil==='number') ba.frozenUntil=m.npcFrozenUntil; // Stage 24: Freeze root on my target
