@@ -2537,6 +2537,7 @@ function send(ws, obj) {
   // + Stage 31 restore put the player straight back.
   if (ws.bufferedAmount > 16 * 1024 * 1024) { try { ws.terminate(); } catch {} return; }
   try { ws.send(JSON.stringify(obj)); } catch {}
+  specMirror(ws, obj); // View Live (2026-11-23): fight streams also reach owner-spectators of the recipient
 }
 function broadcast(obj, exceptKey) {
   for (const [k, p] of online) if (k !== exceptKey) send(p.ws, obj);
@@ -2577,6 +2578,144 @@ function broadcastState() {
   for (const area of areasPresent) {
     const msg = { type: 'state', area, players: playersSnapshot(area) };
     for (const p of online.values()) if (p.area === area) send(p.ws, msg);
+  }
+  specSweep(); // View Live (2026-11-23): watchers get their target's area stream too
+}
+
+// ---------- View Live spectate (owner only, Derek 2026-11-23) ----------
+// "Nally can view players live game at anytime." The power belongs
+// to the OWNER account alone — the computed 'nally' role from
+// effectiveRole(). NOT mods, NOT regular admins, and NOT the
+// assistant account's standing admin floor (that floor tops out at
+// 'admin', never 'owner'). Every entry point is re-checked
+// server-side in the spectate_start / spectate_stop handlers.
+//
+// Mechanism (no parallel renderer, no engine changes):
+//  - The watcher's session carries spectateKey / spectateName /
+//    spectateArea. The watcher's own session NEVER moves and NEVER
+//    changes area — admin Go to remains the separate moving tool.
+//  - specSweep() (riding broadcastState's cadence) mirrors the
+//    target's area stream to the watcher under spec_* types:
+//    players, shared NPCs, piles, nodes, Tree Guardian allies and
+//    Wilderness state. A full specSceneBundle() is pushed whenever
+//    the target changes area, so the view follows them anywhere —
+//    arenas, Barrows crypts/tunnels and the Fight Caves included.
+//  - specMirror() (hooked into send(), the one choke point every
+//    outbound message passes through) forwards the target's OWN
+//    fight streams — duel / mod duel / NPC fight (Barrows brothers
+//    ride it) / Fight Caves / wild fight / Barrows run state — to
+//    the target's watchers, flagged spec:true and with the
+//    fighter's profile stripped, so a watcher sees HP and swings
+//    live but can never be handed the fighter's profile.
+//  - The target is never sent anything, never moved, never told.
+//  - While spectating, the watcher's inputs are locked server-side
+//    (the gate in handleMessage): movement and every action are
+//    dropped; only spectate control, chat/whisper and read-only
+//    queries pass. The owner's character simply stands in its own
+//    area, visible there exactly as normal.
+//  - Target logout ends the view cleanly (cleanupDisconnect hook,
+//    with this sweep as backstop) and restores the watcher's own
+//    area bundle exactly as a travel arrival would send it.
+const SPEC_FIGHT_TYPES = new Set(['duel_start', 'duel_tick', 'duel_end', 'mod_duel', 'npc_fight', 'wild_fight', 'fc_state', 'fc_wave', 'fc_tick', 'fc_telegraph', 'fc_end', 'barrows_state']);
+const SPEC_ALLOW_WHILE_WATCHING = new Set(['spectate_start', 'spectate_stop', 'chat', 'whisper', 'set_guided', 'friend_add', 'friend_remove', 'online_list', 'admin_list', 'admin_notes', 'ref_lists', 'stake_board_get', 'examine']);
+function isOwner(sessOrProfile) { return effectiveRole(sessOrProfile) === 'owner'; }
+function specRetype(msg, type) { return { ...msg, type }; }
+// A full scene bundle for the watcher's current target: the scene
+// stream plus, when the target is already mid-fight, a start-shaped
+// copy of that fight so the watcher's fight UI joins it live (the
+// regular ticks take over from there; a duel joined this way shows
+// 99/99 until the next tick, under a second, corrects it).
+function specSceneBundle(w, t) {
+  w.spectateArea = t.area;
+  send(w.ws, { type: 'spec_start', target: t.profile.username, area: t.area });
+  send(w.ws, { type: 'spec_state', area: t.area, players: playersSnapshot(t.area) });
+  if (NPC_AREAS.includes(t.area)) send(w.ws, specRetype(npcStateMsg(t.area), 'spec_npc_state'));
+  send(w.ws, specRetype(nodesMsg(t.area), 'spec_nodes'));
+  send(w.ws, specRetype(firesMsg(t.area), 'spec_fires'));
+  send(w.ws, specRetype(pilesMsg(t.area), 'spec_piles'));
+  send(w.ws, specRetype(seaweedMsg(t.area), 'spec_seaweed'));
+  send(w.ws, specRetype(alliesMsg(t.area), 'spec_allies'));
+  send(w.ws, specRetype(objectsMsg(t.area), 'spec_objects'));
+  if (t.area === 'plaza') send(w.ws, specRetype(modNpcsMsg(), 'spec_mod_npcs'));
+  if (isWildArea(t.area)) send(w.ws, specRetype(wildStateMsg(t.area, t), 'spec_wild_state'));
+  if (t.area === 'barrows' || t.area === 'barrows_tunnels' || t.area === 'barrows_crypt') send(w.ws, { ...barrowsStateMsg(t), spec: true, specTarget: t.profile.username });
+  if (t.fcRunId) { const run = fcRuns.get(t.fcRunId); if (run) send(w.ws, { ...fcStateMsg(run), spec: true, specTarget: t.profile.username }); }
+  if (t.duelId) {
+    const duel = duels.get(t.duelId);
+    if (duel) {
+      const otherKey = duel.a === w.spectateKey ? duel.b : duel.a;
+      const other = db.users[otherKey];
+      send(w.ws, { type: 'duel_start', spec: true, specTarget: t.profile.username, duelId: duel.id, stake: duel.stake, pot: duel.pot, escrowItems: duel.escrowItems, arena: duel.arena, official: duel.official, rules: duel.rules, freePlay: duel.freePlay, countdownTicks: 0, you: t.profile.username, opponent: other ? other.profile.username : 'Opponent', h2h: null });
+    }
+  }
+  if (t.npcFightId) {
+    const f = npcFights.get(t.npcFightId);
+    const npc = f ? npcs.get(f.npcId) : null;
+    if (f && npc) send(w.ws, { type: 'npc_fight', spec: true, specTarget: t.profile.username, phase: 'start', npcId: npc.id, kind: npc.kind, name: npc.name, combatLevel: npc.combatLevel, hpYou: f.hpYou, maxHpYou: f.maxHpYou, hpNpc: npc.hp, maxHpNpc: npc.maxHp, energyYou: t.profile.specialEnergy });
+  }
+  if (t.modDuelId) {
+    const f = modDuels.get(t.modDuelId);
+    if (f) { const def = MOD_NPCS.find((d) => d.id === f.npcId); if (def) send(w.ws, { type: 'mod_duel', spec: true, specTarget: t.profile.username, phase: 'start', npcId: def.id, name: def.name, tier: def.tier, stake: f.stake, pot: f.pot, hpYou: f.hpYou, maxHpYou: 99, hpNpc: f.hpNpc, maxHpNpc: 99, energyYou: t.profile.specialEnergy }); }
+  }
+  if (t.barrowsFightId) {
+    const f = barrowsFights.get(t.barrowsFightId);
+    if (f) { const def = BARROWS_BROTHERS[f.brother]; if (def) send(w.ws, { type: 'npc_fight', spec: true, specTarget: t.profile.username, phase: 'start', npcId: def.id, kind: 'barrows', name: def.name, combatLevel: def.combatLevel, hpYou: f.hpYou, maxHpYou: f.maxHpYou, hpNpc: f.hpNpc, maxHpNpc: f.maxHpNpc, energyYou: t.profile.specialEnergy, bx: f.bx, by: f.by }); }
+  }
+}
+// End a watch: clear the session flag, tell the watcher, and
+// re-send their OWN area bundle (their session never left it, so
+// position, camera and panels restore exactly).
+function endSpectate(key, reason) {
+  const w = online.get(key);
+  if (!w || !w.spectateKey) return;
+  const t = online.get(w.spectateKey);
+  const tName = t ? t.profile.username : (w.spectateName || 'them');
+  delete w.spectateKey; delete w.spectateArea; delete w.spectateName;
+  const text = reason === 'logout' ? `📺 ${tName} logged out — back to your own view.` : `📺 Stopped watching ${tName} — back to your own view.`;
+  send(w.ws, { type: 'spec_end', target: tName, reason, text });
+  send(w.ws, { type: 'area', area: w.area });
+  if (NPC_AREAS.includes(w.area)) send(w.ws, npcStateMsg(w.area));
+  send(w.ws, nodesMsg(w.area));
+  send(w.ws, firesMsg(w.area));
+  send(w.ws, pilesMsg(w.area));
+  send(w.ws, seaweedMsg(w.area));
+  send(w.ws, alliesMsg(w.area));
+  send(w.ws, objectsMsg(w.area));
+  if (w.area === 'plaza') { send(w.ws, modNpcsMsg()); send(w.ws, modLadderMsg(w.profile)); }
+  if (w.area === 'barrows' || w.area === 'barrows_tunnels' || w.area === 'barrows_crypt') send(w.ws, barrowsStateMsg(w));
+  broadcastState();
+}
+// Per-state-tick mirror: follow area changes with a full bundle,
+// otherwise stream the target's area state at the normal cadence.
+function specSweep() {
+  for (const [k, w] of [...online]) {
+    if (!w.spectateKey) continue;
+    const t = online.get(w.spectateKey);
+    if (!t) { endSpectate(k, 'logout'); continue; }
+    if (t.area !== w.spectateArea) { specSceneBundle(w, t); continue; }
+    send(w.ws, { type: 'spec_state', area: t.area, players: playersSnapshot(t.area) });
+    if (NPC_AREAS.includes(t.area)) send(w.ws, specRetype(npcStateMsg(t.area), 'spec_npc_state'));
+    send(w.ws, specRetype(pilesMsg(t.area), 'spec_piles'));
+    send(w.ws, specRetype(nodesMsg(t.area), 'spec_nodes'));
+    send(w.ws, specRetype(alliesMsg(t.area), 'spec_allies'));
+    if (isWildArea(t.area)) send(w.ws, specRetype(wildStateMsg(t.area, t), 'spec_wild_state'));
+  }
+}
+// Fight-stream mirror, hooked into send(): when a fight message is
+// delivered to a player, that player's watchers get a copy from the
+// same perspective (each fighter receives their own perspective
+// copy from the engine, so watchers of either side are served by
+// that side's own message — no re-perspectiving is ever needed).
+function specMirror(ws, obj) {
+  if (!obj || obj.spec || !SPEC_FIGHT_TYPES.has(obj.type)) return;
+  let rKey = null, rSess = null;
+  for (const [k, s] of online) if (s.ws === ws) { rKey = k; rSess = s; break; }
+  if (!rSess) return;
+  for (const [wk, w] of online) {
+    if (w.spectateKey !== rKey || wk === rKey) continue;
+    const copy = { ...obj, spec: true, specTarget: rSess.profile.username };
+    delete copy.profile; // the fighter's profile never lands on a watcher
+    send(w.ws, copy);
   }
 }
 // ---------- Friends list (Derek, 2026-11-23) ----------
@@ -6738,6 +6877,10 @@ function cleanupDisconnect(key) {
   clearTradeRequestsInvolving(key);
   // Stage 6: a Tree Guardian is session-only — it goes when you do.
   if (allies.has(key)) { const ally = allies.get(key); allies.delete(key); broadcastAllies(ally.area); }
+  // View Live (2026-11-23): anyone watching the leaver gets their
+  // view ended cleanly ("📺 X logged out — back to your own view.")
+  // and their own area restored.
+  for (const [wk, w] of [...online]) if (w.spectateKey === key) endSpectate(wk, 'logout');
   online.delete(key);
   broadcast({ type: 'chat', from: 'Game', text: `${profile.username} left the plaza.` });
   broadcastState();
@@ -6851,6 +6994,13 @@ wss.on('connection', (ws, req) => {
     // every heartbeat, whatever the proxies in between count.
     if (m.type === 'pong') return;
     if (m.type === 'ping') { send(ws, { type: 'pong' }); return; }
+    // View Live (2026-11-23): while the owner is spectating, their
+    // inputs are locked SERVER-SIDE — movement and every action are
+    // dropped here, before any handler can see them; only spectate
+    // control, chat/whisper and read-only queries pass (see
+    // SPEC_ALLOW_WHILE_WATCHING). The owner's character stands
+    // untouched in its own area for the whole watch.
+    if (me.spectateKey && !SPEC_ALLOW_WHILE_WATCHING.has(m.type)) return;
     if (m.type === 'move') {
       // Stage 12: duel countdown freeze — while a duel's countdown
       // is still running (its tick count has not passed
@@ -6974,6 +7124,40 @@ wss.on('connection', (ws, req) => {
       save(key);
       sendProfile(key);
       broadcastState();
+      return;
+    }
+
+    // ----- View Live spectate (owner only, 2026-11-23) -----
+    // Derek: "Nally can view players live game at anytime." The
+    // owner — and ONLY the owner (effectiveRole 'owner'; mods,
+    // regular admins and the assistant's admin floor are refused
+    // here regardless of what any client shows) — watches any
+    // online player's live game, human or NPC bot, without moving
+    // their own character or disturbing the target. Starting a
+    // watch while already watching switches targets. The owner
+    // must not be mid-fight themselves (same family of guards as
+    // admin_goto); the target may be doing anything at all —
+    // duelling in the arena, down in the Barrows, mid-Fight-Caves
+    // run — the mirror follows (see the View Live block above).
+    if (m.type === 'spectate_start') {
+      if (!isOwner(profile)) return send(ws, { type: 'error', message: '📺 View Live is the owner\'s tool only.' });
+      const targetKey = userKeyFor(m.target);
+      const targetName = String(m.target || '').trim();
+      if (targetKey === key) return send(ws, { type: 'error', message: 'That is you — pick another player.' });
+      const target = online.get(targetKey);
+      if (!target) return send(ws, { type: 'error', message: `${targetName} is not online.` });
+      if (me.duelId || me.modDuelId || me.npcFightId || me.barrowsFightId || me.fcRunId || (me.wildPairs && me.wildPairs.size)) {
+        return send(ws, { type: 'error', message: 'You are in a fight — finish or leave it before watching.' });
+      }
+      me.spectateKey = targetKey; me.spectateName = target.profile.username; me.spectateArea = null;
+      specSceneBundle(me, target);
+      send(ws, { type: 'chat', from: 'Game', text: `📺 You are now watching ${target.profile.username} live. Your own character stays where it stands.` });
+      return;
+    }
+    if (m.type === 'spectate_stop') {
+      if (!isOwner(profile)) return send(ws, { type: 'error', message: '📺 View Live is the owner\'s tool only.' });
+      if (!me.spectateKey) return send(ws, { type: 'error', message: 'You are not watching anyone.' });
+      endSpectate(key, 'stop');
       return;
     }
 
