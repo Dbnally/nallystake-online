@@ -811,6 +811,20 @@ for (const [id, name, tier, buy, accBonus, maxBonus, icon, color] of [
     speedTicks: 6, twoHanded: true, ...(color ? { color } : {}),
     desc: `Max hit +${maxBonus} · Two-handed: slower 6-tick swings, and no shield while wielded · Special: Dragon Slash (55% energy).` };
 }
+// Rat Cave signature loot (Derek, 2026-11-24): the zombies' Big
+// Two-Hander — loot-only, never in a shop. Its own maxBonus is 0
+// on purpose: the doubling IS the bonus (maxHit() doubles the
+// wielder's whole max hit while it is wielded — Derek's rule:
+// "it hits twice your max hit"). Slow 6-tick two-hander cadence
+// and no shield, like the chart two-handers.
+ITEMS.big_two_hander = { name: 'Big Two-Hander', icon: '⚔️', kind: 'weapon', slot: 'weapon', style: 'melee', tier: 'zombie', sellOnly: 250, accBonus: 0.06, maxBonus: 0, doubleMaxHit: true, speedTicks: 6, twoHanded: true, color: '#7d9b5e',
+  desc: 'A huge two-handed blade from the Rat Cave zombies. While you wield it, your max hit is DOUBLED. Two-handed: slower 6-tick swings, and no shield while wielded.' };
+// The skeletons' signature drop: one Enchantment, applied to one
+// weapon (the worn one) via the backpack's Apply button — that
+// weapon then lands an extra hit every third swing (see
+// rollPlayerAttack). One per weapon; re-applying does not stack.
+ITEMS.weapon_enchantment = { name: 'Weapon enchantment', icon: '✨', kind: 'enchant', sellOnly: 120,
+  desc: 'Skeleton magic from the Rat Cave. Apply it to the weapon you are wearing: that weapon lands an extra hit every third swing. One enchantment per weapon.' };
 for (const [id, name, tier, buy, accPts, strBonus, ticks, color] of [
   ['bronze_bow', 'Bronze bow', 'bronze', 80, 1, 1, 0, null],
   ['iron_bow', 'Iron bow', 'iron', 160, 2, 2, 0, null],
@@ -1781,6 +1795,7 @@ function publicProfile(p) {
     username: p.username, gold: p.gold, rating: p.rating, wins: p.wins, losses: p.losses, style: p.style,
     backpack: p.backpack.map((s) => ({ item: s.item, qty: s.qty })),
     worn: { ...p.worn },
+    enchantedWeapons: { ...(p.enchantedWeapons || {}) }, // Rat Cave: weapon ids carrying the skeleton enchantment
     bank: p.bank.map((s) => ({ item: s.item, qty: s.qty })),
     prayerPoints: Math.round(p.prayerPoints * 10) / 10, prayerMax: p.prayerMax,
     activePrayer: p.activePrayer, specialEnergy: p.specialEnergy,
@@ -2505,6 +2520,17 @@ const AREAS = {
   // south return gate, mirroring the Wizard Grounds / Ranger Camp,
   // and the plaza gate is the south wall's west stretch.
   winter: { name: 'Frostfall', spawn: { x: 800, y: 720 } },
+  // Beginner Castle (Derek, voice call 2026-11-24): the Lumbridge-
+  // inspired beginner start for in-game Muse's road to 99. Three
+  // linked areas, all reached by walking (teleport lists the castle
+  // only, as the shortcut): the castle + courtyard (castle), its
+  // shared UPPER FLOOR with the bank (castleup — ladders in the
+  // left and right wings), and the RAT CAVE (ratcave — down the
+  // ladder outside the castle, off the right of the path as you
+  // exit, by the west fountain). Spawns sit by each area's way back.
+  castle: { name: 'Beginner Castle', spawn: { x: 800, y: 720 } },
+  castleup: { name: 'Castle Upper Floor', spawn: { x: 800, y: 720 } },
+  ratcave: { name: 'Rat Cave', spawn: { x: 270, y: 170 } }, // spawn = the foot of the ladder, in the empty entry room
 };
 const NPC_RANGE = 150; // server units — attack / stay-in-combat range (15 tiles at 10 units/tile)
 
@@ -2675,8 +2701,71 @@ COW_SPAWNS.forEach(([x, y], i) => {
   const id = 'cow' + (i + 1);
   npcs.set(id, { id, ...COW_DEF, area: 'plaza', x, y, spawnX: x, spawnY: y, hp: COW_DEF.maxHp, alive: true, respawnAt: 0, fightId: null, pasture: FARM_PASTURE, wx: x, wy: y, wUntil: 0 });
 });
+// Beginner Castle (2026-11-24): GIANT RATS in the Rat Cave — the
+// first real fight of the game. Tuned for a brand-new / combat ~11
+// player with a bronze sword: 10 HP (a handful of swings, not a
+// one-shot), max hit 1 at low accuracy (they nibble), 8s respawn.
+// The cave is a bent corridor (entry room -> south leg -> sharp
+// east turn -> the rat chamber); every spawn sits EAST of the turn
+// (x >= 1120), so the ladder entry stays empty and safe. Same
+// shared-NPC framework as the camps — fought through attack_npc /
+// npcTick; drops in rollNpcDrops (bones + a little gold always).
+const RAT_DEF = { kind: 'rat', name: 'Giant rat', combatLevel: 2, maxHp: 10, maxHit: 1, acc: 0.45, attackType: 'melee', respawnMs: 8000 };
+const RAT_SPAWNS = [[780, 120], [900, 180], [1050, 110], [1150, 200], [830, 230], [1000, 235], [720, 190]]; // the north rat chamber only (x 690-1210, y 60-260)
+RAT_SPAWNS.forEach(([x, y], i) => {
+  const id = 'rat' + (i + 1);
+  npcs.set(id, { id, ...RAT_DEF, area: 'ratcave', x, y, spawnX: x, spawnY: y, hp: RAT_DEF.maxHp, alive: true, respawnAt: 0, fightId: null });
+});
+// The cave's difficulty ladder (Derek, same call): past the rat
+// chamber the cave branches — SKELETONS (the step up; they drop
+// the weapon Enchantment) and, down the EAST path, ZOMBIES (the
+// hard path; they can drop the Big Two-Hander). Same shared-NPC
+// framework; own kinds so their drop tables stay their own (the
+// wild's 'skeleton' table is untouched).
+const CAVE_SKELETON_DEF = { kind: 'cave_skeleton', name: 'Skeleton', combatLevel: 7, maxHp: 16, maxHit: 2, acc: 0.52, attackType: 'melee', respawnMs: 12000 };
+const CAVE_SKELETON_SPAWNS = [[450, 380], [560, 470], [640, 360], [480, 540]]; // the south-west branch chamber
+CAVE_SKELETON_SPAWNS.forEach(([x, y], i) => {
+  const id = 'caveskeleton' + (i + 1);
+  npcs.set(id, { id, ...CAVE_SKELETON_DEF, area: 'ratcave', x, y, spawnX: x, spawnY: y, hp: CAVE_SKELETON_DEF.maxHp, alive: true, respawnAt: 0, fightId: null });
+});
+const ZOMBIE_DEF = { kind: 'zombie', name: 'Zombie', combatLevel: 16, maxHp: 34, maxHit: 5, acc: 0.55, attackType: 'missiles', respawnMs: 15000 };
+const ZOMBIE_SPAWNS = [[1440, 110], [1560, 90], [1460, 290], [1420, 240]]; // the east chamber — the hard path
+ZOMBIE_SPAWNS.forEach(([x, y], i) => {
+  const id = 'zombie' + (i + 1);
+  npcs.set(id, { id, ...ZOMBIE_DEF, area: 'ratcave', x, y, spawnX: x, spawnY: y, hp: ZOMBIE_DEF.maxHp, alive: true, respawnAt: 0, fightId: null });
+});
+// The cave boss: the BIG ZOMBIE himself, at the very end of the
+// east path (Derek, same call). Biggest, toughest, same
+// prayer-switch dance as his lesser kin, the best shot at the
+// two-hander — and the one the Tree Guardian's spell works on.
+// His Defence is a real level (25) for the guardian drain to bite
+// on; ordinary NPCs defend at the flat NPC_DEFENDER level.
+const BIG_ZOMBIE_DEF = { kind: 'zombie_boss', name: 'Big Zombie', combatLevel: 30, maxHp: 90, maxHit: 7, acc: 0.58, attackType: 'missiles', respawnMs: 30000, defLevel: 25 };
+npcs.set('bigzombie', { id: 'bigzombie', ...BIG_ZOMBIE_DEF, area: 'ratcave', x: 1565, y: 185, spawnX: 1565, spawnY: 185, hp: BIG_ZOMBIE_DEF.maxHp, alive: true, respawnAt: 0, fightId: null });
+// Zombie prayer-switch dance (Derek): zombies SHOOT first
+// (attackType 'missiles'). When the player's Deflect counters the
+// zombie's current style, the zombie swaps to the other style —
+// but SLOWLY: it stays committed for ZOMBIE_SWITCH_DELAY_MS after
+// the player switches before it follows. Drop the countering
+// Deflect and it drifts back to ranged on the same slow clock.
+const ZOMBIE_SWITCH_DELAY_MS = 3000;
+// The SAFE ROCK in the zombie chamber (Derek): a big rock at
+// (1500, 180); the pocket directly BEHIND it (south side) is safe
+// — ranged shots are blocked by the rock and melee zombies will
+// not follow in. Step out and you are fair game again.
+const ZOMBIE_SAFE_POCKET = { x1: 1450, x2: 1550, y1: 200, y2: 260 };
+function inZombieSafePocket(x, y) { return x >= ZOMBIE_SAFE_POCKET.x1 && x <= ZOMBIE_SAFE_POCKET.x2 && y >= ZOMBIE_SAFE_POCKET.y1 && y <= ZOMBIE_SAFE_POCKET.y2; }
+// Tree Guardian boss spell (Derek): tapping your guardian while
+// fighting the Big Zombie fires ONE spell per fight that drains
+// the boss's Defence by GUARDIAN_DEF_DRAIN levels (25 -> 15),
+// shown to the player as it lands.
+const GUARDIAN_DEF_DRAIN = 10;
+function bossDefenderProfile(fight) {
+  const eff = Math.max(1, BIG_ZOMBIE_DEF.defLevel - ((fight && fight.defDrain) || 0));
+  return { style: 'accurate', worn: { weapon: null, shield: null, head: null, body: null, legs: null }, xp: { defence: XP_TABLE[eff] || 0 } };
+}
 // The areas whose live NPC roster rides on npc_state messages.
-const NPC_AREAS = ['goblins', 'magic', 'range', 'wilderness', 'purewild', 'plaza'];
+const NPC_AREAS = ['goblins', 'magic', 'range', 'wilderness', 'purewild', 'plaza', 'ratcave'];
 const npcFights = new Map(); // id -> { id, playerKey, npcId, hpYou, maxHpYou, specialQueued, done, timer, tickCount, nextSwingYou, nextSwingNpc }
 // Pseudo-profile so goblins can be the defender in the duel rollHit():
 // no style block, no worn gear, no armour reduction.
@@ -2686,7 +2775,7 @@ function npcStateMsg(area) {
   const now = Date.now();
   return {
     type: 'npc_state', area,
-    npcs: [...npcs.values()].filter((n) => n.alive && n.area === area).map((n) => ({ id: n.id, kind: n.kind, name: n.name, combatLevel: n.combatLevel, x: n.x, y: n.y, hp: n.hp, maxHp: n.maxHp, frozenUntil: (n.frozenUntil && n.frozenUntil > now) ? n.frozenUntil : 0 })), // Stage 24: Freeze root rides the state broadcast like the players'
+    npcs: [...npcs.values()].filter((n) => n.alive && n.area === area).map((n) => ({ id: n.id, kind: n.kind, name: n.name, combatLevel: n.combatLevel, x: n.x, y: n.y, hp: n.hp, maxHp: n.maxHp, style: n.attackType, frozenUntil: (n.frozenUntil && n.frozenUntil > now) ? n.frozenUntil : 0 })), // Stage 24: Freeze root rides the state broadcast like the players'; Rat Cave: `style` = the NPC's live attack style (zombies switch!)
   };
 }
 function broadcastNpcState(area) {
@@ -3377,6 +3466,10 @@ function maxHit(attackerProfile, useSpecial = false, levelOverride = null) {
   const capeDef = capeBonus(attackerProfile);
   if (capeDef) max += capeDef.maxBonus || 0;
   max += armourMaxBonus(attackerProfile); // Stage 28: worn armour max-hit bonus (Dharok's helm)
+  // Rat Cave (Derek, 2026-11-24): the Big Two-Hander's rule — while
+  // it is wielded, the wielder's max hit is twice what it would
+  // otherwise be. Doubling lands before the special multiplier.
+  if (w && w.doubleMaxHit) max *= 2;
   if (useSpecial) max = Math.floor(max * 1.5); // Dragon Slash
   return max;
 }
@@ -3440,7 +3533,27 @@ function rollHit(attackerProfile, defenderProfile, useSpecial = false) {
 // fields to the client for splats).
 function rollPlayerAttack(attackerProfile, defenderProfile, useSpecial = false, levelOverride = null, deflectPvp = false) {
   const r = rollHitDetail(attackerProfile, defenderProfile, useSpecial, levelOverride, deflectPvp);
-  return { dmg: r.dmg, connected: r.connected, outcome: r.outcome, bonusDmg: r.bonusDmg, deflected: r.deflected, power: r.power, notes: [] };
+  const out = { dmg: r.dmg, connected: r.connected, outcome: r.outcome, bonusDmg: r.bonusDmg, deflected: r.deflected, power: r.power, notes: [] };
+  // Rat Cave skeleton Enchantment (Derek, 2026-11-24): a weapon
+  // carrying the enchantment lands an EXTRA HIT every third swing.
+  // The extra hit is a full separate roll (its own accuracy and
+  // damage, like the Accurate proc's instance) and rides bonusDmg —
+  // the field every fight engine already adds on top of the swing —
+  // flagged extraHit so the client can splat it as its own hit.
+  // The swing counter lives on the (runtime) attacker profile and
+  // counts only swings made with that enchanted weapon worn.
+  const wid = attackerProfile.worn && attackerProfile.worn.weapon;
+  if (wid && attackerProfile.enchantedWeapons && attackerProfile.enchantedWeapons[wid]) {
+    attackerProfile._enchSwing = (attackerProfile._enchSwing || 0) + 1;
+    if (attackerProfile._enchSwing % 3 === 0) {
+      const extra = rollHitDetail(attackerProfile, defenderProfile, false, levelOverride, deflectPvp);
+      out.bonusDmg += extra.dmg + extra.bonusDmg;
+      out.extraHit = true;
+      out.extraDmg = extra.dmg + extra.bonusDmg;
+      if (extra.deflected) out.deflected += extra.deflected;
+    }
+  }
+  return out;
 }
 
 // ---------- Stage 19: attack styles (melee / ranged / magic) ----------
@@ -4435,6 +4548,55 @@ function rollNpcDrops(profile, npc) {
     }
     return { gold: 0, items };
   }
+  if (kind === 'rat') {
+    // Beginner Castle (2026-11-24): Derek's standing drop law at
+    // beginner scale — bones + a little gold ALWAYS (the bones are
+    // the buryable kind: free Prayer XP toward the Deflects), and
+    // sometimes a snack for the next fight. Nothing rare, ever.
+    const gold = 1 + Math.floor(Math.random() * 4); // 1-4
+    addGold(profile, gold);
+    const items = [];
+    const give = (item, qty) => {
+      const leftover = addStacks(profile.backpack, item, qty, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(profile.bank, item, leftover);
+      items.push({ item, qty });
+    };
+    give('animal_bones', 1);
+    if (Math.random() < 0.25) give('cooked_shrimps', 1);
+    return { gold, items };
+  }
+  if (kind === 'cave_skeleton') {
+    // The cave's step up (Derek, 2026-11-24): bones + gold, and
+    // the signature drop — a weapon Enchantment (~1 in 8 kills).
+    const gold = 2 + Math.floor(Math.random() * 5); // 2-6
+    addGold(profile, gold);
+    const items = [];
+    const give = (item, qty) => {
+      const leftover = addStacks(profile.backpack, item, qty, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(profile.bank, item, leftover);
+      items.push({ item, qty });
+    };
+    give('animal_bones', 1);
+    if (Math.random() < 0.12) give('weapon_enchantment', 1);
+    return { gold, items };
+  }
+  if (kind === 'zombie' || kind === 'zombie_boss') {
+    // The hard path: more gold, and the signature Big Two-Hander —
+    // rare from a regular zombie (1 in 10), the boss's prize
+    // (~1 in 3).
+    const boss = kind === 'zombie_boss';
+    const gold = boss ? 15 + Math.floor(Math.random() * 26) : 4 + Math.floor(Math.random() * 7);
+    addGold(profile, gold);
+    const items = [];
+    const give = (item, qty) => {
+      const leftover = addStacks(profile.backpack, item, qty, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(profile.bank, item, leftover);
+      items.push({ item, qty });
+    };
+    give('animal_bones', 1);
+    if (Math.random() < (boss ? 0.35 : 0.10)) give('big_two_hander', 1);
+    return { gold, items };
+  }
   if (kind === 'hobgoblin') {
     // Tree Guardian chain (2026-11-24): the herblore carriers.
     // 4-10 gold always; one herb roll — 30% ranarr, 25% snapdragon,
@@ -4512,6 +4674,10 @@ function startNpcFight(key, npc) {
   // Fight HP pool = the player's Hitpoints level (duels keep their 99 pool).
   const maxHpYou = Math.max(1, levelForXp(profile.xp.hitpoints));
   const fight = { id, playerKey: key, npcId: npc.id, hpYou: maxHpYou, maxHpYou, specialQueued: false, done: false, timer: null, tickCount: 0, nextSwingYou: weaponSwingTicks(profile), nextSwingNpc: MELEE_SPEED, npcUnlocked: false, lastRefuseTick: -99 }; // Stage 19: first swing one weapon-speed after engagement (the wielded style's speed); lastRefuseTick throttles out-of-arrows/runes notes
+  // Rat Cave zombies (Derek, 2026-11-24): every fresh zombie fight
+  // starts the prayer-switch dance from the top — the zombie is
+  // SHOOTING (missiles), whatever the last fight left it doing.
+  if (npc.kind === 'zombie' || npc.kind === 'zombie_boss') { npc.zStyle = 'missiles'; npc.attackType = 'missiles'; npc.zPendingSince = 0; }
   npcFights.set(id, fight);
   sess.npcFightId = id;
   npc.fightId = id;
@@ -4549,10 +4715,15 @@ function npcTick(fight) {
   const npcReach = npc.attackType === 'melee' ? MELEE_REACH : NPC_RANGE;
   const distNow = Math.hypot(sess.x - npc.x, sess.y - npc.y);
   const playerOut = distNow > pReach, npcOut = distNow > npcReach;
+  // Rat Cave safe rock (Derek, 2026-11-24): a player standing in
+  // the pocket behind the big rock cannot be hit by the cave's
+  // zombies — their shots are blocked by the rock and they will
+  // not follow in. Computed once per tick for both branches.
+  const playerSafe = (npc.kind === 'zombie' || npc.kind === 'zombie_boss') && inZombieSafePocket(sess.x, sess.y);
   if (playerOut && npcOut && npc.attackType === 'melee') {
     // Stage 24: a Freeze-rooted creature holds its spot instead of
     // stepping in — it may still swing once it's in reach (below).
-    if (!((npc.frozenUntil || 0) > Date.now())) stepToward(npc, sess.x, sess.y, APPROACH_STEP);
+    if (!playerSafe && !((npc.frozenUntil || 0) > Date.now())) stepToward(npc, sess.x, sess.y, APPROACH_STEP);
     send(sess.ws, {
       type: 'npc_fight', phase: 'tick', npcId: npc.id,
       hpYou: Math.max(0, fight.hpYou), maxHpYou: fight.maxHpYou,
@@ -4567,6 +4738,32 @@ function npcTick(fight) {
   fight.tickCount = (fight.tickCount || 0) + 1;
   const tick = fight.tickCount;
   const tickNotes = [];
+  // Rat Cave zombie prayer-switch dance (Derek, 2026-11-24): the
+  // zombie wants to shoot — UNLESS the player's Deflect Missiles is
+  // up (and Deflect Melee is not), when it wants to come in and
+  // swing instead. It is SLOW: once it wants the other style it
+  // stays committed to the wrong one for ZOMBIE_SWITCH_DELAY_MS
+  // before swapping, so the player who switches prayers is a beat
+  // ahead of it. Both Deflects up: it keeps whatever it is doing.
+  // Behind the safe rock it cannot act at all (the swing gate
+  // below), but the dance state still tracks the player.
+  if (npc.kind === 'zombie' || npc.kind === 'zombie_boss') {
+    const nowMs = Date.now();
+    const cur = npc.zStyle || 'missiles';
+    const dMiss = deflectUp(profile, 'missiles'), dMel = deflectUp(profile, 'melee');
+    let desired = cur;
+    if (dMiss && !dMel) desired = 'melee';
+    else if (!dMiss) desired = 'missiles';
+    if (desired !== cur) {
+      if (!npc.zPendingSince) npc.zPendingSince = nowMs;
+      else if (nowMs - npc.zPendingSince >= ZOMBIE_SWITCH_DELAY_MS) {
+        npc.zStyle = desired; npc.attackType = desired; npc.zPendingSince = 0;
+        tickNotes.push(desired === 'melee' ? '🧟 The zombie gives up shooting and charges in to swing!' : '🧟 The zombie falls back and starts shooting again!');
+        broadcastNpcState(npc.area);
+      }
+    } else npc.zPendingSince = 0;
+    if (playerSafe && tick % 10 === 1) tickNotes.push('🪨 Behind the rock, you are safe — the zombies cannot reach you here.');
+  }
   // Stage 12: OSRS swing timers — the player swings once per
   // weapon-speed of fighting ticks, the first swing one full
   // weapon-speed after engagement (no opening beat for NPC fights).
@@ -4582,11 +4779,12 @@ function npcTick(fight) {
   let youHit = null; // null: the player's swing is not due this tick
   let youOutcome = null; // the player's swing outcome (Stage 12 clarity)
   let youBonus = 0; // Stage 27: the player's Accurate bonus hit this tick
+  let youExtra = false; // Rat Cave: this swing was an enchanted weapon's 3rd — its extra hit rode youBonus
   // Stage 19: a melee creature still out of its own reach keeps
   // closing during fighting ticks (a ranging/maging player keeps
   // shooting it as it comes). Ranged creatures hold their ground.
   // Stage 24: a Freeze-rooted creature holds its spot here too.
-  if (npcOut && npc.attackType === 'melee' && !((npc.frozenUntil || 0) > Date.now())) stepToward(npc, sess.x, sess.y, APPROACH_STEP);
+  if (npcOut && npc.attackType === 'melee' && !playerSafe && !((npc.frozenUntil || 0) > Date.now())) stepToward(npc, sess.x, sess.y, APPROACH_STEP);
   if (!playerOut && tick >= (fight.nextSwingYou || MELEE_SPEED)) {
     // Player swing: Stage 19's style dispatcher — melee is the
     // shared Stage 10 roll; ranged consumes an arrow; magic
@@ -4595,7 +4793,9 @@ function npcTick(fight) {
     // leaves the swing timer and a queued special untouched, and
     // its reason rides the tick note, throttled to once per 8
     // ticks so standing in place does not spam it.
-    const atkRes = rollStyleAttack(profile, NPC_DEFENDER, fight.specialQueued);
+    // Rat Cave boss: the Big Zombie defends at a real Defence
+    // level (25), lowered by the Tree Guardian's drain this fight.
+    const atkRes = rollStyleAttack(profile, npc.kind === 'zombie_boss' ? bossDefenderProfile(fight) : NPC_DEFENDER, fight.specialQueued);
     if (atkRes.refused) {
       if (tick - (fight.lastRefuseTick || -99) >= 8) { tickNotes.push(atkRes.refused); fight.lastRefuseTick = tick; }
     } else {
@@ -4604,6 +4804,7 @@ function npcTick(fight) {
       if (useSpec) profile.specialEnergy = Math.max(0, profile.specialEnergy - SPECIAL_COST);
       youHit = atkRes.dmg;
       youBonus = atkRes.bonusDmg || 0;
+      youExtra = !!atkRes.extraHit;
       youOutcome = atkRes.outcome;
       tickNotes.push(...atkRes.notes);
       // Combat XP per attack style (Magic's flat cast XP is owed
@@ -4636,7 +4837,7 @@ function npcTick(fight) {
   let npcDeflected = 0; // Stage 27: damage the player's prayer bounced back onto the creature this tick
   const npcCadence = npc.attackType === 'melee' ? MELEE_SPEED : 3;
   const npcOutNow = Math.hypot(sess.x - npc.x, sess.y - npc.y) > npcReach;
-  if (fight.npcUnlocked && !npcOutNow && tick >= (fight.nextSwingNpc || MELEE_SPEED)) {
+  if (fight.npcUnlocked && !npcOutNow && !playerSafe && tick >= (fight.nextSwingNpc || MELEE_SPEED)) {
     fight.nextSwingNpc = tick + npcCadence;
     npcHit = 0;
     if (Math.random() > npc.acc) npcOutcome = 'miss';
@@ -4687,9 +4888,15 @@ function npcTick(fight) {
     youHit, npcHit, youOutcome, npcOutcome, youSpecial: useSpec, energyYou: profile.specialEnergy,
     // Stage 27: youBonus = my Accurate bonus on the creature;
     // npcDeflected = damage my Deflect prayer bounced back onto it.
-    youBonus, npcDeflected,
+    youBonus, npcDeflected, youExtra,
     note: tickNotes.length ? tickNotes.join(' ') : undefined,
     npcFrozenUntil: (npc.frozenUntil && npc.frozenUntil > Date.now()) ? npc.frozenUntil : 0, // Stage 24
+    // Rat Cave (2026-11-24): the zombie's current style (client
+    // cue: bow vs club over its head), the Big Zombie's live
+    // Defence level (drops when the guardian's spell lands), and
+    // whether that spell is spent for this fight.
+    npcStyle: npc.attackType,
+    ...(npc.kind === 'zombie_boss' ? { bossDef: Math.max(1, BIG_ZOMBIE_DEF.defLevel - (fight.defDrain || 0)), guardianSpellUsed: !!fight.guardianSpellUsed } : {}),
     // Stage 31: per-fighter closing, mirroring the mod-duel tick —
     // when only the PLAYER is out of their weapon's reach (the
     // melee-vs-wizard/ranger case: the creature can act at range,
@@ -5940,6 +6147,12 @@ setInterval(() => {
 
 // Fires: lit from Logs anywhere, burn 60s. Session-only world state.
 const fires = new Map(); // id -> { id, area, x, y, expiresAt }
+// Beginner Castle (2026-11-24): the CENTER WING's cooking range is
+// a permanent hearth fire — it rides the ordinary fires system (so
+// the ordinary cook flow, Use raw food -> tap the fire, just works)
+// with an expiry so far out that the sweep never takes it. It is
+// re-seeded on boot here; nothing else about fires changes.
+fires.set('castle_range', { id: 'castle_range', area: 'castle', x: 800, y: 220, expiresAt: Number.MAX_SAFE_INTEGER });
 const FIRE_RANGE = 120; // must be this close to a lit fire to cook on it
 const FIRE_BURN_MS = 60000;
 function firesMsg(area) {
@@ -7514,6 +7727,11 @@ wss.on('connection', (ws, req) => {
       // Stage 28: the Barrows crypt is reached through a mound, not
       // by travel (its spawn would not know whose crypt it is).
       if (to === 'barrows_crypt') return send(ws, { type: 'error', message: 'Enter a crypt through its mound at the Barrows.' });
+      // Beginner Castle (2026-11-24): the upper floor and the Rat
+      // Cave are ladder-only, like the crypt is mound-only — the
+      // Teleport row lists the castle itself, never its insides.
+      if (to === 'castleup' && !(m.via === 'gate' && me.area === 'castle')) return send(ws, { type: 'error', message: 'The castle\'s upper floor is reached by the ladders in its left and right wings.' });
+      if (to === 'ratcave' && !(m.via === 'gate' && me.area === 'castle')) return send(ws, { type: 'error', message: 'The Rat Cave is reached by the trap door outside the Beginner Castle — just off the path by the west fountain.' });
       if (me.duelId) return send(ws, { type: 'error', message: 'You cannot travel during a duel.' });
       if (me.modDuelId) return send(ws, { type: 'error', message: 'You cannot travel during a duel.' });
       // Stage 17: a player in a matched stake match cannot travel
@@ -7548,8 +7766,23 @@ wss.on('connection', (ws, req) => {
       if (me.barrowsFightId) { const f = barrowsFights.get(me.barrowsFightId); if (f) finishBarrowsFight(f, 'travel'); }
       // Travelling out of the caves abandons a Fight Caves run (records kept).
       if (me.fcRunId) { const r = fcRuns.get(me.fcRunId); if (r) endFcRun(r, 'left'); }
+      const fromAreaForLanding = me.area;
       me.area = to;
       me.x = AREAS[to].spawn.x; me.y = AREAS[to].spawn.y;
+      // Beginner Castle (2026-11-24): ladder landings — a ladder
+      // drops you beside its twin on the other side, not at the
+      // area spawn. Fixed whitelist spots only (never client
+      // coords): wing ladders land by the opposite wing ladder,
+      // the cave ladder lands by the trap door.
+      if (m.via === 'gate' && m.land) {
+        const LANDINGS = {
+          'castle>castleup:left': [420, 270], 'castle>castleup:right': [1180, 270],
+          'castleup>castle:left': [420, 270], 'castleup>castle:right': [1180, 270],
+          'ratcave>castle:cave': [745, 600],
+        };
+        const lk = LANDINGS[`${fromAreaForLanding}>${to}:${String(m.land)}`];
+        if (lk) { me.x = lk[0]; me.y = lk[1]; }
+      }
       // Stage 28: travelling leaves any crypt/tunnel session scratch
       // behind (the run itself is saved on the profile and kept).
       me.barrowsCrypt = null; me.barrowsHp = null; me.barrowsPuzzle = null;
@@ -8176,6 +8409,46 @@ wss.on('connection', (ws, req) => {
       me.actSkill = 'magic'; me.actAt = Date.now();
       send(ws, { type: 'enchant_result', ok: true, item: out, spell: spell.id, xp: spell.castXp || 0 });
       return sendProfile(key);
+    }
+    // Rat Cave skeleton Enchantment (Derek, 2026-11-24): apply one
+    // Enchantment to the weapon you are WEARING. The flag lives on
+    // the profile keyed by weapon item id (the game's items are
+    // stacks, not instances — one enchantment per weapon KIND you
+    // own, which is the cleanest per-weapon state the item system
+    // supports). Re-applying to the same weapon is refused, never
+    // stacked.
+    if (m.type === 'apply_enchantment') {
+      if (stackQty(profile.backpack, 'weapon_enchantment') < 1) return send(ws, { type: 'error', message: 'No Weapon enchantment in your backpack — the Rat Cave skeletons drop them.' });
+      const wid = profile.worn && profile.worn.weapon;
+      const wdef = wid ? itemDef(wid) : null;
+      if (!wid || !wdef || wdef.kind !== 'weapon') return send(ws, { type: 'error', message: 'Wear the weapon you want enchanted first, then apply it.' });
+      profile.enchantedWeapons = profile.enchantedWeapons || {};
+      if (profile.enchantedWeapons[wid]) return send(ws, { type: 'error', message: `Your ${wdef.name} already carries the enchantment — one per weapon.` });
+      removeStacks(profile.backpack, 'weapon_enchantment', 1);
+      profile.enchantedWeapons[wid] = true;
+      save(key);
+      send(ws, { type: 'chat', from: 'Game', text: `✨ Your ${wdef.name} hums with skeleton magic — it will land an extra hit every third swing!` });
+      return sendProfile(key);
+    }
+    // Tree Guardian boss spell (Derek, 2026-11-24): TAP your
+    // guardian while fighting the Big Zombie and he fires one
+    // nature spell at the boss, draining its Defence by
+    // GUARDIAN_DEF_DRAIN levels (25 -> 15) — once per boss fight.
+    // The client animates the projectile on this event and floats
+    // "Defence -10" over the boss as it lands.
+    if (m.type === 'guardian_spell') {
+      const fight = me.npcFightId ? npcFights.get(me.npcFightId) : null;
+      const npc = fight ? npcs.get(fight.npcId) : null;
+      if (!fight || !npc || npc.kind !== 'zombie_boss') return send(ws, { type: 'error', message: 'Your guardian saves his spell for the Big Zombie at the end of the cave\'s east path.' });
+      const ally = helperAlly(key, me.area);
+      if (!ally) return send(ws, { type: 'error', message: 'Your Tree Guardian is not with you here.' });
+      if (fight.guardianSpellUsed) return send(ws, { type: 'error', message: `🌳 ${ally.name} has already cast his spell in this fight.` });
+      fight.guardianSpellUsed = true;
+      fight.defDrain = (fight.defDrain || 0) + GUARDIAN_DEF_DRAIN;
+      const effDef = Math.max(1, BIG_ZOMBIE_DEF.defLevel - fight.defDrain);
+      send(ws, { type: 'guardian_spell', npcId: npc.id, allyId: ally.id, drain: GUARDIAN_DEF_DRAIN, defLevel: effDef });
+      send(ws, { type: 'chat', from: 'Game', text: `🌳 ${ally.name} blasts the Big Zombie with nature magic — its Defence drains by ${GUARDIAN_DEF_DRAIN} (now ${effDef})!` });
+      return;
     }
 
     // ----- Runecrafting + the first quest (Derek, 2026-11-24) -----
@@ -13682,6 +13955,11 @@ const GUIDE_STEPS = [
     done: (p) => guideLvl(p, 'crafting') >= 15,
     text: (n) => `You're holding amulet parts, ${n}. Crafting turns a gold bar and a gem into an unstrung amulet, yarn strings it, and an Enchant spell from the spellbook finishes it — worn, it makes you hit harder.`,
     tip: 'a gold bar, a gem and your yarn make an amulet — Crafting, then string it, then enchant it.' },
+  { id: 'castle_start', domains: ['combat', 'attack', 'strength', 'defence', 'hitpoints'],
+    when: (p) => guideMeleeAvg(p) < 8,
+    done: (p) => guideMeleeAvg(p) >= 8,
+    text: (n) => `New and finding your feet, ${n}? Start at the Beginner Castle — through the plaza's south gate, east stretch. Cook in its center wing, bank on the upper floor (ladders in either wing), and train on the giant rats: the trap door just off the path by the west fountain drops you into the Rat Cave. The entry's empty — walk south, turn east, and the rats are past the corner.`,
+    tip: 'start at the Beginner Castle (plaza south gate, east stretch) — cook in the center wing, bank upstairs, and train on the rats under the trap door by the west fountain.' },
   { id: 'first_coins', domains: [],
     when: (p) => goldTotal(p) < 150,
     done: (p) => goldTotal(p) >= 250,
