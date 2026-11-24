@@ -549,6 +549,7 @@
   <div class="dockgroup" data-group="people">
    <div class="ghead">People</div>
    <button class="rbtn" data-panel="players" title="Players"><span class="tic">👥</span><span class="tlbl">Players</span></button>
+   <button class="rbtn" data-panel="friends" title="Friends"><span class="tic">💚</span><span class="tlbl">Friends</span></button><!-- Friends list (2026-11-23) -->
    <button class="rbtn" data-panel="goals" title="Starter goals & collection log"><span class="tic">📋</span><span class="tlbl">Goals</span></button>
   </div>
   <div class="dockgroup" data-group="system">
@@ -1316,6 +1317,7 @@ function onMsg(m){
  if(m.type==='starter_done'){ toast(`✅ Starter goal: ${m.label} — +${m.reward}g`); logLine(`✅ Starter goal complete: ${m.label} — +${m.reward}g!`); }
  if(m.type==='clog'){ clogFound=m.found||[]; clogTotal=m.total||13; if(dockPanel==='goals') renderDock(); }
  if(m.type==='profile'){ me=m.profile; renderAll(); onProfileForNotes(); onProfileForAppearance(); maybeOpenAppearance(); }
+ if(m.type==='friends'){ myFriends=m.friends||[]; if(dockPanel==='friends') renderDock(); } // Friends list (2026-11-23): live online/area state push
  if(m.type==='note_text'){ openNoteReader(m); }
  if(m.type==='note_request'){ queueNoteRequest(m); }
  if(m.type==='admin_notes'){ lastAdminNotes=m.notes||[]; if(dockPanel==='admin') renderDock(); }
@@ -7551,7 +7553,7 @@ initThree();
 
 /* ================= dock panels (Interface Overhaul) ================= */
 let dockPanel=null, shopTab='Potion', shopMode='buy', bankQty='1', selStack=null, selIdx=-1, packSorted=false; // Stage 29: selIdx = the backpack slot selStack was tapped in (exact-spot equip swaps)
-const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',spellbook:'📖 Spellbook',players:'👥 Players online',admin:'👑 Admin',tools:'🛠️ Admin Tools',skills:'📊 Skills',goals:'📋 Goals & Log',smithy:'🔥 Emberfall Smithy',teleport:'🌀 Teleport',settings:'🎛️ Settings',help:'❓ Help'};
+const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',spellbook:'📖 Spellbook',players:'👥 Players online',friends:'💚 Friends',admin:'👑 Admin',tools:'🛠️ Admin Tools',skills:'📊 Skills',goals:'📋 Goals & Log',smithy:'🔥 Emberfall Smithy',teleport:'🌀 Teleport',settings:'🎛️ Settings',help:'❓ Help'};
 function togglePanel(name){ dockPanel===(name)? closeDock() : openPanel(name); }
 function openPanel(name){ dockPanel=name; selStack=null; selIdx=-1; if(name!=='shop') shopNotice=''; if(name==='backpack') packSorted=false; $('dockpanel').classList.add('open'); $('paneldock').classList.add('panelopen'); renderDock();
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.toggle('on',b.dataset.panel===name));
@@ -7586,6 +7588,7 @@ function renderDock(){
  if(dockPanel==='prayers') b.innerHTML=pPrayers();
  if(dockPanel==='spellbook') b.innerHTML=pSpellbook();
  if(dockPanel==='players') b.innerHTML=pPlayers();
+ if(dockPanel==='friends') b.innerHTML=pFriends(); // Friends list (2026-11-23)
  if(dockPanel==='admin') b.innerHTML=pAdmin();
  if(dockPanel==='tools') b.innerHTML=pTools();
  if(dockPanel==='skills') b.innerHTML=pSkills();
@@ -8803,6 +8806,36 @@ function openCertRequest(m){
  $('crapprove').onclick=()=>{ send({type:'cert_reply',from:m.from,accept:true}); closeModal('certreqmodal'); };
  $('crdecline').onclick=()=>{ send({type:'cert_reply',from:m.from,accept:false}); closeModal('certreqmodal'); };
 }
+/* ================= Friends list (2026-11-23) =================
+   Friends are saved on the profile server-side (instant-add, no
+   request/accept). The server pushes { type:'friends' } state —
+   [{ username, online, area }] — on login, on add/remove, and
+   whenever a friend's online/area state changes (a change-gated
+   sweep), so an open panel stays live. Tapping an online friend
+   opens the existing whisper compose (openTalk); tapping an
+   offline one just says so. */
+let myFriends=[]; // [{ username, online, area }] from 'friends' pushes
+function isFriend(name){ return myFriends.some(f=>f.username.toLowerCase()===String(name||'').toLowerCase()); }
+function pFriends(){
+ let h=`<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px"><input id="friendname" placeholder="Friend's name…" maxlength="16" style="flex:1;box-sizing:border-box;min-width:0"><button class="act" onclick="friendAddFromPanel()">➕ Add</button></div>`;
+ if(!myFriends.length){
+   h+=`<p>No friends yet.<br><span class="note">Add one by name above, or tap any player in the world and choose ➕ Add friend. Friends are saved on your profile — they're here next login, and you can see who's online and where they are. Tap an online friend to send them a private message, from anywhere.</span></p>`;
+   return h;
+ }
+ const sorted=[...myFriends].sort((a,b)=> (a.online===b.online ? a.username.localeCompare(b.username) : (a.online?-1:1)));
+ h+=sorted.map(f=>{
+   const sub=f.online?`🟢 Online — ${AREA_LABELS[f.area]||esc(f.area||'')}`:'⚫ Offline';
+   return `<div class="rowline"><span class="ic">💚</span><span class="grow" style="cursor:pointer" onclick="friendRowTap('${esc(f.username)}',${f.online?1:0})"><b>${esc(f.username)}</b><br><span class="sub">${sub}</span></span>${f.online?`<button class="act" onclick="friendMsg('${esc(f.username)}')">💬 Message</button>`:''}<button class="ghost" title="Remove friend" onclick="friendRemove('${esc(f.username)}')">✕</button></div>`;
+ }).join('');
+ h+=`<p class="note" style="margin-top:6px">💬 Message opens a private chat — it reaches your friend in any area.</p>`;
+ return h;
+}
+window.friendAddFromPanel=function(){ const inp=$('friendname'); const v=((inp&&inp.value)||'').trim(); if(!v){ toast('Type the name first.'); return; } send({type:'friend_add',name:v}); };
+window.friendRowTap=function(name,online){ if(online) openTalk(name); else toast(`${name} is offline right now.`); };
+window.friendMsg=function(name){ openTalk(name); };
+window.friendRemove=function(name){ send({type:'friend_remove',name}); };
+window.pmFriend=function(name){ closeModal('playermenumodal'); send({type:'friend_add',name}); };
+window.pmUnfriend=function(name){ closeModal('playermenumodal'); send({type:'friend_remove',name}); };
 /* ================= Stage 7B: tap-player menu, party, trade, follow, examine, talk ================= */
 let myParty=[]; // usernames in MY party (from 'party' messages; [] = no party)
 /* ---- Tap-player menu ---- */
@@ -8817,6 +8850,7 @@ window.openPlayerMenu=function(name){
  <button class="ghost" style="width:100%;margin-bottom:6px" onclick="pmFollow('${esc(name)}')">🚶 Follow</button>
  <button class="ghost" style="width:100%;margin-bottom:6px" onclick="pmTalk('${esc(name)}')">💬 Talk</button>
  <button class="ghost" style="width:100%;margin-bottom:6px" onclick="pmExamine('${esc(name)}')">🔍 Examine</button>
+ ${isFriend(name)?`<button class="ghost" style="width:100%;margin-bottom:6px" onclick="pmUnfriend('${esc(name)}')">💔 Remove friend</button>`:`<button class="ghost" style="width:100%;margin-bottom:6px" onclick="pmFriend('${esc(name)}')">➕ Add friend</button>`}
  <div class="btns"><button class="ghost" onclick="closeModal('playermenumodal')">Close</button></div>`;
  $('playermenumodal').classList.add('open');
 };
@@ -10876,7 +10910,7 @@ const DOCK_TAB_ORDER=[...document.querySelectorAll('#docktabs .rbtn')].map(b=>b.
    .dockgroup wrappers in #docktabs). A tab's home is its own
    group: dockTabHome returns a placed tab to its group, at its
    canonical spot in DOCK_TAB_ORDER among that group's tabs. */
-const DOCK_GROUPS={play:['backpack','worn','skills','prayers','spellbook'],world:['shop','bank','exchange','smithy','teleport'],people:['players','goals'],system:['admin','tools','settings']};
+const DOCK_GROUPS={play:['backpack','worn','skills','prayers','spellbook'],world:['shop','bank','exchange','smithy','teleport'],people:['players','friends','goals'],system:['admin','tools','settings']}; // Friends list (2026-11-23): 'friends' joins the People group
 function dockGroupOf(panel){ for(const g in DOCK_GROUPS) if(DOCK_GROUPS[g].includes(panel)) return g; return null; }
 function dockTabHome(b){
  const tabs=$('docktabs'); if(!tabs) return;
