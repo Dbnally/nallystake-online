@@ -8010,7 +8010,7 @@ function applyCoveCollision(){
    as the Barrows tunnels, against RATCAVE_ROOMS_C. */
 function applyRatcaveCollision(from){
  if(curArea!=='ratcave') return;
- const ok=(x,y)=>RATCAVE_ROOMS_C.some(r=>x>=r.x0+12&&x<=r.x1-12&&y>=r.y0+12&&y<=r.y1-12);
+ const ok=(x,y)=>RATCAVE_ROOMS_C.some(r=>x>=r.x0&&x<=r.x1&&y>=r.y0&&y<=r.y1); // raw union, exactly like the Barrows tunnels — a per-rect inset seals every touching junction (12+12 dead band) and walls the cave off at the first doorway
  if(!ok(myPos.x,myPos.y)){
    if(ok(myPos.x,from.y)) myPos.y=from.y;
    else if(ok(from.x,myPos.y)) myPos.x=from.x;
