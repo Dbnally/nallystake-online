@@ -1344,6 +1344,11 @@ function newProfile(username) {
     // ever dueled (see recordH2H / h2hVs). A bragging record only:
     // it never touches rating or the overall win/loss record.
     h2h: {},
+    // Friends list (Derek, 2026-11-23): canonical usernames this
+    // player has added — instant-add, no request/accept. Persisted
+    // on the profile; the live online/area state rides the
+    // { type: 'friends' } push (see friendsStateFor / pushFriends).
+    friends: [],
   };
 }
 // Migration: Phase 1 accounts gain the v2 fields with defaults. Existing
@@ -1489,6 +1494,22 @@ function ensureV2(p) {
       }
     }
     if (JSON.stringify(cleanH2h) !== JSON.stringify(p.h2h)) { p.h2h = cleanH2h; changed = true; }
+  }
+  // Friends list (2026-11-23) migration: the added-friend names.
+  // Only the shape is enforced — entries are server-written
+  // canonical usernames; the clean drops non-strings, dedupes
+  // case-insensitively and caps the list at FRIENDS_MAX.
+  if (!Array.isArray(p.friends)) { p.friends = []; changed = true; }
+  else {
+    const seenF = new Set(); const cleanF = [];
+    for (const f of p.friends) {
+      if (typeof f !== 'string' || !f.trim()) continue;
+      const fk = f.trim().toLowerCase();
+      if (seenF.has(fk)) continue;
+      seenF.add(fk); cleanF.push(f.trim());
+      if (cleanF.length >= FRIENDS_MAX) break;
+    }
+    if (JSON.stringify(cleanF) !== JSON.stringify(p.friends)) { p.friends = cleanF; changed = true; }
   }
   // NPC build (2026-11-23) migration: ask-and-learn guide state +
   // the Guided path toggle. guide = { step: last step id handed
@@ -1637,6 +1658,10 @@ function publicProfile(p) {
     // Stage 22: mod NPC stake-ladder wins per tier — also pushed as
     // a dedicated 'mod_ladder' message on welcome and on every change.
     modLadder: { wins: { t1: 0, t2: 0, t3: 0, ...((p.modLadder && p.modLadder.wins) || {}) } },
+    // Friends list (2026-11-23): the added names ride the profile
+    // view (like modLadder above); the live online/area state for
+    // each friend rides the dedicated 'friends' push.
+    friends: [...(p.friends || [])],
   };
 }
 // Week 2 (D15): retired throwaway test accounts from the November
@@ -2554,6 +2579,52 @@ function broadcastState() {
     for (const p of online.values()) if (p.area === area) send(p.ws, msg);
   }
 }
+// ---------- Friends list (Derek, 2026-11-23) ----------
+// Friends are canonical usernames on the profile (instant-add, no
+// request/accept). The live view — who is online and in which
+// area — is computed from the `online` map on demand and pushed
+// as { type: 'friends', friends: [{ username, online, area }] }.
+// Pushes are change-gated by a per-session signature, and a light
+// 2s sweep re-checks every human session, so a friend logging in
+// or out or changing area shows up within a couple of seconds
+// without hooking the ~15 area-change call sites. The same
+// transition detection carries the "💚 X is online." note: it
+// fires only for an offline→online flip seen AFTER the watcher's
+// first (login) push, so logging in yourself never spams notes
+// for everyone who was already on.
+const FRIENDS_MAX = 100;
+function friendsStateFor(profile) {
+  return (profile.friends || []).map((name) => {
+    const t = online.get(userKeyFor(name));
+    return t ? { username: t.profile.username, online: true, area: t.area } : { username: name, online: false, area: null };
+  });
+}
+function pushFriends(key, force) {
+  const sess = online.get(key);
+  if (!sess || sess.bot || !sess.profile) return;
+  ensureV2(sess.profile);
+  const state = friendsStateFor(sess.profile);
+  const sig = JSON.stringify(state);
+  if (!force && sig === sess.friendsSig) return;
+  if (sess.friendsInit) {
+    const prev = sess.friendsPrev || {};
+    for (const f of state) {
+      if (f.online && prev[f.username] === false) send(sess.ws, { type: 'chat', from: 'Game', text: `💚 ${f.username} is online.` });
+    }
+  }
+  sess.friendsPrev = {};
+  for (const f of state) sess.friendsPrev[f.username] = f.online;
+  sess.friendsSig = sig;
+  sess.friendsInit = true;
+  send(sess.ws, { type: 'friends', friends: state });
+}
+setInterval(() => {
+  for (const [k, sess] of online) {
+    if (sess.bot) continue;
+    try { pushFriends(k); } catch (e) { /* one bad list never stops the sweep */ }
+  }
+}, 2000);
+
 function sendProfile(key) {
   const p = online.get(key);
   if (p) send(p.ws, { type: 'profile', profile: publicProfile(p.profile) });
@@ -6715,6 +6786,7 @@ wss.on('connection', (ws, req) => {
     send(ws, modNpcsMsg()); // Stage 22: the three plaza moderators + their busy flags
     send(ws, modLadderMsg(profile)); // Stage 22: stake-ladder progress
   }
+  pushFriends(key, true); // Friends list (2026-11-23): the login push — first state, no online-notes for it
   // Stage 31: a restored session gets the same per-area state push
   // a travel would send (NPC roster, nodes, fires, seaweed, the
   // saved Barrows run) so the area is fully live on arrival.
@@ -9206,6 +9278,39 @@ wss.on('connection', (ws, req) => {
       // talk), and a whispered help question gets the fitted path.
       if (target.bot) { try { onPlayerWhisper(key, me, targetKey, text); } catch (e) { /* talk never breaks whispers */ } }
       return;
+    }
+
+    // ----- Friends list (2026-11-23): instant-add / remove -----
+    // Names are validated against the game's register rules, then
+    // resolved to an EXISTING account — a name with no account is
+    // a clear error and stores nothing. The canonical username
+    // (the account's own spelling) is what lands on the profile.
+    if (m.type === 'friend_add') {
+      const raw = String(m.name || '').trim();
+      if (!/^[A-Za-z0-9_ ]{3,16}$/.test(raw)) return send(ws, { type: 'error', message: 'That name doesn\'t look right — 3–16 letters, numbers, underscores or spaces.' });
+      const tKey = userKeyFor(raw);
+      if (tKey === key) return send(ws, { type: 'error', message: 'You can\'t add yourself as a friend.' });
+      const tUser = db.users[tKey];
+      if (!tUser) return send(ws, { type: 'error', message: `No player named "${raw}" — check the spelling.` });
+      const canon = tUser.profile.username;
+      ensureV2(profile);
+      if (profile.friends.some((f) => userKeyFor(f) === tKey)) return send(ws, { type: 'error', message: `${canon} is already your friend.` });
+      if (profile.friends.length >= FRIENDS_MAX) return send(ws, { type: 'error', message: `Your friends list is full (${FRIENDS_MAX}) — remove someone first.` });
+      profile.friends.push(canon);
+      save(key);
+      pushFriends(key, true);
+      return send(ws, { type: 'chat', from: 'Game', text: `💚 ${canon} added to your friends.` });
+    }
+    if (m.type === 'friend_remove') {
+      const raw = String(m.name || '').trim();
+      const tKey = userKeyFor(raw);
+      ensureV2(profile);
+      const idx = profile.friends.findIndex((f) => userKeyFor(f) === tKey);
+      if (idx < 0) return send(ws, { type: 'error', message: `${raw} isn't on your friends list.` });
+      const [canon] = profile.friends.splice(idx, 1);
+      save(key);
+      pushFriends(key, true);
+      return send(ws, { type: 'chat', from: 'Game', text: `💔 ${canon} removed from your friends.` });
     }
 
     // ----- Stage 7B: Examine (read-only; never gold or backpack) -----
