@@ -1348,9 +1348,120 @@ function onPlayerFell(m){
  if(fa) startDeathFall(fa);
  if(m.respawn&&me&&(m.username===me.username||(duel&&m.username===duel.opponent))) beginDeathHold();
 }
+/* ================= View Live spectate (2026-11-23) =================
+   Owner-only "📺 View Live" (Derek: "Nally can view players live
+   game at anytime"). The server mirrors the watched target's area
+   stream (spec_* messages) and their fight streams (spec:true
+   copies of the target's own duel / NPC / mod / Fight Caves / wild
+   messages, profile stripped) to the owner. This module routes
+   them into the normal scene + fight rendering: the watched area
+   is built with setArea, the camera anchors on the target (the
+   fight UIs' "you" side IS the target while watching, via
+   specYouAv / specYouName), and a persistent banner offers the
+   way back. The owner's own character never moves and is never
+   part of the watched scene — the server drops the owner's
+   inputs for the whole watch. Fight END messages are summarised
+   in one chat line instead of opening the first-person end
+   sheets (those sheets are about YOUR gold and record). */
+let spectate=null; // { target, area } while the owner is watching
+function specYouName(){ return spectate? spectate.target : (me? me.username : null); }
+function specYouAv(){ if(spectate&&avatars[spectate.target]) return avatars[spectate.target]; return me? (avatars[me.username]||null) : null; }
+window.specWatch=function(name){ send({type:'spectate_start',target:name}); closeModal('playermenumodal'); };
+window.specStop=function(){ send({type:'spectate_stop'}); };
+function specShowBanner(){
+ let b=$('specbanner');
+ if(!b){ b=document.createElement('div'); b.id='specbanner'; b.style.cssText='position:fixed;top:calc(8px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:4000;background:rgba(20,14,8,.93);border:2px solid #c9a227;color:#ffe9a8;padding:8px 18px;border-radius:999px;font-weight:700;font-size:15px;cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,.55)'; b.onclick=()=>specStop(); document.body.appendChild(b); }
+ b.innerHTML=`📺 Watching <b>${esc(spectate.target)}</b> — tap to stop`;
+ b.style.display='block';
+}
+function specHideBanner(){ const b=$('specbanner'); if(b) b.style.display='none'; }
+function specEnter(target,area){
+ spectate={target,area};
+ specShowBanner();
+ if(area&&area!==curArea) setArea(area);
+}
+function specExitCleanup(){
+ // The local fight-view state belongs to the watched scene — drop
+ // it so no watched fight strip can linger over my own game. (My
+ // own fights can't exist here: the server refuses to start a
+ // watch while I'm in one, and locks my inputs while I watch.)
+ duel=null; npcFight=null; modDuel=null; wildFight=null;
+ if(fcRun){ fcRun=null; clearFcMonsters(); const fb=$('fcbar'); if(fb) fb.classList.remove('open'); const jw=$('jadwarn'); if(jw) jw.style.display='none'; }
+ duelTopHide();
+ const db=$('duelbar'); if(db) db.classList.remove('open');
+ const df=$('duelflee'); if(df) df.style.display='none';
+}
+function specExit(text){
+ if(spectate){ spectate=null; specExitCleanup(); }
+ specHideBanner();
+ if(text){ toast(text); logLine(text); }
+}
+const SPEC_SCENE_TYPES={spec_npc_state:'npc_state',spec_nodes:'nodes',spec_fires:'fires',spec_piles:'piles',spec_seaweed:'seaweed',spec_allies:'allies',spec_objects:'objects',spec_mod_npcs:'mod_npcs',spec_wild_state:'wild_state'};
+const SPEC_BASE_SCENE=['state','npc_state','nodes','fires','piles','seaweed','allies','objects','mod_npcs','wild_state'];
+function specHandleMsg(m){
+ if(m.type==='spec_start'){ specEnter(m.target,m.area); return true; }
+ if(m.type==='spec_end'){ specExit(m.text||null); return true; } // the server's own-area bundle follows and restores my scene
+ if(!spectate) return false;
+ if(m.type==='welcome'){ specExit(null); return false; } // a fresh session — the server forgot the watch, drop the mode too
+ if(m.type==='area'){ specExit(null); window.specStop(); return false; } // I was moved myself (e.g. respawned): end the watch server-side as well, then take the area normally
+ if(m.type==='spec_state'){
+   // The watched area's player stream: seed myPos on the target so
+   // the minimap and camera maths centre on THEM, then let the
+   // normal state handler build the scene.
+   const tp=(m.players||[]).find(p=>p.username===spectate.target);
+   if(tp) myPos={x:tp.x,y:tp.y};
+   onStateMsg(m); tapTarget=null;
+   return true;
+ }
+ if(SPEC_SCENE_TYPES[m.type]){ m.type=SPEC_SCENE_TYPES[m.type]; return false; } // watched scene dressing → the normal handlers
+ if(SPEC_BASE_SCENE.includes(m.type)) return true; // my own area's stream — not what I'm looking at right now
+ if(m.spec){
+   if(!m.profile) m.profile=me; // the server strips the fighter's profile; this keeps the UIs' `me=m.profile` a no-op
+   if(m.type==='duel_end'){
+     const oppAv=duel?avatars[duel.opponent]:null, tAv=avatars[spectate.target];
+     logLine(`📺 Duel over — ${m.winner} beat ${m.opponent} (${m.reason})${m.freePlay?' · 🆓 Free Play':` · pot ${m.pot}g`}.`);
+     duel=null; duelTopHide(); clearDuelCountdown();
+     if(oppAv) hideHpBar(oppAv); if(tAv) hideHpBar(tAv);
+     $('duelbar').classList.remove('open');
+     return true;
+   }
+   if(m.type==='npc_fight'&&m.phase==='end'){
+     let extra='';
+     if(m.reason==='kill'&&m.drops){ const parts=[]; if(m.drops.gold) parts.push(`+${m.drops.gold}g`); for(const s of (m.drops.items||[])) parts.push(`${nameOf(s.item)}${s.qty>1?' x'+s.qty:''}`); extra=parts.length?` Drops: ${parts.join(', ')}`:''; }
+     logLine(`📺 ${spectate.target}'s fight with ${m.name||'the creature'} ended (${m.reason}).${extra}`);
+     npcFight=null; $('duelbar').classList.remove('open'); $('duelflee').style.display='none';
+     const ba=npcAvatars[m.npcId];
+     if(ba&&ba.isBrother){ scene.remove(ba.group); ba.label.remove(); delete npcAvatars[m.npcId]; }
+     else if(ba) hideHpBar(ba);
+     renderBarrowsBar();
+     return true;
+   }
+   if(m.type==='mod_duel'&&m.phase==='end'){
+     logLine(`📺 ${spectate.target}'s mod duel vs ${m.name} ended — ${m.result==='win'?`${spectate.target} won the ${m.pot}g pot!`:`${spectate.target} lost the ${m.stake}g stake.`}`);
+     modDuel=null; duelTopHide(); $('duelbar').classList.remove('open');
+     return true;
+   }
+   if(m.type==='fc_end'){
+     logLine(`📺 ${spectate.target}'s Fight Caves run ended (${m.reason}) — wave ${m.wave}, ${m.kills} kills.`);
+     fcRun=null; clearFcMonsters(); $('fcbar').classList.remove('open'); $('jadwarn').style.display='none';
+     return true;
+   }
+   if(m.type==='wild_fight'&&m.phase==='end'){
+     logLine(`📺 ${spectate.target}'s Wilderness fight ended (${m.reason}).`);
+     wildFight=null; $('duelbar').classList.remove('open');
+     return true;
+   }
+   if(m.type==='wild_fight'&&m.phase==='tick'&&!wildFight) wildFightUI({...m,phase:'start'}); // joining a wild fight mid-way: a tick carries everything a start does
+   return false; // starts + ticks render through the normal fight UIs, with the target as "you"
+ }
+ return false;
+}
+/* ================= end View Live spectate ================= */
+
 function onMsg(m){
  if(m.type==='ping'){ send({type:'pong'}); return; }
  if(m.type==='pong'){ return; }
+ if(specHandleMsg(m)) return; // View Live spectate (2026-11-23): watched-scene routing
  // Week 2 (D11): a welcome is a fresh server session — it never has
  // a live fight, so any local fight state is stale (see
  // clearLocalFightState) and is dropped before anything renders.
@@ -4026,7 +4137,7 @@ function setArea(a){
    rebuildSeaweed();
    rebuildObjects();
    syncAllies();
-   if(a==='fightcaves'&&me&&!fcRun) openFcStart();
+   if(a==='fightcaves'&&me&&!fcRun&&!spectate) openFcStart(); // View Live: a spectator entering the caves view never gets the start-a-run sheet
  }
  drawMinimap();
 }
@@ -5333,7 +5444,7 @@ function wildFightUI(m){
    if(me) me.specialEnergy=m.energyYou;
    applyClosing(m); // Stage 8/26: on a closing tick, walk into reach (moveTo) — face + chase
    const oa=wildOppAvatar();
-   const myAv=me?avatars[me.username]:null;
+   const myAv=specYouAv(); // View Live: the watched target's avatar while spectating
    if(typeof m.youHit==='number'){ startSwingAt(myAv,oa,true);
      if(typeof m.youOutcome==='string') spawnOutcomeSplatOn(oa,m.youOutcome,m.youHit,m.youSpecial);
      else spawnSplatOn(oa,m.youHit,m.youSpecial);
@@ -7780,8 +7891,8 @@ function animate(){
    if(Math.hypot(dx,dz)>0.05) easeRot(a,Math.atan2(dx,dz),dt);
    else a.group.rotation.y=a.rot||0;
  }
- // camera follows local player
- const a=me?avatars[me.username]:null;
+ // camera follows local player (View Live, 2026-11-23: while spectating it anchors on the watched target instead)
+ const a=specYouAv();
  const fx=a?a.group.position.x:0, fz=a?a.group.position.z:0;
  // Polish build: field of view follows the view — first person
  // runs wide (78), over-the-shoulder a touch wide (62), third
@@ -8407,7 +8518,7 @@ function pAdmin(){
  h+=`<h4 style="margin:12px 0 5px;color:#e3c766">🌐 Online now</h4>`;
  if(lastOnlineList===null) h+=`<p class="note">Loading online players…</p>`;
  else if(!lastOnlineList.length) h+=`<p class="note">Nobody is online.</p>`;
- else h+=lastOnlineList.map(p=>`<div class="rowline"><span class="grow"><b>${rolePrefix(p.role)}${esc(p.username)}</b><br><span class="sub">${esc(AREA_LABELS[p.area]||p.area)}</span></span>${(role==='admin'||role==='owner')&&(!me||p.username!==me.username)?`<button class="act" onclick="adminGoto('${esc(p.username)}')">🧭 Go to</button>`:''}</div>`).join('');
+ else h+=lastOnlineList.map(p=>`<div class="rowline"><span class="grow"><b>${rolePrefix(p.role)}${esc(p.username)}</b><br><span class="sub">${esc(AREA_LABELS[p.area]||p.area)}</span></span>${(role==='admin'||role==='owner')&&(!me||p.username!==me.username)?`<button class="act" onclick="adminGoto('${esc(p.username)}')">🧭 Go to</button>`:''}${role==='owner'&&(!me||p.username!==me.username)?`<button class="act" onclick="specWatch('${esc(p.username)}')">📺 View Live</button>`:''}</div>`).join('');
  if(isAdminOrOwner()){
    h+=`<h4 style="margin:12px 0 5px;color:#e3c766">📝 Signed notes</h4>`;
    if(lastAdminNotes===null) h+=`<p class="note">Loading signed notes…</p>`;
@@ -9270,6 +9381,7 @@ window.openPlayerMenu=function(name){
  <button class="ghost" style="width:100%;margin-bottom:6px" onclick="pmFollow('${esc(name)}')">🚶 Follow</button>
  <button class="ghost" style="width:100%;margin-bottom:6px" onclick="pmTalk('${esc(name)}')">💬 Talk</button>
  <button class="ghost" style="width:100%;margin-bottom:6px" onclick="pmExamine('${esc(name)}')">🔍 Examine</button>
+ ${(me&&me.role==='owner'&&name!==me.username)?`<button class="act" style="width:100%;margin-bottom:6px" onclick="specWatch('${esc(name)}')">📺 View Live</button>`:''}
  ${isFriend(name)?`<button class="ghost" style="width:100%;margin-bottom:6px" onclick="pmUnfriend('${esc(name)}')">💔 Remove friend</button>`:`<button class="ghost" style="width:100%;margin-bottom:6px" onclick="pmFriend('${esc(name)}')">➕ Add friend</button>`}
  <div class="btns"><button class="ghost" onclick="closeModal('playermenumodal')">Close</button></div>`;
  $('playermenumodal').classList.add('open');
@@ -9608,7 +9720,7 @@ function renderDuelHint(){ const h=$('duelhint'); if(h) h.style.display=(duel&&!
    overhead bars divide by 99 too). */
 function duelTopShow(oppName){
  const t=$('dueltop'); if(!t) return;
- $('dtmyname').textContent=me?me.username:'You';
+ $('dtmyname').textContent=spectate? spectate.target : (me?me.username:'You'); // View Live: the left top bar is the watched target while spectating
  $('dtoppname').textContent=oppName||'Opponent';
  duelTopUpdate(99,99);
  t.classList.add('open');
@@ -9769,9 +9881,9 @@ function startDuelUI(m){
  // HP now lives over the fighters' heads — the opponent's bar AND mine,
  // both with the number, for the whole duel (the strip has no HP rows).
  const oppAv0=avatars[m.opponent]; if(oppAv0) setHpBar(oppAv0,duel.hpOpponent/99,duel.hpOpponent,99);
- const myAv0=me?avatars[me.username]:null; if(myAv0) setHpBar(myAv0,duel.hpYou/99,duel.hpYou,99);
+ const myAv0=specYouAv(); if(myAv0) setHpBar(myAv0,duel.hpYou/99,duel.hpYou,99); // View Live: "my" bar rides the watched target while spectating
  // Amendment B: both knights turn to face each other (visual only)
- const oppP=players.find(x=>x.username===m.opponent), myP=me? players.find(x=>x.username===me.username):null;
+ const oppP=players.find(x=>x.username===m.opponent), myP=players.find(x=>x.username===specYouName()); // View Live: the "me" fighter is the watched target while spectating
  if(oppP&&myP){
    localRot=Math.atan2(oppP.x-myP.x,oppP.y-myP.y);
    const oa=avatars[m.opponent]; if(oa) oa.rot=Math.atan2(myP.x-oppP.x,myP.y-oppP.y);
@@ -9835,7 +9947,7 @@ function duelTickUI(m){
  if(me) me.specialEnergy=m.energyYou;
  setDuelCountdown(m.countdownLeft); // Stage 12: drives the 3·2·1 overlay + the move lock
  const oppAv=avatars[duel.opponent]; if(oppAv) setHpBar(oppAv,duel.hpOpponent/99,duel.hpOpponent,99); // opponent's overhead bar + number
- const myAv=me?avatars[me.username]:null; if(myAv) setHpBar(myAv,duel.hpYou/99,duel.hpYou,99); // my overhead bar + number (duels only)
+ const myAv=specYouAv(); if(myAv) setHpBar(myAv,duel.hpYou/99,duel.hpYou,99); // my overhead bar + number (duels only; the watched target's while spectating)
  applyClosing(m); // Stage 8: on a closing tick, walk into reach (moveTo)
  // Stage 26 AUDIT FIX: closing is ONLY what the server says it is.
  // The old line also treated "I didn't swing this tick" as a
@@ -9851,13 +9963,13 @@ function duelTickUI(m){
    // Stage 12: when the server tags the swing with an outcome, the
    // splat shows it — red damage / blue shield / grey Miss. Absent
    // outcome → the damage-derived splat, exactly as before.
-   if(typeof m.youHit==='number'){ startSwingAt(me?avatars[me.username]:null,avatars[duel.opponent],true);
+   if(typeof m.youHit==='number'){ startSwingAt(specYouAv(),avatars[duel.opponent],true);
      if(typeof m.youOutcome==='string') spawnOutcomeSplat(duel.opponent,m.youOutcome,m.youHit,m.youSpecial);
      else spawnSplat(duel.opponent,m.youHit,m.youSpecial);
      flinchForOutcome(oppAv,myAv,typeof m.youOutcome==='string'?m.youOutcome:null,m.youHit); } // Stage 26: my landed hit recoils them
-   if(typeof m.oppHit==='number'){ startSwingAt(avatars[duel.opponent],me?avatars[me.username]:null,true);
-     if(typeof m.oppOutcome==='string') spawnOutcomeSplat(me.username,m.oppOutcome,m.oppHit,m.oppSpecial);
-     else spawnSplat(me.username,m.oppHit,m.oppSpecial);
+   if(typeof m.oppHit==='number'){ startSwingAt(avatars[duel.opponent],specYouAv(),true);
+     if(typeof m.oppOutcome==='string') spawnOutcomeSplat(specYouName(),m.oppOutcome,m.oppHit,m.oppSpecial);
+     else spawnSplat(specYouName(),m.oppHit,m.oppSpecial);
      flinchForOutcome(myAv,oppAv,typeof m.oppOutcome==='string'?m.oppOutcome:null,m.oppHit); } // Stage 26: their landed hit recoils me
  }
  // Stage 27: proc + prayer splats ride the same tick — my Accurate
@@ -10004,19 +10116,19 @@ function npcFightUI(m){
    // that side never swung (closing tick / gated melee brother).
    // Stage 12: a present outcome field picks the splat (hit / blocked
    // shield / Miss); absent → the damage-derived splat, as before.
-   if(typeof m.youHit==='number'){ startSwingAt(me?avatars[me.username]:null,ba,true);
+   if(typeof m.youHit==='number'){ startSwingAt(specYouAv(),ba,true);
      if(typeof m.youOutcome==='string') spawnOutcomeSplatOn(ba,m.youOutcome,m.youHit,m.youSpecial);
      else spawnSplatOn(ba,m.youHit,m.youSpecial);
-     flinchForOutcome(ba,me?avatars[me.username]:null,typeof m.youOutcome==='string'?m.youOutcome:null,m.youHit); } // Stage 26
-   if(typeof m.npcHit==='number'){ startSwingAt(ba,me?avatars[me.username]:null,true);
-     if(typeof m.npcOutcome==='string') spawnOutcomeSplat(me.username,m.npcOutcome,m.npcHit,false);
-     else spawnSplat(me.username,m.npcHit,false);
-     flinchForOutcome(me?avatars[me.username]:null,ba,typeof m.npcOutcome==='string'?m.npcOutcome:null,m.npcHit); } // Stage 26
+     flinchForOutcome(ba,specYouAv(),typeof m.youOutcome==='string'?m.youOutcome:null,m.youHit); } // Stage 26
+   if(typeof m.npcHit==='number'){ startSwingAt(ba,specYouAv(),true);
+     if(typeof m.npcOutcome==='string') spawnOutcomeSplat(specYouName(),m.npcOutcome,m.npcHit,false);
+     else spawnSplat(specYouName(),m.npcHit,false);
+     flinchForOutcome(specYouAv(),ba,typeof m.npcOutcome==='string'?m.npcOutcome:null,m.npcHit); } // Stage 26
    // Stage 27: my Accurate bonus bursts on the creature; damage my
    // Deflect prayer bounced back bursts blue (↩N) on it too and
    // flinches it — the bounce is real damage, not a block.
    if(m.youBonus>0) spawnBonusSplatOn(ba,m.youBonus);
-   if(m.npcDeflected>0){ spawnDeflectSplatOn(ba,m.npcDeflected); startFlinch(ba,me?avatars[me.username]:null,false); }
+   if(m.npcDeflected>0){ spawnDeflectSplatOn(ba,m.npcDeflected); startFlinch(ba,specYouAv(),false); }
    if(ba&&ba.isBrother){ ba.hp=m.hpNpc; ba.maxHp=m.maxHpNpc; }
    if(ba&&typeof m.npcFrozenUntil==='number') ba.frozenUntil=m.npcFrozenUntil; // Stage 24: Freeze root on my target
    if(ba) setHpBar(ba,m.hpNpc/Math.max(1,m.maxHpNpc),m.hpNpc,m.maxHpNpc); // overhead bar + number tracks the fight, green → yellow → red
@@ -10108,7 +10220,7 @@ function modDuelUI(m){
    $('dueltitle').textContent=`⭐ ${m.name} · Tier ${m.tier} — pot ${m.pot}g`;
    $('duellast').textContent=`Tap ⭐ ${m.name} to attack!`;
    const ma=modAvatars[m.npcId]; if(ma) setHpBar(ma,1,99,99); // overhead bars on both fighters, like a duel
-   const myAv0=me?avatars[me.username]:null; if(myAv0) setHpBar(myAv0,1,99,99);
+   const myAv0=specYouAv(); if(myAv0) setHpBar(myAv0,1,99,99); // View Live: the watched target's bar while spectating
    if(m.profile) me=m.profile;
    renderModDuelBar(); renderOrbs();
    return;
@@ -10122,21 +10234,21 @@ function modDuelUI(m){
    const ma=modAvatars[m.npcId];
    if(ma&&typeof m.npcFrozenUntil==='number') ma.frozenUntil=m.npcFrozenUntil; // Stage 24: Freeze root on the mod
    if(ma) setHpBar(ma,m.hpNpc/99,m.hpNpc,99);
-   const myAv=me?avatars[me.username]:null; if(myAv) setHpBar(myAv,m.hpYou/99,m.hpYou,99);
+   const myAv=specYouAv(); if(myAv) setHpBar(myAv,m.hpYou/99,m.hpYou,99); // View Live: the watched target's bar while spectating
    applyClosing(m); // on a closing tick, walk into reach (moveTo)
    // Stage 26 AUDIT FIX: same invisible-swing bug as duelTickUI —
    // "I didn't swing this tick" is not a closing tick; the mod's
    // swing on such a tick now renders (animation + splat + flinch).
    const closing=!!m.closing;
    if(!closing){
-     if(typeof m.youHit==='number'){ startSwingAt(me?avatars[me.username]:null,ma,true);
+     if(typeof m.youHit==='number'){ startSwingAt(specYouAv(),ma,true);
        if(typeof m.youOutcome==='string') spawnOutcomeSplatOn(ma,m.youOutcome,m.youHit,m.youSpecial);
        else spawnSplatOn(ma,m.youHit,m.youSpecial);
-       flinchForOutcome(ma,me?avatars[me.username]:null,typeof m.youOutcome==='string'?m.youOutcome:null,m.youHit); } // Stage 26
-     if(typeof m.npcHit==='number'){ startSwingAt(ma,me?avatars[me.username]:null,true);
-       if(typeof m.npcOutcome==='string') spawnOutcomeSplat(me.username,m.npcOutcome,m.npcHit,false);
-       else spawnSplat(me.username,m.npcHit,false);
-       flinchForOutcome(me?avatars[me.username]:null,ma,typeof m.npcOutcome==='string'?m.npcOutcome:null,m.npcHit); } // Stage 26
+       flinchForOutcome(ma,specYouAv(),typeof m.youOutcome==='string'?m.youOutcome:null,m.youHit); } // Stage 26
+     if(typeof m.npcHit==='number'){ startSwingAt(ma,specYouAv(),true);
+       if(typeof m.npcOutcome==='string') spawnOutcomeSplat(specYouName(),m.npcOutcome,m.npcHit,false);
+       else spawnSplat(specYouName(),m.npcHit,false);
+       flinchForOutcome(specYouAv(),ma,typeof m.npcOutcome==='string'?m.npcOutcome:null,m.npcHit); } // Stage 26
      // Stage 27: my Accurate bonus bursts on the mod; damage my
      // Deflect prayer bounced off the mod's swing bursts blue (↩N)
      // on the mod and flinches it. (npcBonus / youDeflected are
@@ -10272,21 +10384,21 @@ function onFcTick(m){
    if(typeof prev==='number'&&u.hp<prev){
      spawnSplatOn(fcAvatars[u.id],prev-u.hp,false);
      if(!fcSfxHit){ fcSfxHit=true; sfxHit(false); } // Stage 37b: cave hits land with a thud (my swing itself whooshes via startSwingAt below)
-     if(u.id===m.targetId) startSwingAt(me?avatars[me.username]:null,fcAvatars[u.id],true);
-     startFlinch(fcAvatars[u.id],me?avatars[me.username]:null,false); // Stage 26: a real HP drop recoils the monster
+     if(u.id===m.targetId) startSwingAt(specYouAv(),fcAvatars[u.id],true);
+     startFlinch(fcAvatars[u.id],specYouAv(),false); // Stage 26: a real HP drop recoils the monster
    }
    prevFcHp[u.id]=u.hp;
    if(fcMonsters[u.id]) fcMonsters[u.id].hp=u.hp;
  }
  for(const id of Object.keys(prevFcHp)){
    if(!aliveIds.has(id)){
-     if(prevFcHp[id]>0){ spawnSplatOn(fcAvatars[id],prevFcHp[id],false); if(id===m.targetId) startSwingAt(me?avatars[me.username]:null,fcAvatars[id],true); }
+     if(prevFcHp[id]>0){ spawnSplatOn(fcAvatars[id],prevFcHp[id],false); if(id===m.targetId) startSwingAt(specYouAv(),fcAvatars[id],true); }
      delete prevFcHp[id];
    }
  }
- if(typeof prevFcMyHp==='number'&&m.hpYou<prevFcMyHp){ spawnSplat(me.username,prevFcMyHp-m.hpYou,false);
+ if(typeof prevFcMyHp==='number'&&m.hpYou<prevFcMyHp){ spawnSplat(specYouName(),prevFcMyHp-m.hpYou,false);
    sfxHit(prevFcMyHp-m.hpYou>=10); if(prevFcMyHp-m.hpYou>=12) addShake(prevFcMyHp-m.hpYou); // Stage 37b: a cave hit on me thuds — and a heavy one (Jad!) knocks the camera
-   startFlinch(me?avatars[me.username]:null,m.targetId?fcAvatars[m.targetId]:null,false); } // Stage 26: a landed cave hit recoils me (away from my target)
+   startFlinch(specYouAv(),m.targetId?fcAvatars[m.targetId]:null,false); } // Stage 26: a landed cave hit recoils me (away from my target)
  prevFcMyHp=m.hpYou;
  for(const id of Object.keys(fcMonsters)){ if(!aliveIds.has(id)) delete fcMonsters[id]; }
  syncFcMonsters();
@@ -10296,7 +10408,7 @@ function onFcTick(m){
  // splats up top); the strip text names the total bounced.
  let taken=0, blockedN=0, jadDmg=0, defl=0;
  for(const h of (m.hitsTaken||[])){
-   if(h.blocked){ blockedN++; if(blockedN===1) sfxBlock(); spawnSplat(me.username,0,false); startFlinch(me?avatars[me.username]:null,m.targetId?fcAvatars[m.targetId]:null,true); if(h.deflected>0) defl+=h.deflected; } // Stage 26: blocked = guard flinch · Stage 37b: one clang per tick
+   if(h.blocked){ blockedN++; if(blockedN===1) sfxBlock(); spawnSplat(specYouName(),0,false); startFlinch(specYouAv(),m.targetId?fcAvatars[m.targetId]:null,true); if(h.deflected>0) defl+=h.deflected; } // Stage 26: blocked = guard flinch · Stage 37b: one clang per tick
    else if(h.dmg>0){ taken+=h.dmg; if(h.kind==='jad') jadDmg+=h.dmg; }
  }
  let last;
