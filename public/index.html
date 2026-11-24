@@ -1519,6 +1519,9 @@ function onMsg(m){
  if(m.type==='player_level_up'){ onPlayerLevelUp(m); }
  if(m.type==='announce'){ showBanner(m.text); logLine(m.text); }
  if(m.type==='starter'){ starterGoals=m.goals||[]; if(dockPanel==='goals') renderDock(); }
+ if(m.type==='quests'){ myQuests=m.quests||[]; if(dockPanel==='goals') renderDock(); if(aldenOpen) renderAldenSheet(); } // Runecrafting + first quest (2026-11-24)
+ if(m.type==='quest_talk_result'){ aldenLines=m.lines||[]; if(aldenOpen) renderAldenSheet(); else for(const L of aldenLines) logLine(`🧙 Alden: ${L}`); }
+ if(m.type==='rc_result'){ toast(`🔷 Crafted ${m.runes} × ${nameOf(m.item)} (+${m.xp||0} Runecrafting XP)`); logLine(`🔷 +${m.runes} ${nameOf(m.item)} (+${m.xp||0} Runecrafting XP)`); const avR=me?avatars[me.username]:null; if(avR) spawnTextSplat(avR,`+${m.xp||0} 🔷 Runecrafting XP`,'good'); if(rcOpen) renderRcPanel(); }
  if(m.type==='starter_done'){ toast(`✅ Starter goal: ${m.label} — +${m.reward}g`); logLine(`✅ Starter goal complete: ${m.label} — +${m.reward}g!`); }
  if(m.type==='clog'){ clogFound=m.found||[]; clogTotal=m.total||13; if(dockPanel==='goals') renderDock(); }
  if(m.type==='profile'){ me=m.profile; renderAll(); onProfileForNotes(); onProfileForAppearance(); maybeOpenAppearance(); }
@@ -1615,7 +1618,7 @@ $('orbhp').onclick=()=>{ if(duel||npcFight||fcRun||wildFight) toast('Eat food or
 $('orbrun').onclick=()=>{ settings.run=!settings.run; saveSettings(); renderOrbs(); toast(settings.run?'🏃 Run on — full speed':'🚶 Run off — walking pace'); };
 
 /* ================= XP drops ================= */
-const SKILL_DEFS=[['attack','⚔️','Attack'],['strength','💪','Strength'],['defence','🛡️','Defence'],['hitpoints','❤️','Hitpoints'],['ranged','🏹','Ranged'],['magic','🔮','Magic'],['prayer','🙏','Prayer'],['mining','⛏️','Mining'],['smithing','🔨','Smithing'],['woodcutting','🪓','Woodcutting'],['firemaking','🔥','Firemaking'],['fishing','🎣','Fishing'],['cooking','🍳','Cooking'],['fletching','🪶','Fletching'],['crafting','🧵','Crafting']];
+const SKILL_DEFS=[['attack','⚔️','Attack'],['strength','💪','Strength'],['defence','🛡️','Defence'],['hitpoints','❤️','Hitpoints'],['ranged','🏹','Ranged'],['magic','🔮','Magic'],['runecrafting','🔷','Runecrafting'],['prayer','🙏','Prayer'],['mining','⛏️','Mining'],['smithing','🔨','Smithing'],['woodcutting','🪓','Woodcutting'],['firemaking','🔥','Firemaking'],['fishing','🎣','Fishing'],['cooking','🍳','Cooking'],['fletching','🪶','Fletching'],['crafting','🧵','Crafting']];
 const SKILL_ICON={}; const SKILL_NAME={};
 for(const [id,ic,nm] of SKILL_DEFS){ SKILL_ICON[id]=ic; SKILL_NAME[id]=nm; }
 let lastXp={};
@@ -1653,6 +1656,7 @@ function onXpDrop(m){
 
 /* ================= Stage 20: the rewarding layer ================= */
 let starterGoals=[]; // [{id,label,done}] from 'starter' messages
+let myQuests=[], aldenOpen=false, aldenLines=null, rcOpen=false; // Runecrafting + first quest (2026-11-24): quest log state + Alden/altar sheet flags
 let clogFound=[], clogTotal=13; // from 'clog' messages
 /* The gold celebration banner (level-ups + game-wide announcements). */
 let bannerTimer=null;
@@ -1721,7 +1725,17 @@ const CLOG_SECTIONS=[
  {title:'👻 Barrows Tier Armour',entries:['Bronze','Iron','Steel','Mithril','Adamant','Rune','Dragon','Torva','Necro'].flatMap(tn=>['Helm','Platebody','Platelegs','Boots'].map(sfx=>[`barrows_${tn.toLowerCase()}_${sfx.toLowerCase()}`,`Barrows ${tn} ${sfx}`]))},
 ];
 function pGoals(){
- let h=`<h4 style="margin:2px 0 5px;color:#e3c766">📋 Starter Goals</h4>`;
+ // Runecrafting + first quest (2026-11-24): the quest log lives
+ // at the top of the Goals tab — one card per quest, its steps
+ // ticked off, the current step lit.
+ let h=`<h4 style="margin:2px 0 5px;color:#e3c766">🗺️ Quests</h4>`;
+ if(!myQuests.length) h+=`<p class="note">Loading your quests…</p>`;
+ else for(const q of myQuests){
+   h+=`<div class="note" style="margin:7px 0 3px;font-weight:800;color:#b8a888">${q.icon} ${esc(q.name)} — ${q.status==='done'?'✅ Complete':q.status==='active'?'In progress':`Starts with ${esc(q.giver)}`}</div>`;
+   if(q.status==='not_started') h+=`<p class="note">Find ${esc(q.giver)} at the Wizard Grounds and tap him to begin.</p>`;
+   else h+=q.steps.map(s=>`<div class="rowline"><span class="ic">${s.done?'✅':s.current?'▶️':'⬜'}</span><span class="grow" ${s.current?'':'style="opacity:.75"'}><b>${esc(s.label)}</b></span></div>`).join('');
+ }
+ h+=`<h4 style="margin:14px 0 5px;color:#e3c766">📋 Starter Goals</h4>`;
  if(!starterGoals.length) h+=`<p class="note">Loading your goals…</p>`;
  else{
    h+=starterGoals.map(g=>`<div class="rowline"><span class="ic">${g.done?'✅':'⬜'}</span><span class="grow"><b>${esc(g.label)}</b></span>${g.done?'<b style="color:#e3c766">+25g</b>':'<span class="sub">25g</span>'}</div>`).join('');
@@ -2896,6 +2910,34 @@ function buildWizardGrounds(root){
  buildGateway(S,0,45,0,'🧙 WIZARD GROUNDS',{banner:'#5d5480',color:'#cdbcf2'});
  runeStone(S,-9,11,'ᚨ'); runeStone(S,9,11,'ᚱ'); runeStone(S,-15,-3,'ᛗ'); runeStone(S,15,-3,'ᚦ'); runeStone(S,0,-13,'ᚹ');
  glowCrystal(S,-24,30,0xb79cff); glowCrystal(S,26,-10,0x7ec8ff,0.8);
+ // Runecrafting + first quest (2026-11-24): THE ALTAR at the
+ // circle's heart (world 0,0 = server 800,450) — a stone table
+ // with a floating rune crystal — and WIZARD ALDEN, the quest
+ // giver, standing north-east of the circle at world (12,-9) =
+ // server (920,360). Both are tappable (see the handleTap magic
+ // branch): the altar opens the crafting panel, Alden talks.
+ const altar=new THREE.Group(); altar.position.set(0,0,0); S.add(altar);
+ box(2.6,0.9,1.5,0x6e6392,0,0.45,0,altar); // altar table
+ box(3.0,0.25,1.9,0x8a7fb0,0,1.0,0,altar); // altar top slab
+ const aCry=new THREE.Mesh(new THREE.OctahedronGeometry(0.55),new THREE.MeshBasicMaterial({color:0x7ec8ff}));
+ aCry.position.set(0,2.0,0); altar.add(aCry);
+ box(0.3,0.5,0.3,0x55505e,-1.5,0.25,1.1,altar); box(0.3,0.5,0.3,0x55505e,1.5,0.25,-1.1,altar);
+ const alabel=document.createElement('div'); alabel.className='plabel';
+ alabel.innerHTML=`<div class="nname">🔷 Runecrafting Altar</div>`;
+ $('labels').appendChild(alabel);
+ worldLabels.push({el:alabel,x:0,y:3.4,z:0,area:'magic',kind:'static'});
+ const alden=new THREE.Group(); alden.position.set(12,0,-9); S.add(alden);
+ box(0.26,0.7,0.26,0x3d2a63,-0.16,0.35,0,alden); box(0.26,0.7,0.26,0x3d2a63,0.16,0.35,0,alden); // legs under the robe
+ const robe=new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.52,1.15,10),new THREE.MeshLambertMaterial({color:0x5d48a0})); robe.position.y=1.15; alden.add(robe); // violet robe
+ box(0.44,0.44,0.44,0xd9a066,0,1.95,0,alden); // head
+ const beard=box(0.3,0.42,0.1,0xe8e2d2,0,1.68,0.2,alden); // long white beard
+ const aHat=new THREE.Mesh(new THREE.ConeGeometry(0.4,0.95,10),new THREE.MeshLambertMaterial({color:0x3d2a63})); aHat.position.set(0,2.5,0); alden.add(aHat); // pointed hat
+ const aStaff=box(0.07,2.1,0.07,0x6e4a1f,0.62,1.35,0.1,alden); aStaff.rotation.z=0.08; // staff
+ const aOrb=new THREE.Mesh(new THREE.SphereGeometry(0.16,10,8),new THREE.MeshBasicMaterial({color:0x7ec8ff})); aOrb.position.set(0.7,2.45,0.1); alden.add(aOrb);
+ const wlabel=document.createElement('div'); wlabel.className='plabel';
+ wlabel.innerHTML=`<div class="nname">🧙 Wizard Alden</div>`;
+ $('labels').appendChild(wlabel);
+ worldLabels.push({el:wlabel,x:12,y:3.3,z:-9,area:'magic',kind:'static'});
  // Stage 45: sparse mystic tufts on the violet ground — kept out
  // of the centre circle (r16) and away from the tower; tinted
  // teal-violet so the grounds keep their dusky identity.
@@ -5277,6 +5319,48 @@ window.openRangerKeeper=function(){
  <div class="btns"><button class="act" onclick="openRangerKeeper()">💬 Talk more</button><button class="act" onclick="askKeeper('fern')">🙋 Ask what to do</button><button class="ghost" onclick="closeModal('keepermodal')">Close</button></div>`;
  $('keepermodal').classList.add('open');
 };
+/* Runecrafting + first quest (2026-11-24): Wizard Alden, the
+   "Rune Crafting" quest giver, and the altar's crafting panel.
+   Both live in the shared keeper modal; the quest state comes
+   from the server's 'quests' pushes (myQuests), Alden's words
+   from 'quest_talk_result'. Positions mirror the server's:
+   Alden at server (920,360) = world (12,-9); the altar at the
+   stone circle's centre, server (800,450) = world (0,0). */
+const WIZARD_ALDEN_POS={x:12,z:-9};
+const WIZARD_ALDEN_SERVER={x:920,y:360};
+const RC_ALTAR_SERVER={x:800,y:450};
+const RC_TIERS_CLIENT={air:{level:1,icon:'💨',xp:9},water:{level:5,icon:'💧',xp:11},earth:{level:9,icon:'🪨',xp:13},fire:{level:14,icon:'🔥',xp:15}};
+function myQuest(){ return myQuests.find(q=>q.id==='runecrafting')||null; }
+window.openWizardAlden=function(){ aldenOpen=true; rcOpen=false; aldenLines=null; renderAldenSheet(); $('keepermodal').classList.add('open'); };
+window.renderAldenSheet=function(){
+ const q=myQuest();
+ let h=`<h3>🧙 Wizard Alden</h3>`;
+ if(aldenLines){ h+=aldenLines.map(L=>`<p style="margin-bottom:8px">“${esc(L)}”</p>`).join(''); }
+ if(!q) h+=`<p class="note" style="margin-bottom:8px">The old wizard is studying a floating rune. (Quest state is still loading…)</p>`;
+ else if(q.status==='not_started') h+=`<p style="margin-bottom:8px">“Well met. I am Alden, keeper of this circle — and you have the look of someone whose spells keep running out. Runes are not found, traveller. They are MADE.”</p><p class="note" style="margin-bottom:8px">🗺️ New quest available: <b>Rune Crafting</b> — learn Runecrafting from essence to your first cast.</p>`;
+ else if(q.status==='active'){ const cur=q.steps.find(s=>s.current); h+=`<p class="note" style="margin-bottom:8px">🗺️ <b>Rune Crafting</b> — your current step:<br>${cur?esc(cur.label):''}</p>`; }
+ else h+=`<p class="note" style="margin-bottom:8px">🗺️ <b>Rune Crafting</b> — ✅ complete. The altar is yours to use whenever you like.</p>`;
+ h+=`<p class="note" style="margin-bottom:8px">🔍 Examine: Keeper of the stone circle and the oldest rune-hand at the Grounds. He teaches Runecrafting to anyone willing to swing a pickaxe first.</p>`;
+ const talkLabel=!q?'💬 Talk':q.status==='not_started'?'🗺️ Begin "Rune Crafting"':q.status==='done'?'💬 Talk':'💬 Talk / hand in the quest';
+ h+=`<div class="btns"><button class="act" onclick="talkAlden()">${talkLabel}</button><button class="act" onclick="askKeeper('alden')">🙋 Ask what to do</button><button class="ghost" onclick="closeModal('keepermodal')">Close</button></div>`;
+ $('keepersheet').innerHTML=h;
+};
+window.talkAlden=function(){ send({type:'quest_talk',quest:'runecrafting'}); };
+window.openRcAltar=function(){ rcOpen=true; aldenOpen=false; renderRcPanel(); $('keepermodal').classList.add('open'); };
+window.renderRcPanel=function(){
+ const ess=me?(me.backpack||[]).filter(s=>s.item==='rune_essence').reduce((a,s)=>a+s.qty,0):0;
+ const rcLvl=me&&me.levels? (me.levels.runecrafting||1):1;
+ let h=`<h3>🔷 The Runecrafting Altar</h3>`;
+ h+=`<p class="note" style="margin-bottom:8px">Lay rune essence on the altar and bind it into runes. You hold <b>${ess} 🔷 Rune essence</b> · Runecrafting level <b>${rcLvl}</b>. Each use works up to 10 essence; every 10 levels past a rune's gate, one essence yields +1 rune (up to ×4).</p>`;
+ for(const [el,t] of Object.entries(RC_TIERS_CLIENT)){
+   const locked=rcLvl<t.level, noEss=ess<1;
+   h+=`<div class="rowline"><span class="ic">${t.icon}</span><span class="grow"><b>${el[0].toUpperCase()+el.slice(1)} runes</b><br><span class="sub">Runecrafting ${t.level} · +${t.xp} XP per essence</span></span><button class="${locked||noEss?'ghost':'act'}" ${locked||noEss?'disabled':''} onclick="rcCraft('${el}')">${locked?`🔒 Lvl ${t.level}`:'🔷 Craft'}</button></div>`;
+ }
+ if(ess<1) h+=`<p class="note" style="margin-top:6px">No essence? Mine the pale Essence rocks west, east and south of this circle — bring a pickaxe.</p>`;
+ h+=`<div class="btns"><button class="ghost" onclick="closeModal('keepermodal')">Close</button></div>`;
+ $('keepersheet').innerHTML=h;
+};
+window.rcCraft=function(el){ send({type:'rc_craft',element:el}); };
 /* NPC build: Pickaxe Pete (Emberfall Mine) and Fisher Wren
    (Fishing Cove) get the same tap-to-talk keeper modal Fern and
    the farmers have — they were scenery before. Positions match
@@ -5743,7 +5827,8 @@ let pendingNode=null; // node def to walk to, then auto-gather on arrival
 let pendingSpin=false; // Crafting chain: walk to the spinning wheel, then spin on arrival
 let gatherTimer=null;
 const ROCK_TINT={copper_ore:0xb87333,tin_ore:0xcfd4d8,iron_ore:0x8a5a4a,coal:0x2b2b2b,uncut_gem:0x9b59d0,
- silver_ore:0xd8dde2,gold_ore:0xf2c230,mithril_ore:0x7f9fb0,adamantite_ore:0x5e7a52,runite_ore:0x9fd8e8};
+ silver_ore:0xd8dde2,gold_ore:0xf2c230,mithril_ore:0x7f9fb0,adamantite_ore:0x5e7a52,runite_ore:0x9fd8e8,
+ rune_essence:0x7ec8ff}; // Runecrafting (2026-11-24): essence rocks glow rune-blue
 const GATHER_VERB={rock:['⛏️','Mining'],tree:['🪓','Chopping'],fish:['🎣','Fishing'],station:['🏋️','Training']};
 function makeNodeProp(n){
  const g=new THREE.Group();
@@ -7195,6 +7280,14 @@ function handleTap(cx,cy){
  if(curArea==='range'){
    const ns=projectTo(RANGER_KEEPER_POS.x,1.4,RANGER_KEEPER_POS.z);
    if(ns&&Math.hypot(ns.x-cx,ns.y-cy)<52){ spawnTapSplat(RANGER_KEEPER_SERVER.x,RANGER_KEEPER_SERVER.y,true); openRangerKeeper(); return; }
+ }
+ // Runecrafting + first quest (2026-11-24): Wizard Alden + the
+ // altar at the Wizard Grounds (the same keeper tap pattern).
+ if(curArea==='magic'){
+   const wa=projectTo(WIZARD_ALDEN_POS.x,1.4,WIZARD_ALDEN_POS.z);
+   if(wa&&Math.hypot(wa.x-cx,wa.y-cy)<52){ spawnTapSplat(WIZARD_ALDEN_SERVER.x,WIZARD_ALDEN_SERVER.y,true); openWizardAlden(); return; }
+   const al=projectTo(0,1.4,0);
+   if(al&&Math.hypot(al.x-cx,al.y-cy)<52){ spawnTapSplat(RC_ALTAR_SERVER.x,RC_ALTAR_SERVER.y,true); openRcAltar(); return; }
  }
  // NPC build: Pickaxe Pete in the mine + Fisher Wren at the cove
  // (the same keeper tap pattern — both were scenery before).
@@ -9147,6 +9240,12 @@ const HELP_TASKS=[
    {t:'Tap a burial mound to enter its crypt, then search the sarcophagus to wake the brother inside. Kill all six if you can.'},
    {t:'One crypt per run is the tunnel entrance instead — its sarcophagus takes you DOWN. In the tunnels, solve the puzzle door to reach the chest room.'},
    {t:'Loot the chest: more brothers killed means more rolls and better odds. Your kills carry over between trips until the chest is looted — then the run resets.'}]},
+ {id:'runes', ic:'🔷', name:'Learn Runecrafting — the "Rune Crafting" quest', sub:'The game\'s first quest · Wizard Grounds', steps:[
+   {t:'Head to the Wizard Grounds (north-west gate) and tap Wizard Alden, standing by the stone circle. Begin his quest: "Rune Crafting".', go:'magic'},
+   {t:'Mine 3 rune essence from the pale Essence rocks west, east and south of the circle. You need a pickaxe — Pickaxe Pete at the Emberfall Mine sells a bronze one for 60g.'},
+   {t:'Tap the Runecrafting Altar at the circle\'s heart and craft 3 air runes from your essence. Higher Runecrafting levels unlock water (5), earth (9) and fire (14) runes — and yield more runes per essence.'},
+   {t:'Cast any spell — Air Strike at a wizard here, or the Magic dummy at the Training Cave — so it burns the runes you crafted.'},
+   {t:'Return to Alden for your reward: Runecrafting XP, air runes and gold. Your 📋 Goals tab keeps your place in the quest.'}]},
  {id:'wild', ic:'💀', name:'Stay alive in the Wilderness', sub:'Levels, skulls and death drops', steps:[
    {t:'Cross the ditch on the plaza\u2019s north edge (east stretch) — or teleport to the obelisk.', go:'wilderness'},
    {t:'The deeper north you go, the higher the Wilderness level. A player within that many combat levels of you can attack you — and you them.'},
@@ -9432,7 +9531,7 @@ window.openChallenge=function(name){
  $('challengemodal').classList.add('open');
  renderChalSheet();
 };
-window.closeModal=function(id){ $(id).classList.remove('open'); if(id==='incomingmodal') stopIncomingTimer(); if(id==='fightoffermodal') stopFightOfferTimer(); if(id==='partyinvitemodal') stopPartyInviteTimer(); if(id==='tradeincomingmodal') stopTradeReqTimer(); };
+window.closeModal=function(id){ $(id).classList.remove('open'); if(id==='keepermodal'){ aldenOpen=false; rcOpen=false; } if(id==='incomingmodal') stopIncomingTimer(); if(id==='fightoffermodal') stopFightOfferTimer(); if(id==='partyinvitemodal') stopPartyInviteTimer(); if(id==='tradeincomingmodal') stopTradeReqTimer(); };
 let incomingCh=null, incomingTimer=null;
 function stopIncomingTimer(){ if(incomingTimer){ clearInterval(incomingTimer); incomingTimer=null; } }
 function openIncoming(m){
