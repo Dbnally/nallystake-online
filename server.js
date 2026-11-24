@@ -895,6 +895,137 @@ const FREEZE_MS = 5000;
 const BUTTON_CAST_COOLDOWN_MS = 5 * TICK_MS;
 function spellOf(p) { return SPELL_BY_ID[p.spell] || SPELLS[0]; }
 
+// ---------- Runecrafting + the first quest (Derek, 2026-11-24) ----------
+// Derek's first quest, "Rune Crafting", teaches the new 16th skill
+// end-to-end: Wizard Alden at the Wizard Grounds shows you the
+// essence rocks, you mine rune essence (a pickaxe job, through the
+// ordinary gather machinery), carry it to the altar in the stone
+// circle, craft your first runes, then cast a spell burning runes
+// you made yourself. The quest plumbing is deliberately general —
+// QUEST_DEFS + a per-quest state record on the profile
+// (p.quests[id] = { status, step, ...counters }) — so the next
+// quest is a table entry, not a rebuild.
+// The altar: the stone circle's centre (the client rings it with
+// rune stones). Crafting converts essence in batches of up to
+// RC_BATCH per action; every 10 Runecrafting levels past a rune's
+// gate yields +1 rune per essence (cap x4) — the higher tiers are
+// worth more per essence because their gates sit higher.
+const RC_ALTAR_POS = { x: 800, y: 450 };
+const RC_ALTAR_RANGE = 170;
+const WIZARD_ALDEN_POS = { x: 920, y: 360 };
+const QUEST_TALK_RANGE = 170;
+const RC_TIERS = {
+  air: { level: 1, xp: 9 },
+  water: { level: 5, xp: 11 },
+  earth: { level: 9, xp: 13 },
+  fire: { level: 14, xp: 15 },
+};
+const RC_BATCH = 10;
+function rcMultiFor(rcLevel, gate) { return Math.min(4, 1 + Math.floor(Math.max(0, rcLevel - gate) / 10)); }
+ITEMS.rune_essence = { name: 'Rune essence', icon: '🔷', kind: 'resource', sellOnly: 3 };
+// The quest's own numbers: mine 3 essence, craft 3 air runes, cast
+// once with them, come back. The reward is first-quest scale: a
+// lump of Runecrafting XP, a starter bundle of air runes and a
+// little gold — handed over by Alden himself (quest_talk).
+const RC_QUEST_ESSENCE = 3;
+const RC_QUEST_RUNES = 3;
+const RC_QUEST_REWARD = { xp: 100, gold: 50, runeItem: 'air_rune', runeQty: 20 };
+const QUEST_DEFS = {
+  runecrafting: {
+    name: 'Rune Crafting', icon: '🔷', giver: 'Wizard Alden',
+    steps: [
+      { id: 'mine', label: (st) => `Mine rune essence from the essence rocks at the Wizard Grounds — ${Math.min(st.mined || 0, RC_QUEST_ESSENCE)}/${RC_QUEST_ESSENCE} (you need a pickaxe)` },
+      { id: 'craft', label: (st) => `Craft air runes at the altar in the stone circle — ${Math.min((st.crafted && st.crafted.air) || 0, RC_QUEST_RUNES)}/${RC_QUEST_RUNES}` },
+      { id: 'cast', label: () => 'Cast any spell using the runes you crafted (a staff and your spellbook both work)' },
+      { id: 'return', label: () => 'Return to Wizard Alden for your reward' },
+    ],
+  },
+};
+// Normalised read of a quest's state: anything missing or malformed
+// reads as not started. The stored shape is only ever written by
+// the quest handlers below.
+function questStateOf(p, qid) {
+  const raw = (p.quests && typeof p.quests === 'object' && !Array.isArray(p.quests)) ? p.quests[qid] : null;
+  if (!raw || typeof raw !== 'object') return { status: 'not_started', step: 0, mined: 0, crafted: {} };
+  const st = {
+    status: raw.status === 'active' || raw.status === 'done' ? raw.status : 'not_started',
+    step: Number.isFinite(+raw.step) ? Math.max(0, Math.min(QUEST_DEFS[qid].steps.length - 1, Math.floor(+raw.step))) : 0,
+    mined: Number.isFinite(+raw.mined) ? Math.max(0, Math.floor(+raw.mined)) : 0,
+    crafted: (raw.crafted && typeof raw.crafted === 'object' && !Array.isArray(raw.crafted)) ? raw.crafted : {},
+  };
+  if (st.status === 'not_started') { st.step = 0; }
+  return st;
+}
+function questsMsg(p) {
+  ensureV2(p);
+  return {
+    type: 'quests',
+    quests: Object.entries(QUEST_DEFS).map(([id, def]) => {
+      const st = questStateOf(p, id);
+      return {
+        id, name: def.name, icon: def.icon, giver: def.giver, status: st.status, step: st.step,
+        steps: def.steps.map((s, i) => ({
+          id: s.id, label: s.label(st),
+          done: st.status === 'done' || (st.status === 'active' && i < st.step),
+          current: st.status === 'active' && i === st.step,
+        })),
+      };
+    }),
+  };
+}
+// Push the quest log + a chat line to a player whose quest just moved.
+function rcQuestPush(key, chatLine) {
+  const sess = online.get(key);
+  if (!sess) return;
+  if (chatLine) send(sess.ws, { type: 'chat', from: 'Game', text: chatLine });
+  send(sess.ws, questsMsg(sess.profile));
+}
+// Advance the Runecrafting quest one step (never past the final
+// 'return' step — talking to Alden finishes that one). Called by
+// the gather hook (essence mined), the altar handler (runes
+// crafted) and the cast hook (a spell cast with home-made runes).
+function rcQuestAdvance(key) {
+  const u = db.users[key];
+  if (!u) return;
+  const p = u.profile;
+  const st = questStateOf(p, 'runecrafting');
+  if (st.status !== 'active') return;
+  if (st.step >= QUEST_DEFS.runecrafting.steps.length - 1) return;
+  st.step += 1;
+  p.quests.runecrafting = st;
+  save(key);
+  const next = QUEST_DEFS.runecrafting.steps[st.step];
+  rcQuestPush(key, `🗺️ Quest step done! Next: ${next.label(st)}`);
+}
+// Gather hook: a successful essence mine counts toward the quest's
+// mining step while it is the current step.
+function rcQuestMined(key) {
+  const u = db.users[key];
+  if (!u) return;
+  const st = questStateOf(u.profile, 'runecrafting');
+  if (st.status !== 'active' || QUEST_DEFS.runecrafting.steps[st.step].id !== 'mine') return;
+  st.mined = (st.mined || 0) + 1;
+  u.profile.quests.runecrafting = st;
+  if (st.mined >= RC_QUEST_ESSENCE) rcQuestAdvance(key);
+  else { save(key); rcQuestPush(key, null); }
+}
+// Cast hook (called from rollMagicCast the moment a cast's runes
+// are actually consumed — hit or miss, the spell was cast): the
+// quest's cast step completes only when the caster crafted, during
+// this quest, at least as many runes of the spell's element as the
+// cast just burned. Enchant-amulet casts never reach this hook —
+// they are not spell casts at a target and don't count.
+function questCastHook(casterProfile, spell) {
+  if (!casterProfile || casterProfile.bot || !spell) return;
+  const key = userKeyFor(casterProfile.username || '');
+  if (!key || !db.users[key] || db.users[key].profile !== casterProfile) return;
+  const st = questStateOf(casterProfile, 'runecrafting');
+  if (st.status !== 'active' || QUEST_DEFS.runecrafting.steps[st.step].id !== 'cast') return;
+  const made = (st.crafted && st.crafted[spell.element]) || 0;
+  if (made < spell.runes) return;
+  rcQuestAdvance(key);
+}
+
 // ---------- Stage 20: the rewarding layer ----------
 // Starter goals (first steps): five one-time goals, each paying
 // STARTER_REWARD gold once via addGold (see completeStarterGoal,
@@ -1205,8 +1336,8 @@ function goodsList() {
 // XP_TABLE[L] = total XP needed for level L, generated with the standard
 // OSRS formula: floor( sum_{x=1}^{L-1} floor(x + 300 * 2^(x/7)) / 4 ).
 // (Level 2 = 83, level 10 = 1154, level 99 = 13,034,431.)
-const SKILLS = ['attack', 'strength', 'defence', 'hitpoints', 'ranged', 'magic', 'prayer',
-  'mining', 'smithing', 'woodcutting', 'firemaking', 'fishing', 'cooking', 'fletching', 'crafting']; // Stage 19 adds fletching; the Crafting chain (Derek, 2026-11-23) adds crafting as the 15th skill — ensureV2 backfills it onto old profiles
+const SKILLS = ['attack', 'strength', 'defence', 'hitpoints', 'ranged', 'magic', 'runecrafting', 'prayer',
+  'mining', 'smithing', 'woodcutting', 'firemaking', 'fishing', 'cooking', 'fletching', 'crafting']; // Stage 19 adds fletching; the Crafting chain (Derek, 2026-11-23) adds crafting as the 15th skill; Runecrafting (Derek, 2026-11-24) adds runecrafting as the 16th, listed after magic, its sister art — ensureV2 backfills it onto old profiles
 const XP_TABLE = [0, 0]; // index by level 1..99
 {
   let points = 0;
@@ -1485,6 +1616,11 @@ function ensureV2(p) {
     for (const id of clogEntryIds()) if (p.clog[id]) cleanClog[id] = true;
     if (JSON.stringify(cleanClog) !== JSON.stringify(p.clog)) { p.clog = cleanClog; changed = true; }
   }
+  // Runecrafting quest migration (2026-11-24): per-quest state
+  // records (p.quests[id] = { status, step, ...counters }). Only
+  // the container shape is enforced here — questStateOf normalises
+  // each entry on read and recorded progress is never reset.
+  if (!p.quests || typeof p.quests !== 'object' || Array.isArray(p.quests)) { p.quests = {}; changed = true; }
   // Stage 22 migration: mod NPC stake-ladder progress. Only the
   // container shape is enforced; recorded wins are clamped to the
   // 0..3 band the ladder stores (3 = tier complete) and never reset.
@@ -1747,6 +1883,9 @@ function unlockTextFor(skill, level) {
   }
   if (skill === 'crafting') {
     for (const [gem, rec] of Object.entries(AMULET_CRAFT)) if (rec.level === level) parts.push(`You can now craft ${GEM_DEFS[gem].name} amulets`);
+  }
+  if (skill === 'runecrafting') {
+    for (const [el, rec] of Object.entries(RC_TIERS)) if (rec.level === level) parts.push(`You can now craft ${cap(el)} runes at the altar`);
   }
   if (skill === 'smithing') {
     for (const [bar, rec] of Object.entries(BAR_RECIPES)) if (rec.level === level) parts.push(`You can now smelt ${ITEMS[bar].name}`);
@@ -3453,6 +3592,9 @@ function rollMagicCast(attackerProfile, defenderProfile, spell, useSpecial = fal
   if (!removeStacks(attackerProfile.backpack, runeId, spell.runes)) {
     return { refused: `You don't have the runes for ${spell.name}.`, style, spell: spell.id };
   }
+  // Runecrafting quest (2026-11-24): a cast whose runes were just
+  // consumed may complete the quest's cast step — see questCastHook.
+  try { questCastHook(attackerProfile, spell); } catch (e) { /* quests never break a cast */ }
   const connected = Math.random() <= styleHitChance(attackerProfile, defenderProfile, 'magic', useSpecial, levelOverride);
   if (!connected) return { dmg: 0, connected: false, outcome: 'miss', notes: [], style, spell: spell.id, bonusDmg: 0, deflected: 0, power: false };
   // Stage 27: casts do NOT proc (the app's casts never roll the
@@ -5761,6 +5903,15 @@ defNode('snowy_oak', 'winter', 'tree', 'Snowy oak', 'woodcutting', 15, 'oak_logs
 defNode('frost_copper', 'winter', 'rock', 'Copper rock', 'mining', 1, 'copper_ore', 18, 3, 8000, 1080, 560);
 defNode('frost_tin', 'winter', 'rock', 'Tin rock', 'mining', 1, 'tin_ore', 18, 3, 8000, 1330, 600);
 defNode('frost_iron', 'winter', 'rock', 'Iron rock', 'mining', 10, 'iron_ore', 35, 3, 12000, 950, 430);
+// Runecrafting (2026-11-24): essence rocks at the Wizard Grounds —
+// west and east of the stone circle and one south toward the gate,
+// so the whole loop (Alden, rocks, altar) stays inside the one
+// area. Ordinary mining nodes: a pickaxe is required and refused
+// with the usual line; each success yields rune essence + 5 Mining
+// XP (the Runecrafting XP is earned at the altar, not the rock).
+defNode('essence_rock_w', 'magic', 'rock', 'Essence rock', 'mining', 1, 'rune_essence', 5, 5, 8000, 560, 450);
+defNode('essence_rock_e', 'magic', 'rock', 'Essence rock', 'mining', 1, 'rune_essence', 5, 5, 8000, 1040, 450);
+defNode('essence_rock_s', 'magic', 'rock', 'Essence rock', 'mining', 1, 'rune_essence', 5, 5, 8000, 800, 650);
 
 function nodesMsg(area) {
   const now = Date.now();
@@ -7075,6 +7226,7 @@ wss.on('connection', (ws, req) => {
   send(ws, objectsMsg(sess.area)); // Stage 7D: any placed objects in the area
   send(ws, { type: 'catalog', items: catalogList(), shops: SHOPS, spells: SPELLS });
   send(ws, starterMsg(profile)); // Stage 20: starter-goal state
+  send(ws, questsMsg(profile)); // Runecrafting + first quest (2026-11-24): quest log state
   send(ws, clogMsg(profile)); // Stage 20: collection-log state
   send(ws, { type: 'exchange_prices', goods: goodsList() });
   send(ws, stakeBoardMsg()); // Stage 17: the current Stake Board offers
@@ -7878,6 +8030,9 @@ wss.on('connection', (ws, req) => {
       // item — Training Cave stations grant XP only, item null, and
       // don't count) completes the "Gather a resource" starter goal.
       if (node.item) completeStarterGoal(key, 'gather');
+      // Runecrafting quest (2026-11-24): essence mines count
+      // toward Wizard Alden's mining step.
+      if (node.item === 'rune_essence') rcQuestMined(key);
       save(key);
       me.actSkill = node.skill; me.actAt = Date.now(); // Stage 7C: activity marker (training stations share this handler)
       send(ws, { type: 'gather_result', nodeId: node.id, ok: true, item: node.item, xp: node.xp, bonus: bonusItem });
@@ -8020,6 +8175,104 @@ wss.on('connection', (ws, req) => {
       save(key);
       me.actSkill = 'magic'; me.actAt = Date.now();
       send(ws, { type: 'enchant_result', ok: true, item: out, spell: spell.id, xp: spell.castXp || 0 });
+      return sendProfile(key);
+    }
+
+    // ----- Runecrafting + the first quest (Derek, 2026-11-24) -----
+    // quest_talk is Wizard Alden's whole conversation: the first
+    // talk starts "Rune Crafting", later talks report the current
+    // step, and the talk at the final step pays the reward and
+    // closes the quest. rc_craft is the altar: essence in, runes
+    // out, gated by Runecrafting level. Crafting is NOT locked
+    // behind the quest — anyone standing at the altar can craft;
+    // the quest only teaches (and counts what you craft while it
+    // runs).
+    if (m.type === 'quest_talk') {
+      const qid = String(m.quest || 'runecrafting');
+      if (qid !== 'runecrafting' || !QUEST_DEFS[qid]) return send(ws, { type: 'error', message: 'Unknown quest.' });
+      if (me.duelId || me.npcFightId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
+      if (me.area !== 'magic' || Math.hypot(me.x - WIZARD_ALDEN_POS.x, me.y - WIZARD_ALDEN_POS.y) > QUEST_TALK_RANGE) return send(ws, { type: 'error', message: 'Wizard Alden is at the Wizard Grounds — he stands by the stone circle.' });
+      const st = questStateOf(profile, qid);
+      let lines;
+      if (st.status === 'done') {
+        lines = ['Ah, my rune-crafter returns. The altar hums a little brighter since your lesson, I swear it.', 'Craft whenever you like — the essence rocks never truly empty, and neither does a wizard\'s curiosity.'];
+        send(ws, { type: 'quest_talk_result', quest: qid, lines });
+        return;
+      }
+      if (st.status === 'not_started') {
+        profile.quests.runecrafting = { status: 'active', step: 0, mined: 0, crafted: {} };
+        save(key);
+        lines = [
+          'Well met. I am Alden, keeper of this circle — and you have the look of someone whose spells keep running out.',
+          'Runes are not found, traveller. They are MADE. That is Runecrafting, and I will teach it to you, here, with your own hands.',
+          `First: the pale rocks west, east and south of this circle hold rune essence. Chip me ${RC_QUEST_ESSENCE} pieces — and bring a pickaxe; bare hands only bruise. Pickaxe Pete at the Emberfall Mine sells a bronze one.`,
+        ];
+        send(ws, { type: 'quest_talk_result', quest: qid, lines });
+        send(ws, questsMsg(profile));
+        return;
+      }
+      const stepId = QUEST_DEFS[qid].steps[st.step].id;
+      if (stepId === 'return') {
+        profile.quests.runecrafting = { ...st, status: 'done' };
+        addXp(key, { runecrafting: RC_QUEST_REWARD.xp });
+        addGold(profile, RC_QUEST_REWARD.gold);
+        const leftover = addStacks(profile.backpack, RC_QUEST_REWARD.runeItem, RC_QUEST_REWARD.runeQty, BACKPACK_MAX_STACKS);
+        if (leftover > 0) addStacks(profile.bank, RC_QUEST_REWARD.runeItem, leftover);
+        save(key);
+        lines = [
+          'You felt it, yes? A spell cast with runes of your own making flies truer. That is the whole secret, and now it is yours.',
+          `Take these, with an old wizard's blessing: ${RC_QUEST_REWARD.xp} Runecrafting XP, ${RC_QUEST_REWARD.runeQty} air runes and ${RC_QUEST_REWARD.gold} gold. Quest complete — "Rune Crafting"!`,
+        ];
+        send(ws, { type: 'quest_talk_result', quest: qid, lines });
+        send(ws, { type: 'chat', from: 'Game', text: `🗺️ Quest complete: "Rune Crafting"! +${RC_QUEST_REWARD.xp} Runecrafting XP, +${RC_QUEST_REWARD.runeQty} air runes, +${RC_QUEST_REWARD.gold}g.` });
+        send(ws, questsMsg(profile));
+        return sendProfile(key);
+      }
+      const guidance = {
+        mine: `The essence rocks, remember — pale stone, west, east and south of the circle. You have ${Math.min(st.mined || 0, RC_QUEST_ESSENCE)} of ${RC_QUEST_ESSENCE} pieces. And a pickaxe: no pickaxe, no essence.`,
+        craft: 'To the altar at the circle\'s heart. Lay your essence on it and choose air — the first rune every crafter learns. Three runes will prove the lesson.',
+        cast: 'Now spend what you made. Set a spell — Air Strike is already yours — and cast it at anything: a wizard here will spar, or the Magic dummy at the Training Cave. The runes it burns must be your own work.',
+      };
+      lines = [guidance[stepId] || 'The circle provides. Follow your quest log — the 📋 Goals tab keeps your place.'];
+      send(ws, { type: 'quest_talk_result', quest: qid, lines });
+      return;
+    }
+    if (m.type === 'rc_craft') {
+      const el = String(m.element || '');
+      const rec = RC_TIERS[el];
+      if (!rec) return send(ws, { type: 'error', message: 'The altar only knows air, water, earth and fire runes.' });
+      if (me.duelId || me.npcFightId) return send(ws, { type: 'error', message: 'Not while you are fighting.' });
+      if (me.area !== 'magic' || Math.hypot(me.x - RC_ALTAR_POS.x, me.y - RC_ALTAR_POS.y) > RC_ALTAR_RANGE) return send(ws, { type: 'error', message: 'You need the Runecrafting altar — it stands in the stone circle at the Wizard Grounds.' });
+      const rcLvl = levelForXp((profile.xp && profile.xp.runecrafting) || 0);
+      if (rcLvl < rec.level) return send(ws, { type: 'error', message: `You need Runecrafting level ${rec.level} to craft ${cap(el)} runes (you are level ${rcLvl}).` });
+      const have = stackQty(profile.backpack, 'rune_essence');
+      if (have < 1) return send(ws, { type: 'error', message: 'No Rune essence in your backpack — mine the pale essence rocks around this circle (a pickaxe job).' });
+      if (actionOnCooldown(me)) return send(ws, { type: 'error', message: 'Too fast — one action at a time.' });
+      const batch = Math.min(have, RC_BATCH);
+      const multi = rcMultiFor(rcLvl, rec.level);
+      const out = batch * multi;
+      removeStacks(profile.backpack, 'rune_essence', batch);
+      const runeId = `${el}_rune`;
+      const leftover = addStacks(profile.backpack, runeId, out, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(profile.bank, runeId, leftover); // full pack: bank it, never lose a craft
+      const xpGain = batch * rec.xp;
+      addXp(key, { runecrafting: xpGain });
+      // Quest counting: runes crafted while "Rune Crafting" runs
+      // are remembered per element — the cast step checks them, so
+      // a bought rune can never fake the lesson.
+      const st = questStateOf(profile, 'runecrafting');
+      if (st.status === 'active') {
+        st.crafted = st.crafted || {};
+        st.crafted[el] = (st.crafted[el] || 0) + out;
+        profile.quests.runecrafting = st;
+        if (QUEST_DEFS.runecrafting.steps[st.step].id === 'craft' && (st.crafted.air || 0) >= RC_QUEST_RUNES) {
+          save(key);
+          rcQuestAdvance(key);
+        }
+      }
+      save(key);
+      me.actSkill = 'runecrafting'; me.actAt = Date.now();
+      send(ws, { type: 'rc_result', ok: true, element: el, item: runeId, essenceUsed: batch, runes: out, xp: xpGain });
       return sendProfile(key);
     }
 
@@ -13385,6 +13638,9 @@ function isHelpAsk(text) {
 }
 function guideLvl(p, skill) { return levelForXp((p.xp && p.xp[skill]) || 0); }
 function guidePack(p, item) { return stackQty(p.backpack, item); }
+// Runecrafting quest (2026-11-24): the Guided path's quest pointer
+// retires once "Rune Crafting" is complete.
+function rcQuestDone(p) { const q = p.quests && p.quests.runecrafting; return !!(q && q.status === 'done'); }
 function guideWornHas(p, pred) { return Object.values(p.worn || {}).some((id) => id && pred(id)); }
 function guideHasPickaxe(p) {
   return ['bronze_pickaxe', 'iron_pickaxe', 'steel_pickaxe', 'mithril_pickaxe', 'adamant_pickaxe', 'rune_pickaxe', 'dragon_pickaxe']
@@ -13468,6 +13724,11 @@ const GUIDE_STEPS = [
     done: (p) => (p.barrowsRuns || 0) >= 1,
     text: (n) => `You're Barrows-ready, ${n}. Six mounds, six brothers — search the sarcophagus to wake each one, match your Deflect to their style, and the tunnels hide the chest. Bring food and prayer potions.`,
     tip: 'you\'re ready for Barrows itself — six brothers, matched Deflects, food and prayer potions.' },
+  { id: 'rune_quest', domains: ['magic', 'runecrafting'],
+    when: (p) => !rcQuestDone(p),
+    done: (p) => rcQuestDone(p),
+    text: (n) => `There's a new art to learn, ${n}: Runecrafting. Wizard Alden at the Wizard Grounds is teaching it — his quest "Rune Crafting" walks you from your first essence to casting a spell with runes you made yourself.`,
+    tip: 'Wizard Alden at the Wizard Grounds teaches Runecrafting — the quest "Rune Crafting".' },
   { id: 'endgame', domains: [],
     when: () => true,
     done: () => false,
@@ -13505,6 +13766,7 @@ const GUIDE_KEEPERS = [
   { id: 'pete', name: 'Pickaxe Pete', area: 'mine', x: 1340, y: 590, domains: ['mining', 'smithing'], frame: 'Pete leans on his pick.' },
   { id: 'wren', name: 'Fisher Wren', area: 'cove', x: 640, y: 570, domains: ['fishing', 'cooking'], frame: 'Wren checks her nets.' },
   { id: 'fern', name: 'Ranger Fern', area: 'range', x: 500, y: 630, domains: ['ranged', 'fletching'], frame: 'Fern nocks an arrow, then lowers it.' },
+  { id: 'alden', name: 'Wizard Alden', area: 'magic', x: 920, y: 360, domains: ['magic', 'runecrafting'], frame: 'Alden looks up from a rune floating over his palm.' },
   { id: 'frost', name: 'Warden Frost', area: 'winter', x: 880, y: 660, domains: ['woodcutting', 'mining'], frame: 'Frost stamps the snow off his boots.' },
   { id: 'bramble', name: 'Farmer Bramble', area: 'plaza', x: 620, y: 722, domains: ['farm', 'crafting'], frame: 'Bramble wipes his hands on his apron.' },
   { id: 'wrenna', name: 'Farmer Wrenna', area: 'plaza', x: 660, y: 748, domains: ['farm', 'crafting'], frame: 'Wrenna straightens up from the rows.' },
