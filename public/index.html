@@ -1396,7 +1396,7 @@ function specExit(text){
  specHideBanner();
  if(text){ toast(text); logLine(text); }
 }
-const SPEC_SCENE_TYPES={spec_npc_state:'npc_state',spec_nodes:'nodes',spec_fires:'fires',spec_piles:'piles',spec_seaweed:'seaweed',spec_allies:'allies',spec_objects:'objects',spec_mod_npcs:'mod_npcs',spec_wild_state:'wild_state'};
+const SPEC_SCENE_TYPES={spec_npc_state:'npc_state',spec_nodes:'nodes',spec_fires:'fires',spec_piles:'piles',spec_seaweed:'seaweed',spec_sand:'sand',spec_allies:'allies',spec_objects:'objects',spec_mod_npcs:'mod_npcs',spec_wild_state:'wild_state'}; // spec_sand: Tree Guardian chain (2026-11-24)
 const SPEC_BASE_SCENE=['state','npc_state','nodes','fires','piles','seaweed','allies','objects','mod_npcs','wild_state'];
 function specHandleMsg(m){
  if(m.type==='spec_start'){ specEnter(m.target,m.area); return true; }
@@ -1487,6 +1487,7 @@ function onMsg(m){
  if(m.type==='fires'){ firesByArea[m.area]=m.fires||[]; if(m.area===curArea) rebuildFires(); drawMinimap(); }
  if(m.type==='piles'){ pilesByArea[m.area]=m.piles||[]; if(m.area===curArea) rebuildPiles(); drawMinimap(); }
  if(m.type==='seaweed'){ seaweedByArea[m.area]=m.patches||[]; if(m.area===curArea) rebuildSeaweed(); drawMinimap(); }
+ if(m.type==='sand'){ sandByArea[m.area]=m.piles||[]; if(m.area===curArea) rebuildSand(); } // Tree Guardian maker + herblore (2026-11-24)
  if(m.type==='allies'){ alliesByArea[m.area]=m.allies||[]; if(m.area===curArea) syncAllies(); drawMinimap(); }
  if(m.type==='ally_died'){ toast(`🌳 Your ${m.name||'Tree Guardian'} has fallen…`); }
  if(m.type==='player_jump'){ const a=avatars[m.username]; if(a&&(!me||m.username!==me.username)) startJump(a,false); }
@@ -1504,6 +1505,12 @@ function onMsg(m){
  if(m.type==='craft_result'){ toast(`📿 Crafted ${nameOf(m.item)}! (+${m.xp||0} 🧵 Crafting XP)`); const avC=me?avatars[me.username]:null; if(avC) spawnTextSplat(avC,`+${m.xp||0} 🧵 Crafting XP`,'good'); }
  if(m.type==='string_result'){ toast(`🧵 Strung it — ${nameOf(m.item)} is ready to wear! (+${m.xp||0} Crafting XP)`); }
  if(m.type==='enchant_result'){ toast(`✨ Enchanted! ${nameOf(m.item)} (+${m.xp||0} 🔮 Magic XP)`); const avE=me?avatars[me.username]:null; if(avE) spawnTextSplat(avE,'✨ Enchanted!','good'); }
+ /* Tree Guardian maker + herblore (2026-11-24): the making results */
+ if(m.type==='sand_result'){ toast('🪣 Scooped a bucket of sand.'); logLine('🪣 +1 Bucket of sand'); }
+ if(m.type==='glass_result'){ toast(`🔥 Your guardian works the furnace — molten glass! (+${m.xp||0} 🧵 Crafting XP)`); logLine(`🔥 +1 Molten glass (+${m.xp||0} Crafting XP)`); const avG=me?avatars[me.username]:null; if(avG) spawnTextSplat(avG,`+${m.xp||0} 🧵 Crafting XP`,'good'); refreshGuardianMaker(); }
+ if(m.type==='blow_result'){ toast(`🫧 Blown — ${nameOf(m.item)}! (+${m.xp||0} 🧵 Crafting XP)`); logLine(`🫧 +1 ${nameOf(m.item)} (+${m.xp||0} Crafting XP)`); const avB=me?avatars[me.username]:null; if(avB) spawnTextSplat(avB,`+${m.xp||0} 🧵 Crafting XP`,'good'); refreshGuardianMaker(); }
+ if(m.type==='mix_result'){ toast(`🧪 Mixed a ${nameOf(m.item)}! (+${m.xp||0} 🧵 Crafting XP)`); logLine(`🧪 +1 ${nameOf(m.item)} (+${m.xp||0} Crafting XP)`); const avM2=me?avatars[me.username]:null; if(avM2) spawnTextSplat(avM2,`+${m.xp||0} 🧵 Crafting XP`,'good'); refreshGuardianMaker(); }
+ if(m.type==='lantern_result'){ if(m.action==='placed'){ toast('🏮 Your glass lantern stands in the world — it stays until you take it back or smash it.'); logLine('🏮 You place a glass lantern.'); } else if(m.action==='took'){ toast('🏮 Lantern taken back into your backpack.'); } else if(m.action==='smashed'){ toast('🏮 You smash the glass lantern. Gone for good.'); logLine('🏮 A glass lantern is smashed.'); } }
  if(m.type==='smelt_result'){ toast(`🔥 Smelted ${m.qty} × ${nameOf(m.bar)} (+${m.xp} Smithing XP)`); logLine(`🔥 Smelted ${m.qty} × ${nameOf(m.bar)} (+${m.xp} Smithing XP)`); if(dockPanel==='smithy') renderDock(); }
  if(m.type==='smith_state'){ onSmithState(m); }
  if(m.type==='upgrade_result'){ if(m.ok){ toast(`⬆️ Upgraded to ${nameOf(m.item)}!`); logLine(`⬆️ Upgraded to ${nameOf(m.item)} (+${m.xp||0} Smithing XP)`); } else { toast('⬆️ The upgrade failed — the bar was lost, your item is unharmed.'); logLine('⬆️ Upgrade failed — bar lost, item unharmed.'); } }
@@ -4120,6 +4127,7 @@ function setArea(a){
    // lost 'end' message can never strand the fight strip here.
    if(npcFight||duel||modDuel){ npcFight=null; duel=null; modDuel=null; $('duelbar').classList.remove('open'); $('duelflee').style.display='none'; }
    pendingMound=null; pendingPile=null; pendingSeaweed=null; pendingChest=null; pendingSpin=false;
+   pendingSand=null; pendingUseFurnace=null; // Tree Guardian chain (2026-11-24)
    // Stage 30: leaving a wild area drops the local wild state
    // (PKer avatars, the wild fight bar, the HUD chip) — the server
    // ends the fights themselves and its end messages settle them.
@@ -4135,6 +4143,7 @@ function setArea(a){
    rebuildFires();
    rebuildPiles();
    rebuildSeaweed();
+   rebuildSand(); // Tree Guardian chain (2026-11-24)
    rebuildObjects();
    syncAllies();
    if(a==='fightcaves'&&me&&!fcRun&&!spectate) openFcStart(); // View Live: a spectator entering the caves view never gets the start-a-run sheet
@@ -5179,7 +5188,39 @@ function makeNpcAvatar(n){
  if(n.kind==='skeleton') return makeSkeleton(n);
  if(n.kind==='sheep') return makeSheep(n);
  if(n.kind==='cow') return makeCow(n);
+ if(n.kind==='hobgoblin') return makeHobgoblin(n); // Tree Guardian chain (2026-11-24)
  return makeGoblin(n);
+}
+/* Tree Guardian chain (2026-11-24): the hobgoblin — a goblin's
+   bigger, uglier cousin. Same rig shape as makeGoblin (the
+   right-arm pivot is the swing arm), scaled up with rusty-orange
+   skin, a heavier club and a iron brow band, so it reads as a
+   tougher fight from across the camp. */
+function makeHobgoblin(n){
+ const g=new THREE.Group();
+ const skin=0xb06a28, dark=0x7a4416;
+ const skinMat=new THREE.MeshLambertMaterial({color:skin});
+ box(0.26,0.55,0.26,dark,-0.18,0.28,0,g); box(0.26,0.55,0.26,dark,0.18,0.28,0,g); // legs
+ const body=new THREE.Mesh(new THREE.CylinderGeometry(0.36,0.46,0.78,10),new THREE.MeshLambertMaterial({color:dark})); body.position.y=0.95; g.add(body); // barrel body
+ box(0.16,0.3,0.05,0x9aa2ad,0,1.05,0.42,g); // scrap-iron chest plate
+ box(0.24,0.62,0.24,skin,-0.52,1.0,0,g); // left arm
+ const armR=new THREE.Group(); armR.position.set(0.52,1.28,0); g.add(armR);
+ const armMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.12,0.62,8),skinMat); armMesh.position.y=-0.31; armR.add(armMesh);
+ box(0.14,0.85,0.14,0x5d3a17,0,-0.85,0.05,armR); // heavy club
+ const head=new THREE.Mesh(new THREE.SphereGeometry(0.34,12,10),skinMat); head.position.y=1.66; g.add(head); // big round head
+ const band=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,0.12,12),new THREE.MeshLambertMaterial({color:0x6e6e78})); band.position.y=1.8; g.add(band); // iron brow band
+ const earGeo=new THREE.ConeGeometry(0.11,0.55,5);
+ const earMat=new THREE.MeshLambertMaterial({color:skin});
+ const earL=new THREE.Mesh(earGeo,earMat); earL.position.set(-0.45,1.74,0); earL.rotation.z=1.85; g.add(earL);
+ const earR=new THREE.Mesh(earGeo,earMat); earR.position.set(0.45,1.74,0); earR.rotation.z=-1.85; g.add(earR);
+ shadowify(g);
+ const sh=new THREE.Mesh(new THREE.CircleGeometry(0.62,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
+ sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
+ const label=document.createElement('div'); label.className='plabel';
+ label.innerHTML=`<div class="gname">${esc(n.name||'Hobgoblin')} · lvl ${n.combatLevel||12}</div><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
+ $('labels').appendChild(label);
+ return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
+   x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:2.4,hp:n.hp,maxHp:n.maxHp};
 }
 function syncNpcs(){
  if(!scene) return;
@@ -6087,6 +6128,49 @@ function checkPendingSeaweed(){
  if(!p||!p.present){ pendingSeaweed=null; return; }
  if(Math.hypot(myPos.x-p.x,myPos.y-p.y)<=140){ pendingSeaweed=null; tapTarget=null; send({type:'seaweed_pickup',id:p.id}); }
 }
+/* ---- Tree Guardian chain (2026-11-24): sand piles at the cove ----
+   The seaweed pattern, one shore over: the 'sand' message carries
+   the piles, each present one renders as a pale mound with a tag.
+   Tap one (or use an empty Bucket on it) and you walk over and
+   scoop it into a Bucket of sand — no bucket, no sand. */
+let sandByArea={}; // area -> [pile] from 'sand' messages
+let sandProps={}; // CURRENT area: pile id -> {x,z,pile} (world coords, for tap tests)
+let sandGroups={}; // area -> THREE.Group holding that area's piles
+let pendingSand=null; // pile id I'm walking to scoop
+function rebuildSand(){
+ const area=curArea, root=areaGroups[area];
+ sandProps={};
+ worldLabels=worldLabels.filter(wl=>{ if(wl.kind==='sand'&&wl.area===area){ wl.el.remove(); return false; } return true; });
+ if(!root||!scene) return;
+ if(sandGroups[area]) root.remove(sandGroups[area]);
+ const grp=new THREE.Group(); root.add(grp); sandGroups[area]=grp;
+ for(const p of (sandByArea[area]||[])){
+   if(!p.present) continue;
+   const g=new THREE.Group(); g.position.set(sx2w(p.x),0,sy2w(p.y)); grp.add(g);
+   const mound=new THREE.Mesh(new THREE.SphereGeometry(0.62,10,7),new THREE.MeshLambertMaterial({color:0xd9c184}));
+   mound.scale.y=0.38; mound.position.y=0.08; g.add(mound);
+   const dip=new THREE.Mesh(new THREE.CircleGeometry(0.3,9),new THREE.MeshLambertMaterial({color:0xc4ab6d}));
+   dip.rotation.x=-Math.PI/2; dip.position.y=0.3; g.add(dip);
+   const label=document.createElement('div'); label.className='plabel';
+   label.innerHTML=`<div class="nname">🏖️ Sand pile</div><div class="nsub">tap with an empty 🪣 Bucket to scoop</div>`;
+   $('labels').appendChild(label);
+   worldLabels.push({el:label,x:sx2w(p.x),y:1.3,z:sy2w(p.y),area,kind:'sand',pileId:p.id});
+   sandProps[p.id]={x:sx2w(p.x),z:sy2w(p.y),pile:p};
+ }
+}
+function tapSand(p){
+ if(!myPos) return;
+ spawnTapSplat(p.x,p.y,true); // Visual pass: red action splat
+ const d=Math.hypot(myPos.x-p.x,myPos.y-p.y);
+ if(d<=140){ send({type:'sand_collect',id:p.id}); }
+ else { pendingSand=p.id; tapTarget={x:p.x,y:p.y}; toast('🚶 Walking to the sand…'); }
+}
+function checkPendingSand(){
+ if(!pendingSand||!myPos) return;
+ const p=(sandByArea[curArea]||[]).find(x=>x.id===pendingSand);
+ if(!p||!p.present){ pendingSand=null; return; }
+ if(Math.hypot(myPos.x-p.x,myPos.y-p.y)<=140){ pendingSand=null; tapTarget=null; send({type:'sand_collect',id:p.id}); }
+}
 /* ---- Stage 7D: admin-placed objects (decorative props) ---- */
 let objectsByArea={}; // area -> [obj] from 'objects' messages
 let objectGroups={}; // area -> THREE.Group holding that area's placed props
@@ -6096,6 +6180,7 @@ const PROP_KINDS_CLIENT=[
  {kind:'flowers',label:'Flowers',icon:'🌸'},
  {kind:'light',label:'Stage light',icon:'💡'},
  {kind:'chest',label:'Chest',icon:'🧰'},
+ {kind:'glass_lantern',label:'Glass lantern',icon:'🏮'}, // Tree Guardian chain (2026-11-24)
 ];
 function propDef(kind){ return PROP_KINDS_CLIENT.find(p=>p.kind===kind)||{kind,label:kind,icon:'📦'}; }
 function makeProp(o){
@@ -6131,17 +6216,27 @@ function makeProp(o){
    box(1.9,0.35,1.2,0x8a6d1f,0,1.05,0,g);
    box(1.92,0.16,1.22,0xd4af37,0,0.88,0,g); // gold band
    box(0.35,0.4,0.12,0xffd75e,0,0.75,0.58,g); // gold clasp
+ } else if(o.kind==='glass_lantern'){ // Tree Guardian chain (2026-11-24): a hand-blown amber glass globe on a dark post, glowing warm
+   box(0.13,1.7,0.13,0x2a2320,0,0.85,0,g);
+   box(0.46,0.1,0.46,0x2a2320,0,0.05,0,g); // base
+   box(0.4,0.08,0.4,0x2a2320,0,2.06,0,g); // cap
+   const halo=new THREE.Mesh(new THREE.SphereGeometry(0.52,10,8),new THREE.MeshBasicMaterial({color:0xffb85e,transparent:true,opacity:0.2}));
+   halo.position.y=1.78; g.add(halo);
+   const globe=new THREE.Mesh(new THREE.SphereGeometry(0.3,10,8),new THREE.MeshLambertMaterial({color:0xffc06a,emissive:0xff9a3c,emissiveIntensity:0.9,transparent:true,opacity:0.92}));
+   globe.position.y=1.78; g.add(globe);
  } else {
    box(0.7,0.7,0.7,0x8a8578,0,0.35,0,g);
  }
  return g;
 }
+let objectProps={}; // Tree Guardian chain (2026-11-24): CURRENT area placed objects by id -> {x,z,obj} (world coords, for tap tests)
 function rebuildObjects(){
  const area=curArea, root=areaGroups[area];
+ objectProps={};
  if(!root||!scene) return;
  if(objectGroups[area]) root.remove(objectGroups[area]);
  const grp=new THREE.Group(); root.add(grp); objectGroups[area]=grp;
- for(const o of (objectsByArea[area]||[])) grp.add(makeProp(o));
+ for(const o of (objectsByArea[area]||[])){ grp.add(makeProp(o)); objectProps[o.id]={x:sx2w(o.x),z:sy2w(o.y),obj:o}; }
 }
 window.dropItem=(item,qty)=>{ send({type:'drop',item,qty}); };
 function onGatherResult(m){
@@ -7179,6 +7274,43 @@ function handleTap(cx,cy){
    }
    if(wb){ tapSeaweed(wb); return; }
  }
+ // Tree Guardian chain (2026-11-24): sand piles (tap to scoop with a bucket; walks over first if too far)
+ if(Object.keys(sandProps).length){
+   let sb=null,sbD=1e9;
+   for(const p of Object.values(sandProps)){
+     const s=projectTo(p.x,1.0,p.z);
+     if(!s) continue;
+     const d=Math.hypot(s.x-cx,s.y-cy);
+     if(d<52 && d<sbD){ sb=p.pile; sbD=d; }
+   }
+   if(sb){ tapSand(sb); return; }
+ }
+ // Tree Guardian chain (2026-11-24): your own Tree Guardian — tap
+ // him to open the making panel; the Emberfall furnace — tap to
+ // open the Smithy (smelting lives there; glass is worked at it
+ // from the guardian's panel or by using an item on it).
+ if(Object.keys(allyAvatars).length){
+   for(const [id,a] of Object.entries(allyAvatars)){
+     const al=(alliesByArea[curArea]||[]).find(x=>x.id===id);
+     if(!al||!me||al.owner!==me.username) continue;
+     const s=projectTo(a.group.position.x,1.4,a.group.position.z);
+     if(s&&Math.hypot(s.x-cx,s.y-cy)<52){ spawnTapSplat(wx2s(a.group.position.x),wz2s(a.group.position.z),true); openGuardianMaker(); return; }
+   }
+ }
+ if(curArea==='mine'){
+   const fs=projectTo(62,1.4,26);
+   if(fs&&Math.hypot(fs.x-cx,fs.y-cy)<60){ spawnTapSplat(FURNACE_SERVER_POS.x,FURNACE_SERVER_POS.y,true); openPanel('smithy'); return; }
+ }
+ // Tree Guardian chain (2026-11-24): placed glass lanterns — tap
+ // your own for its sheet (take back / smash); someone else's
+ // just says whose it is.
+ if(Object.keys(objectProps).length){
+   for(const p of Object.values(objectProps)){
+     if(p.obj.kind!=='glass_lantern') continue;
+     const s=projectTo(p.x,1.2,p.z);
+     if(s&&Math.hypot(s.x-cx,s.y-cy)<52){ spawnTapSplat(p.obj.x,p.obj.y,true); openLanternSheet(p.obj); return; }
+   }
+ }
  // drop piles (tap to pick up; walks over first if too far)
  if(Object.keys(pileProps).length){
    let pb=null,pbD=1e9;
@@ -7433,7 +7565,7 @@ function finishStep(moved){
    lastSend=now;
  }
  checkGates();
- if(moved){ checkPendingAttack(); checkPendingNode(); checkPendingSpin(); checkPendingFcAttack(); checkPendingMound(); checkPendingPile(); checkPendingSeaweed(); checkPendingChest(); checkPendingUse(); checkPendingWildAttack(); checkPendingWildPker(); }
+ if(moved){ checkPendingAttack(); checkPendingNode(); checkPendingSpin(); checkPendingFcAttack(); checkPendingMound(); checkPendingPile(); checkPendingSeaweed(); checkPendingSand(); checkPendingChest(); checkPendingUse(); checkPendingWildAttack(); checkPendingWildPker(); checkPendingUseFurnace(); } // checkPendingSand + checkPendingUseFurnace: Tree Guardian chain (2026-11-24)
 }
 /* ================= minimap (rotating, player-centred) ================= */
 const MM_S=128/520; // minimap px per server unit (~520 units across — Stage 13 kept the same view window: the map is player-centred, so a bigger world just means more of it lies off-map; every feature below is drawn in the new 0..1600 x 0..900 server coords)
@@ -7531,6 +7663,8 @@ function drawMinimap(){
  for(const p of (pilesByArea[curArea]||[])){ g.beginPath(); g.arc(p.x,p.y,6.5,0,7); g.fill(); } // Visual pass: drop piles are RED dots (classic RuneScape)
  g.fillStyle='#5da244';
  for(const p of (seaweedByArea[curArea]||[])){ if(p.present){ g.beginPath(); g.arc(p.x,p.y,7,0,7); g.fill(); } } // Stage 29: seaweed clumps
+ g.fillStyle='#d9c184';
+ for(const p of (sandByArea[curArea]||[])){ if(p.present){ g.beginPath(); g.arc(p.x,p.y,7,0,7); g.fill(); } } // Tree Guardian chain (2026-11-24): sand piles
  g.fillStyle='#51ff6e';
  for(const al of (alliesByArea[curArea]||[])){ g.beginPath(); g.arc(al.x,al.y,8,0,7); g.fill(); } // Tree Guardians
  for(const p of players){
@@ -8247,6 +8381,13 @@ function pBackpack(){
      if(s.item==='wool') h+=`<button class="act" onclick="tapSpinWheel()">🌀 Spin at the wheel (farm)</button>`;
      if(d&&d.kind==='gem') h+=`<button class="act" onclick="send({type:'craft_amulet',gem:'${s.item}'})">📿 Make amulet (1 gold bar + this gem)</button>`;
      if(s.item.endsWith('_amulet_unstrung')) h+=`<button class="act" onclick="send({type:'string_amulet',item:'${s.item}'})">🧵 String it (1 ball of yarn)</button>`;
+     // Tree Guardian maker + herblore (2026-11-24): the chain's
+     // steps live on the items themselves, like spin/bury above.
+     if(s.item==='bucket') h+=`<button class="act" onclick="armUse('bucket')">🏖️ Use — scoop sand at the cove</button>`;
+     if(s.item==='seaweed'||s.item==='bucket_of_sand') h+=`<button class="act" onclick="armUse('${s.item}')">🔥 Use — make glass at the furnace</button>`;
+     if(s.item==='molten_glass') h+=`<button class="act" onclick="openGuardianMaker()">🫧 Blow it — the guardian's making</button>`;
+     if(s.item==='glass_vial'||s.item==='herbs'||s.item==='snapdragon') h+=`<button class="act" onclick="openGuardianMaker()">🧪 Mix a potion — the guardian's making</button>`;
+     if(s.item==='glass_lantern') h+=`<button class="act" onclick="send({type:'lantern_place'})">🏮 Place here — it stays in the world</button>`;
      if(d&&d.slot==='amulet'&&!s.item.endsWith('_enchanted')){ const esp=spellList.find(x=>x.tier==='enchant'&&x.gem===d.gem); h+=`<button class="act" onclick="send({type:'enchant_amulet',item:'${s.item}'})">✨ Enchant${esp?` — ${esc(esp.name)} (Magic ${esp.level}, ${esp.runes} ${esc(esp.element)} runes)`:''}</button>`; }
      const smithM=s.item.startsWith('smith_')? s.item.match(/^smith_([a-z]+)_(?:sword|platebody)(?:_u(\d))?$/) : null;
      if(smithM&&(+ (smithM[2]||0))<4) h+=`<button class="act" onclick="send({type:'smith_upgrade',item:'${s.item}'})">⬆️ Upgrade (+1)</button>`;
@@ -10669,6 +10810,34 @@ function detectWorldTap(cx,cy){
    const s=projectTo(sx2w(f.x),1.0,sy2w(f.y));
    if(s&&Math.hypot(s.x-cx,s.y-cy)<52) return {kind:'fire',fire:f};
  }
+ /* Tree Guardian chain (2026-11-24): the use-mode targets — cove
+    sand piles, the Emberfall furnace, my own guardian, and placed
+    glass lanterns. */
+ if(Object.keys(sandProps).length){
+   for(const p of Object.values(sandProps)){
+     const s=projectTo(p.x,1.0,p.z);
+     if(s&&Math.hypot(s.x-cx,s.y-cy)<52) return {kind:'sand',pile:p.pile};
+   }
+ }
+ if(curArea==='mine'){
+   const s=projectTo(62,1.2,26);
+   if(s&&Math.hypot(s.x-cx,s.y-cy)<60) return {kind:'furnace'};
+ }
+ if(Object.keys(allyAvatars).length){
+   for(const [id,a] of Object.entries(allyAvatars)){
+     const al=(alliesByArea[curArea]||[]).find(x=>x.id===id);
+     if(!al||!me||al.owner!==me.username) continue;
+     const s=projectTo(a.group.position.x,1.4,a.group.position.z);
+     if(s&&Math.hypot(s.x-cx,s.y-cy)<52) return {kind:'guardian'};
+   }
+ }
+ if(Object.keys(objectProps).length){
+   for(const p of Object.values(objectProps)){
+     if(p.obj.kind!=='glass_lantern') continue;
+     const s=projectTo(p.x,1.2,p.z);
+     if(s&&Math.hypot(s.x-cx,s.y-cy)<52) return {kind:'object',obj:p.obj};
+   }
+ }
  if(NPC_AREAS_CLIENT.includes(curArea)){
    for(const [id,a] of Object.entries(npcAvatars)){
      const s=projectTo(a.group.position.x,1.1,a.group.position.z);
@@ -10739,7 +10908,7 @@ function renderUseChip(){
 }
 function cancelUse(silent){
  if(!useMode&&!pendingUseCook&&!pendingUseLogs) return;
- useMode=null; pendingUseCook=null; pendingUseLogs=null;
+ useMode=null; pendingUseCook=null; pendingUseLogs=null; pendingUseFurnace=null; // pendingUseFurnace: Tree Guardian chain (2026-11-24)
  renderUseChip();
  if(dockPanel==='backpack') renderDock();
 }
@@ -10751,7 +10920,11 @@ window.armUse=function(item){
  if(d0&&d0.kind==='arrowhead'){ send({type:'fletch',item}); return; }
  useMode={item};
  renderUseChip();
- if(dockPanel==='backpack') renderDock(); // paints the pulsing gold outline
+ // Tree Guardian chain (2026-11-24): Derek's tap-item flow — once
+ // an item is armed, the inventory MINIMISES so the world (and the
+ // target you mean to tap) is what you see. The chip stays up.
+ if(dockPanel==='backpack') closeDock();
+ else if(dockPanel) renderDock();
 };
 $('usechip').onclick=()=>cancelUse();
 function resolveUseTap(cx,cy){
@@ -10765,6 +10938,35 @@ function resolveUseTap(cx,cy){
      if(myPos&&Math.hypot(myPos.x-f.x,myPos.y-f.y)<=120) send({type:'cook',item});
      else { pendingUseCook={item,fire:{x:f.x,y:f.y}}; tapTarget={x:f.x,y:f.y}; toast('🚶 Walking to the fire…'); }
    } else { toast('Nothing happens.'); cancelUse(true); }
+   return;
+ }
+ /* Tree Guardian chain (2026-11-24): Derek's tap-item flow at
+    the work targets — the taps route INTO the existing server
+    mechanics (cook / smelt) and the new guardian making
+    (glass at the furnace), never a parallel copy. */
+ if(hit.kind==='furnace'){
+   cancelUse(true);
+   if(item==='seaweed'||item==='bucket_of_sand'){ useAtFurnace({action:'glass'}); return; }
+   if(item==='molten_glass'){ openGuardianMaker(); return; }
+   const bar=ORE_TO_BAR[item];
+   if(bar){ useAtFurnace({action:'smelt',bar}); return; }
+   if(item==='coal'||item==='iron_ore'){ openPanel('smithy'); toast('🔥 That one feeds more than one bar — pick the bar at the Smithy.'); return; }
+   toast('Nothing happens.');
+   return;
+ }
+ if(hit.kind==='guardian'){
+   cancelUse(true);
+   openGuardianMaker();
+   return;
+ }
+ if(hit.kind==='sand'){
+   if(item==='bucket'){ cancelUse(true); tapSand(hit.pile); }
+   else { toast('Nothing happens.'); cancelUse(true); }
+   return;
+ }
+ if(hit.kind==='object'){
+   cancelUse(true);
+   openLanternSheet(hit.obj);
    return;
  }
  if(hit.kind==='player'){
@@ -10815,6 +11017,83 @@ function applyPreOffer(){
  sendTradeOffer(items);
  toast(`✋ ${nameOf(item)} pre-offered — tap to adjust, then confirm.`);
 }
+
+/* ---- Tree Guardian maker + herblore (2026-11-24) ----
+   Derek's tap-item flow at the work targets + the guardian's
+   making panel. The furnace is the Emberfall one (client prop at
+   world (62,26)); the server keeps the same spot as FURNACE_POS. */
+const FURNACE_SERVER_POS={x:1420,y:710};
+/* Ores that feed exactly ONE bar — tapping the furnace with one
+   smelts one bar through the ordinary 'smelt' message. Coal and
+   iron ore feed several bars, so they open the Smithy instead. */
+const ORE_TO_BAR={copper_ore:'bronze_bar',tin_ore:'bronze_bar',silver_ore:'silver_bar',gold_ore:'bars',mithril_ore:'mithril_bar',adamantite_ore:'adamant_bar',runite_ore:'rune_bar'};
+let pendingUseFurnace=null; // {action:'glass'} | {action:'smelt',bar} — walk to the furnace, then work
+function useAtFurnace(job){
+ if(myPos&&curArea==='mine'&&Math.hypot(myPos.x-FURNACE_SERVER_POS.x,myPos.y-FURNACE_SERVER_POS.y)<=150){
+   if(job.action==='glass') send({type:'glass_make'});
+   else send({type:'smelt',bar:job.bar,qty:1});
+ } else {
+   pendingUseFurnace=job; tapTarget={x:FURNACE_SERVER_POS.x,y:FURNACE_SERVER_POS.y};
+   toast('🚶 Walking to the furnace…');
+ }
+}
+function checkPendingUseFurnace(){
+ if(!pendingUseFurnace||!myPos) return;
+ if(curArea!=='mine'){ pendingUseFurnace=null; return; }
+ if(Math.hypot(myPos.x-FURNACE_SERVER_POS.x,myPos.y-FURNACE_SERVER_POS.y)<=150){
+   const job=pendingUseFurnace; pendingUseFurnace=null; tapTarget=null;
+   if(job.action==='glass') send({type:'glass_make'});
+   else send({type:'smelt',bar:job.bar,qty:1});
+ }
+}
+function myGuardianHere(){
+ return !!me&&(alliesByArea[curArea]||[]).some(a=>a.owner===me.username);
+}
+function atFurnaceNow(){
+ return curArea==='mine'&&!!myPos&&Math.hypot(myPos.x-FURNACE_SERVER_POS.x,myPos.y-FURNACE_SERVER_POS.y)<=150;
+}
+/* The making panel: opened by tapping your Tree Guardian. Glass
+   steps need him AND the Emberfall furnace; mixing needs only
+   him. Buttons grey out with the reason in the status line — the
+   server is still the real gate and refuses clearly. */
+window.openGuardianMaker=function(){
+ const gHere=myGuardianHere(), atF=atFurnaceNow();
+ const q=(id)=>myQty(id);
+ const glassGate=!gHere? '🌳 Your Tree Guardian is not with you — awaken a tree (Gathering Cave / Fishing Cove) and he will follow.'
+   : !atF? '🔥 Glass is worked at the Emberfall furnace (Mine & Smithy, plaza north-east gate) — your guardian follows you there.'
+   : '🔥 At the furnace, guardian beside you — the glass can be worked.';
+ const disGlass=(gHere&&atF&&q('seaweed')>=1&&q('bucket_of_sand')>=1)? '' : 'disabled style="opacity:.45"';
+ const disBlow=(gHere&&atF&&q('molten_glass')>=1)? '' : 'disabled style="opacity:.45"';
+ const disMixR=(gHere&&q('glass_vial')>=1&&q('herbs')>=1)? '' : 'disabled style="opacity:.45"';
+ const disMixS=(gHere&&q('glass_vial')>=1&&q('snapdragon')>=1)? '' : 'disabled style="opacity:.45"';
+ $('keepersheet').innerHTML=`<span id="guardianmaker-anchor"></span><h3>🌳 Tree Guardian — the making</h3>
+ <p style="margin-bottom:6px">Your guardian is a maker. What he makes with you stays in the world until someone destroys it.</p>
+ <p class="note" style="margin-bottom:8px">${glassGate}</p>
+ <div class="detail"><b>🔥 Glass</b> — 1 🥬 Seaweed (you have ${q('seaweed')}) + 1 🪣 Bucket of sand (${q('bucket_of_sand')}) → 1 🔸 Molten glass (${q('molten_glass')}) · +10 🧵 Crafting XP
+ <div class="btns"><button class="act" ${disGlass} onclick="send({type:'glass_make'})">🔥 Melt glass</button></div></div>
+ <div class="detail"><b>🫧 Blowing</b> — 1 🔸 Molten glass → a vial (+8 XP) or a lantern (+12 XP)
+ <div class="btns"><button class="act" ${disBlow} onclick="send({type:'glass_blow',make:'vial'})">🧪 Blow a glass vial</button><button class="act" ${disBlow} onclick="send({type:'glass_blow',make:'lantern'})">🏮 Blow a glass lantern</button></div></div>
+ <div class="detail"><b>🧪 Potions</b> — 1 🧪 Glass vial (${q('glass_vial')}) + a herb. Hobgoblins at the Goblin Camp drop both herbs.
+ <div class="btns"><button class="act" ${disMixR} onclick="send({type:'mix_potion',herb:'herbs'})">🌿 Ranarr (${q('herbs')}) → Prayer potion (+12 XP)</button><button class="act" ${disMixS} onclick="send({type:'mix_potion',herb:'snapdragon'})">🌺 Snapdragon (${q('snapdragon')}) → Restore potion (+14 XP)</button></div></div>
+ <p class="note" style="margin-top:6px">🏮 A lantern goes in your backpack — tap <b>Place here</b> on it there and it stands in the world for everyone, until you take it back, smash it, or an admin removes it. Mixing works anywhere your guardian stands with you.</p>
+ <div class="btns"><button class="act" onclick="askKeeper('guardian')">🙋 Ask what to do</button><button class="ghost" onclick="closeModal('keepermodal')">Close</button></div>`;
+ $('keepermodal').classList.add('open');
+};
+/* Result messages re-render the open making panel so counts and
+   gates stay true while you work. */
+function refreshGuardianMaker(){
+ if($('keepermodal').classList.contains('open')&&$('guardianmaker-anchor')) openGuardianMaker();
+}
+/* A placed glass lantern's sheet: the owner's carries Take back /
+   Smash; anyone else just learns whose it is. */
+window.openLanternSheet=function(o){
+ const mine=!!me&&o.by===me.username;
+ $('keepersheet').innerHTML=`<h3>🏮 Glass lantern</h3>
+ <p style="margin-bottom:8px">${mine? 'Your hand-blown lantern, standing where you left it. It stays until you take it back or smash it — or an admin removes it.' : `A hand-blown glass lantern. <b>${esc(o.by||'Someone')}</b> made this — only they (or an admin) can remove it.`}</p>
+ ${mine? `<div class="btns"><button class="act" onclick="closeModal('keepermodal');send({type:'lantern_take',id:'${o.id}'})">🎒 Take back</button><button class="ghost" onclick="closeModal('keepermodal');send({type:'lantern_smash',id:'${o.id}'})">🔨 Smash it</button><button class="ghost" onclick="closeModal('keepermodal')">Close</button></div>`
+ : `<div class="btns"><button class="ghost" onclick="closeModal('keepermodal')">Close</button></div>`}`;
+ $('keepermodal').classList.add('open');
+};
 
 /* ---- §3: sign a note, read a note, admin note requests ---- */
 let signTarget=null; // admin username the sign is aimed at, or null
