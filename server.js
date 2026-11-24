@@ -1490,6 +1490,21 @@ function ensureV2(p) {
     }
     if (JSON.stringify(cleanH2h) !== JSON.stringify(p.h2h)) { p.h2h = cleanH2h; changed = true; }
   }
+  // NPC build (2026-11-23) migration: ask-and-learn guide state +
+  // the Guided path toggle. guide = { step: last step id handed
+  // out, asks: how many times this player has asked, at: last ask
+  // timestamp } — the path engine reads the profile itself for
+  // progress; this record is what makes a RETURN visit move on to
+  // the next step instead of repeating the first one. guidedPath
+  // defaults TRUE for every player (Derek, confirmed 2026-11-23):
+  // OFF silences only UNSOLICITED guidance; asking still answers.
+  if (!p.guide || typeof p.guide !== 'object' || Array.isArray(p.guide)) { p.guide = { step: null, asks: 0, at: 0 }; changed = true; }
+  else {
+    if (typeof p.guide.step !== 'string' && p.guide.step !== null) { p.guide.step = null; changed = true; }
+    if (typeof p.guide.asks !== 'number' || !(p.guide.asks >= 0)) { p.guide.asks = 0; changed = true; }
+    if (typeof p.guide.at !== 'number' || !(p.guide.at >= 0)) { p.guide.at = 0; changed = true; }
+  }
+  if (typeof p.guidedPath !== 'boolean') { p.guidedPath = true; changed = true; }
   // Stage 10 migration: character appearance. A missing one is
   // backfilled with the default; a present one is sanitised in
   // place (merged over the default — a set look is never wiped).
@@ -1725,6 +1740,9 @@ function onLevelUp(key, skill, level) {
     }
   }
   if (level >= 99) announce(`🏆 ${u.profile.username} just reached level 99 ${cap(skill)}!`);
+  // NPC build: bots react to level-ups — their own, and a nearby
+  // human's (free talk; self-gates on BOT_TALK_OFF / botsReady).
+  try { botLevelReact(key, sess, skill, level); } catch (e) { /* talk never breaks XP */ }
 }
 function starterMsg(p) {
   ensureV2(p);
@@ -2302,6 +2320,11 @@ const AREAS = {
   range: { name: 'Ranger Camp', spawn: { x: 800, y: 720 } },
   wilderness: { name: 'The Wilderness', spawn: { x: 800, y: 845 } }, // Stage 30: PvP — ditch crossing + obelisk teleport
   purewild: { name: 'Pure Wild', spawn: { x: 800, y: 845 } }, // Stage 30: PK Noob's hop — no prayer, no food
+  // Stage 44: Frostfall, the Winter World — Derek's first themed
+  // world (multi-world brainstorm, 2026-11-23). Spawn sits by the
+  // south return gate, mirroring the Wizard Grounds / Ranger Camp,
+  // and the plaza gate is the south wall's west stretch.
+  winter: { name: 'Frostfall', spawn: { x: 800, y: 720 } },
 };
 const NPC_RANGE = 150; // server units — attack / stay-in-combat range (15 tiles at 10 units/tile)
 
@@ -3376,6 +3399,12 @@ function endDuel(duel, winnerKey, reason) {
   }
   if (duel.freePlay) broadcast({ type: 'chat', from: 'Duel Master', text: `🆓 ${winner.username} wins the free play fight against ${loser.username} (${reason}) — no stakes, no record.` });
   else broadcast({ type: 'chat', from: 'Duel Master', text: `${winner.username} beat ${loser.username} for ${duel.pot}g (${reason}).` });
+  // NPC build: bot fighters react in character to their own
+  // result (free talk; self-gates). No mechanics touched.
+  try {
+    if (bots.has(winnerKey)) botDuelReact(winnerKey, true, loser.username, duel.freePlay ? 0 : duel.pot);
+    if (bots.has(loserKey)) botDuelReact(loserKey, false, winner.username, duel.freePlay ? 0 : duel.pot);
+  } catch (e) { /* talk never breaks a duel */ }
   // Stage 7A: official-duel settlement is announced game-wide, and
   // the runner hears it directly as well (the broadcast already
   // reaches them; the admin_note makes it unmissable in their feed).
@@ -5462,6 +5491,17 @@ defNode('gold_rock', 'mine', 'rock', 'Gold rock', 'mining', 40, 'gold_ore', 65, 
 defNode('mithril_rock', 'mine', 'rock', 'Mithril rock', 'mining', 55, 'mithril_ore', 80, 2, 25000, 760, 400);
 defNode('adamantite_rock', 'mine', 'rock', 'Adamantite rock', 'mining', 70, 'adamantite_ore', 100, 2, 30000, 1020, 180);
 defNode('runite_rock', 'mine', 'rock', 'Runite rock', 'mining', 85, 'runite_ore', 125, 1, 40000, 1020, 400);
+// Frostfall (Stage 44) — the Winter World's gathering: frost pines
+// and a snowy oak to chop, ice-crusted rocks to mine. Same items
+// and XP as their temperate cousins — the winter is a new place,
+// not a new economy, and it runs on the same gather machinery.
+defNode('frost_pine1', 'winter', 'tree', 'Frost pine', 'woodcutting', 1, 'logs', 25, 3, 10000, 300, 250);
+defNode('frost_pine2', 'winter', 'tree', 'Frost pine', 'woodcutting', 1, 'logs', 25, 3, 10000, 430, 580);
+defNode('frost_pine3', 'winter', 'tree', 'Frost pine', 'woodcutting', 1, 'logs', 25, 3, 10000, 620, 200);
+defNode('snowy_oak', 'winter', 'tree', 'Snowy oak', 'woodcutting', 15, 'oak_logs', 38, 3, 15000, 1240, 640);
+defNode('frost_copper', 'winter', 'rock', 'Copper rock', 'mining', 1, 'copper_ore', 18, 3, 8000, 1080, 560);
+defNode('frost_tin', 'winter', 'rock', 'Tin rock', 'mining', 1, 'tin_ore', 18, 3, 8000, 1330, 600);
+defNode('frost_iron', 'winter', 'rock', 'Iron rock', 'mining', 10, 'iron_ore', 35, 3, 12000, 950, 430);
 
 function nodesMsg(area) {
   const now = Date.now();
@@ -6810,6 +6850,35 @@ wss.on('connection', (ws, req) => {
     if (m.type === 'chat') {
       const text = String(m.text || '').slice(0, 140).trim();
       if (text) broadcast({ type: 'chat', from: profile.username, text });
+      // NPC build: nearby NPC players may answer (free talk), and
+      // a help-seeking question routes to the ask-and-learn path.
+      if (text) { try { onPlayerChat(key, me, text); } catch (e) { /* talk never breaks chat */ } }
+    }
+    // NPC build: the Guided path toggle (client sends it at login
+    // and on change) and the keeper modal's Ask button.
+    if (m.type === 'set_guided') {
+      profile.guidedPath = m.on !== false;
+      save(key);
+    }
+    if (m.type === 'ask_guide') {
+      const now = Date.now();
+      if (now - (me.lastGuideAskAt || 0) >= GUIDE_ASK_COOLDOWN_MS) {
+        me.lastGuideAskAt = now;
+        let src = null;
+        if (m.who === 'guardian') {
+          const ally = allies.get(key);
+          if (ally && ally.area === me.area && ally.hp > 0) src = { kind: 'guardian' };
+        } else {
+          const keeper = GUIDE_KEEPERS.find((k) => k.id === String(m.who || ''));
+          if (keeper && keeper.area === me.area && Math.hypot(keeper.x - me.x, keeper.y - me.y) <= 380) src = { kind: 'keeper', keeper };
+        }
+        if (src) {
+          const ans = guideAnswerFor(key, me, src);
+          send(ws, { type: 'guide_answer', who: String(m.who || ''), name: ans.who, text: ans.text });
+        } else {
+          send(ws, { type: 'guide_answer', who: String(m.who || ''), name: '', text: 'Step a little closer and ask again.' });
+        }
+      }
     }
     // ----- Jump relay (Stage 6): cosmetic only — tell everyone else in
     // this area so their client plays the same hop/flip on this knight.
@@ -9132,7 +9201,11 @@ wss.on('connection', (ws, req) => {
       if (!target) return send(ws, { type: 'error', message: `${targetName} is not online.` });
       if (targetKey !== key) send(target.ws, { type: 'whisper', from: profile.username, text });
       // Echo to the sender (with `to`) so their client renders their own line.
-      return send(ws, { type: 'whisper', from: profile.username, to: target.profile.username, text });
+      send(ws, { type: 'whisper', from: profile.username, to: target.profile.username, text });
+      // NPC build: a whispered NPC player may whisper back (free
+      // talk), and a whispered help question gets the fitted path.
+      if (target.bot) { try { onPlayerWhisper(key, me, targetKey, text); } catch (e) { /* talk never breaks whispers */ } }
+      return;
     }
 
     // ----- Stage 7B: Examine (read-only; never gold or backpack) -----
@@ -9713,6 +9786,32 @@ const BOT_ROSTER = [
   { name: 'Champion Zara', cbt: 99, gold: 4000, rating: 1560, style: 'accurate', tier: 2, stakeMin: 150, stakeMax: 600,
     kit: { weapon: 'dragon_sword', head: 'dragon_helm', body: 'dragon_platebody', legs: 'dragon_platelegs', feet: 'dragon_boots' },
     traits: { aggression: [65, 90], greed: [30, 55], loyalty: [60, 85], ambition: [80, 99], sociability: [45, 70], risk: [60, 85] } },
+  // NPC build (Derek, 2026-11-23): five more players from his
+  // family's old RuneScape days, living the same life as the nine
+  // above. Flavours beyond their identities are Muse's colouring
+  // (flagged to Derek): the aunt warm and chatty, the cousin young
+  // and eager, the uncle laid-back, 6 d9 a veteran of the old days.
+  // branman3's flavour is Derek's own words: a sneaky guy, always
+  // ready to trick you for a fast buck — his trickery lives in his
+  // chat and in the OFFERS he makes through the real trade system
+  // (def.shady drives lowball openings + a hard rate in
+  // botTradeRate / botTradeGoalOffer / botTradeDrive). The trade
+  // window, escrow and confirmations are never touched by it.
+  { name: '6 d9', cbt: 63, gold: 750, rating: 1040, style: 'controlled', tier: 1, stakeMin: 20, stakeMax: 130,
+    kit: { weapon: 'steel_sword', head: 'steel_helm', body: 'steel_platebody', legs: 'steel_platelegs' },
+    traits: { aggression: [35, 60], greed: [35, 60], loyalty: [45, 70], ambition: [35, 60], sociability: [50, 75], risk: [25, 50] } },
+  { name: 'imatoad', cbt: 47, gold: 480, rating: 910, style: 'defensive', tier: 0, stakeMin: 10, stakeMax: 80,
+    kit: { weapon: 'iron_sword', head: 'iron_helm', body: 'iron_platebody', legs: 'bronze_platelegs' },
+    traits: { aggression: [20, 45], greed: [25, 50], loyalty: [60, 85], ambition: [25, 50], sociability: [65, 90], risk: [15, 40] } },
+  { name: 'branman3', cbt: 71, gold: 1350, rating: 1150, style: 'aggressive', tier: 1, stakeMin: 30, stakeMax: 220, shady: true,
+    kit: { weapon: 'steel_sword', head: 'mithril_helm', body: 'mithril_platebody', legs: 'mithril_platelegs' },
+    traits: { aggression: [45, 70], greed: [70, 95], loyalty: [5, 30], ambition: [55, 80], sociability: [50, 75], risk: [55, 80] } },
+  { name: 'imaliltoad', cbt: 33, gold: 260, rating: 780, style: 'aggressive', tier: 0, stakeMin: 5, stakeMax: 50,
+    kit: { weapon: 'bronze_sword', head: 'bronze_helm', body: 'bronze_platebody', legs: 'bronze_platelegs' },
+    traits: { aggression: [40, 65], greed: [35, 60], loyalty: [45, 70], ambition: [60, 85], sociability: [60, 85], risk: [45, 70] } },
+  { name: 'papa4life', cbt: 57, gold: 880, rating: 1000, style: 'defensive', tier: 1, stakeMin: 20, stakeMax: 120,
+    kit: { weapon: 'steel_sword', head: 'iron_helm', body: 'iron_platebody', legs: 'iron_platelegs' },
+    traits: { aggression: [25, 50], greed: [30, 55], loyalty: [50, 75], ambition: [20, 45], sociability: [45, 70], risk: [10, 35] } },
 ];
 const BOT_KEYS = new Set(BOT_ROSTER.map((d) => d.name.toLowerCase()));
 const bots = new Map(); // key -> brain { key, def, sess, profile, plan, planUntil, ... }
@@ -9893,6 +9992,12 @@ function spawnBotSession(def, profile) {
     lastGiftAt: 0, lastPostAt: 0, lastPartyInviteAt: 0,
     lastPvmAt: Date.now(), pvm: null, fcJadSeen: null, pvmEatAt: 0, // Stage 39: the current Barrows / Fight Caves attempt, if any
     lastBuildAt: 0, lastIdeaAt: 0, lastTalkAt: 0, greetedAt: new Map(), ideaIn: new Set(), // Stage 40: city/social clocks (session-only)
+    // NPC build: free-talk clocks (session-only). lastReplyAt —
+    // last time this bot answered a player's chat/whisper;
+    // replyAtBy — per-player reply cooldowns; bbAt — per-pair
+    // bot-to-bot exchange cooldowns; guideTipAt — per-player
+    // unsolicited-guidance cooldowns (Part C).
+    lastReplyAt: 0, replyAtBy: new Map(), whisperAtBy: new Map(), bbAt: new Map(), guideTipAt: new Map(),
     wasInDuel: false,
   });
 }
@@ -10842,6 +10947,10 @@ function botTradeRate(bot, partnerName) {
   if (rel <= BOT_GRUDGE) return Infinity;
   let rate = 1 + (botTrait(bot.profile, 'greed') - 50) * 0.004;
   if (rel >= FRIEND_THRESHOLD) rate -= 0.08 + botTrait(bot.profile, 'loyalty') * 0.0012;
+  // NPC build: a shady trader (branman3) always drives a harder
+  // bargain than his traits alone say — still just an offer price
+  // inside the real trade window; the player sees it and decides.
+  if (bot.def && bot.def.shady) rate *= 1.3;
   return Math.max(0.55, Math.min(1.6, rate));
 }
 // One-sided memory for partners who have no relations map of
@@ -11015,6 +11124,10 @@ function botTradeGoalOffer(bot, trade, st, partnerKey) {
       const offered = (trade.offers[partnerKey].items || []).find((s) => s.item === intent.item);
       const qty = offered ? Math.min(intent.qty, offered.qty) : intent.qty;
       let pay = Math.max(1, Math.round(botMarketValue(intent.item) * qty * (1.02 - botTrait(bot.profile, 'greed') * 0.003)));
+      // NPC build: a shady buyer opens with a real lowball — a
+      // fraction of even the greedy opening. It is only an offer:
+      // the trade window shows the true numbers to both sides.
+      if (bot.def && bot.def.shady) pay = Math.max(1, Math.round(pay * 0.62));
       // Negotiation: if the seller is holding out, the drive
       // grows st.raiseFactor and the offer climbs toward (never
       // past) the goods' full catalogue value.
@@ -11057,7 +11170,10 @@ function botTradeDrive(bot, trade) {
   // paths below re-derive my side from it (capped at what the
   // goods are worth, so a bot never bids past catalogue sense).
   if (st.sameActs >= 6 && myOffer.gold > 0 && (theirOffer.items || []).length > 0 && !trade.confirmed[partnerKey]) {
-    st.raiseFactor = Math.min(2.5, (st.raiseFactor || 1) * 1.15);
+    // NPC build: a shady negotiator raises slower and stops well
+    // short of full price — stingy to the end, by character.
+    if (bot.def && bot.def.shady) st.raiseFactor = Math.min(1.5, (st.raiseFactor || 1) * 1.08);
+    else st.raiseFactor = Math.min(2.5, (st.raiseFactor || 1) * 1.15);
     st.sameActs = 0;
   }
   // 1) Put up my side if this trade has a goal for me and my side
@@ -11180,7 +11296,14 @@ function botDealDrive(bot) {
   botDealIntents.set(req.id, { initiatorKey: bot.key, kind: goal.kind, item: goal.item, qty: goal.qty });
   const partnerName = db.users[goal.partnerKey] ? db.users[goal.partnerKey].profile.username : goal.partnerKey;
   const def = itemDef(goal.item);
-  if (goal.kind === 'buy') botSay(bot, `${partnerName} — buying ${goal.qty}× ${def.name}. I'll pay gold.`);
+  if (bot.def && bot.def.shady) {
+    // NPC build: branman3 pitches his deals like a fast-buck
+    // artist — the talk is the trick; the trade window that
+    // follows shows the real numbers to both sides, always.
+    if (goal.kind === 'buy') botSay(bot, talkPick([`Psst, ${partnerName} — that ${def.name} is just gathering dust. Quick gold, no questions. Trade me.`, `${partnerName}, friend — I'll take that ${def.name} off your hands for cash, right now. You won't get a better offer. (You might.)`, `Between you and me, ${partnerName}: ${def.name}, cash, done in a flash. Trade me before I change my mind.`]));
+    else botSay(bot, talkPick([`Selling ${goal.qty}× ${def.name} — practically giving it away, ${partnerName}. Practically.`, `${def.name} ×${goal.qty}, fresh off the back of a cart. Trade me, ${partnerName} — first come, first fleeced. Er, served.`, `Got ${goal.qty}× ${def.name} going cheap, ${partnerName}. Cheap-ish. Trade me and see.`]));
+  }
+  else if (goal.kind === 'buy') botSay(bot, `${partnerName} — buying ${goal.qty}× ${def.name}. I'll pay gold.`);
   else botSay(bot, `Selling ${goal.qty}× ${def.name} — trade me if you want it.`);
 }
 
@@ -12101,7 +12224,7 @@ const BOT_GREET_RANGE = 320; // a bot greets a player it can practically see
 const BOT_TALK_EVERY_MS = 300000; // per-bot clock between plaza small-talk lines (scaled)
 const CITY_IDEA_TARGET = 8; // objects placed toward an idea that complete it
 const CITY_IDEA_MAX_OPEN = 3; // open ideas at once, so the bots' attention stays meaningful
-const CITY_BUILD_AREAS = new Set(['plaza', 'gathering', 'cove', 'mine', 'training', 'magic', 'range', 'goblins']);
+const CITY_BUILD_AREAS = new Set(['plaza', 'gathering', 'cove', 'mine', 'training', 'magic', 'range', 'goblins', 'winter']);
 // Rough areas an idea can name: the plaza as a whole or by quadrant,
 // or one whole gathering/training area. { area } is the world area,
 // (x, y) the rough centre, r the radius contributors build inside.
@@ -12118,6 +12241,7 @@ const CITY_IDEA_AREAS = {
   magic: { label: 'Wizard Grounds', area: 'magic', x: 800, y: 450, r: 380 },
   range: { label: 'Ranger Camp', area: 'range', x: 800, y: 450, r: 380 },
   goblins: { label: 'Goblin Camp', area: 'goblins', x: 800, y: 450, r: 380 },
+  winter: { label: 'Frostfall (Winter World)', area: 'winter', x: 800, y: 450, r: 380 },
 };
 const cityIdeas = new Map(); // ideaId -> { rec, ownerKey } — rec is the SAME object saved on the poster's profile
 let ideaSeq = 0; // last City Idea number handed out (seeded at boot)
@@ -12416,6 +12540,614 @@ function botCongratsHook(text) {
   setTimeout(() => { try { botSay(bot, line); } catch (e) { /* the world moved on */ } }, botDelay(2500, 7000) / BOT_TIME_SCALE);
 }
 
+// ============================================================
+// NPC BUILD (Derek, 2026-11-23) — Part A: NPC FREE TALK, and
+// Part C: ASK-AND-LEARN + the Guided path toggle.
+//
+// Part A: the NPC players talk as their own players — they remark
+// on what they're doing, answer players who speak near them or
+// whisper them, banter with each other, and react to their duels
+// and level-ups. Stage 40's greetings/small talk are the floor;
+// this is the layer on top. Every line is a hand-written bank plus
+// interpolation from the bot's REAL state (its plan, levels,
+// friends, grudges, purse) — no generated text. Bots speak ONLY
+// through botSay / the whisper path, so overhead bubbles (5s) and
+// the chat log behave exactly as for a human. Hard limits:
+// botSay's per-area gap, a per-bot reply cooldown, a per-player
+// reply cooldown, one responder per player message, no replies
+// while busy (duel/fight/PvM/wild), bot-to-bot pairs on a long
+// per-pair clock. BOT_TALK_OFF=1 silences this whole layer (test
+// isolation); production never sets it.
+//
+// Part C: a player who asks a help-seeking question — in public
+// chat near a character, by whisper to a bot, or via the keeper
+// modal's Ask button — gets a REAL next step fitted to THEIR
+// levels/gold/backpack from the GUIDE_STEPS table below. Every
+// character teaches its own domain first. Progress is remembered
+// on profile.guide so a return visit moves on. The Guided path
+// toggle (profile.guidedPath, default ON) gates only UNSOLICITED
+// guidance (botGuideTipDrive); explicit asks always answer, and
+// ordinary free talk is not guidance and is never gated.
+// ============================================================
+const BOT_TALK_OFF = process.env.BOT_TALK_OFF === '1';
+function talkPick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+const BOT_TALK_RANGE = 320; // the Stage 40 greeting range
+const CHAT_GREETING_RE = /\b(hi|hello|hey|hiya|yo|sup|morning|afternoon|evening|greetings)\b/i;
+const BOT_REPLY_COOLDOWN_MS = 30000 / BOT_TIME_SCALE; // per bot, between answers
+const BOT_REPLY_PLAYER_MS = 60000 / BOT_TIME_SCALE; // per bot per player
+const BOT_WHISPER_COOLDOWN_MS = 30000 / BOT_TIME_SCALE; // per bot per player
+const BOT_BB_EVERY_MS = 300000 / BOT_TIME_SCALE; // per bot pair, bot-to-bot banter
+const BOT_REACT_MS = 20000 / BOT_TIME_SCALE; // per bot, between activity remarks
+const GUIDE_ASK_COOLDOWN_MS = 4000; // real ms, per asker (answers are not chatter)
+const GUIDE_TIP_COOLDOWN_MS = 720000 / BOT_TIME_SCALE; // per bot per player, unsolicited tips
+const GUIDE_TIP_RANGE = 320;
+
+function botBusyForTalk(bot) {
+  const s = bot.sess;
+  return !!(s.duelId || s.modDuelId || s.npcFightId || s.fcRunId || s.barrowsFightId
+    || s.area === 'wilderness' || s.area === 'purewild' || s.area === 'fightcaves'
+    || s.area === 'waiting' || s.area === 'arena' || bot.pvm || bot.wildTrip);
+}
+// What the bot is doing right now, in words — grounded in its
+// plan/session state, never invented.
+function botActivityPhrase(bot) {
+  const s = bot.sess, plan = bot.plan;
+  if (s.duelId) return 'in a duel';
+  if (bot.pvm) return bot.pvm.kind === 'barrows' ? 'running Barrows' : 'in the Fight Caves';
+  if (bot.wildTrip) return 'out in the Wilderness';
+  if (plan) {
+    if (plan.kind === 'train') return plan.skill ? `training ${cap(plan.skill)}` : 'training';
+    if (plan.kind === 'gather') return plan.skill ? `working on ${cap(plan.skill)}` : 'out gathering';
+    if (plan.kind === 'sell') return 'selling up at the shops';
+    if (plan.kind === 'bank') return 'sorting my bank';
+    if (plan.kind === 'social') return 'taking a breather in the plaza';
+    if (plan.kind === 'go') return 'on my way somewhere';
+  }
+  switch (s.area) {
+    case 'gathering': return 'gathering in the cave';
+    case 'cove': return 'fishing at the cove';
+    case 'mine': return 'mining at Emberfall';
+    case 'training': return 'training in the cave';
+    case 'magic': return 'training Magic';
+    case 'range': return 'training Ranged';
+    case 'goblins': return 'fighting goblins';
+    case 'barrows': case 'barrows_crypt': case 'barrows_tunnels': return 'down at Barrows';
+    default: return 'around the plaza';
+  }
+}
+// Per-bot voice banks for the five family players (Muse's
+// colouring on Derek's identities; branman3's are Derek's own
+// character note — a sneaky guy after a fast buck. His lines can
+// boast and bait; they are chat only, never a system surface).
+const BOT_VOICE_LINES = {
+  'branman3': [
+    'Made a tidy little profit today. Don\'t ask how.',
+    'Everything\'s negotiable. EVERYTHING. Remember that.',
+    'Psst — if anyone asks, I was never here.',
+    'A deal\'s a deal, even when it isn\'t. Especially then.',
+    'I know a guy who knows a guy. I\'m both guys.',
+    'Buy low, sell high, talk fast. That\'s the whole game.',
+    'That item you\'re carrying? I could move it. For a price. My price.',
+    'Trust me. Would this face lie? Don\'t answer that.',
+  ],
+  'imatoad': [
+    'Lovely day for it, isn\'t it, dear?',
+    'You look like you could use a cooked trout and a sit-down.',
+    'Back in my day we walked to Barrows. Uphill. Both ways.',
+    'I keep a little gold aside for the family. And a little more for me.',
+    'Mind your manners at the Stake Board, now.',
+  ],
+  'imaliltoad': [
+    'One day I\'m taking Zara\'s crown. ONE DAY.',
+    'Race you to the next level. Loser buys the trout.',
+    'I trained ALL morning. Well. Some of the morning.',
+    'What\'s the fastest way to get rich? Asking for a me.',
+    'Watch this — actually wait, let me practise first.',
+  ],
+  'papa4life': [
+    'No rush. The fish aren\'t going anywhere. Neither am I.',
+    'Slow and steady banks the gold.',
+    'I\'ve seen a hundred champions come and go. I\'m still here.',
+    'Best seat in the plaza is the one you bring yourself.',
+    'Papa\'s rule: never stake what you can\'t laugh about losing.',
+  ],
+  '6 d9': [
+    'Played since the old days. The REAL old days.',
+    'kingnally3\'s my main, you know. This is just my little alt.',
+    'They don\'t make grind like they used to. Good.',
+    'I remember when this plaza was two stalls and a dream.',
+    'Veteran tip: the bank chest is your best friend. Use it.',
+  ],
+};
+// Generic activity remarks, keyed loosely by what the bot is up
+// to; state interpolation keeps them honest.
+function botActivityLine(bot) {
+  const name = bot.profile.username;
+  const bank = [];
+  const act = botActivityPhrase(bot);
+  const plan = bot.plan;
+  if (bot.def && bot.def.shady) bank.push(...BOT_VOICE_LINES['branman3']);
+  if (BOT_VOICE_LINES[name]) bank.push(...BOT_VOICE_LINES[name]);
+  if (plan && plan.kind === 'train' && plan.skill) {
+    bank.push(`Grinding ${cap(plan.skill)} — level ${levelForXp(bot.profile.xp[plan.skill] || 0)} and counting.`,
+      `This ${cap(plan.skill)} grind is the real boss fight.`,
+      `Nearly dropped my weapon mid-swing. Graceful as ever.`);
+  }
+  if (plan && plan.kind === 'gather') {
+    bank.push('Filling the pack, then it\'s sell-up time.', 'Honest work, honest gold.', 'One more haul and I\'m banking.');
+  }
+  if (bot.sess.area === 'cove') bank.push('The trout are biting today.', 'Nothing beats the cove when it\'s quiet like this.', 'Lost a good one just now. The lake keeps the change.');
+  if (bot.sess.area === 'mine') bank.push('Rock\'s stubborn today.', 'Hear that ringing? That\'s money.', 'Emberfall dust gets everywhere. Worth it.');
+  if (bot.sess.area === 'gathering') bank.push('Cave\'s peaceful today.', 'Logs, ore, gems — the cave provides.');
+  if (bot.sess.area === 'goblins') bank.push('These goblins never learn.', 'Goblin gold spends the same as any gold.');
+  if (bot.sess.area === 'magic') bank.push('Mind the wizards — they bite back with spells.', 'Runes in, levels out.');
+  if (bot.sess.area === 'range') bank.push('Fern runs a tight camp out here.', 'Steady… breathe… loose.');
+  bank.push(`Just ${act}. Living the dream.`, `Still ${act}. Someone bring snacks.`);
+  return talkPick(bank);
+}
+// A reply to a player who just spoke near the bot. Grounded:
+// greets back, says what it's doing, colours by the relationship.
+function botReplyLine(bot, speakerName, text) {
+  const me = bot.profile, rel = botRelation(me, speakerName);
+  const friend = botBestFriend(me);
+  const act = botActivityPhrase(bot);
+  const bank = [];
+  if (CHAT_GREETING_RE.test(text)) {
+    bank.push(`Hey ${speakerName}. Just ${act} — how about you?`,
+      `${speakerName}! Good to see you. I'm ${act} if you're looking for company.`,
+      `Morning-ish, ${speakerName}. Mind the plaza traffic.`);
+  }
+  if (/thank|thanks|thx|ty\b/i.test(text)) bank.push(`Any time, ${speakerName}.`, `Don't mention it. Well — mention it a little.`);
+  if (/bye|cya|see you|gtg/i.test(text)) bank.push(`See you around, ${speakerName}.`, `Later, ${speakerName}. Don't do anything I wouldn't stake on.`);
+  if (/duel|fight me|stake|challenge/i.test(text)) {
+    bank.push(botTrait(me, 'aggression') > 55
+      ? `Careful what you wish for, ${speakerName}. Set it up on the board and I'll see you there.`
+      : `Duels? I'm more of a careful type, ${speakerName} — but the dais is right there if you're feeling brave.`);
+  }
+  if (/gold|rich|money|poor|broke/i.test(text)) {
+    bank.push(`Gold? Goblins, logs and the Exchange, ${speakerName}. That's the whole secret.`,
+      `I'm sitting on ${goldTotal(me)}g myself. Earned every coin. Mostly.`);
+  }
+  if (rel <= BOT_GRUDGE) bank.push(`...I've not forgotten what you did, ${speakerName}.`, `Hmph. ${speakerName}.`);
+  else if (rel >= FRIEND_THRESHOLD) bank.push(`${speakerName}! My favourite person in the plaza. Don't tell the others.`, `For you, ${speakerName}? Always got time.`);
+  else if (friend && friend.toLowerCase() === speakerName.toLowerCase()) bank.push(`${speakerName}! There you are. I was just ${act}.`);
+  if (bot.def && bot.def.shady) bank.push(
+    `${speakerName}, friend — have I got a deal for you sometime. A REAL deal. Trade me and see.`,
+    `Psst, ${speakerName}. Keep this between us: the best money in this plaza never touches a shop.`,
+    `You look like a person of taste, ${speakerName}. Taste and gold. Let's talk business sometime.`);
+  if (BOT_VOICE_LINES[me.username]) bank.push(...BOT_VOICE_LINES[me.username]);
+  bank.push(`Just ${act}, ${speakerName}. What brings you by?`,
+    `Can't chat long — I'm ${act}. Walk with me if you like.`,
+    `That's the way of it, ${speakerName}. Anyway — back to ${act} for me.`);
+  return talkPick(bank);
+}
+// Bot-to-bot banter: an opener addressed to the other bot, and
+// the reply when it lands.
+function botBbOpener(bot, other) {
+  const on = other.profile.username, act = botActivityPhrase(other);
+  const bank = [
+    `${on} — still ${act}? You'll wear a hole in the world.`,
+    `Oi, ${on}. Race you to the next level?`,
+    `${on}, you owe me a trout from last time. Don't think I've forgotten.`,
+    `Heard the Exchange is moving today, ${on}. Just saying.`,
+    `${on}! Tell them about the time you nearly beat Jad. Go on. The SHORT version.`,
+  ];
+  if (bot.def && bot.def.shady) bank.push(`${on}, have I got an opportunity for you. A genuine, no-strings, only-slightly-strings opportunity.`);
+  if (botRelation(bot.profile, on) <= BOT_GRUDGE) bank.push(`${on}. Still breathing, I see. Pity.`);
+  return talkPick(bank);
+}
+function botBbReply(bot, openerName) {
+  const bank = [
+    `Ha! ${openerName}, you wish.`,
+    `Says the one talking instead of training, ${openerName}.`,
+    `Put your gold where your mouth is, ${openerName}.`,
+    `Not now, ${openerName} — I'm in the zone. THE ZONE.`,
+    `You always say that, ${openerName}. Always.`,
+  ];
+  if (BOT_VOICE_LINES[bot.profile.username]) bank.push(...BOT_VOICE_LINES[bot.profile.username]);
+  return talkPick(bank);
+}
+// Deliver a bot line through the real chat path, retrying a
+// couple of times if the area just spoke (botSay's gap) — a reply
+// a player is waiting for shouldn't be eaten by the chatter gap.
+function botSaySoon(bot, text, tries = 2) {
+  if (botSay(bot, text)) return;
+  if (tries <= 0) return;
+  setTimeout(() => { try { botSaySoon(bot, text, tries - 1); } catch (e) { /* moved on */ } }, 2100 / BOT_TIME_SCALE);
+}
+// The free-talk drive, called from botThink beside the Stage 40
+// social drive: activity remarks anywhere (Stage 40's small talk
+// is plaza-only) and bot-to-bot exchanges. All voluntary lines
+// share the lastTalkAt clock so a bot's total chatter stays
+// bounded no matter which drive fires.
+function botFreeTalkDrive(bot) {
+  if (BOT_TALK_OFF || !botsReady) return;
+  const sess = bot.sess, now = Date.now();
+  if (botBusyForTalk(bot)) return;
+  // Activity remarks: any area, any working plan — a bot living
+  // its life out loud, on the shared talk clock.
+  if (now - bot.lastTalkAt >= BOT_TALK_EVERY_MS && bot.plan && (bot.plan.kind === 'train' || bot.plan.kind === 'gather')) {
+    if (botScore(bot, { sociability: 0.4 }) > 54) {
+      bot.lastTalkAt = now;
+      botSay(bot, botActivityLine(bot));
+      return;
+    }
+    bot.lastTalkAt = now - BOT_TALK_EVERY_MS + 60000 / BOT_TIME_SCALE; // recheck soon, not every tick
+  }
+  // Bot-to-bot: two bots near each other in the same area trade a
+  // line pair, on a long per-pair clock.
+  if (now - bot.lastTalkAt < 30000 / BOT_TIME_SCALE) return;
+  for (const other of bots.values()) {
+    if (other === bot || other.sess.area !== sess.area || botBusyForTalk(other)) continue;
+    if (Math.hypot(other.sess.x - sess.x, other.sess.y - sess.y) > 260) continue;
+    const pairKey = [bot.key, other.key].sort().join('|');
+    if (now - (bot.bbAt.get(pairKey) || 0) < BOT_BB_EVERY_MS) continue;
+    if (botScore(bot, { sociability: 0.45 }) < 58) { bot.bbAt.set(pairKey, now - BOT_BB_EVERY_MS + 90000 / BOT_TIME_SCALE); continue; }
+    bot.bbAt.set(pairKey, now);
+    other.bbAt.set(pairKey, now);
+    bot.lastTalkAt = now;
+    if (botSay(bot, botBbOpener(bot, other))) {
+      const replyBot = other, openerName = bot.profile.username;
+      setTimeout(() => {
+        try {
+          if (botsReady && !botBusyForTalk(replyBot)) { replyBot.lastTalkAt = Date.now(); botSaySoon(replyBot, botBbReply(replyBot, openerName), 1); }
+        } catch (e) { /* moved on */ }
+      }, botDelay(2200, 5200) / BOT_TIME_SCALE);
+    }
+    return;
+  }
+}
+// A bot's reaction when a duel it fought ends (win or lose) —
+// called from endDuel after settlement. Lines by
+// traits; friends and grudges colour them.
+function botDuelReact(botKey, won, oppName, stake) {
+  if (BOT_TALK_OFF || !botsReady) return;
+  const bot = bots.get(botKey);
+  if (!bot) return;
+  const rel = botRelation(bot.profile, oppName);
+  let bank;
+  if (won) {
+    bank = ['Gg. Earned every coin of that.', 'And THAT is how it\'s done.', 'Good fight. The gold softens it. For me.'];
+    if (botTrait(bot.profile, 'aggression') > 65) bank.push('Too easy. Who\'s next?', 'That\'s the difference between us. Remember it.');
+    if (rel >= FRIEND_THRESHOLD) bank.push(`Sorry, ${oppName} — business is business. First trout's on me.`);
+    if (bot.def && bot.def.shady) bank.push('Clean win. Totally clean. Why are you looking at me like that?');
+  } else {
+    bank = ['Gg. Ow. But gg.', 'Rematch. Not now — but rematch.', 'The dais giveth, the dais taketh away.'];
+    if (rel <= BOT_GRUDGE) bank.push(`You. ${oppName}. This isn't over.`);
+    if (botTrait(bot.profile, 'risk') > 65) bank.push('Worth the gamble. It\'s only gold.');
+    if (bot.def && bot.def.shady) bank.push('I meant to do that. Part of a larger plan. A secret plan.');
+  }
+  if (stake > 0 && Math.random() > 0.5) return; // staked losses/wins often pass quietly
+  const delay = botDelay(2000, 6000) / BOT_TIME_SCALE;
+  setTimeout(() => { try { if (!botBusyForTalk(bot)) botSaySoon(bot, talkPick(bank), 1); } catch (e) { /* moved on */ } }, delay);
+}
+// A bot's own level-up line (its gather lines already exist in
+// botGatherOnce; this covers combat/PvM XP through onLevelUp),
+// plus a nearby bot congratulating a HUMAN who just levelled.
+function botLevelReact(key, sess, skill, level) {
+  if (BOT_TALK_OFF || !botsReady) return;
+  const self = bots.get(key);
+  if (self) {
+    const line = talkPick([
+      `Level ${level} ${cap(skill)}! Took long enough.`,
+      `${cap(skill)} ${level}. Write it down, history.`,
+      `Ding! ${cap(skill)} level ${level}. Drinks are on… someone else.`,
+    ]);
+    setTimeout(() => { try { if (!botBusyForTalk(self)) botSaySoon(self, line, 1); } catch (e) { /* moved on */ } }, botDelay(1200, 3500) / BOT_TIME_SCALE);
+    return;
+  }
+  if (!sess || sess.bot) return;
+  // A human levelled: one nearby, sociable, unbusy bot may cheer.
+  if (Math.random() > 0.5) return;
+  const cands = [...bots.values()].filter((b) => b.sess.area === sess.area && !botBusyForTalk(b)
+    && Math.hypot(b.sess.x - sess.x, b.sess.y - sess.y) <= BOT_TALK_RANGE
+    && Date.now() - b.lastReplyAt >= BOT_REPLY_COOLDOWN_MS);
+  if (!cands.length) return;
+  const bot = botPickWeighted(cands[0], cands.map((b) => ({ value: b, weight: 5 + botTrait(b.profile, 'sociability') })));
+  if (botScore(bot, { sociability: 0.4 }) < 55) return;
+  bot.lastReplyAt = Date.now();
+  const name = sess.profile.username;
+  const line = talkPick([`Gz on ${level} ${cap(skill)}, ${name}!`, `${level} ${cap(skill)} — nice one, ${name}.`, `Look at ${name} go. ${cap(skill)} ${level}!`]);
+  setTimeout(() => { try { if (!botBusyForTalk(bot)) botSaySoon(bot, line, 1); } catch (e) { /* moved on */ } }, botDelay(1500, 4000) / BOT_TIME_SCALE);
+}
+
+// ---------- Part C: ask-and-learn ----------
+// Help-seeking patterns (public chat, whispers, keeper modal).
+const HELP_ASK_RE = /(what (do|should|can) i do|what'?s next|what now|how (do|can) i (make|earn|get|start|train|fish|mine)|make (money|gold)|earn (money|gold)|get (rich|gold|money)|where (do|can|should) i (train|go|start|fish|mine)|i'?m (new|lost|stuck)|im (new|lost|stuck)|need help|help me|any (tips|advice)|advice)/i;
+function isHelpAsk(text) {
+  const t = (text || '').trim().toLowerCase();
+  if (t === 'help' || t === 'help?' || t === '?') return true;
+  return HELP_ASK_RE.test(text || '');
+}
+function guideLvl(p, skill) { return levelForXp((p.xp && p.xp[skill]) || 0); }
+function guidePack(p, item) { return stackQty(p.backpack, item); }
+function guideWornHas(p, pred) { return Object.values(p.worn || {}).some((id) => id && pred(id)); }
+function guideHasPickaxe(p) {
+  return ['bronze_pickaxe', 'iron_pickaxe', 'steel_pickaxe', 'mithril_pickaxe', 'adamant_pickaxe', 'rune_pickaxe', 'dragon_pickaxe']
+    .some((id) => guidePack(p, id) > 0) || guideWornHas(p, (id) => id.endsWith('_pickaxe'));
+}
+const GUIDE_ORES = ['copper_ore', 'tin_ore', 'iron_ore', 'silver_ore', 'coal', 'gold_ore', 'mithril_ore', 'adamantite_ore', 'runite_ore'];
+const GUIDE_BARS = ['bronze_bar', 'iron_bar', 'steel_bar', 'silver_bar', 'mithril_bar', 'adamant_bar', 'rune_bar', 'bars'];
+function guideMeleeAvg(p) { return (guideLvl(p, 'attack') + guideLvl(p, 'strength') + guideLvl(p, 'defence')) / 3; }
+function guideBarrowsReady(p) { return ['attack', 'strength', 'defence', 'hitpoints'].every((s) => guideLvl(p, s) >= 40); }
+function guideBarrowsNear(p) { return ['attack', 'strength', 'defence', 'hitpoints'].every((s) => guideLvl(p, s) >= 30); }
+// The PATH TABLE: ordered journey steps. Each step says when it
+// APPLIES to an asker (when), when the asker has already OUTGROWN
+// it (done), the full answer (text) and a one-line version for
+// unsolicited tips (tip). Resource-in-hand steps come first —
+// holding the input is the strongest signal — then the beginner
+// money step, the skill climbs, duelling, and Barrows. Only
+// things that exist in the game today are ever recommended.
+// Later builds (Runecrafting quest, the town) extend this table.
+const GUIDE_STEPS = [
+  { id: 'bury_bones', domains: ['farm', 'prayer', 'combat'],
+    when: (p) => guidePack(p, 'animal_bones') > 0,
+    done: (p) => guideLvl(p, 'prayer') >= 3,
+    text: (n) => `Those bones in your pack, ${n}? Tap one and press Bury — that's free Prayer XP, and Prayer powers your Deflects when something's hitting you.`,
+    tip: 'bury those bones you\'re carrying — free Prayer XP for your Deflects.' },
+  { id: 'spin_wool', domains: ['farm', 'crafting'],
+    when: (p) => guidePack(p, 'wool') > 0,
+    done: (p) => guideLvl(p, 'crafting') >= 2 || guidePack(p, 'yarn') > 0,
+    text: (n) => `That wool's worth more spun, ${n}. Take it to the spinning wheel at Nally Farm, south-west of the plaza — wool in, ball of yarn out, Crafting XP every spin. Yarn strings amulets later.`,
+    tip: 'take that wool to the spinning wheel at the farm — yarn is worth more, and it\'s Crafting XP.' },
+  { id: 'smelt_smith', domains: ['mining', 'smithing'],
+    when: (p) => GUIDE_ORES.some((o) => guidePack(p, o) > 0),
+    done: (p) => guideLvl(p, 'smithing') >= 5,
+    text: (n, p) => guidePack(p, 'gold_ore') > 0
+      ? `Gold ore, ${n}? Smelt it at the Emberfall furnace into gold bars — bars sell big on the Exchange, and a gold bar plus a gem makes an amulet with Crafting.`
+      : `That ore wants a furnace, ${n}. Smelt it at Emberfall, north-east through the plaza's east gate, then work the bars on the anvil — Smithing XP and gear you made yourself.`,
+    tip: 'smelt that ore at the Emberfall furnace — bars are where the money is.' },
+  { id: 'craft_amulet', domains: ['crafting', 'farm'],
+    when: (p) => guidePack(p, 'yarn') > 0 || guidePack(p, 'bars') > 0 || GEM_TIERS.some((g) => guidePack(p, g) > 0),
+    done: (p) => guideLvl(p, 'crafting') >= 15,
+    text: (n) => `You're holding amulet parts, ${n}. Crafting turns a gold bar and a gem into an unstrung amulet, yarn strings it, and an Enchant spell from the spellbook finishes it — worn, it makes you hit harder.`,
+    tip: 'a gold bar, a gem and your yarn make an amulet — Crafting, then string it, then enchant it.' },
+  { id: 'first_coins', domains: [],
+    when: (p) => goldTotal(p) < 150,
+    done: (p) => goldTotal(p) >= 250,
+    text: (n) => `Short on gold, ${n}? Head east of the plaza to the Goblin Camp — goblins drop coins — and chop logs or pick seaweed at the Fishing Cove to sell at the plaza shops. A hundred gold stakes your first duel at Mod Ash.`,
+    tip: 'goblins east of the plaza drop gold, and logs and seaweed sell at the shops — that\'s your first coins.' },
+  { id: 'train_combat', domains: ['combat', 'duelling', 'attack', 'strength', 'defence', 'hitpoints'],
+    when: (p) => !guideBarrowsReady(p),
+    done: (p) => guideBarrowsReady(p),
+    text: (n) => `Train your combat, ${n}: the Training Cave dummies are safe XP, and the Beginner Barrows Training Grounds teach the Deflects step by step. Aim for Attack, Strength, Defence and Hitpoints around 40 — that's Barrows territory.`,
+    tip: 'train at the Training Cave and the Barrows Training Grounds — 40s in Attack, Strength, Defence and Hitpoints opens Barrows.' },
+  { id: 'fish_trout', domains: ['fishing', 'cooking'],
+    when: (p) => guideLvl(p, 'fishing') < 10,
+    done: (p) => guideLvl(p, 'fishing') >= 10,
+    text: (n) => `Try the Fishing Cove, west through the plaza gate, ${n}. The trout spots by the piers are level 1 — catch trout, cook them on a fire, and you've got food that heals for your fights.`,
+    tip: 'the trout spots by the cove piers are level 1 — catch and cook your own fight food.' },
+  { id: 'mine_basics', domains: ['mining', 'smithing'],
+    when: (p) => guideLvl(p, 'mining') < 15,
+    done: (p) => guideLvl(p, 'mining') >= 15,
+    text: (n, p) => guideHasPickaxe(p)
+      ? `Work the Emberfall Mine, ${n} — copper and tin first, iron at Mining 10. Smelt bars at the furnace, and watch for gems: they turn up in the rock now and then.`
+      : `You need a pickaxe to mine, ${n} — Pickaxe Pete at the Emberfall Mine, north-east of the plaza, sells a bronze one for 60g. Then copper and tin are all yours.`,
+    tip: 'Emberfall Mine, north-east — copper and tin first, and gems hide in the rock.' },
+  { id: 'try_ranged_magic', domains: ['ranged', 'magic', 'fletching'],
+    when: (p) => guideLvl(p, 'ranged') < 10 && guideLvl(p, 'magic') < 10,
+    done: (p) => guideLvl(p, 'ranged') >= 10 || guideLvl(p, 'magic') >= 10,
+    text: (n) => `Two more ways to fight, ${n}: the Ranger Camp north of the plaza for Ranged — Ranger Fern will set you straight — and the Wizard Grounds north-west for Magic. Spells burn runes; wizards drop them.`,
+    tip: 'Ranger Camp north for bows, Wizard Grounds north-west for spells — both beat standing still.' },
+  { id: 'stake_duel', domains: ['duelling'],
+    when: (p) => guideMeleeAvg(p) >= 15 && goldTotal(p) >= 60,
+    done: (p) => (p.wins || 0) >= 1,
+    text: (n) => `Ready to test yourself, ${n}? Inside a duel everyone's stats are levelled, so it's fair. Start with Mod Ash on the dais — 100g stake — or post a small bid on the Stake Board, south-west corner.`,
+    tip: 'duels level everyone\'s stats — Mod Ash on the dais takes a 100g stake when you\'re ready.' },
+  { id: 'barrows_ready', domains: ['combat'],
+    when: (p) => guideBarrowsNear(p) && !guideBarrowsReady(p) && (p.barrowsRuns || 0) < 1,
+    done: (p) => guideBarrowsReady(p) || (p.barrowsRuns || 0) >= 1,
+    text: (n) => `You're close to Barrows, ${n}. Push Attack, Strength, Defence and Hitpoints to about 40, stock food and prayer potions, and learn your Deflects at the Training Grounds — the brothers punish the wrong prayer.`,
+    tip: 'you\'re nearly Barrows-ready — 40s across your melee stats, food, prayer potions, Deflects practised.' },
+  { id: 'barrows_run', domains: ['combat'],
+    when: (p) => guideBarrowsReady(p) && (p.barrowsRuns || 0) < 1,
+    done: (p) => (p.barrowsRuns || 0) >= 1,
+    text: (n) => `You're Barrows-ready, ${n}. Six mounds, six brothers — search the sarcophagus to wake each one, match your Deflect to their style, and the tunnels hide the chest. Bring food and prayer potions.`,
+    tip: 'you\'re ready for Barrows itself — six brothers, matched Deflects, food and prayer potions.' },
+  { id: 'endgame', domains: [],
+    when: () => true,
+    done: () => false,
+    text: (n) => `You know the roads now, ${n}. The deep goals: the Fight Caves for the fire cape — nobody's beaten Jad yet — Barrows armour from the chest, and the hiscores board. The rest is style.`,
+    tip: 'the Fight Caves and the fire cape are the deep end — nobody has beaten Jad yet.' },
+];
+// Pick the asker's next step. Candidates = steps that apply and
+// aren't outgrown, in table order. If the front candidate is the
+// step this player was LAST given (profile.guide.step) and
+// another candidate exists, it rotates to the back — so asking
+// again moves forward to the next step instead of repeating,
+// while the highest-priority unfinished step still leads on a
+// fresh visit. A character's DOMAIN step wins when it is already
+// at the front of the asker's path (one of the first two
+// candidates) — a broke beginner asking the mining keeper still
+// gets the beginner money step, while a player holding ore gets
+// the smelting step from that same keeper.
+function guideStepFor(profile, domain) {
+  const cands = GUIDE_STEPS.filter((s) => s.when(profile) && !s.done(profile));
+  if (!cands.length) return GUIDE_STEPS[GUIDE_STEPS.length - 1];
+  let ordered = cands;
+  const lastId = profile.guide && profile.guide.step;
+  if (lastId && cands.length > 1 && cands[0].id === lastId) ordered = [...cands.slice(1), cands[0]];
+  if (domain) {
+    const dom = ordered.slice(0, 2).find((s) => (s.domains || []).includes(domain));
+    if (dom) return dom;
+  }
+  return ordered[0];
+}
+// The named characters who teach, with their spots and domains.
+// Positions are the figures' real spots (client keeper figures /
+// MOD_NPCS / the plaza stalls); the Tree Guardian is resolved
+// dynamically from the asker's own ally.
+const GUIDE_KEEPERS = [
+  { id: 'pete', name: 'Pickaxe Pete', area: 'mine', x: 1340, y: 590, domains: ['mining', 'smithing'], frame: 'Pete leans on his pick.' },
+  { id: 'wren', name: 'Fisher Wren', area: 'cove', x: 640, y: 570, domains: ['fishing', 'cooking'], frame: 'Wren checks her nets.' },
+  { id: 'fern', name: 'Ranger Fern', area: 'range', x: 500, y: 630, domains: ['ranged', 'fletching'], frame: 'Fern nocks an arrow, then lowers it.' },
+  { id: 'frost', name: 'Warden Frost', area: 'winter', x: 880, y: 660, domains: ['woodcutting', 'mining'], frame: 'Frost stamps the snow off his boots.' },
+  { id: 'bramble', name: 'Farmer Bramble', area: 'plaza', x: 620, y: 722, domains: ['farm', 'crafting'], frame: 'Bramble wipes his hands on his apron.' },
+  { id: 'wrenna', name: 'Farmer Wrenna', area: 'plaza', x: 660, y: 748, domains: ['farm', 'crafting'], frame: 'Wrenna straightens up from the rows.' },
+  { id: 'duelmaster', name: 'Duel Master', area: 'plaza', x: 1030, y: 506, domains: ['duelling'], frame: 'The Duel Master folds his arms.' },
+  { id: 'modash', name: 'Mod Ash', area: 'plaza', x: 680, y: 300, domains: ['duelling'], frame: 'Mod Ash taps his steel sword.' },
+  { id: 'modblair', name: 'Mod Blair', area: 'plaza', x: 800, y: 280, domains: ['duelling'], frame: 'Mod Blair nods toward the dais.' },
+  { id: 'modvega', name: 'Mod Vega', area: 'plaza', x: 920, y: 300, domains: ['duelling'], frame: 'Mod Vega grins like a fence post with secrets.' },
+  { id: 'shop_potion', name: 'Potion Stall Keeper', area: 'plaza', x: 340, y: 220, domains: ['supplies'], frame: 'The keeper rattles a crate of vials.' },
+  { id: 'shop_weapon', name: 'Weapon Stall Keeper', area: 'plaza', x: 1260, y: 220, domains: ['duelling', 'gear'], frame: 'The keeper polishes a blade.' },
+  { id: 'shop_armour', name: 'Armour Stall Keeper', area: 'plaza', x: 1260, y: 680, domains: ['gear'], frame: 'The keeper raps a platebody with one knuckle.' },
+  { id: 'shop_food', name: 'Food Stall Keeper', area: 'plaza', x: 340, y: 680, domains: ['cooking', 'supplies'], frame: 'The keeper fans the smell of fresh rations your way.' },
+];
+// Compose + record a guide answer for an asker from a character
+// ({ kind:'bot', bot } | { kind:'keeper', keeper } | { kind:'guardian' }).
+// Records profile.guide (the progression memory) and saves.
+function guideAnswerFor(askerKey, askerSess, source) {
+  const p = askerSess.profile;
+  ensureV2(p);
+  let domain = null, whoName = 'A local';
+  if (source.kind === 'bot') {
+    whoName = source.bot.profile.username;
+    const act = botActivityPhrase(source.bot);
+    const planSkill = source.bot.plan && source.bot.plan.skill;
+    if (planSkill) domain = planSkill;
+    else if (/fishing/i.test(act)) domain = 'fishing';
+    else if (/mining/i.test(act)) domain = 'mining';
+    else if (/duel/i.test(act)) domain = 'duelling';
+  } else if (source.kind === 'keeper') {
+    whoName = source.keeper.name;
+    domain = source.keeper.domains[0];
+  } else if (source.kind === 'guardian') {
+    whoName = 'Tree Guardian';
+    domain = 'gathering';
+  }
+  const step = guideStepFor(p, domain);
+  p.guide.step = step.id;
+  p.guide.asks = (p.guide.asks || 0) + 1;
+  p.guide.at = Date.now();
+  save(askerKey);
+  return { who: whoName, stepId: step.id, text: step.text(p.username, p) };
+}
+// A keeper speaks in public chat through the real chat path (the
+// Duel Master precedent): a chat line in the log for everyone.
+function keeperSay(name, text) {
+  broadcast({ type: 'chat', from: name, text });
+}
+// Who answers this asker, standing where they stand? The nearest
+// of: a bot in range, a keeper in range, the asker's own Tree
+// Guardian beside them. Null when nobody is near — ask a person,
+// not the wind.
+function guideSourceNear(askerKey, askerSess) {
+  let best = null;
+  const consider = (d, src) => { if (d <= BOT_TALK_RANGE && (!best || d < best.d)) best = { d, src }; };
+  for (const b of bots.values()) {
+    if (b.sess.area !== askerSess.area || botBusyForTalk(b)) continue;
+    consider(Math.hypot(b.sess.x - askerSess.x, b.sess.y - askerSess.y), { kind: 'bot', bot: b });
+  }
+  for (const k of GUIDE_KEEPERS) {
+    if (k.area !== askerSess.area) continue;
+    consider(Math.hypot(k.x - askerSess.x, k.y - askerSess.y), { kind: 'keeper', keeper: k });
+  }
+  const ally = allies.get(askerKey);
+  if (ally && ally.area === askerSess.area && ally.hp > 0) {
+    consider(Math.hypot(ally.x - askerSess.x, ally.y - askerSess.y), { kind: 'guardian' });
+  }
+  return best ? best.src : null;
+}
+// Public-chat hook (called from the chat handler after the
+// broadcast): help asks route to Part C; everything else may draw
+// ONE free-talk reply from a nearby bot.
+function onPlayerChat(key, sess, text) {
+  if (BOT_TALK_OFF || !botsReady || !sess || sess.bot) return;
+  const now = Date.now();
+  if (isHelpAsk(text)) {
+    if (now - (sess.lastGuideAskAt || 0) < GUIDE_ASK_COOLDOWN_MS) return;
+    sess.lastGuideAskAt = now;
+    const src = guideSourceNear(key, sess);
+    if (!src) return;
+    const ans = guideAnswerFor(key, sess, src);
+    if (src.kind === 'bot') {
+      const bot = src.bot;
+      bot.lastReplyAt = now;
+      setTimeout(() => { try { botSaySoon(bot, ans.text, 2); } catch (e) { /* moved on */ } }, botDelay(900, 2200) / BOT_TIME_SCALE);
+    } else {
+      setTimeout(() => { try { keeperSay(ans.who, ans.text); } catch (e) { /* moved on */ } }, 700);
+    }
+    return;
+  }
+  // Free-talk reply: name-mentioned bots first, then greeting /
+  // general chatter. Exactly one responder.
+  const lower = text.toLowerCase();
+  const cands = [];
+  for (const b of bots.values()) {
+    if (b.sess.area !== sess.area || botBusyForTalk(b)) continue;
+    if (Math.hypot(b.sess.x - sess.x, b.sess.y - sess.y) > BOT_TALK_RANGE) continue;
+    if (now - b.lastReplyAt < BOT_REPLY_COOLDOWN_MS) continue;
+    if (now - (b.replyAtBy.get(key) || 0) < BOT_REPLY_PLAYER_MS) continue;
+    const mentioned = lower.includes(b.profile.username.toLowerCase());
+    cands.push({ bot: b, mentioned, d: Math.hypot(b.sess.x - sess.x, b.sess.y - sess.y) });
+  }
+  if (!cands.length) return;
+  cands.sort((a, b2) => (b2.mentioned - a.mentioned) || (a.d - b2.d));
+  const chosen = cands[0];
+  const bot = chosen.bot;
+  // Sociability decides whether it answers at all; being named or
+  // greeted makes an answer much more likely.
+  const bar = chosen.mentioned ? 30 : (CHAT_GREETING_RE.test(text) ? 42 : 62);
+  if (botScore(bot, { sociability: 0.6 }) < bar) return;
+  bot.lastReplyAt = now;
+  bot.replyAtBy.set(key, now);
+  const speakerName = sess.profile.username;
+  const line = botReplyLine(bot, speakerName, text);
+  setTimeout(() => { try { if (!botBusyForTalk(bot)) botSaySoon(bot, line, 2); } catch (e) { /* moved on */ } }, botDelay(1300, 3400) / BOT_TIME_SCALE);
+}
+// Whisper hook (called from the whisper handler when the target
+// is a bot): help asks get the fitted path by whisper; other
+// whispers get an in-character whisper back, on a per-player
+// cooldown. A whisper is directed, so sociable bots nearly
+// always answer.
+function onPlayerWhisper(key, sess, targetKey, text) {
+  if (BOT_TALK_OFF || !botsReady || !sess || sess.bot) return;
+  const bot = bots.get(targetKey);
+  if (!bot || botBusyForTalk(bot)) return;
+  const now = Date.now();
+  const replyWhisper = (t) => send(sess.ws, { type: 'whisper', from: bot.profile.username, text: t });
+  if (isHelpAsk(text)) {
+    if (now - (sess.lastGuideAskAt || 0) < GUIDE_ASK_COOLDOWN_MS) return;
+    sess.lastGuideAskAt = now;
+    const ans = guideAnswerFor(key, sess, { kind: 'bot', bot });
+    setTimeout(() => { try { replyWhisper(ans.text); } catch (e) { /* moved on */ } }, botDelay(900, 2000) / BOT_TIME_SCALE);
+    return;
+  }
+  if (now - (bot.whisperAtBy.get(key) || 0) < BOT_WHISPER_COOLDOWN_MS) return;
+  if (botScore(bot, { sociability: 0.6 }) < 38) return;
+  bot.whisperAtBy.set(key, now);
+  bot.lastReplyAt = now;
+  const line = botReplyLine(bot, sess.profile.username, text);
+  setTimeout(() => { try { replyWhisper(line); } catch (e) { /* moved on */ } }, botDelay(1400, 3600) / BOT_TIME_SCALE);
+}
+// Unsolicited guidance — the ONLY thing the Guided path toggle
+// gates. A bot near a player whose Guided path is ON, whose next
+// step is still an early one, may offer that step as a tip, on a
+// long per-player clock. OFF players are never tipped; asking
+// always works regardless (see onPlayerChat / ask_guide).
+function botGuideTipDrive(bot) {
+  if (BOT_TALK_OFF || !botsReady) return;
+  const sess = bot.sess, now = Date.now();
+  if (botBusyForTalk(bot) || sess.area === 'arena') return;
+  for (const [k, p] of online) {
+    if (p.bot || p.area !== sess.area) continue;
+    if (Math.hypot(p.x - sess.x, p.y - sess.y) > GUIDE_TIP_RANGE) continue;
+    if (p.profile.guidedPath === false) continue; // the toggle, honoured
+    if (now - (bot.guideTipAt.get(k) || 0) < GUIDE_TIP_COOLDOWN_MS) continue;
+    // Readability: a bot that just greeted this player doesn't
+    // pile a tip on top of the greeting — one approach at a time.
+    if (now - (bot.greetedAt.get(k) || 0) < 240000 / BOT_TIME_SCALE) continue;
+    const step = guideStepFor(p.profile, null);
+    const idx = GUIDE_STEPS.indexOf(step);
+    if (idx < 0 || idx > 4) continue; // tips are for the early path only
+    if (botScore(bot, { sociability: 0.5 }) < 58) { bot.guideTipAt.set(k, now - GUIDE_TIP_COOLDOWN_MS + 120000 / BOT_TIME_SCALE); continue; }
+    bot.guideTipAt.set(k, now);
+    const line = `🧭 ${p.profile.username} — ${step.tip}`;
+    setTimeout(() => { try { if (!botBusyForTalk(bot)) botSaySoon(bot, line, 1); } catch (e) { /* moved on */ } }, botDelay(800, 2500) / BOT_TIME_SCALE);
+    return;
+  }
+}
+
 function botThink(bot) {
   const sess = bot.sess, now = Date.now();
   // In a duel: drive the fighter, nothing else.
@@ -12511,6 +13243,8 @@ function botThink(bot) {
   // anywhere — then the day job.
   if (sess.area === 'plaza') botPlazaHabits(bot);
   botSocialDrive(bot); // Stage 40: plaza greetings + small talk (self-gates on the plaza)
+  botFreeTalkDrive(bot); // NPC build: activity remarks + bot-to-bot banter
+  botGuideTipDrive(bot); // NPC build: unsolicited path tips (Guided path toggle gates this)
   botDealDrive(bot); // Stage 38: skill deals, in any safe area
   botPvmHabits(bot); // Stage 39: Barrows / Fight Caves attempt decisions, made wherever the bot is standing
   botCityHabits(bot); // Stage 40: city building + City Idea work, decided wherever the bot is standing
