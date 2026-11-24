@@ -202,7 +202,7 @@
  input,select{background:#171310;color:#e8d9b0;border:1px solid #7a6748;border-radius:6px;padding:7px;font-size:14px}
  input[type=number]{width:76px}
  /* joystick */
- #joy{position:fixed;left:18px;bottom:100px;width:112px;height:112px;border-radius:50%;background:rgba(23,19,16,.55);border:2px solid rgba(201,162,39,.85);z-index:30;touch-action:none;opacity:var(--uia)} /* Stage 45: bottom 86 -> 100 — the rim sat 6px under every fight strip (the strips' slot starts at bottom:92) */
+ #joy{position:fixed;left:18px;bottom:100px;width:112px;height:112px;border-radius:50%;background:rgba(23,19,16,.55);border:2px solid rgba(201,162,39,.85);z-index:30;touch-action:none;opacity:var(--uia)} /* Stage 46: bottom 86 -> 100 — the rim sat 6px under every fight strip (the strips' slot starts at bottom:92) */
  #knob{position:absolute;left:50%;top:50%;width:50px;height:50px;border-radius:50%;background:rgba(201,162,39,.75);border:2px solid #7a6748;transform:translate(-50%,-50%)}
  #camstick{position:fixed;right:16px;bottom:196px;width:104px;height:104px;border-radius:50%;background:rgba(23,19,16,.55);border:2px solid rgba(201,162,39,.8);z-index:30;touch-action:none;opacity:var(--uia)}
  #camknob{position:absolute;left:50%;top:50%;width:46px;height:46px;border-radius:50%;background:rgba(176,141,79,.75);border:2px solid #6e5a3e;transform:translate(-50%,-50%)}
@@ -268,7 +268,7 @@
     name + bar + number for you and your opponent, OSRS-video
     style. Presentation only: the overhead bars stay, the fight
     strip stays; this is a readout, not a panel (clear-screen rule). */
- #dueltop{position:fixed;top:calc(40px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:14;display:none;gap:10px;align-items:stretch;pointer-events:none;font-family:inherit} /* Stage 45: top 6 -> 40 — the bars sat UNDER the top bar (on a phone, whose top bar wraps two rows tall, they were hidden completely) */
+ #dueltop{position:fixed;top:calc(40px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:14;display:none;gap:10px;align-items:stretch;pointer-events:none;font-family:inherit} /* Stage 46: top 6 -> 40 — the bars sat UNDER the top bar (on a phone, whose top bar wraps two rows tall, they were hidden completely) */
  #dueltop.open{display:flex}
  .dtside{width:158px;background:rgba(24,18,10,.82);border:1px solid #c9a227;border-radius:8px;padding:4px 7px 6px;box-shadow:inset 0 1px 0 rgba(255,255,255,.14)}
  .dtname{font-size:11px;font-weight:800;color:#ffe9a8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
@@ -503,7 +503,7 @@
  .appseg{padding:7px 14px;border-radius:9px;border:2px solid #7a6748;background:rgba(43,33,24,.12);color:#2b2118;font-weight:700;cursor:pointer}
  .appseg.sel{background:linear-gradient(180deg,#8e2f32,#5d1d20);color:#ffe9a8;border-color:#c9a227}
  .appseg.dis{opacity:.4;pointer-events:none}
- /* ============ Stage 45: the no-overlap pass (Derek, 2026-11-23:
+ /* ============ Stage 46: the no-overlap pass (Derek, 2026-11-23:
     "make the interface easier to use so nothing is over lapping")
     Layout only — no control is removed, nothing changes what
     anything does. Every position below was measured at 390x844 in
@@ -541,7 +541,7 @@
    /* Duel HP bars: under the top bar in the free left band, narrow
       enough to clear the minimap beside them. */
    #dueltop{left:2px;transform:none}
-   #dueltop .dtside{width:86px}
+   #dueltop .dtside{width:82px}
    #dueltop .dtname{font-size:9.5px}
  }
  @media (max-width:700px){
@@ -561,31 +561,34 @@
    #connbar{left:8px;transform:none;max-width:188px}
    /* Area bars: narrowed to clear the minimap they used to cover
       (the stake-wait bar covered it entirely). The Barrows bar
-      scrolls internally past 268px, and while it is open the dock
-      drops below it instead of sliding underneath. */
+      scrolls internally past 268px. */
    #barrowsbar{width:min(320px,calc(100vw - 202px));max-height:268px;overflow-y:auto}
    #stakewaitbar{left:8px;right:auto;width:min(320px,calc(100vw - 202px))}
-   body:has(#barrowsbar.open) #paneldock{top:320px}
+   /* The stat orbs shrink, so the whole map block starts at x=202
+      and the left stack (area bars, toast, use-chip, duel bars)
+      clears it entirely instead of clipping its left edge. */
+   .orb{width:42px;height:42px}
+   #orbs{gap:4px}
    /* Quick buttons + status chips: out from under the chat and
       the camera stick, into the free left column above the
       joystick. The chips cap at 118px wide (their text wraps) so
       they end before the camera stick starts (x=270). */
    #quickbar{left:18px;bottom:284px}
-   #followchip{bottom:348px;max-width:118px;flex-wrap:wrap}
+   #followchip{bottom:212px;max-width:118px;flex-wrap:wrap}
    #wildchip{bottom:414px;max-width:118px}
    /* Prompt lines: above the strip as before but higher, narrower
       and shifted right, off the joystick they used to clip. */
-   #promptchip,#promptline{bottom:calc(140px + env(safe-area-inset-bottom,0px));max-width:200px;white-space:normal;text-align:center;transform:translateX(calc(-50% + 42px))}
-   #promptchip.open + #promptline{bottom:calc(182px + env(safe-area-inset-bottom,0px))}
+   #promptchip,#promptline{bottom:calc(140px + env(safe-area-inset-bottom,0px));max-width:120px;white-space:normal;text-align:center;transform:translateX(calc(-50% + 8px))}
+   #promptchip.open + #promptline{bottom:calc(216px + env(safe-area-inset-bottom,0px))}
    /* The dock stops higher on a phone, so even a fully-open tab
       grid or panel never reaches the camera stick, the chips or
       the quick buttons; the tab grid scrolls inside the cap, and
       with a panel open it steps aside (the panel header's own
       "‹ Tabs" button brings it back). */
-   #paneldock{max-height:calc(100dvh - 190px - 316px - env(safe-area-inset-bottom,0px))}
+   #paneldock{max-height:calc(100dvh - 190px - 346px - env(safe-area-inset-bottom,0px))}
    #docktabs{min-height:0;overflow-y:auto}
    #paneldock.panelopen #docktabs{display:none}
-   #dockbody{max-height:calc(100dvh - 190px - 316px - 118px)}
+   #dockbody{max-height:calc(100dvh - 190px - 346px - 130px)}
  }
 </style></head><body>
 <div id="scene"></div>
@@ -4457,7 +4460,7 @@ function buildWeaponInto(a,id){
    Guarded like every other scale in this file: the headless gear
    test's THREE stub has no scale on its objects. */
  if(wg.scale){ const ws2=(d0&&d0.twoHanded)? 1.35*1.18 : 1.35; wg.scale.set(ws2,ws2,ws2); }
- /* Stage 45 (Derek, 2026-11-23: "holding the sword at the end"):
+ /* Stage 46 (Derek, 2026-11-23: "holding the sword at the end"):
    every melee weapon is now held BY THE END of its grip — the fist
    (the group origin) closes on the very bottom of the handle, with
    only a small pommel cap below the hand; the guard sits on top of
@@ -4549,11 +4552,11 @@ function buildWeaponInto(a,id){
    const orbC=STAFF_ORBS[id]||c;
    wg.traverse(o=>{ if(o.isMesh&&o.material&&o.material.isMeshLambertMaterial){ const hx=hexOf(o.material); if(hx===orbC||hx===c) o.material=crystalMat(hx); } });
  }
- // Stage 45: applySwing's overhead chop adds a wrist snap on the
+ // Stage 46: applySwing's overhead chop adds a wrist snap on the
  // weapon group itself, so it needs the live group + the rotation
  // it was built with (two-handers carry a base tilt). syncGear
  // clears this whenever the anchors are rebuilt.
- a.weaponGroup=wg; wg.userData.baseRotX=wg.rotation.x;
+ a.weaponGroup=wg; wg.userData=wg.userData||{}; wg.userData.baseRotX=wg.rotation.x;
 }
 function syncGear(a,p){
  if(!a.gearAnchors) return;
@@ -4563,7 +4566,7 @@ function syncGear(a,p){
  a.gearSig=sig;
  const A=a.gearAnchors;
  for(const k of Object.keys(A)){ while(A[k].children.length) A[k].remove(A[k].children[0]); }
- a.weaponGroup=null; // Stage 45: the old weapon group was just removed with the anchor's children; buildWeaponInto re-registers the new one below
+ a.weaponGroup=null; // Stage 46: the old weapon group was just removed with the anchor's children; buildWeaponInto re-registers the new one below
  const mat=c=>new THREE.MeshLambertMaterial({color:c});
  // (bxM mirrors boxM locally: test/gear.js extracts syncGear without boxM in scope.)
  const bxM=(w,h,d,mm,x,y,z,parent)=>{ const ms=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mm); ms.position.set(x,y,z); if(parent) parent.add(ms); return ms; };
@@ -6551,7 +6554,7 @@ function applyDeathFall(a,now){
  }
  a.pivot.rotation.x=ang;
 }
-/* Swing pose. Stage 45 (Derek, 2026-11-23: "swings it over head"):
+/* Swing pose. Stage 46 (Derek, 2026-11-23: "swings it over head"):
    on a jointed knight the melee swing is an OVERHEAD chop in three
    beats — (1) wind-up: the shoulder sweeps the arm up while the
    elbow folds the forearm back, cocking the weapon up and back
@@ -6569,7 +6572,7 @@ function applyDeathFall(a,now){
 function applySwing(a,now){
  if(!a||!a.swingStart) return;
  const t=(now-a.swingStart)/320;
- if(t>=1){ a.swingStart=0; if(a.armR){ a.armR.rotation.x=0; const l0=a.armR.userData?a.armR.userData.lower:null; if(l0) l0.rotation.x=0; } else if(a.group) a.group.rotation.x=0; if(a.weaponGroup) a.weaponGroup.rotation.x=a.weaponGroup.userData.baseRotX||0; return; }
+ if(t>=1){ a.swingStart=0; if(a.armR){ a.armR.rotation.x=0; const l0=a.armR.userData?a.armR.userData.lower:null; if(l0) l0.rotation.x=0; } else if(a.group) a.group.rotation.x=0; if(a.weaponGroup) a.weaponGroup.rotation.x=(a.weaponGroup.userData&&a.weaponGroup.userData.baseRotX)||0; return; }
  const lowR=a.armR&&a.armR.userData?a.armR.userData.lower:null;
  if(a.armR&&lowR){
    let sh, el, wr=0;
@@ -6577,7 +6580,7 @@ function applySwing(a,now){
    else if(t<0.60){ const p=(t-0.375)/0.225, e=p*p; sh=-2.30+1.50*e; el=1.80+0.15*e; wr=-0.35+1.50*e; } // the chop whips down in front
    else { const p=(t-0.60)/0.40, e=p*p*(3-2*p); sh=-0.80*(1-e); el=1.95*(1-e); wr=1.15*(1-e); } // recovery
    a.armR.rotation.x=sh; lowR.rotation.x=el;
-   if(a.weaponGroup) a.weaponGroup.rotation.x=(a.weaponGroup.userData.baseRotX||0)+wr;
+   if(a.weaponGroup) a.weaponGroup.rotation.x=((a.weaponGroup.userData&&a.weaponGroup.userData.baseRotX)||0)+wr;
    return;
  }
  const ang= t<0.375 ? -2.05*(t/0.375) : -2.05*(1-(t-0.375)/0.625);
