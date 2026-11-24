@@ -1110,7 +1110,7 @@ function applySettings(){
  document.documentElement.style.setProperty('--uia',settings.uiAlpha);
  applyRailVisibility();
 }
-window.toggleRail=function(){ railOpen=!railOpen; try{ localStorage.setItem('nallystake_rail_open',railOpen?'1':'0'); }catch(e){} applyRailVisibility(); };
+window.toggleRail=function(){ railOpen=!railOpen; try{ localStorage.setItem('nallystake_rail_open',railOpen?'1':'0'); }catch(e){} applyRailVisibility(); if(!railOpen&&grabMode) setGrabMode(false); /* Layout follow-up (2026-11-24): closing the Menu is the lock — it also exits Grab, so placed buttons are locked AND tappable, never left paused. */ };
 $('gearbtn').onclick=()=>toggleRail();
 $('helpbtn').onclick=()=>togglePanel('help'); // Polish build: ❓ Help — always findable beside the Menu toggle
 window.setCamSpeed=function(v){ settings.camSpeed=clamp(parseFloat(v)||1.5,0.25,3); const el=$('camspeedval'); if(el) el.textContent=settings.camSpeed+'×'; saveSettings(); };
