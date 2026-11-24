@@ -853,10 +853,11 @@ const SETTINGS_KEY='nallystake_settings_v1';
    the saved setting. */
 const CAM_PITCH_MIN=0.25, CAM_PITCH_MAX=1.35;
 const CAM_PITCH_LEVEL=0.92; // Stage 37: the pitch that means a level gaze in first person (the saved default)
-let settings={camSpeed:1.5,camPitch:0.92,groundTap:'walk',tapMode:'normal',camPov:'third',uiAlpha:0.78,run:true,hidden:{},soundOn:true,shakeOn:true,iface:'B'};
+let settings={camSpeed:1.5,camPitch:0.92,groundTap:'walk',tapMode:'normal',camPov:'third',uiAlpha:0.78,run:true,hidden:{},soundOn:true,shakeOn:true,iface:'B',guided:true};
 try{ const s=JSON.parse(localStorage.getItem(SETTINGS_KEY)||'null'); if(s&&typeof s==='object') settings=Object.assign(settings,s); }catch(e){}
 if(typeof settings.camSpeed!=='number') settings.camSpeed=1.5;
 if(typeof settings.soundOn!=='boolean') settings.soundOn=true; // Stage 37b: fight sounds (app parity), on unless turned off
+if(typeof settings.guided!=='boolean') settings.guided=true; // NPC build: Guided path toggle — default ON for every player (Derek, confirmed 2026-11-23); OFF stops only UNSOLICITED guidance
 if(typeof settings.shakeOn!=='boolean') settings.shakeOn=true; // Stage 37b: camera shake on a heavy hit taken, on unless turned off
 /* Stage 18 migration: tapMode used to hold the GROUND tap mode
    ('walk' / 'face'). That preference now lives in groundTap, and
@@ -973,6 +974,13 @@ window.setCamPov=function(v){ settings.camPov=(v==='first'||v==='shoulder')? v :
    this same settings object wins. The swap is presentation only —
    applyIfaceMode just flips a body class. */
 window.setIfaceMode=function(v){ settings.iface=(v==='A')?'A':'B'; saveSettings(); applyIfaceMode(); if(dockPanel==='settings') renderDock(); };
+/* NPC build: the Guided path toggle. Stored in this settings
+   object; the server needs the flag for bot behaviour, so it is
+   pushed at login (welcome handler) and on every change via
+   {type:'set_guided'}. OFF = bots/keepers never volunteer path
+   advice; asking a character or the ❓ Help button still answers. */
+window.setGuidedPath=function(v){ settings.guided=!!v; saveSettings(); pushGuidedSetting(); if(dockPanel==='settings') renderDock(); };
+function pushGuidedSetting(){ send({type:'set_guided',on:settings.guided!==false}); }
 function applyIfaceMode(){ document.body.classList.toggle('ifaceB',settings.iface!=='A'); }
 /* Stage 37b: fight-feel toggles, same setter shape as the camera
    ones — persisted in the settings store, panel re-renders in sync. */
@@ -1258,7 +1266,7 @@ function onMsg(m){
  // Week 2 (D11): a welcome is a fresh server session — it never has
  // a live fight, so any local fight state is stale (see
  // clearLocalFightState) and is dropped before anything renders.
- if(m.type==='welcome'){ welcomed=true; quickAttempt=false; wasInGame=true; const wasReconnect=reconnecting; stopReconnect(); reconnectMs=1000; clearLocalFightState(); if(wasReconnect){ toast('✅ Reconnected.'); logLine('✅ Reconnected.'); } if(railFirstRun&&!navHintDone){ navHintDone=true; railFirstRun=false; try{ localStorage.setItem('nallystake_rail_open','1'); }catch(e){} logLine('👋 New here? Everything lives in the dock, top right — the 🎛️ Menu button shows or hides the panel tabs (🎒 Backpack, 🌀 Teleport, 📊 Skills and more).'); } flushChatOutbox(); me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); maybeShowActivityPicker(); }
+ if(m.type==='welcome'){ welcomed=true; quickAttempt=false; wasInGame=true; const wasReconnect=reconnecting; stopReconnect(); reconnectMs=1000; clearLocalFightState(); if(wasReconnect){ toast('✅ Reconnected.'); logLine('✅ Reconnected.'); } if(railFirstRun&&!navHintDone){ navHintDone=true; railFirstRun=false; try{ localStorage.setItem('nallystake_rail_open','1'); }catch(e){} logLine('👋 New here? Everything lives in the dock, top right — the 🎛️ Menu button shows or hides the panel tabs (🎒 Backpack, 🌀 Teleport, 📊 Skills and more).'); } flushChatOutbox(); pushGuidedSetting(); me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); maybeShowActivityPicker(); }
  if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(Array.isArray(m.spells)) spellList=m.spells; if(dockPanel==='shop') renderDock(); renderQuickButtons(); renderSpellBtns(); for(const av of Object.values(avatars)) av.gearSig=null; }
  if(m.type==='exchange_prices'){ goods={}; for(const g of (m.goods||[])) goods[g.id]=g; if(dockPanel==='exchange') renderDock(); drawMinimap(); }
  if(m.type==='state'){ onStateMsg(m); }
@@ -1347,6 +1355,7 @@ function onMsg(m){
  if(m.type==='fight_offer'){ openFightOffer(m); }
  if(m.type==='cert_request'){ openCertRequest(m); }
  if(m.type==='whisper'){ if(m.to) logLine(`💬 you → ${m.to}: ${m.text}`); else { logLine(`💬 ${m.from} → you: ${m.text}`); bumpUnread(); } }
+ if(m.type==='guide_answer'){ showGuideAnswer(m); }
  if(m.type==='examine'){ openExamine(m); }
  if(m.type==='party_invite'){ openPartyInvite(m); }
  if(m.type==='party'){ myParty=m.members||[]; if(dockPanel==='players') renderDock(); }
@@ -1570,6 +1579,7 @@ const NALLY_SIGN_POS={x:855,y:510}; // Polish build: the Derek Nally sign, a few
 let stakeSparkles=[]; // sign sparkle meshes, pulsed in animate()
 let fishSparkles=[]; // Feel-fixes: fishing-spot shimmer sparkles, pulsed in animate() like the Stake Board's
 let fishRipples=[]; // Fishfix: expanding ripple rings on ACTIVE fishing spots, pulsed in animate(); rebuilt with the node props like fishSparkles
+let snowFall=null; // Stage 44: Frostfall's drifting snow points {pts,pos,speed,phase,count}, advanced in animate() only while the winter area is on screen
 let stakeBoard={offers:[]}; // latest stake_board payload
 let stakeMatch=null; // {matchId,opponent,stake,pot,readyMine,readyOpponent} while matched
 let renderer, scene, camera, raycaster, sunLight=null;
@@ -1894,7 +1904,18 @@ window.openFarmer=function(name){
  $('keepersheet').innerHTML=`<h3>${icon} ${esc(name)}</h3>
  <p style="margin-bottom:8px">“${line}”</p>
  <p class="note" style="margin-bottom:8px">🔍 Examine: ${exam}</p>
- <div class="btns"><button class="act" onclick="openFarmer('${name}')">💬 Talk more</button><button class="ghost" onclick="closeModal('keepermodal')">Close</button></div>`;
+ <div class="btns"><button class="act" onclick="openFarmer('${name}')">💬 Talk more</button><button class="act" onclick="askKeeper('${name==='Farmer Wrenna'?'wrenna':'bramble'}')">🙋 Ask what to do</button><button class="ghost" onclick="closeModal('keepermodal')">Close</button></div>`;
+ $('keepermodal').classList.add('open');
+};
+/* NPC build: the keeper modal's Ask button — the server fits the
+   answer to YOUR levels/gold/backpack (ask-and-learn) and the
+   reply lands back in this sheet via showGuideAnswer. */
+window.askKeeper=function(who){ send({type:'ask_guide',who}); };
+window.showGuideAnswer=function(m){
+ if(!m.name){ toast(m.text||'Step a little closer and ask again.'); return; }
+ $('keepersheet').innerHTML=`<h3>🙋 ${esc(m.name)}</h3>
+ <p style="margin-bottom:8px">“${esc(m.text)}”</p>
+ <div class="btns"><button class="act" onclick="askKeeper('${m.who}')">🙋 Ask again — next step</button><button class="ghost" onclick="closeModal('keepermodal')">Close</button></div>`;
  $('keepermodal').classList.add('open');
 };
 function buildFarm(S){
@@ -2278,6 +2299,7 @@ function buildPlaza(root){
  buildGateway(scene,80,0,Math.PI/2,'👺 GOBLIN CAMP',{banner:'#77683f'});
  buildGateway(scene,-80,0,Math.PI/2,'🎣 FISHING COVE',{banner:'#2e6db0'});
  buildGateway(scene,0,45,0,'⚰️ BARROWS',{banner:'#4a5548',color:'#b9d9a8'});
+ buildGateway(scene,-48,45,0,'❄️ FROSTFALL',{banner:'#7ec8ff',color:'#dff2ff'}); // Stage 44: the Winter World's gate, south wall west stretch
  buildGateway(scene,78,40.5,Math.PI/4,'🏋️ TRAINING CAVE',{banner:'#55565e'});
  buildGateway(scene,-78,40.5,-Math.PI/4,'🌲 GATHERING CAVE',{banner:'#3a5230'});
  buildGateway(scene,49,-45,0,'💀 THE WILDERNESS',{dark:true,color:'#ff8a7a'});
@@ -2294,6 +2316,7 @@ function buildPlaza(root){
  pathStrip(scene,-14,-16,14,-16,2.6); // the mod NPC row (Stage 22)
  pathStrip(scene,-6,6,-60,31,3); // -> the Stake Board sign
  pathStrip(scene,-60,31,-77,42,2.6); // Stake Board -> Gathering Cave corner
+ pathStrip(scene,-16,14,-48,43,3); // Stage 44: -> the Frostfall gate (south wall, west stretch)
  pathStrip(scene,-44,-21,-48,-43,3); // Potion shop -> Ranger Camp gate stretch
  pathStrip(scene,-48,-43,-77,-43,2.6); // along the north wall -> Wizard Grounds corner
  pathStrip(scene,44,-21,77,-41,3); // Weapon shop -> Emberfall Mine corner
@@ -3454,6 +3477,129 @@ function makeBrother(m){
  return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
    x:sx2w(anchor.x),z:sy2w(anchor.y),tx:sx2w(anchor.x),tz:sy2w(anchor.y),hp:100,maxHp:100,isBrother:true,swingStart:0,splatY:2.9};
 }
+/* Stage 44: FROSTFALL — the Winter World (Derek's multi-world
+   brainstorm, 2026-11-23; the first themed world). Snow ground
+   with a packed-snow path, cold blue light inside the area group
+   (the Fishing Cove hemisphere-light pattern), falling snow that
+   DRIFTS sideways on a gusting wind (advanced in animate()),
+   snow-dusted pines and rocks, a frozen pond, a snow-capped
+   cabin, and Warden Frost at the gate. Gathering runs on the
+   server's normal nodes (frost pines / snowy oak / ice-crusted
+   rocks); the client frosts their props in makeNodeProp. */
+function buildWinterWorld(root){
+ const S=root;
+ // snow-covered ground (pale noise, the Stage 42 texture helpers)
+ const snow=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:noiseTexture('#dde8f1',['#cddce9','#eef5fb','#c2d3e2'],16,10)}));
+ snow.rotation.x=-Math.PI/2; snow.receiveShadow=true; S.add(snow);
+ // cold blue light, local to this group (invisible groups' lights
+ // are skipped, so the plaza keeps its warm sun)
+ S.add(new THREE.HemisphereLight(0xd8e9ff,0x8ea6c4,0.55));
+ S.add(new THREE.AmbientLight(0xaec6e8,0.22));
+ // packed-snow paths: paler, harder-trodden strips (the plaza's
+ // pathStrip pattern, in snow colours) — gate to the middle, then
+ // west to the cabin and east to the frozen pond
+ function snowPath(x1,z1,x2,z2,w){
+   const len=Math.hypot(x2-x1,z2-z1); if(len<0.5) return;
+   const m=new THREE.Mesh(new THREE.BoxGeometry(w||3.2,0.06,len),new THREE.MeshLambertMaterial({map:noiseTexture('#c3d4e4',['#b4c8da','#d2e0ec','#a9bfd4'],1,Math.max(1,Math.round(len/7)))}));
+   m.position.set((x1+x2)/2,0.05+(pathLift++)*0.0016,(z1+z2)/2);
+   m.rotation.y=Math.atan2(x2-x1,z2-z1); m.receiveShadow=true; S.add(m);
+ }
+ snowPath(0,44,0,8,3.6); // the gate road
+ snowPath(0,8,-38,-10,3); // west fork: to the cabin
+ snowPath(0,8,26,-12,3); // east fork: to the pond rim
+ // the perimeter fence, with the gap at the south gate
+ const fenceMat=0x6e5a40;
+ function fenceRun(x1,z1,x2,z2){
+   const len=Math.hypot(x2-x1,z2-z1), n=Math.max(2,Math.round(len/1.6));
+   for(let i=0;i<=n;i++){ const t=i/n; box(0.15,1.05,0.15,fenceMat,x1+(x2-x1)*t,0.52,z1+(z2-z1)*t,S); }
+   const midx=(x1+x2)/2, midz=(z1+z2)/2, ang=Math.atan2(x2-x1,z2-z1);
+   const rail=box(0.07,0.11,len,fenceMat,midx,0.82,midz,S); rail.rotation.y=ang;
+   const rail2=box(0.07,0.11,len,fenceMat,midx,0.42,midz,S); rail2.rotation.y=ang;
+ }
+ fenceRun(-80,-45,80,-45); fenceRun(-80,45,-5.5,45); fenceRun(5.5,45,80,45);
+ fenceRun(-80,-45,-80,45); fenceRun(80,-45,80,45);
+ // the south gate (the gate-post pattern) + the big dressed gateway
+ for(const gx of [-5.2,5.2]) box(0.5,3.4,0.5,0x8d99a8,gx,1.7,45,S);
+ box(11.4,0.5,0.6,0xd4af37,0,3.55,45,S);
+ buildGateway(S,0,45,0,'❄️ FROSTFALL',{banner:'#7ec8ff',color:'#dff2ff'});
+ // the entrance sign
+ box(0.14,1.7,0.14,0x5a4632,6.8,0.85,40.5,S);
+ const sgn=textSprite('❄️ Frostfall','#eaf6ff','rgba(18,28,44,0.88)'); sgn.position.set(6.8,2.1,40.5); S.add(sgn);
+ // snow-dusted pines: dark tiers with a white cap (decorative —
+ // the choppable frost pines are server nodes, frosted in
+ // makeNodeProp)
+ function snowPine(x,z,s){
+   s=s||1; const g=new THREE.Group(); g.position.set(x,0,z); g.rotation.y=(x*7+z*13)%3; S.add(g);
+   const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.16*s,0.24*s,1.5*s,8),new THREE.MeshLambertMaterial({map:woodTexture('#4c3420')})); trunk.position.y=0.75*s; g.add(trunk);
+   const c1=new THREE.Mesh(new THREE.ConeGeometry(1.8*s,3.4*s,7),foliageMat('#2e4f3a',['#274430','#3a5f47','#223c2c'])); c1.position.y=3.0*s; g.add(c1);
+   const c2=new THREE.Mesh(new THREE.ConeGeometry(1.2*s,2.3*s,7),foliageMat('#35593f',['#2c4c35','#40684b','#274430'])); c2.position.y=4.5*s; g.add(c2);
+   const cap=new THREE.Mesh(new THREE.ConeGeometry(0.85*s,1.5*s,7),new THREE.MeshLambertMaterial({color:0xf2f7fc})); cap.position.y=5.6*s; g.add(cap);
+   const dust=new THREE.Mesh(new THREE.ConeGeometry(1.86*s,1.1*s,7),new THREE.MeshLambertMaterial({color:0xe8f1f8,transparent:true,opacity:0.55})); dust.position.y=3.9*s; g.add(dust);
+   shadowify(g);
+ }
+ for(const [tx,tz,ts] of [[-62,-30,1.1],[-24,-38,1],[16,-40,1.2],[62,-34,1],[70,6,0.9],[-70,12,1.05],[-58,30,1],[32,38,1.1],[56,32,0.95],[-14,24,0.9],[68,-16,1.15],[-34,-32,0.85],[8,-34,1],[24,20,0.8],[-64,-14,0.9]]) snowPine(tx,tz,ts);
+ // snow-dusted rocks (rockMat + a white cap)
+ function snowRock(x,z,s){
+   s=s||1; const g=new THREE.Group(); g.position.set(x,0,z); S.add(g);
+   const rk=new THREE.Mesh(new THREE.DodecahedronGeometry(0.75*s),rockMat()); rk.position.y=0.42*s; g.add(rk);
+   const cap=new THREE.Mesh(new THREE.SphereGeometry(0.55*s,10,6),new THREE.MeshLambertMaterial({color:0xf2f7fc})); cap.scale.y=0.38; cap.position.y=0.95*s; g.add(cap);
+   shadowify(g);
+ }
+ snowRock(-20,32,1); snowRock(22,28,0.8); snowRock(66,-24,1.2); snowRock(-66,-6,0.9); snowRock(-8,-18,0.7);
+ // the frozen pond (north-east): a snow rim under pale ice, with
+ // lighter skate streaks frozen into the surface
+ const rim=new THREE.Mesh(new THREE.CircleGeometry(17,28),new THREE.MeshLambertMaterial({color:0xf4f9fd})); rim.rotation.x=-Math.PI/2; rim.scale.set(1,0.62,1); rim.position.set(40,0.03,-17); S.add(rim);
+ const ice=new THREE.Mesh(new THREE.CircleGeometry(15.8,28),new THREE.MeshLambertMaterial({map:noiseTexture('#a9cdea',['#9dbede','#bcd7f2','#8fb4d8'],6,4)})); ice.rotation.x=-Math.PI/2; ice.scale.set(1,0.62,1); ice.position.set(40,0.055,-17); ice.receiveShadow=true; S.add(ice);
+ for(const [ox,oz,ow] of [[-5,-1,7],[4,2.5,9],[0,-4,5]]){
+   const streak=new THREE.Mesh(new THREE.CircleGeometry(ow/2,16),new THREE.MeshLambertMaterial({color:0xd9ecfa,transparent:true,opacity:0.5}));
+   streak.rotation.x=-Math.PI/2; streak.scale.set(1,0.22,1); streak.position.set(40+ox,0.07,-17+oz); S.add(streak);
+ }
+ snowRock(27,-27,0.8); snowRock(53,-7,0.9);
+ // the cabin (north-west): the plaza house builder, stone walls,
+ // with a thick snow slab over its roof and a smoking chimney
+ buildHouse(S,-42,-14,Math.PI/2,1);
+ const slab=new THREE.Mesh(new THREE.ConeGeometry(4.75,2.1,4),new THREE.MeshLambertMaterial({color:0xf2f7fc}));
+ slab.position.set(-42,4.62,-14); slab.rotation.y=Math.PI/2+Math.PI/4; slab.scale.set(1.08,1,0.88); S.add(slab);
+ box(0.7,1.6,0.7,0x6b675e,-40.2,5.2,-15.8,S); // chimney
+ const cabinSign=textSprite('🏠 Frostfall Cabin','#ffe9bb','rgba(23,19,12,0.85)'); cabinSign.position.set(-36.5,3.4,-14); S.add(cabinSign);
+ { const fg=new THREE.Group(); fg.position.set(-35,0,-9); S.add(fg); buildCampfire(fg); } // a warming fire by the cabin door
+ // two lit torches flanking the gate road (the budgeted lights)
+ buildLitTorch(S,-3.4,41.5); buildLitTorch(S,3.4,41.5);
+ // Warden Frost, the keeper — heavy ice-blue coat, fur hood, staff
+ {
+   const frost=new THREE.Group(); frost.position.set(FROST_KEEPER_POS.x,0,FROST_KEEPER_POS.z); S.add(frost);
+   box(0.30,0.85,0.30,0x3c4656,-0.17,0.42,0,frost); box(0.30,0.85,0.30,0x3c4656,0.17,0.42,0,frost); // legs
+   box(0.34,0.18,0.36,0xf2f7fc,-0.17,0.06,0.03,frost); box(0.34,0.18,0.36,0xf2f7fc,0.17,0.06,0.03,frost); // snow boots
+   box(0.78,1.05,0.46,0x5d7ea6,0,1.32,0,frost); // the ice-blue coat
+   box(0.82,0.16,0.50,0xf2f7fc,0,0.86,0,frost); // fur hem
+   box(0.82,0.14,0.50,0xf2f7fc,0,1.82,0,frost); // fur collar
+   box(0.24,0.8,0.24,0x5d7ea6,-0.52,1.28,0,frost); box(0.24,0.8,0.24,0x4c6b96,0.52,1.28,0,frost); // arms
+   const fhead=new THREE.Mesh(new THREE.SphereGeometry(0.27,12,10),new THREE.MeshLambertMaterial({color:0xd9a37e})); fhead.position.y=2.12; frost.add(fhead);
+   const hood=new THREE.Mesh(new THREE.ConeGeometry(0.36,0.62,9),new THREE.MeshLambertMaterial({color:0xe8f1f8})); hood.position.y=2.38; frost.add(hood);
+   const staff=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.045,2.3,6),new THREE.MeshLambertMaterial({color:0x5a4632})); staff.position.set(0.68,1.15,0.1); staff.rotation.z=0.1; frost.add(staff);
+   const gem=new THREE.Mesh(new THREE.OctahedronGeometry(0.13),new THREE.MeshLambertMaterial({color:0x9fd8ff,emissive:0x2a5a8a})); gem.position.set(0.79,2.36,0.1); frost.add(gem);
+   shadowify(frost);
+   const flabel=document.createElement('div'); flabel.className='plabel';
+   flabel.innerHTML='<div class="gname">❄️ Warden Frost</div>';
+   $('labels').appendChild(flabel);
+   worldLabels.push({el:flabel,x:FROST_KEEPER_POS.x,y:3.15,z:FROST_KEEPER_POS.z,area:'winter',kind:'static'});
+ }
+ // falling snow that DRIFTS: ~900 flakes over the whole field,
+ // advanced in animate() — they fall, and a gusting wind shoves
+ // them sideways (Derek asked for wind you can see)
+ {
+   const COUNT=900, pos=new Float32Array(COUNT*3), speed=new Float32Array(COUNT), phase=new Float32Array(COUNT);
+   for(let i=0;i<COUNT;i++){
+     pos[i*3]=-80+Math.random()*160; pos[i*3+1]=Math.random()*26; pos[i*3+2]=-45+Math.random()*90;
+     speed[i]=1.6+Math.random()*2.2; phase[i]=Math.random()*Math.PI*2;
+   }
+   const geo=new THREE.BufferGeometry();
+   geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+   const pts=new THREE.Points(geo,new THREE.PointsMaterial({color:0xffffff,size:0.32,transparent:true,opacity:0.9,depthWrite:false}));
+   pts.frustumCulled=false; S.add(pts);
+   snowFall={pts,pos,speed,phase,count:COUNT};
+ }
+}
 function buildAreas(){
  areaGroups.plaza=new THREE.Group(); scene.add(areaGroups.plaza); buildPlaza(areaGroups.plaza);
  areaGroups.goblins=new THREE.Group(); scene.add(areaGroups.goblins); buildGoblinCamp(areaGroups.goblins);
@@ -3471,6 +3617,7 @@ function buildAreas(){
  areaGroups.range=new THREE.Group(); scene.add(areaGroups.range); buildRangerCamp(areaGroups.range);
  areaGroups.wilderness=new THREE.Group(); scene.add(areaGroups.wilderness); buildWilderness(areaGroups.wilderness,false);
  areaGroups.purewild=new THREE.Group(); scene.add(areaGroups.purewild); buildWilderness(areaGroups.purewild,true);
+ areaGroups.winter=new THREE.Group(); scene.add(areaGroups.winter); buildWinterWorld(areaGroups.winter); // Stage 44: Frostfall
  applyAreaVisibility();
 }
 function applyAreaVisibility(){
@@ -3523,7 +3670,7 @@ function setArea(a){
  }
  drawMinimap();
 }
-const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_crypt:1,barrows_tunnels:1,arena:1,waiting:1,magic:1,range:1,wilderness:1,purewild:1}; // Stage 30 adds the two wild variants
+const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_crypt:1,barrows_tunnels:1,arena:1,waiting:1,magic:1,range:1,wilderness:1,purewild:1,winter:1}; // Stage 30 adds the two wild variants; Stage 44 adds Frostfall (winter)
 // Stage 19: the areas with a live shared-NPC roster (npc_state).
 // Feel-fixes: the two Wilderness variants join the roster — the
 // shallow-wild skeleton pocket rides the same npc_state flow.
@@ -4600,7 +4747,57 @@ window.openRangerKeeper=function(){
  $('keepersheet').innerHTML=`<h3>🏹 Ranger Fern</h3>
  <p style="margin-bottom:8px">“${line}”</p>
  <p class="note" style="margin-bottom:8px">🔍 Examine: The camp's resident ranger. She keeps the target butts strung, the hay bales dry, and a quiver of arrows on her back for anyone who asks nicely. Her longbow has more kills chalked on it than the whole range put together.</p>
- <div class="btns"><button class="act" onclick="openRangerKeeper()">💬 Talk more</button><button class="ghost" onclick="closeModal('keepermodal')">Close</button></div>`;
+ <div class="btns"><button class="act" onclick="openRangerKeeper()">💬 Talk more</button><button class="act" onclick="askKeeper('fern')">🙋 Ask what to do</button><button class="ghost" onclick="closeModal('keepermodal')">Close</button></div>`;
+ $('keepermodal').classList.add('open');
+};
+/* NPC build: Pickaxe Pete (Emberfall Mine) and Fisher Wren
+   (Fishing Cove) get the same tap-to-talk keeper modal Fern and
+   the farmers have — they were scenery before. Positions match
+   their figures: Pete at world (54,14) = server (1340,590); Wren
+   at world (-16,12) = server (640,570). */
+const PETE_LINES=[
+ 'Mind the roof props and keep your pick swinging. Copper and tin by the entrance, iron deeper in — and gems hide in any rock if luck fancies you.',
+ 'Smelt at the furnace, smith at the anvil. A bar you made yourself hits different, I always say.',
+];
+let peteLine=0;
+window.openPickaxePete=function(){
+ const line=PETE_LINES[peteLine % PETE_LINES.length]; peteLine++;
+ $('keepersheet').innerHTML=`<h3>⛏️ Pickaxe Pete</h3>
+ <p style="margin-bottom:8px">“${line}”</p>
+ <p class="note" style="margin-bottom:8px">🔍 Examine: He sells the pickaxes, knows every seam in Emberfall by its ring, and has strong opinions about other people's swing technique.</p>
+ <div class="btns"><button class="act" onclick="openPickaxePete()">💬 Talk more</button><button class="act" onclick="askKeeper('pete')">🙋 Ask what to do</button><button class="ghost" onclick="closeModal('keepermodal')">Close</button></div>`;
+ $('keepermodal').classList.add('open');
+};
+const WREN_LINES=[
+ 'Trout by the piers, patience everywhere. The rings on the water tell you where they are feeding — watch for the sparkles.',
+ 'Cook what you catch on a fire and it will keep you standing in a fight. Raw trout is a poor friend.',
+];
+let wrenLine=0;
+window.openFisherWren=function(){
+ const line=WREN_LINES[wrenLine % WREN_LINES.length]; wrenLine++;
+ $('keepersheet').innerHTML=`<h3>🎣 Fisher Wren</h3>
+ <p style="margin-bottom:8px">“${line}”</p>
+ <p class="note" style="margin-bottom:8px">🔍 Examine: She has fished this cove since before the piers were built, reads the water like a notice board, and dries seaweed for the stall keepers.</p>
+ <div class="btns"><button class="act" onclick="openFisherWren()">💬 Talk more</button><button class="act" onclick="askKeeper('wren')">🙋 Ask what to do</button><button class="ghost" onclick="closeModal('keepermodal')">Close</button></div>`;
+ $('keepermodal').classList.add('open');
+};
+/* Stage 44: Warden Frost, Frostfall's standing keeper (world
+   coords for the figure; server coords for taps/splats). He
+   stands just inside the south gate, beside the spawn. */
+const FROST_KEEPER_POS={x:8,z:21};
+const FROST_KEEPER_SERVER={x:880,y:660};
+const FROST_LINES=[
+ 'Welcome to Frostfall, traveller. Mind the wind — it shoves the snow sideways up here, and it will shove you too if you stand about.',
+ 'The frost pines chop like any tree and the ice-crusted rocks mine like any rock — the cold never stopped a good axe. Warm yourself at the cabin fire when your fingers go numb.',
+ 'That pond has been frozen since before the plaza had walls. Skaters swear there is something shining under the ice. Nobody has ever cut through to check.',
+];
+let frostLine=0;
+window.openWardenFrost=function(){
+ const line=FROST_LINES[frostLine % FROST_LINES.length]; frostLine++;
+ $('keepersheet').innerHTML=`<h3>❄️ Warden Frost</h3>
+ <p style="margin-bottom:8px">“${line}”</p>
+ <p class="note" style="margin-bottom:8px">🔍 Examine: Frostfall's warden. He keeps the south gate swept, the cabin stocked and the path lamps lit, and he has worn the same ice-blue coat through eleven winters without once admitting he is cold.</p>
+ <div class="btns"><button class="act" onclick="openWardenFrost()">💬 Talk more</button><button class="act" onclick="askKeeper('frost')">🙋 Ask what to do</button><button class="ghost" onclick="closeModal('keepermodal')">Close</button></div>`;
  $('keepermodal').classList.add('open');
 };
 const WILD_OBELISK_POS={x:700,y:830};
@@ -5028,11 +5225,21 @@ function makeNodeProp(n){
  if(n.kind==='rock'){
    const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.95),new THREE.MeshLambertMaterial({color:ROCK_TINT[n.item]||0x8a8578}));
    rock.position.y=0.55; g.add(rock); labelY=2.1;
+   // Stage 44: Frostfall's rocks wear a cap of snow.
+   if(curArea==='winter'){ const cap=new THREE.Mesh(new THREE.SphereGeometry(0.62,10,6),new THREE.MeshLambertMaterial({color:0xf2f7fc})); cap.scale.y=0.38; cap.position.y=1.28; g.add(cap); }
  } else if(n.kind==='tree'){
    const oak=(n.item==='oak_logs');
    box(0.35,1.5,0.35,0x5a4020,0,0.75,0,g);
    const cone=new THREE.Mesh(new THREE.ConeGeometry(oak?2.0:1.7,oak?4.2:3.4,7),new THREE.MeshLambertMaterial({color:oak?0x1e4620:0x2c5e26}));
    cone.position.y=oak?3.6:3.1; g.add(cone); labelY=oak?6.0:5.4;
+   // Stage 44: Frostfall's choppable trees are snow-dusted — a
+   // pale dusting cone over the canopy and a white cap on top.
+   if(curArea==='winter'){
+     const dust=new THREE.Mesh(new THREE.ConeGeometry((oak?2.05:1.75),1.3,7),new THREE.MeshLambertMaterial({color:0xe8f1f8,transparent:true,opacity:0.55}));
+     dust.position.y=(oak?4.6:3.9); g.add(dust);
+     const cap=new THREE.Mesh(new THREE.ConeGeometry(0.8,1.4,7),new THREE.MeshLambertMaterial({color:0xf2f7fc}));
+     cap.position.y=(oak?6.1:5.2); g.add(cap); labelY=(oak?7.2:6.4);
+   }
  } else if(n.kind==='fish'){
    const ring=new THREE.Mesh(new THREE.RingGeometry(0.75,1.05,24),new THREE.MeshBasicMaterial({color:0x9fd8ff,transparent:true,opacity:0.85,side:THREE.DoubleSide}));
    ring.rotation.x=-Math.PI/2; ring.position.y=0.09; g.add(ring);
@@ -6392,6 +6599,21 @@ function handleTap(cx,cy){
    const ns=projectTo(RANGER_KEEPER_POS.x,1.4,RANGER_KEEPER_POS.z);
    if(ns&&Math.hypot(ns.x-cx,ns.y-cy)<52){ spawnTapSplat(RANGER_KEEPER_SERVER.x,RANGER_KEEPER_SERVER.y,true); openRangerKeeper(); return; }
  }
+ // NPC build: Pickaxe Pete in the mine + Fisher Wren at the cove
+ // (the same keeper tap pattern — both were scenery before).
+ if(curArea==='mine'){
+   const ns=projectTo(54,1.4,14);
+   if(ns&&Math.hypot(ns.x-cx,ns.y-cy)<52){ spawnTapSplat(1340,590,true); openPickaxePete(); return; }
+ }
+ if(curArea==='cove'){
+   const ns=projectTo(-16,1.4,12);
+   if(ns&&Math.hypot(ns.x-cx,ns.y-cy)<52){ spawnTapSplat(640,570,true); openFisherWren(); return; }
+ }
+ // Stage 44: Warden Frost at Frostfall (the same keeper tap pattern).
+ if(curArea==='winter'){
+   const ns=projectTo(FROST_KEEPER_POS.x,1.4,FROST_KEEPER_POS.z);
+   if(ns&&Math.hypot(ns.x-cx,ns.y-cy)<52){ spawnTapSplat(FROST_KEEPER_SERVER.x,FROST_KEEPER_SERVER.y,true); openWardenFrost(); return; }
+ }
  // Farm life: the plaza farmers (the keeper tap pattern) — they
  // walk their rows, so the tap tests their LIVE positions.
  if(curArea==='plaza'){
@@ -6578,6 +6800,9 @@ function checkGates(){
    // strip at 600–1000). Crossing it walks you into the wild.
    if(myPos.y<=10&&myPos.x>=1020&&myPos.x<=1560){ go('wilderness','💀 The ditch → THE WILDERNESS…'); return; }
    if(myPos.y>=890&&myPos.x>=600&&myPos.x<=1000){ go('barrows','🚪 South gate → Barrows…'); return; }
+   // Stage 44: the Frostfall gate — south wall, west stretch (clear
+   // of the Gathering Cave corner at x<=20 and the Barrows strip).
+   if(myPos.y>=890&&myPos.x>=120&&myPos.x<=520){ go('winter','❄️ South gate → Frostfall, the Winter World…'); return; }
  }
  else if(isWildClient()&&myPos.y>=890){ go('plaza','🚪 The ditch → back to safety…'); }
  else if(curArea==='barrows'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
@@ -6589,6 +6814,7 @@ function checkGates(){
  else if(curArea==='fightcaves'&&myPos.y>=890){ go('plaza','🚪 South entrance → Plaza…'); }
  else if(curArea==='magic'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
  else if(curArea==='range'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
+ else if(curArea==='winter'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
 }
 function checkPendingAttack(){
  if(!pendingAttack||!myPos) return;
@@ -6730,7 +6956,7 @@ function drawMinimap(){
    : curArea==='waiting'? '#33302a'
    : curArea==='arena'? ARENA_VARIANTS[arenaVariant].css
    : isWildClient()? '#2a1a14'
-   : caveBg? (curArea==='fightcaves'? '#241a12' : '#2b2b30') : (curArea==='goblins')? '#55702f' : '#241d15'; g.fillRect(0,0,1600,900);
+   : caveBg? (curArea==='fightcaves'? '#241a12' : '#2b2b30') : (curArea==='goblins')? '#55702f' : (curArea==='winter')? '#dfe9f2' : '#241d15'; g.fillRect(0,0,1600,900);
  if(curArea==='plaza'){
    g.fillStyle='#8a7a5f'; g.fillRect(800-420,450-270,840,540); // cobblestone centre
    g.fillStyle='#6e4a1f'; g.fillRect(800-140,140-50,280,100); // tournament dais (wood)
@@ -6768,6 +6994,9 @@ function drawMinimap(){
    for(const n of npcList){ g.beginPath(); g.arc(n.x,n.y,11,0,7); g.fill(); } // goblins
  } else if(curArea==='cove'){
    g.fillStyle='#2e6db0'; g.fillRect(1060,0,540,900); // lake, east third
+ } else if(curArea==='winter'){
+   g.fillStyle='#a8cdea'; g.beginPath(); g.ellipse(1200,280,180,100,0,0,7); g.fill(); // the frozen pond
+   g.fillStyle='#6e4a1f'; g.fillRect(350-14,300-14,28,28); // the cabin
  } else if(curArea==='training'){
    g.fillStyle='#3d3d44'; g.fillRect(800-620,450-140,1240,280); // station hall floor
  } else if(curArea==='gathering'){
@@ -7094,6 +7323,22 @@ function animate(){
    const rs=1+t*0.9;
    s.mesh.scale.set(rs,rs,rs);
    s.mesh.material.opacity=0.75*(1-t);
+ }
+ // Stage 44: Frostfall's snowfall — flakes fall and DRIFT on a
+ // gusting wind: a slow swell plus a faster chop, so the drift
+ // visibly strengthens and slackens. Only advanced while the
+ // winter area is on screen; flakes wrap at the field's edges.
+ if(snowFall&&curArea==='winter'){
+   const gust=1.5+1.3*Math.sin(now*0.00021)+0.7*Math.sin(now*0.0013+1.7); // wind strength, ~0.5..3.5
+   const pos=snowFall.pos;
+   for(let i=0;i<snowFall.count;i++){
+     let y=pos[i*3+1]-snowFall.speed[i]*dt;
+     let x=pos[i*3]+(gust*1.9+Math.sin(now*0.001+snowFall.phase[i])*0.7)*dt;
+     if(y<0){ y=24+Math.random()*3; x=-80+Math.random()*160; pos[i*3+2]=-45+Math.random()*90; }
+     if(x>82) x-=164;
+     pos[i*3]=x; pos[i*3+1]=y;
+   }
+   snowFall.pts.geometry.attributes.position.needsUpdate=true;
  }
  updateLiveSplats(now);
  updateTapSplats(now); // Visual pass: fade the tap splats (~600ms)
@@ -8169,7 +8414,7 @@ window.doTravel=function(to){
 };
 function pTeleport(){
  const here=(a)=>a===curArea;
- let h=`<p class="note" style="margin-bottom:8px">Teleporting is the shortcut — every place stays walkable too: Goblin Camp (plaza east gate), Fishing Cove (west gate), Training Cave (south-east corner), Gathering Cave (south-west corner), Emberfall Mine &amp; Smithy (north-east corner), Fight Caves (north gate), Barrows (south gate), Wizard Grounds (north-west corner), Ranger Camp (north gate, west stretch).</p>`;
+ let h=`<p class="note" style="margin-bottom:8px">Teleporting is the shortcut — every place stays walkable too: Goblin Camp (plaza east gate), Fishing Cove (west gate), Training Cave (south-east corner), Gathering Cave (south-west corner), Emberfall Mine &amp; Smithy (north-east corner), Fight Caves (north gate), Barrows (south gate), Wizard Grounds (north-west corner), Ranger Camp (north gate, west stretch), Frostfall — the Winter World (south gate, west stretch).</p>`;
  h+=`<div class="rowline"><span class="ic">🏰</span><span class="grow"><b>Plaza</b><br><span class="sub">Shops, bank, duels</span></span>${here('plaza')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('plaza')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">👺</span><span class="grow"><b>Goblin Camp</b><br><span class="sub">East gate · fight goblins for drops &amp; XP</span></span>${here('goblins')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('goblins')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">🏋️</span><span class="grow"><b>Training Cave</b><br><span class="sub">South-east corner · safe skill training</span></span>${here('training')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('training')">Teleport</button>`}</div>`;
@@ -8181,6 +8426,7 @@ function pTeleport(){
  h+=`<div class="rowline"><span class="ic">🧙</span><span class="grow"><b>Wizard Grounds</b><br><span class="sub">North-west corner · wizards drop the runes for your spells</span></span>${here('magic')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('magic')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">🏹</span><span class="grow"><b>Ranger Camp</b><br><span class="sub">North gate (west stretch) · rangers drop arrows &amp; arrowheads</span></span>${here('range')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('range')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">💀</span><span class="grow"><b>The Wilderness</b><br><span class="sub">North ditch crossing (east stretch) or this obelisk teleport · PvP, skulls, death drops loot · NO teleporting out above level 20</span></span>${here('wilderness')||here('purewild')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('wilderness')">Teleport</button>`}</div>`;
+ h+=`<div class="rowline"><span class="ic">❄️</span><span class="grow"><b>Frostfall — the Winter World</b><br><span class="sub">South gate (west stretch) · drifting snow, frost pines to chop, ice-crusted rocks to mine, a frozen pond</span></span>${here('winter')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('winter')">Teleport</button>`}</div>`;
  return h;
 }
 /* ---- Help (Polish build) ----
@@ -8254,6 +8500,7 @@ const PANEL_LIST=[['backpack','🎒 Backpack'],['worn','🗡️ Worn items'],['s
 function pSettings(){
  let h=`<div class="setrow"><span class="grow">🎨 Appearance<br><span class="note">Change how your knight looks</span></span><button class="act" onclick="closeDock();openAppearance()">🎨 Appearance</button></div>`;
  h+=`<div class="setrow"><span class="grow">🧭 Interface: A / B<br><span class="note">Two layouts on trial — pick the one that feels simpler. A: classic bottom bar. B: grouped action buttons, smart prompts, and the side Pack + Protect cluster</span></span></div><div class="seg" style="margin-top:-2px"><button class="${settings.iface==='A'?'on':''}" onclick="setIfaceMode('A')">A — Classic</button><button class="${settings.iface!=='A'?'on':''}" onclick="setIfaceMode('B')">B — Grouped</button></div>`;
+ h+=`<div class="setrow"><span class="grow">🧭 Guided path<br><span class="note">When on, the world's characters may volunteer your next step as you play. Turn it off and nobody pushes advice at you — asking anyone what to do, or the ❓ Help button, still answers any time.</span></span></div><div class="seg" style="margin-top:-2px"><button class="${settings.guided!==false?'on':''}" onclick="setGuidedPath(true)">On</button><button class="${settings.guided===false?'on':''}" onclick="setGuidedPath(false)">Off</button></div>`;
  h+=`<div class="setrow"><span class="grow">📷 Camera drag speed<br><span class="note">Screen-drag rotation &amp; tilt, camera stick</span></span><input type="range" min="0.25" max="3" step="0.25" value="${settings.camSpeed}" oninput="setCamSpeed(this.value)"><b id="camspeedval" style="color:#e3c766;min-width:34px;text-align:right">${settings.camSpeed}×</b></div>`;
  h+=`<div class="setrow"><span class="grow">👆 Ground tap mode</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.groundTap==='walk'?'on':''}" onclick="setGroundTap('walk')">🚶 Walk</button><button class="${settings.groundTap==='face'?'on':''}" onclick="setGroundTap('face')">🧭 Face</button></div>`;
  h+=`<p class="note" style="margin:2px 0 8px">Walk: tapping the ground walks there. Face: tapping just turns your knight to face that spot.</p>`;
