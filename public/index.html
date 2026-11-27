@@ -1950,6 +1950,51 @@ function updateBursts(now,dt){
    }
  }
 }
+/* Feel pass (Derek, 2026-11-27): impact sparks — a small, hot
+   burst of the same octahedra at the hit point on every LANDED
+   hit, so a connecting blow throws sparks instead of only a
+   number. Colour follows the hit size: pale gold-white for a
+   normal hit, orange for a solid one (8+), red-orange for a big
+   one (15+); the count grows with damage too. Short-lived
+   (~0.42s) and capped, stepped beside the bursts in animate().
+   Presentation only: spawned from the splat paths, which are
+   driven by the server's outcome numbers — no combat math here. */
+let hitSparks=[]; // {group,parts,born,life}
+const SPARK_MAX=20; // live spark bursts cap (phone performance)
+function spawnHitSparks(a,dmg){
+ if(!a||!a.group||!scene) return;
+ if(hitSparks.length>=SPARK_MAX){ const old=hitSparks.shift(); scene.remove(old.group); }
+ const big=dmg>=15, solid=dmg>=8;
+ const colors= big? [0xff5a2a,0xff2a1a,0xffb347] : solid? [0xffb347,0xff8c2a,0xffe9a0] : [0xffffff,0xffe9a0,0xffd75e];
+ const n=5+Math.min(9,Math.round(dmg)); // 5 sparks for a tap, up to 14 for a huge hit
+ const g=new THREE.Group();
+ g.position.copy(a.group.position); g.position.y=(a.splatY||2.6)*0.62; // chest height — where the blow lands
+ const parts=[];
+ for(let i=0;i<n;i++){
+   const mesh=new THREE.Mesh(burstGeo,new THREE.MeshBasicMaterial({color:colors[i%colors.length]}));
+   const th=Math.random()*Math.PI*2, r=Math.random()*0.3;
+   mesh.position.set(Math.cos(th)*r,Math.random()*0.25,Math.sin(th)*r);
+   mesh.scale.setScalar(0.75);
+   g.add(mesh);
+   const sp=1.6+Math.random()*1.8+(big?0.7:0);
+   parts.push({mesh,vx:Math.cos(th)*sp*0.6,vy:1.2+Math.random()*1.6,vz:Math.sin(th)*sp*0.6,spin:(Math.random()-0.5)*11});
+ }
+ scene.add(g);
+ hitSparks.push({group:g,parts,born:performance.now(),life:420});
+}
+function updateHitSparks(now,dt){
+ for(let i=hitSparks.length-1;i>=0;i--){
+   const b=hitSparks[i], age=now-b.born;
+   if(age>=b.life){ scene.remove(b.group); hitSparks.splice(i,1); continue; }
+   const fade=1-age/b.life;
+   for(const p of b.parts){
+     p.vy-=6.5*dt; // sparks fall faster than the level-up confetti
+     p.mesh.position.x+=p.vx*dt; p.mesh.position.y+=p.vy*dt; p.mesh.position.z+=p.vz*dt;
+     p.mesh.rotation.y+=p.spin*dt; p.mesh.rotation.x+=p.spin*0.7*dt;
+     p.mesh.scale.setScalar(Math.max(0.12,0.75*fade));
+   }
+ }
+}
 function onLevelUp(m){
  const nm=SKILL_NAME[m.skill]||m.skill, ic=SKILL_ICON[m.skill]||'✨';
  showBanner(`🎉 ${ic} ${nm} level ${m.level}!`,m.unlock||'');
@@ -2077,13 +2122,25 @@ function initMyPos(){
  if(s){ myPos={x:s.x,y:s.y}; myInit=true; }
 }
 function textSprite(text,fg,bg){
- const c=document.createElement('canvas'); c.width=256; c.height=64;
+ /* Fit pass (2026-11-27): the canvas used to be a fixed 256 wide
+    at a fixed 26px font, so any line wider than the pill was
+    clipped at both ends ('STEP 1 · TRAINING GOBLIN' showed as
+    'P 1', 'BARROWS-READY CHECK' lost its tail). Now the canvas —
+    and the sprite, in proportion — widens to the measured text
+    (cap 640 wide); past the cap the font shrinks to fit. Lines
+    that fitted before render exactly as they did. */
+ const meas=document.createElement('canvas').getContext('2d');
+ let fs=26; meas.font='bold '+fs+'px system-ui';
+ const tw=meas.measureText(text).width, PAD=30;
+ const W=Math.min(640,Math.max(256,Math.ceil(tw+PAD)));
+ if(tw+PAD>W) fs=Math.max(12,Math.floor(fs*(W-PAD)/tw));
+ const c=document.createElement('canvas'); c.width=W; c.height=64;
  const g=c.getContext('2d');
- g.fillStyle=bg; g.beginPath(); g.roundRect(6,8,244,48,10); g.fill();
- g.font='bold 26px system-ui'; g.textAlign='center'; g.textBaseline='middle'; g.fillStyle=fg; g.fillText(text,128,33);
+ g.fillStyle=bg; g.beginPath(); g.roundRect(6,8,W-12,48,10); g.fill();
+ g.font='bold '+fs+'px system-ui'; g.textAlign='center'; g.textBaseline='middle'; g.fillStyle=fg; g.fillText(text,W/2,33);
  const tex=new THREE.CanvasTexture(c);
  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true}));
- sp.scale.set(7,1.75,1);
+ sp.scale.set(7*W/256,1.75,1);
  return sp;
 }
 /* Cobblestone (Stage 8 medieval pass): dark mortar, rounded stones. */
@@ -3315,6 +3372,8 @@ function gateSignTexture(title,color){
  g.fillStyle='rgba(0,0,0,0.25)'; for(let x=0;x<512;x+=64) g.fillRect(x,0,2,128); // plank seams
  g.strokeStyle='#c9a227'; g.lineWidth=6; g.strokeRect(8,8,496,112);
  g.fillStyle=color||'#f3e5c0'; g.font='bold 42px system-ui'; g.textAlign='center'; g.textBaseline='middle';
+ const gtw=g.measureText(title).width; // Fit pass (2026-11-27): the gateway board is a fixed-width plane, so a long title ('⚔️ BARROWS TRAINING GROUNDS') clipped at the frame — shrink the font to fit inside it instead
+ if(gtw>452) g.font='bold '+Math.max(16,Math.floor(42*452/gtw))+'px system-ui';
  g.fillText(title,256,66);
  const t=new THREE.CanvasTexture(cv); if(THREE.SRGBColorSpace) t.colorSpace=THREE.SRGBColorSpace;
  _gateSignTex[title]=t; return t;
@@ -4658,10 +4717,10 @@ function buildTrainingGrounds(root){
  // and its sign at the gap (pen centres = the server step centres)
  const STEPS=[
    {x:-56,lines:['STEP 1 · TRAINING GOBLIN','Tap to attack — styles & food']},
-   {x:-28,lines:['STEP 2 · TRAINING KNIGHT','Deflect Melee — and eat early']},
-   {x:0,lines:['STEP 3 · TRAINING WIZARD','Deflect Magic — switch or get hit']},
-   {x:28,lines:['STEP 4 · TRAINING RANGER','Deflect Missiles — the third prayer']},
-   {x:56,lines:['STEP 5 · PRACTICE BROTHER','A Dharok shade — watch his health!']},
+   {x:-28,lines:['STEP 2 · TRAINING KNIGHT','Deflect Melee — eat in time']},
+   {x:0,lines:['STEP 3 · TRAINING WIZARD','Deflect Magic']},
+   {x:28,lines:['STEP 4 · TRAINING RANGER','Deflect Missiles']},
+   {x:56,lines:['STEP 5 · PRACTICE BROTHER','Watch his rage']},
  ];
  for(const st of STEPS){
    const cz=-9, h=9;
@@ -4749,6 +4808,7 @@ function setArea(a){
    syncAllies();
    if(a==='fightcaves'&&me&&!fcRun&&!spectate) openFcStart(); // View Live: a spectator entering the caves view never gets the start-a-run sheet
  }
+ if(changed) syncHudPicture(); // Feel pass fix (2026-11-27): the area card (#pcarea / #pcstatus) is written ONLY by syncHudPicture, which otherwise rides renderOrbs (profile / fight pushes). A travel 'area' push changed curArea + the scene but never the card, so after a teleport it kept the old area's name + line until an unrelated push (walking, wielding) refreshed it. Refresh the card on every area change.
  drawMinimap();
 }
 const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_crypt:1,barrows_tunnels:1,arena:1,waiting:1,magic:1,range:1,wilderness:1,purewild:1,winter:1,castle:1,castleup:1,ratcave:1,training_grounds:1}; // Stage 30 adds the two wild variants; Stage 44 adds Frostfall (winter); Beginner Castle adds castle/castleup/ratcave (2026-11-24); Barrows Training Grounds adds training_grounds (2026-11-27)
@@ -5592,6 +5652,7 @@ function poseWalk(a,dist,dt){
  const target=dist>0.002?1:0;
  a.moveAmt=(a.moveAmt||0)+(target-(a.moveAmt||0))*Math.min(1,dt*10);
  const m=a.moveAmt||0, s=Math.sin(a.phase||0);
+ a.speedFrac=dt>0? Math.min(1,dist/(15*dt)) : (a.speedFrac||0); // Feel pass: 0..1 of full run pace (15 world u/s) — drives the speed lean in applyFightStance
  a.legL.rotation.x=s*0.6*m;
  a.legR.rotation.x=-s*0.6*m;
  if(a.armL) a.armL.rotation.x=-s*0.42*m;
@@ -7131,7 +7192,7 @@ function pushSplat(a,tex,sc){
  sp.scale.set(sc,sc,1);
  sp.position.copy(a.group.position); sp.position.y=(a.splatY||2.6);
  scene.add(sp);
- liveSplats.push({sp,av:a,born:performance.now(),baseY:sp.position.y});
+ liveSplats.push({sp,av:a,born:performance.now(),baseY:sp.position.y,sc});
 }
 function spawnSplatOn(a,dmg,special){
  if(!a||!a.group||!scene) return;
@@ -7140,6 +7201,7 @@ function spawnSplatOn(a,dmg,special){
  dmg=Math.max(0,Math.round(dmg));
  const kind=special?'spec':(dmg===0?'zero':'hit');
  pushSplat(a,splatTexture(kind,dmg),special?2.15:1.45);
+ if(dmg>0&&(kind==='hit'||kind==='spec')) spawnHitSparks(a,dmg); // Feel pass: a landed hit throws impact sparks at the victim
 }
 function spawnSplat(name,dmg,special){ spawnSplatOn(avatars[name],dmg,special); }
 /* Stage 27: second-story splats — the Accurate proc's bonus hit and
@@ -7153,9 +7215,9 @@ function pushSplatOffset(a,tex,sc,dy){
  sp.scale.set(sc,sc,1);
  sp.position.copy(a.group.position); sp.position.y=(a.splatY||2.6)+dy;
  scene.add(sp);
- liveSplats.push({sp,av:a,born:performance.now(),baseY:sp.position.y});
+ liveSplats.push({sp,av:a,born:performance.now(),baseY:sp.position.y,sc});
 }
-function spawnBonusSplatOn(a,dmg){ if(!a||!a.group||!scene||!(dmg>0)) return; sfxHit(false); pushSplatOffset(a,splatTexture('hit',Math.round(dmg)),1.25,0.95); }
+function spawnBonusSplatOn(a,dmg){ if(!a||!a.group||!scene||!(dmg>0)) return; sfxHit(false); pushSplatOffset(a,splatTexture('hit',Math.round(dmg)),1.25,0.95); spawnHitSparks(a,Math.round(dmg)); } // Feel pass: bonus hits spark too
 function spawnDeflectSplatOn(a,dmg){ if(!a||!a.group||!scene||!(dmg>0)) return; sfxBlock(); pushSplatOffset(a,splatTextTexture('zero','↩'+Math.round(dmg)),1.3,0.95); }
 /* Stage 12 clarity: the server tags every swing with an outcome —
    'hit' | 'blocked' | 'miss'. 'hit' keeps the red damage splat,
@@ -7175,6 +7237,11 @@ function updateLiveSplats(now){
    if(age>900){ scene.remove(s.sp); s.sp.material.dispose(); return false; }
    s.sp.position.x=s.av.group.position.x; s.sp.position.z=s.av.group.position.z; // follow the target
    s.sp.position.y=s.baseY+age/900*1.05; // rise…
+   // Feel pass: the splat POPS in — swells past its size in the
+   // first ~70ms, settles back by ~150ms — so a hit lands with
+   // a punch instead of just appearing.
+   const pop= age<70? 0.65+0.85*(age/70) : age<150? 1.5-0.5*((age-70)/80) : 1;
+   const cur=(s.sc||1.45)*pop; s.sp.scale.set(cur,cur,1);
    s.sp.material.opacity= age<70? age/70 : 1-(age-70)/830; // …and fade
    return true;
  });
@@ -7402,6 +7469,12 @@ function updateFlashes(now){
    damage 12+ → shake min(7, dmg × 0.4), decaying fast) -- */
 let shakeMag=0;
 function addShake(dmg){ if(settings.shakeOn===false) return; shakeMag=Math.max(shakeMag,Math.min(7,dmg*0.4)); }
+/* Feel pass (Derek, 2026-11-27): the dealt half of the shake —
+   a hit of 5+ that I LAND on someone else knocks the camera a
+   little too (min(2.2, dmg × 0.12): under a third of the
+   heavy-hit-on-me cap), so my own blows carry weight. Same
+   shakeMag pool and decay, so the two never stack into a mess. */
+function addShakeDealt(dmg){ if(settings.shakeOn===false) return; if(dmg>=5) shakeMag=Math.max(shakeMag,Math.min(2.2,dmg*0.12)); }
 /* -- the sound half of the shared outcome rule (flinchForOutcome
    below does the body half): a miss whistles past, a blocked hit
    clangs, a landed hit thuds — deeper at 10+ — and a heavy hit on
@@ -7413,6 +7486,7 @@ function fightOutcomeSfx(victim,outcome,dmg){
  if(typeof dmg==='number'&&dmg>0){
    sfxHit(dmg>=10);
    if(me&&victim===avatars[me.username]&&dmg>=12) addShake(dmg);
+   else if(me&&victim&&victim!==avatars[me.username]) addShakeDealt(dmg); // Feel pass: a hit I dealt shakes the camera a touch (addShakeDealt gates it to 5+)
    return;
  }
  if(typeof dmg==='number'){ sfxHit(false); return; } // connected, rolled 0
@@ -7513,6 +7587,16 @@ function applyFightStance(a,now,dt,engaged){
  if(a.armL&&a.guardUntil&&now<a.guardUntil&&!a.swingStart){
    a.armL.rotation.x+=(-1.15-a.armL.rotation.x)*Math.min(1,dt*16); // guard up
  }
+ // Feel pass (Derek, 2026-11-27): a slight forward lean that
+ // grows with speed, applied to the knight's jump pivot — the
+ // WHOLE figure leans (worn gear and the held weapon ride the
+ // pivot, so nothing detaches or re-grips). Runs after
+ // applyFlinch in the frame loops, so it skips while a flinch,
+ // jump or dodge owns the pivot and never fights them.
+ if(a.pivot&&!a.jump&&!a.flinch&&!a.dodge){
+   const leanTgt=(a.moveAmt||0)*(a.speedFrac||0)*0.10; // ≈5.7° at a full run, half that at a walk
+   a.pivot.rotation.x+=(leanTgt-a.pivot.rotation.x)*Math.min(1,dt*10);
+ }
  if(!engaged){ if(a.pivot&&!a.jump&&!a.dodge) a.pivot.rotation.z=0; return; }
  if(a.armR&&!a.swingStart&&(a.moveAmt||0)<0.3){
    a.armR.rotation.x+=(-0.5-a.armR.rotation.x)*Math.min(1,dt*8); // weapon ready
@@ -7584,7 +7668,53 @@ function applyDeathFall(a,now){
    keep the previous raise-and-lower / rock-forward motion exactly.
    For knights this runs AFTER the walk cycle each frame, so a swing
    overrides the arm's counter-swing while it plays. */
+/* Feel pass (Derek, 2026-11-27): swing trail — a brief crescent
+   swoosh that sweeps with the chop, so a swing reads as a blade
+   MOVING through the air instead of an arm teleporting. One
+   lazily-built plane per avatar, parented to the avatar's GROUP
+   (never the jump pivot, so flips can't twist it, and the weapon
+   — which rides the arm rig inside the group — stays exactly
+   where the rig holds it). The plane stands in the facing (ZY)
+   plane just ahead of the fighter and shows only through the
+   chop's fast middle (t 0.28–0.85 of the 320ms swing), sweeping
+   and fading as it goes. Called from applySwing, which every
+   fighter loop already runs each frame. */
+let swingTrailTex=null;
+function swingTrailTexture(){
+ if(swingTrailTex) return swingTrailTex;
+ const c=document.createElement('canvas'); c.width=c.height=128;
+ const g=c.getContext('2d');
+ g.translate(64,64); g.rotate(-0.5);
+ const grad=g.createLinearGradient(-50,0,55,0);
+ grad.addColorStop(0,'rgba(255,255,255,0)');
+ grad.addColorStop(0.55,'rgba(210,235,255,0.55)');
+ grad.addColorStop(1,'rgba(255,255,255,0)');
+ g.strokeStyle=grad; g.lineCap='round';
+ g.beginPath(); g.arc(0,0,44,Math.PI*0.95,Math.PI*1.95); g.lineWidth=15; g.stroke();
+ g.beginPath(); g.arc(0,0,44,Math.PI*1.1,Math.PI*1.8); g.lineWidth=7; g.strokeStyle='rgba(255,255,255,0.5)'; g.stroke();
+ swingTrailTex=new THREE.CanvasTexture(c);
+ return swingTrailTex;
+}
+const swingTrailGeo=new THREE.PlaneGeometry(2.6,2.6);
+function updateSwingTrail(a,now){
+ if(!a||!a.group||!a.armR) return; // only rigs with a swing arm trail
+ const t=a.swingStart? (now-a.swingStart)/320 : 1;
+ if(t<0.28||t>0.85){ if(a.trailMesh) a.trailMesh.visible=false; return; }
+ if(!a.trailMesh){
+   a.trailMesh=new THREE.Mesh(swingTrailGeo,new THREE.MeshBasicMaterial({map:swingTrailTexture(),transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide}));
+   a.trailMesh.rotation.y=Math.PI/2; // stand in the facing plane
+   const s=(a.splatY||2.6)/2.6; // sized to the fighter (knights are the tall rig)
+   a.trailMesh.scale.setScalar(s);
+   a.trailMesh.position.set(0,(a.splatY||2.6)*0.72,0.55*s);
+   a.group.add(a.trailMesh);
+ }
+ const p=(t-0.28)/0.57; // 0..1 across the chop's fast middle
+ a.trailMesh.visible=true;
+ a.trailMesh.material.opacity=0.75*Math.sin(p*Math.PI); // fade in, flash, fade out
+ a.trailMesh.rotation.z=-0.9+p*1.5; // the crescent sweeps with the chop
+}
 function applySwing(a,now){
+ updateSwingTrail(a,now); // Feel pass: the swoosh follows the chop (and hides itself when not swinging)
  if(!a||!a.swingStart) return;
  const t=(now-a.swingStart)/320;
  if(t>=1){ a.swingStart=0; if(a.armR){ a.armR.rotation.x=0; const l0=a.armR.userData?a.armR.userData.lower:null; if(l0) l0.rotation.x=0; } else if(a.group) a.group.rotation.x=0; if(a.weaponGroup) a.weaponGroup.rotation.x=(a.weaponGroup.userData&&a.weaponGroup.userData.baseRotX)||0; return; }
@@ -7734,8 +7864,11 @@ function updateLabels(now){
    it is not persisted — so the new default is simply what every
    page load starts from; a player's pinch/wheel still owns it
    for the session. otsDist is the over-the-shoulder distance,
-   adjusted by the same pinch/wheel while that view is active. */
-let camYaw=0.7, camDist=30;
+   adjusted by the same pinch/wheel while that view is active.
+   Feel pass (Derek, 2026-11-27): the default steps out further,
+   to 42 — still well inside the 64 duel-framing cap, and the
+   pinch/wheel clamps (10..64) are unchanged. */
+let camYaw=0.7, camDist=42;
 let otsDist=8;
 /* Visual pass (Derek, 2026-11-23: "pinch to zoom always works"):
    first person has no camera distance to zoom, so pinch/wheel
@@ -7755,7 +7888,7 @@ const OTS_FOLLOW_RATE=2.4;
    midpoint / fit distance and the 0..1 blend — see the
    third-person branch of animate(). Zero blend = the classic
    follow, exactly. */
-let pairBlend=0, pairMX=0, pairMZ=0, pairFit=30;
+let pairBlend=0, pairMX=0, pairMZ=0, pairFit=42;
 /* Field of view per view (Polish build): third person keeps the
    long-standing 55; over-the-shoulder widens a touch (62); first
    person widens properly (78, was the shared 55 — Derek: "if in
@@ -7794,10 +7927,13 @@ let localRot=0; // local knight facing (world radians, atan2(x,z) convention)
    joystick direction change swings him around the same way. The
    cap is fast enough that facing and movement direction are only
    briefly apart at the start of a turn (no sustained sideways
-   sliding), slow enough to read as a turn (~0.35s for a full
-   about-face). Swing facing (faceTarget) and the duel-start snap
-   stay instant — a swing has to read on the tick it lands. */
-const TURN_RATE=9; // radians per second
+   sliding), slow enough to read as a turn. Swing facing
+   (faceTarget) and the duel-start snap stay instant — a swing
+   has to read on the tick it lands.
+   Feel pass (Derek, 2026-11-27): the cap rises 9 → 13 rad/s
+   (~0.24s for a full about-face) — turns read quicker and less
+   laggy alongside the new velocity easing in stepMovement. */
+const TURN_RATE=13; // radians per second
 let faceGoal=null; // a heading to turn to while standing (Face tap mode)
 function turnLocalRotTo(target,dt){
  let d=target-localRot; d=Math.atan2(Math.sin(d),Math.cos(d));
@@ -8338,6 +8474,20 @@ let lastSend=0, lastSentPos=null;
    OFF = half that (walking). Defaults ON; the choice saves in settings. */
 function moveSpeed(){ return (runDrainedUntil>Date.now())? 7.5 : (settings.run? 15 : 7.5); } // Stage 28: Torag's drain forces walking
 let stepFrom=null; // Stage 28: where this step started (Barrows collision slides from here)
+/* Feel pass (Derek, 2026-11-27): movement eases instead of
+   snapping. moveVel is my knight's SMOOTHED velocity, in the
+   same dir × moveSpeed() units myVel carries on the tap path;
+   each frame it approaches the input's target velocity
+   exponentially at MOVE_ACCEL per second (≈63% in ~90ms, so a
+   direction change or a dodge still answers inside ~100ms of
+   feel), and eases back to zero the same way when input stops —
+   a glide of a step or two instead of a dead halt. Top speed is
+   untouched: at full deflection the target is exactly the old
+   velocity, so server-visible pace never changes. The tap path
+   also tapers its target inside the last ~25 units, so walk-to
+   arrivals settle instead of stopping dead on the spot. */
+const MOVE_ACCEL=11; // 1/s exponential approach rate for moveVel
+let moveVel={x:0,z:0};
 function stepMovement(dt){
  if(!myPos||!me) return;
  stepFrom={x:myPos.x,y:myPos.y};
@@ -8349,12 +8499,12 @@ function stepMovement(dt){
  // frozen positions.
  // Stage 23: Grab mode freezes the knight too — arranging the
  // interface is the only thing happening while it's on.
- if(grabMode||duelCountdownLeft>0||(duel&&duel.rules&&duel.rules.noMovement)||meFrozenNow()){ tapTarget=null; myVel={x:0,z:0}; finishStep(false); return; } // Stage 24: meFrozenNow — a Freeze root stops my knight locally too (the server ignores the moves anyway)
+ if(grabMode||duelCountdownLeft>0||(duel&&duel.rules&&duel.rules.noMovement)||meFrozenNow()){ tapTarget=null; myVel={x:0,z:0}; moveVel={x:0,z:0}; finishStep(false); return; } // Stage 24: meFrozenNow — a Freeze root stops my knight locally too (the server ignores the moves anyway); Feel pass: the smoothed velocity zeroes too, so a freeze/countdown never banks a glide
  if(wildLeaving&&isWildClient()) tapTarget={x:800,y:895}; // Stage 30: Leave keeps walking you to the ditch until the crossing fires (steering yourself cancels it)
  // Stage 31: standing still with a face goal (Face tap mode) — turn
  // toward it at the capped rate until we're looking that way.
  if(faceGoal!==null && !tapTarget && !stickActive()){ turnLocalRotTo(faceGoal,dt); if(localRot===faceGoal) faceGoal=null; }
- let vx=0, vz=0; // world units / s
+ let wantX=0, wantZ=0; // Feel pass: this frame's target velocity (dir × moveSpeed)
  const sYaw=Math.sin(camYaw), cYaw=Math.cos(camYaw);
  // camera forward on the ground (world): (-sinYaw, -cosYaw); right: (cosYaw, -sinYaw)
  let f=0, r=0;
@@ -8362,23 +8512,28 @@ function stepMovement(dt){
  if(keys.d||keys.arrowright) r+=1; if(keys.a||keys.arrowleft) r-=1;
  f+=-joyVec.y; r+=joyVec.x;
  if(f||r){ tapTarget=null; faceGoal=null; pendingAttack=null; pendingFcAttack=null; pendingMound=null; pendingPile=null; pendingChest=false; pendingWildAttack=null; pendingWildPker=null; wildLeaving=false; stopGather(); const l=Math.hypot(f,r); f/=l; r/=l;
-   vx=(-sYaw*f + cYaw*r); vz=(-cYaw*f - sYaw*r); myVel={x:vx,z:vz}; }
+   wantX=(-sYaw*f + cYaw*r)*moveSpeed(); wantZ=(-cYaw*f - sYaw*r)*moveSpeed();
+   turnLocalRotTo(Math.atan2(wantX,wantZ),dt); faceGoal=null; // Stage 31 + Feel pass: facing follows the input direction at the capped turn rate, while the velocity below eases up to it
+ }
  else if(tapTarget){
    const dx=tapTarget.x-myPos.x, dy=tapTarget.y-myPos.y, d=Math.hypot(dx,dy);
-   if(d<6){ tapTarget=null; myVel={x:0,z:0}; }
-   else { const sp=moveSpeed()*10*dt; // server units per step
-          turnLocalRotTo(Math.atan2(dx,dy),dt); faceGoal=null; // Stage 31: turn toward the tap spot at the capped rate while walking the straight line to it
-          myVel={x:(dx/d)*moveSpeed(),z:(dy/d)*moveSpeed()}; // world units/s, same speed as stick movement
-          myPos.x+=(dx/d)*sp; myPos.y+=(dy/d)*sp;
-          finishStep(true); return; }
+   if(d<6){ tapTarget=null; }
+   else { const taper=Math.min(1,d/25); // Feel pass: settle into the spot instead of stopping dead on it
+          wantX=(dx/d)*moveSpeed()*taper; wantZ=(dy/d)*moveSpeed()*taper;
+          turnLocalRotTo(Math.atan2(dx,dy),dt); faceGoal=null; } // Stage 31: turn toward the tap spot at the capped rate while walking the straight line to it
  }
- if(vx||vz){
-   turnLocalRotTo(Math.atan2(vx,vz),dt); faceGoal=null; // Stage 31: facing follows the movement direction at the same capped turn rate
-   const sp=moveSpeed()*dt; // world units/s
-   myPos.x=clamp(myPos.x+vx*sp*W2S,0,WORLD_W);
-   myPos.y=clamp(myPos.y+vz*sp*W2S,0,WORLD_H);
+ // Feel pass: ease the smoothed velocity toward the target (or
+ // toward a stop), then integrate position from IT — at full
+ // deflection the steady state is bit-for-bit the old pace.
+ const mk=1-Math.exp(-MOVE_ACCEL*dt);
+ moveVel.x+=(wantX-moveVel.x)*mk; moveVel.z+=(wantZ-moveVel.z)*mk;
+ if(!wantX&&!wantZ&&Math.hypot(moveVel.x,moveVel.z)<0.25) moveVel={x:0,z:0}; // close enough to stopped: be stopped (no endless creep)
+ myVel={x:moveVel.x,z:moveVel.z};
+ if(moveVel.x||moveVel.z){
+   myPos.x=clamp(myPos.x+moveVel.x*dt*W2S,0,WORLD_W);
+   myPos.y=clamp(myPos.y+moveVel.z*dt*W2S,0,WORLD_H);
    finishStep(true);
- } else { myVel={x:0,z:0}; finishStep(false); }
+ } else { finishStep(false); }
 }
 /* Stage 28: Barrows collision — the player collides with the crypt
    walls + sarcophagus and with the tunnel maze (axis-slide along
@@ -8685,7 +8840,7 @@ function animate(){
    const eng=(me&&name===me.username)? !!(duel||modDuel||npcFight||fcRun||wildFight)
      : (a.act==='duel'||a.act==='fight'||(duel&&name===duel.opponent)||(wildFight&&wildFight.oppKind==='player'&&name===wildFight.oppName));
    poseWalk(a,dist,dt);
-   a.group.position.y=Math.abs(Math.sin(a.phase||0))*0.08*(a.moveAmt||0)+(eng&&(a.moveAmt||0)<0.3? Math.abs(Math.sin(now*0.0055+(a.phase||0)))*0.05 : 0); // walk bob + engaged stance bounce
+   a.group.position.y=Math.abs(Math.sin(a.phase||0))*0.08*(a.moveAmt||0)*(0.75+0.5*(a.speedFrac||0))+(eng&&(a.moveAmt||0)<0.3? Math.abs(Math.sin(now*0.0055+(a.phase||0)))*0.05 : 0); // walk bob (Feel pass: a touch taller at a run than at a walk) + engaged stance bounce
    applySwing(a,now);
    updateJump(a,now);
    applyLunge(a,now);
@@ -8755,7 +8910,7 @@ function animate(){
    const pdist=Math.hypot(a.group.position.x-gx0,a.group.position.z-gz0);
    const peng=!!(wildFight&&wildFight.oppKind==='pker'&&wildFight.oppId===pid); // Stage 32
    poseWalk(a,pdist,dt);
-   a.group.position.y=Math.abs(Math.sin(a.phase||0))*0.08*(a.moveAmt||0)+(peng&&(a.moveAmt||0)<0.3? Math.abs(Math.sin(now*0.0055+(a.phase||0)))*0.05 : 0);
+   a.group.position.y=Math.abs(Math.sin(a.phase||0))*0.08*(a.moveAmt||0)*(0.75+0.5*(a.speedFrac||0))+(peng&&(a.moveAmt||0)<0.3? Math.abs(Math.sin(now*0.0055+(a.phase||0)))*0.05 : 0); // Feel pass: same speed-scaled bob as the player knights
    applySwing(a,now);
    applyLunge(a,now);
    applyFlinch(a,now);
@@ -8894,6 +9049,7 @@ function animate(){
  updateTapSplats(now); // Visual pass: fade the tap splats (~600ms)
  updateFlashes(now); // Stage 37b: expire hit flashes (~160ms)
  updateBursts(now,dt); // Stage 20: level-up fireworks
+ updateHitSparks(now,dt); // Feel pass: impact sparks
  // Stage 20: rare loot beams pulse (tall gold shafts over rare piles)
  for(const b of rareBeams){
    b.mesh.rotation.y+=dt*0.7;
@@ -9015,8 +9171,15 @@ function animate(){
  // Stage 37b: camera shake — a heavy hit on me (addShake, from the
  // outcome hooks) knocks the camera for a few frames, then decays.
  if(shakeMag>0){
-   camera.position.x+=(Math.random()*2-1)*shakeMag*0.05;
-   camera.position.y+=(Math.random()*2-1)*shakeMag*0.04;
+   // Feel pass: never while a dock panel or a modal is up (the
+   // clear-screen rule) — the knock decays away unapplied. The
+   // offset itself is added AFTER the view branches above set
+   // the camera, so it composes with duel pair-framing instead
+   // of fighting it.
+   if(!dockPanel&&!document.querySelector('.modal.open')){
+     camera.position.x+=(Math.random()*2-1)*shakeMag*0.05;
+     camera.position.y+=(Math.random()*2-1)*shakeMag*0.04;
+   }
    shakeMag=Math.max(0,shakeMag-dt*14);
  }
  // Stage 13: the shadow camera follows the local player (its box is
