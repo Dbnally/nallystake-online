@@ -317,6 +317,23 @@ const GOODS = [
   { id: 'charms', name: 'Spirit charms', base: 60, min: 30, max: 120 },
 ];
 for (const g of GOODS) ITEMS[g.id] = { name: g.name, kind: 'good' };
+// The Shattered Crown (Derek, 2026-11-27): one Crown shard per
+// story chapter — a backpack flavour trophy granted (once) when a
+// chapter's activity is completed. Each shard is its own item so
+// its examine names the chapter it came from. The Restored Crown
+// is the finale trophy: all fifteen shards combined. Neither is
+// sold anywhere (no shop field) and neither has combat stats.
+for (const [cid, cname] of [
+  ['plaza', 'the Plaza'], ['duel_bowl', 'the Duel Bowl'], ['goblins', 'Goblin Camp'],
+  ['training', 'the Training Cave'], ['training_grounds', 'the Training Grounds'],
+  ['gathering', 'the Gathering Cave'], ['cove', 'the Fishing Cove'], ['mine', 'Emberfall'],
+  ['magic', 'the Wizard Grounds'], ['range', 'the Ranger Camp'], ['castle', 'the Beginner Castle'],
+  ['barrows', 'the Barrows'], ['fightcaves', 'the Fight Caves'], ['wilderness', 'the Wilderness'],
+  ['winter', 'Frostfall'],
+]) {
+  ITEMS[`crown_shard_${cid}`] = { name: `Crown shard — ${cname}`, kind: 'trophy', icon: '👑', desc: `A shard of the shattered Crown of Nallystake, won at ${cname}. Fifteen shards make the Crown whole.` };
+}
+ITEMS.restored_crown = { name: 'Restored Crown', kind: 'trophy', icon: '👑', desc: 'The Crown of Nallystake, whole again — fifteen shards rejoined by the one who retraced them all. The world is re-crowned.' };
 // Stage 2 gathered resources + cooked food. No `buy` price (shops never
 // sell them); `sellOnly` is the fixed price shops pay for them.
 for (const [id, name, sellOnly, extra] of [
@@ -1459,6 +1476,11 @@ function newProfile(username) {
     // so this is never persisted as true — it completes the shape).
     barrows: { kills: [], tunnel: null, looted: false, puzzleSolved: false },
     barrowsRuns: 0, // Stage 28b: completed Barrows runs (chests looted) — the app's "chests" counter
+    // The Shattered Crown (2026-11-27): per-chapter story state —
+    // found = the area's Story Stone has been read, done = its
+    // activity completed (once only, pays the chapter reward),
+    // crowned = the finale has fired (once only).
+    story: { found: {}, done: {}, crowned: false },
     // Stage 7A roles: stored role ('player' | 'mod' | 'admin') plus
     // the mod certification flag. The 'owner' role is never stored —
     // it is computed from the username (see effectiveRole).
@@ -1561,6 +1583,14 @@ function ensureV2(p) {
   }
   // Stage 28b: the completed-runs counter (chests looted).
   if (typeof p.barrowsRuns !== 'number' || !(p.barrowsRuns >= 0)) { p.barrowsRuns = 0; changed = true; }
+  // The Shattered Crown migration: only the container shapes are
+  // enforced — chapter keys inside are server-written.
+  if (!p.story || typeof p.story !== 'object' || Array.isArray(p.story)) { p.story = { found: {}, done: {}, crowned: false }; changed = true; }
+  else {
+    if (!p.story.found || typeof p.story.found !== 'object' || Array.isArray(p.story.found)) { p.story.found = {}; changed = true; }
+    if (!p.story.done || typeof p.story.done !== 'object' || Array.isArray(p.story.done)) { p.story.done = {}; changed = true; }
+    if (typeof p.story.crowned !== 'boolean') { p.story.crowned = false; changed = true; }
+  }
   // Stage 7A migration: role + certified. An unknown/corrupt stored
   // role falls back to 'player'; certification is a plain boolean.
   if (p.role !== 'player' && p.role !== 'mod' && p.role !== 'admin') { p.role = 'player'; changed = true; }
@@ -1994,6 +2024,160 @@ function recordClog(key, entryId) {
   save(key);
   const sess = online.get(key);
   if (sess) send(sess.ws, clogMsg(p));
+}
+
+// ---------- The Shattered Crown (Derek, 2026-11-27) ----------
+// One story across every area of the world: the Crown of
+// Nallystake was shattered and a shard scattered to every corner.
+// The player retraces the shards IN ORDER — each chapter's text
+// names where the shard was last seen and where the trail leads
+// next, so the fifteen areas read as one tale. A 📖 Story Stone
+// stands in each chapter area (the client builds it; the read is
+// answered here, canonically, like the other sign reads): reading
+// marks the chapter found. Each chapter has ONE activity, hooked
+// into an existing server event (named at each hook site);
+// completing it (once only) pays STORY_REWARD gold + that
+// chapter's Crown shard item. All fifteen done fires the finale
+// once: the Restored Crown trophy + STORY_FINALE_REWARD gold + a
+// server-wide announcement.
+const STORY_REWARD = 25;
+const STORY_FINALE_REWARD = 250;
+const STORY_CHAPTERS = [
+  { id: 'plaza', areaName: 'the Plaza', title: 'Chapter 1 — The Crown Falls',
+    text: ['Long ago the Crown of Nallystake sat above this plaza, and every road in the world ran true beneath it.', 'On the night it shattered, the plaza sign was the last thing its light touched — which is why the first shard still hums here, waiting for a reader.', 'The shard remembers being carried south, to where fighters gather in a sunken bowl…'],
+    act: 'Read the Derek Nally sign in the plaza' },
+  { id: 'duel_bowl', areaName: 'the Duel Bowl', title: 'Chapter 2 — Where Champions Are Made',
+    text: ['The crown-bearer\'s champion carried the second shard to the Duel Bowl, and would not give it up to words — only to a victor.', 'Win a duel, as champions here are made (an agreed duel fights on the Tournament Dais, as duels do everywhere), and the shard is yours.', 'The champion\'s last words pointed west, to a camp of goblins who had been seen polishing something shiny…'],
+    act: 'Win a duel' },
+  { id: 'goblins', areaName: 'Goblin Camp', title: 'Chapter 3 — The Goblins\' Prize',
+    text: ['The goblins found the third shard in the dirt and made it the prize of their camp — every goblin here guards it without knowing why.', 'Take it back from any one of them, and the camp is just a camp again.', 'Scratched under the shard, in goblin hand: "cave men hit straw men, shard went there." The Training Cave, then…'],
+    act: 'Defeat any creature at the Goblin Camp' },
+  { id: 'training', areaName: 'the Training Cave', title: 'Chapter 4 — Straw and Patience',
+    text: ['A patient soul carried the fourth shard to the Training Cave and set it where beginners swing, so only the diligent would ever notice it.', 'Earn your XP from a training dummy, the way everyone here begins, and the shard shows itself.', 'On its back, an older scratch: the shard before this one was dragged south, to a yard built for Barrows hopefuls…'],
+    act: 'Gain XP from a training dummy' },
+  { id: 'training_grounds', areaName: 'the Training Grounds', title: 'Chapter 5 — Five Steps Down',
+    text: ['The Training Grounds were built over the shard on purpose: five pens, five lessons, and the fifth shard buried in the work itself.', 'Defeat any training monster here and the shard comes up with the dust of the yard.', 'Its edge is nicked with cave-marks — the next shard went down, into the Gathering Cave, with the miners and fishers…'],
+    act: 'Defeat any training monster' },
+  { id: 'gathering', areaName: 'the Gathering Cave', title: 'Chapter 6 — What the Cave Keeps',
+    text: ['The Gathering Cave keeps everything that falls into it — ore, fish, timber, and the sixth shard, lodged in the rock like a gem.', 'Gather anything here, the cave\'s own work, and the shard works loose with it.', 'It smells of salt and lake water: the shard before it washed east, to the Fishing Cove…'],
+    act: 'Gather from any node in the Gathering Cave' },
+  { id: 'cove', areaName: 'the Fishing Cove', title: 'Chapter 7 — The Fisher\'s Catch',
+    text: ['They say the seventh shard fell in the lake, and the fish have been guarding it ever since — every fisher here has hooked it once and lost it.', 'Catch any fish at the cove and you may find it was never a fish at all.', 'Wet through, its inscription still reads: the trail climbs from the water to fire — the Emberfall Mine…'],
+    act: 'Catch any fish at the Fishing Cove' },
+  { id: 'mine', areaName: 'Emberfall Mine & Smithy', title: 'Chapter 8 — Fire Remembers',
+    text: ['The smiths of Emberfall took the eighth shard for a strange ore and set it by the furnace, where the fire has been remembering it ever since.', 'Mine an ore or smith a bar — work the mountain either way — and the shard cools enough to take.', 'Its heat-scorched twin went to the wizards, to be studied in their stone circle…'],
+    act: 'Mine an ore or smith a bar at Emberfall' },
+  { id: 'magic', areaName: 'the Wizard Grounds', title: 'Chapter 9 — The Circle\'s Price',
+    text: ['The wizards knew the ninth shard at once, and would not touch it: a crown\'s piece may only be lifted by hands that have made something of their own.', 'Craft a rune at the Runecrafting altar in the stone circle, and the circle lets the shard go.', 'The rune you made hums toward the east — toward the Ranger Camp, where its brother shard was shot into a target and forgotten…'],
+    act: 'Craft a rune at the Runecrafting altar' },
+  { id: 'range', areaName: 'the Ranger Camp', title: 'Chapter 10 — Shot and Forgotten',
+    text: ['A ranger pinned the tenth shard to a target as a joke, and the camp has been shooting at a crown for years without hitting it.', 'Defeat any creature of the Ranger Camp and claim what their arrows never could.', 'Scratched on its rim, a child\'s drawing of a castle — the next shard went to the Beginner Castle, to be hidden where new heroes start…'],
+    act: 'Defeat any creature at the Ranger Camp' },
+  { id: 'castle', areaName: 'the Beginner Castle', title: 'Chapter 11 — Under the Castle',
+    text: ['The eleventh shard was hidden in the Beginner Castle for safekeeping — and promptly lost down the trap door, among the rats.', 'Defeat a rat or a zombie in the Rat Cave beneath the castle, and the shard is back in honest hands.', 'It is gnawed at the edges, and smells of grave-dirt: its twin lies south, with six brothers who will not rest…'],
+    act: 'Defeat a rat or zombie in the Rat Cave' },
+  { id: 'barrows', areaName: 'the Barrows', title: 'Chapter 12 — The Brothers\' Toll',
+    text: ['The six brothers took the twelfth shard as their toll, and their chest has kept it under lock and curse ever since.', 'Open the Barrows reward chest — earn it the way everyone must — and the toll is paid back to you.', 'The chest\'s lid bears a burn mark shaped like a cave of fire: the next shard was carried into the Fight Caves, and left for whoever survives…'],
+    act: 'Open the Barrows reward chest' },
+  { id: 'fightcaves', areaName: 'the Fight Caves', title: 'Chapter 13 — Five Waves Deep',
+    text: ['The thirteenth shard lies in the Fight Caves, close enough to the entrance that the caves\' keeper mocks everyone who turns back early.', 'Reach wave 5 of a run — no further, the keeper insists, is any of his business — and take the shard as you pass.', 'Beyond wave 5 the heat gives way to a colder dark on the shard\'s face: the Wilderness, where the fourteenth was lost by someone running…'],
+    act: 'Reach wave 5 in a Fight Caves run' },
+  { id: 'wilderness', areaName: 'the Wilderness', title: 'Chapter 14 — What the Wild Keeps',
+    text: ['The fourteenth shard was carried into the Wilderness by a runner who never came back, and the wild keeps what it is given.', 'Defeat any creature — or any rival — in the Wilderness or Pure Wild, and the wild gives this piece back.', 'One face is frozen white. The last shard went north past the world\'s edge, into Frostfall\'s snow, and the crown is nearly whole…'],
+    act: 'Defeat any creature or player opponent in the Wilderness or Pure Wild' },
+  { id: 'winter', areaName: 'Frostfall', title: 'Chapter 15 — The Last Shard',
+    text: ['The last shard fell in Frostfall\'s snow, where the cold kept it perfect while the world forgot the Crown entirely.', 'Gather, chop or mine anything in Frostfall and the snow gives up its keeping.', 'Fifteen shards, one road, retraced in order. Bring them together — and the Crown of Nallystake is whole again.'],
+    act: 'Gather, chop or mine any node in Frostfall' },
+];
+const STORY_CHAPTER_BY_ID = Object.fromEntries(STORY_CHAPTERS.map((c) => [c.id, c]));
+// Which chapter an area belongs to (sub-areas fold into their
+// chapter's area: the castle's floors and cave, the Barrows
+// below-ground, Pure Wild into the Wilderness).
+const STORY_AREA_CHAPTER = {
+  plaza: 'plaza', duel_bowl: 'duel_bowl', goblins: 'goblins', training: 'training',
+  training_grounds: 'training_grounds', gathering: 'gathering', cove: 'cove', mine: 'mine',
+  magic: 'magic', range: 'range', castle: 'castle', castleup: 'castle', ratcave: 'castle',
+  barrows: 'barrows', barrows_crypt: 'barrows', barrows_tunnels: 'barrows',
+  fightcaves: 'fightcaves', wilderness: 'wilderness', purewild: 'wilderness', winter: 'winter',
+};
+function storyMsg(p) {
+  ensureV2(p);
+  return {
+    type: 'story',
+    chapters: STORY_CHAPTERS.map((c) => ({
+      id: c.id, title: c.title, areaName: c.areaName, act: c.act,
+      text: p.story.found[c.id] ? c.text : null, // unfound chapters keep their words hidden — find the stone
+      found: !!p.story.found[c.id], done: !!p.story.done[c.id],
+    })),
+    doneCount: STORY_CHAPTERS.filter((c) => p.story.done[c.id]).length,
+    crowned: !!p.story.crowned,
+  };
+}
+function storyChapterView(p, chapter) {
+  ensureV2(p);
+  return {
+    type: 'story_chapter', id: chapter.id, title: chapter.title, areaName: chapter.areaName,
+    text: chapter.text, act: chapter.act,
+    found: !!p.story.found[chapter.id], done: !!p.story.done[chapter.id],
+  };
+}
+// Reading a Story Stone: marks the chapter found (once) and
+// answers with the chapter itself, canonically, like the other
+// sign reads.
+function markStoryFound(key, chapterId) {
+  const u = db.users[key];
+  const chapter = STORY_CHAPTER_BY_ID[chapterId];
+  if (!u || !chapter) return;
+  const p = u.profile;
+  ensureV2(p);
+  if (!p.story.found[chapterId]) {
+    p.story.found[chapterId] = true;
+    save(key);
+    const sess = online.get(key);
+    if (sess) send(sess.ws, storyMsg(p));
+  }
+}
+// Completing a chapter's activity (once only): +25g, the
+// chapter's Crown shard, a chat line + toast, a fresh story push
+// and profile. All fifteen done fires the finale once: the
+// Restored Crown trophy + 250g + a server-wide announcement.
+function completeStoryChapter(key, chapterId) {
+  const u = db.users[key];
+  const chapter = STORY_CHAPTER_BY_ID[chapterId];
+  if (!u || !chapter) return;
+  const p = u.profile;
+  ensureV2(p);
+  if (p.story.done[chapterId]) return;
+  p.story.done[chapterId] = true;
+  p.story.found[chapterId] = true; // doing the deed teaches the chapter too
+  addGold(p, STORY_REWARD);
+  addItemToProfile(p, `crown_shard_${chapterId}`, 1);
+  let finale = false;
+  if (!p.story.crowned && STORY_CHAPTERS.every((c) => p.story.done[c.id])) {
+    p.story.crowned = true;
+    finale = true;
+    addGold(p, STORY_FINALE_REWARD);
+    addItemToProfile(p, 'restored_crown', 1);
+  }
+  save(key);
+  const sess = online.get(key);
+  if (sess) {
+    send(sess.ws, { type: 'chat', from: 'Game', text: `📖 Story chapter complete: ${chapter.title} — +${STORY_REWARD}g and a Crown shard is yours.` });
+    send(sess.ws, { type: 'story_done', id: chapterId, title: chapter.title, reward: STORY_REWARD });
+    send(sess.ws, storyMsg(p));
+    sendProfile(key);
+  }
+  if (finale) announce(`👑 ${p.username} has restored the Crown of Nallystake!`);
+}
+// Shared-NPC kill dispatch (both kill paths — the melee tick and
+// the cast kill — call this): maps the creature's area to its
+// chapter. Barrows brothers / Fight Caves monsters ride their own
+// systems and are not shared NPCs, so they never land here.
+function storyNpcKill(key, npc) {
+  if (!npc) return;
+  const byArea = { goblins: 'goblins', training_grounds: 'training_grounds', range: 'range', ratcave: 'castle', wilderness: 'wilderness', purewild: 'wilderness' };
+  const chapterId = byArea[npc.area];
+  if (chapterId) completeStoryChapter(key, chapterId);
 }
 
 // ---------- backpack / bank stack helpers ----------
@@ -4253,6 +4437,10 @@ function endDuel(duel, winnerKey, reason) {
   // Stage 20: ANY duel win (staked, Free Play or mod-run) completes
   // the winner's "Win a duel" starter goal.
   completeStarterGoal(winnerKey, 'win_duel');
+  // The Shattered Crown: a duel win anywhere completes the Duel
+  // Bowl chapter — duels are not area-restricted (a challenge
+  // issued at the Bowl fights on the Dais, as the chapter says).
+  completeStoryChapter(winnerKey, 'duel_bowl');
   for (const k of [duel.a, duel.b]) {
     const p = online.get(k);
     if (p) {
@@ -4803,6 +4991,7 @@ function endModDuel(fight, result) { // 'win' | 'loss' | 'forfeit'
   save(key);
   // Stage 20: a mod-duel win is a duel win for the starter goal.
   if (result === 'win') completeStarterGoal(key, 'win_duel');
+  if (result === 'win') completeStoryChapter(key, 'duel_bowl'); // The Shattered Crown: a mod-duel win is a duel win
   const sess = online.get(key);
   if (sess) {
     if (sess.modDuelId === fight.id) sess.modDuelId = null;
@@ -5372,6 +5561,7 @@ function npcTick(fight) {
     npc.alive = false; npc.hp = 0; npc.respawnAt = Date.now() + npc.respawnMs;
     const drops = rollNpcDrops(profile, npc);
     completeStarterGoal(fight.playerKey, 'kill_monster'); // Stage 20: first NPC kill (goblin / wizard / ranger)
+    storyNpcKill(fight.playerKey, npc); // The Shattered Crown: the kill's area chapter
     save(fight.playerKey);
     const playerDead = fight.hpYou <= 0;
     finishNpcFight(fight, 'kill', drops);
@@ -6156,6 +6346,7 @@ function addFcMonster(run, kind, x, y) {
 }
 function spawnFcWave(run, wave) {
   run.wave = wave;
+  if (wave >= 5) completeStoryChapter(run.playerKey, 'fightcaves'); // The Shattered Crown: reaching wave 5
   run.betweenWaves = false;
   run.monsters.clear();
   run.jadPending = null;
@@ -7417,6 +7608,11 @@ setInterval(() => {
     const deadA = aC && aC.hp() <= 0;
     const deadB = bC && bC.hp() <= 0;
     if (deadA || deadB) {
+      // The Shattered Crown: a player who fells anything in the
+      // wild — rival or PKer — completes the Wilderness chapter
+      // (shared-NPC wild kills ride storyNpcKill in npcTick).
+      if (deadA && bC && bC.isPlayer) completeStoryChapter(bC.key, 'wilderness');
+      if (deadB && aC && aC.isPlayer) completeStoryChapter(aC.key, 'wilderness');
       if (deadA && deadB) {
         endWildPair(pair, { [pair.a]: 'death', [pair.b]: 'death' });
         if (aC.isPlayer) wildDeath(aC.key, bC.name, { skipPairEnd: true }); else pkerDeath(aC.pker, bC.isPlayer ? bC.key : null);
@@ -7993,6 +8189,7 @@ wss.on('connection', (ws, req) => {
   send(ws, starterMsg(profile)); // Stage 20: starter-goal state
   send(ws, questsMsg(profile)); // Runecrafting + first quest (2026-11-24): quest log state
   send(ws, clogMsg(profile)); // Stage 20: collection-log state
+  send(ws, storyMsg(profile)); // The Shattered Crown (2026-11-27): story state
   send(ws, { type: 'exchange_prices', goods: goodsList() });
   send(ws, stakeBoardMsg()); // Stage 17: the current Stake Board offers
   broadcast({ type: 'chat', from: 'Game', text: restore ? `${profile.username} reconnected.` : `${profile.username} entered the plaza.` }, key);
@@ -8235,8 +8432,13 @@ wss.on('connection', (ws, req) => {
       if (toArea === 'plaza') { me.accDrain = 0; me.strDrain = 0; me.runDrainedUntil = 0; }
       if (toArea !== 'plaza') completeStarterGoal(key, 'visit_area');
       // The same per-area state push a travel sends (plus the
-      // Stake Board, which the login push also carries).
-      send(ws, { type: 'area', area: toArea });
+      // Stake Board, which the login push also carries). The
+      // landing coordinates ride along: a same-area Go to never
+      // changes the client's area, so without them the client
+      // keeps its old local position and overwrites this one
+      // with its next move (found live 2026-11-27: the chat line
+      // arrived but the admin never moved).
+      send(ws, { type: 'area', area: toArea, x: gx, y: gy });
       if (toArea === 'plaza') { send(ws, modNpcsMsg()); send(ws, modLadderMsg(profile)); }
       if (NPC_AREAS.includes(toArea)) send(ws, npcStateMsg(toArea));
       send(ws, nodesMsg(toArea));
@@ -8332,7 +8534,25 @@ wss.on('connection', (ws, req) => {
       // coming. (Bots never send this: no bot path taps signs.)
       profile.signReadAt = Date.now();
       save(key);
-      return send(ws, { type: 'chat', from: 'Game', text: "📖 Thanks for reading! Muse has been notified — he'll come and show you around when he's next in game." });
+      // The sign's own chat line goes first (its exact text and
+      // place are the tour system's contract); the Shattered
+      // Crown completion follows it.
+      send(ws, { type: 'chat', from: 'Game', text: "📖 Thanks for reading! Muse has been notified — he'll come and show you around when he's next in game." });
+      completeStoryChapter(key, 'plaza'); // The Shattered Crown: reading the sign is the first chapter's deed
+      return;
+    }
+
+    if (m.type === 'story_read') {
+      // The Shattered Crown (2026-11-27): a player tapped the 📖
+      // Story Stone standing in this area. The chapter is read
+      // from WHERE THE PLAYER STANDS (sub-areas fold into their
+      // chapter), the read marks the chapter found, and the
+      // answer is the chapter itself — the castle directory
+      // sign's canonical-read pattern.
+      const chapterId = STORY_AREA_CHAPTER[me.area];
+      if (!chapterId) return send(ws, { type: 'error', message: 'No Story Stone stands here.' });
+      markStoryFound(key, chapterId);
+      return send(ws, storyChapterView(profile, STORY_CHAPTER_BY_ID[chapterId]));
     }
 
     if (m.type === 'travel') {
@@ -8650,6 +8870,7 @@ wss.on('connection', (ws, req) => {
       // counter goes up (the app's "chests" / "Barrows runs
       // completed") and rides the loot message.
       profile.barrowsRuns = (profile.barrowsRuns || 0) + 1;
+      completeStoryChapter(key, 'barrows'); // The Shattered Crown: the chest is opened
       // The round is finished: the run state resets (the next round
       // re-randomises its tunnel crypt) and the player climbs back
       // out onto the field.
@@ -8881,6 +9102,15 @@ wss.on('connection', (ws, req) => {
       // item — Training Cave stations grant XP only, item null, and
       // don't count) completes the "Gather a resource" starter goal.
       if (node.item) completeStarterGoal(key, 'gather');
+      // The Shattered Crown: one gather handler serves every
+      // node's chapter — the Training Cave's stations (XP only,
+      // no item), the Gathering Cave, cove fishing, Emberfall
+      // mining and Frostfall's nodes.
+      if (node.area === 'training') completeStoryChapter(key, 'training');
+      else if (node.area === 'gathering' && node.item) completeStoryChapter(key, 'gathering');
+      else if (node.area === 'cove' && node.skill === 'fishing') completeStoryChapter(key, 'cove');
+      else if (node.area === 'mine' && node.skill === 'mining') completeStoryChapter(key, 'mine');
+      else if (node.area === 'winter' && node.item) completeStoryChapter(key, 'winter');
       // Runecrafting quest (2026-11-24): essence mines count
       // toward Wizard Alden's mining step.
       if (node.item === 'rune_essence') rcQuestMined(key);
@@ -9164,6 +9394,7 @@ wss.on('connection', (ws, req) => {
       save(key);
       me.actSkill = 'runecrafting'; me.actAt = Date.now();
       send(ws, { type: 'rc_result', ok: true, element: el, item: runeId, essenceUsed: batch, runes: out, xp: xpGain });
+      completeStoryChapter(key, 'magic'); // The Shattered Crown: a rune crafted at the altar
       return sendProfile(key);
     }
 
@@ -9343,6 +9574,7 @@ wss.on('connection', (ws, req) => {
       save(key);
       me.actSkill = 'smithing'; me.actAt = Date.now(); // Stage 7C: activity marker
       send(ws, { type: 'smelt_result', bar, qty, xp });
+      completeStoryChapter(key, 'mine'); // The Shattered Crown: smelting a bar is the mine chapter's other road
       return sendProfile(key);
     }
 
@@ -10013,6 +10245,7 @@ wss.on('connection', (ws, req) => {
           npc.alive = false; npc.hp = 0; npc.respawnAt = Date.now() + npc.respawnMs;
           const drops = rollNpcDrops(profile, npc);
           completeStarterGoal(key, 'kill_monster');
+          storyNpcKill(key, npc); // The Shattered Crown: the cast kill path counts too
           save(key);
           finishNpcFight(fight, 'kill', drops);
           broadcastNpcState(npc.area);
