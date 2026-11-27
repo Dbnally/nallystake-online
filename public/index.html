@@ -1568,8 +1568,16 @@ let deathHoldUntil=0, heldAreaMsg=null, heldStateMsg=null;
 function holdActive(){ return !!deathHoldUntil&&performance.now()<deathHoldUntil; }
 function beginDeathHold(){ deathHoldUntil=performance.now()+1600; }
 function onAreaMsg(m){
- if(m.area!==curArea&&holdActive()){ heldAreaMsg=m.area; return; }
+ if(m.area!==curArea&&holdActive()){ heldAreaMsg=m; return; }
  setArea(m.area);
+ // An area message carrying landing coordinates (admin Go to)
+ // snaps my local position to them. Without this a same-area
+ // Go to never moved me: the area didn't change, so myPos was
+ // never re-seeded and my next move overwrote the server's
+ // placement (found live 2026-11-27).
+ if(typeof m.x==='number'&&typeof m.y==='number'){
+   myPos={x:m.x,y:m.y}; myInit=true; tapTarget=null; moveVel={x:0,z:0};
+ }
 }
 function onStateMsg(m){
  if(m.area&&m.area!==curArea&&holdActive()){ heldStateMsg=m; return; }
@@ -1578,7 +1586,7 @@ function onStateMsg(m){
 }
 function releaseHeldMsgs(){
  if(heldStateMsg){ const m=heldStateMsg; heldStateMsg=null; heldAreaMsg=null; onStateMsg(m); }
- else if(heldAreaMsg){ const a=heldAreaMsg; heldAreaMsg=null; setArea(a); }
+ else if(heldAreaMsg){ const m=heldAreaMsg; heldAreaMsg=null; onAreaMsg(m); }
 }
 function onPlayerFell(m){
  const fa=avatars[m.username];
@@ -1770,6 +1778,9 @@ function onMsg(m){
  if(m.type==='rc_result'){ toast(`🔷 Crafted ${m.runes} × ${nameOf(m.item)} (+${m.xp||0} Runecrafting XP)`); logLine(`🔷 +${m.runes} ${nameOf(m.item)} (+${m.xp||0} Runecrafting XP)`); const avR=me?avatars[me.username]:null; if(avR) spawnTextSplat(avR,`+${m.xp||0} 🔷 Runecrafting XP`,'good'); if(rcOpen) renderRcPanel(); }
  if(m.type==='starter_done'){ toast(`✅ Starter goal: ${m.label} — +${m.reward}g`); logLine(`✅ Starter goal complete: ${m.label} — +${m.reward}g!`); }
  if(m.type==='clog'){ clogFound=m.found||[]; clogTotal=m.total||13; if(dockPanel==='goals') renderDock(); }
+ if(m.type==='story'){ storyState=m; if(dockPanel==='story') renderDock(); } // The Shattered Crown: story state push
+ if(m.type==='story_done'){ toast(`📖 Chapter complete: ${m.title} — +${m.reward}g and a Crown shard!`); logLine(`📖 Story chapter complete: ${m.title} — +${m.reward}g, and a Crown shard is yours.`); }
+ if(m.type==='story_chapter'){ renderStoryChapter(m); }
  if(m.type==='profile'){ me=m.profile; renderAll(); onProfileForNotes(); onProfileForAppearance(); maybeOpenAppearance(); }
  if(m.type==='friends'){ myFriends=m.friends||[]; if(dockPanel==='friends') renderDock(); } // Friends list (2026-11-23): live online/area state push
  if(m.type==='note_text'){ openNoteReader(m); }
@@ -1905,6 +1916,7 @@ function onXpDrop(m){
 let starterGoals=[]; // [{id,label,done}] from 'starter' messages
 let myQuests=[], aldenOpen=false, aldenLines=null, rcOpen=false; // Runecrafting + first quest (2026-11-24): quest log state + Alden/altar sheet flags
 let clogFound=[], clogTotal=13; // from 'clog' messages
+let storyState=null; // The Shattered Crown (2026-11-27): {chapters:[{id,title,areaName,act,text,found,done}],doneCount,crowned} from 'story' messages
 /* The gold celebration banner (level-ups + game-wide announcements). */
 let bannerTimer=null;
 function showBanner(text,hint){
@@ -2044,6 +2056,45 @@ function pGoals(){
  }
  h+=`<p class="note" style="margin-top:8px">Kill Barrows brothers, clear the Fight Caves and loot rare Barrows weapons to fill the log.</p>`;
  return h;
+}
+/* ---- The Shattered Crown (2026-11-27): the story panel ----
+   A normal dock panel (opened from the Help panel — never over a
+   fight strip). Found chapters show their words; unfound ones
+   keep them hidden and point at their Story Stone. */
+function pStory(){
+ let h=`<h4 style="margin:2px 0 5px;color:#e3c766">📖 The Shattered Crown — Chapters: ${storyState?storyState.doneCount:0}/15</h4>`;
+ h+=`<p class="note" style="margin-bottom:8px">The Crown of Nallystake was shattered and a shard scattered to every corner of the world. Retrace them in order: read each area's 📖 Story Stone, do its deed, and earn its shard (+25g each). All fifteen make the Crown whole.</p>`;
+ if(!storyState) h+=`<p class="note">Loading your story…</p>`;
+ else{
+   for(const c of storyState.chapters){
+     if(!c.found){
+       h+=`<div class="rowline"><span class="ic">🔒</span><span class="grow"><b>Undiscovered</b><br><span class="sub">Find the Story Stone in ${esc(c.areaName)}</span></span></div>`;
+       continue;
+     }
+     h+=`<div class="note" style="margin:9px 0 3px;font-weight:800;color:#b8a888">${c.done?'✅':'📖'} ${esc(c.title)} — ${esc(c.areaName)}</div>`;
+     for(const l of (c.text||[])) h+=`<p class="note" style="margin:2px 0">${esc(l)}</p>`;
+     h+=`<div class="rowline"><span class="ic">${c.done?'👑':'⬜'}</span><span class="grow"><b>${esc(c.act)}</b></span>${c.done?'<b style="color:#e3c766">+25g 👑</b>':'<span class="sub">25g + shard</span>'}</div>`;
+   }
+   if(storyState.crowned) h+=`<div class="setrow" style="margin-top:8px"><span class="grow"><b>👑 The Crown is restored!</b></span><b style="color:#e3c766">+250g</b></div>`;
+ }
+ return h;
+}
+/* The Story Stone read sheet: opens with a placeholder and the
+   server's canonical chapter (story_read → 'story_chapter')
+   fills it in — the training board's pattern, on the shared
+   sign modal. */
+function renderStoryChapter(m){
+ const s=$('signsheet');
+ s.innerHTML=`<h3>📖 ${esc(m.title||'The Shattered Crown')}</h3>
+ <p class="note" style="margin-bottom:8px">The Story Stone in ${esc(m.areaName||'this area')} remembers:</p>
+ ${(m.text&&m.text.length?m.text:['Reading the stone…']).map(l=>`<div class="kv"><span>•</span><b>${esc(l)}</b></div>`).join('')}
+ <div class="kv" style="margin-top:8px"><span>${m.done?'👑':'⬜'}</span><b>${esc(m.act||'')} — ${m.done?'complete ✓ (+25g and the shard are yours)':'not yet done (pays 25g + this chapter\'s Crown shard)'}</b></div>
+ <div class="btns" style="margin-top:10px"><button class="ghost" onclick="closeModal('signmodal')">Close</button></div>`;
+ $('signmodal').classList.add('open');
+}
+function openStoryStone(){
+ renderStoryChapter({title:'The Shattered Crown',areaName:'this area',text:null,act:'…',done:false});
+ send({type:'story_read'});
 }
 /* ---- Boards: duel leaderboard + skills hiscores (Players panel) ---- */
 let boardTab='duels', boardRows=null, boardLoading=false;
@@ -4909,7 +4960,31 @@ function buildAreas(){
  areaGroups.ratcave=new THREE.Group(); scene.add(areaGroups.ratcave); buildRatCave(areaGroups.ratcave); // the Rat Cave under the trap door
  areaGroups.training_grounds=new THREE.Group(); scene.add(areaGroups.training_grounds); buildTrainingGrounds(areaGroups.training_grounds); // Barrows Training Grounds (2026-11-27)
  areaGroups.duel_bowl=new THREE.Group(); scene.add(areaGroups.duel_bowl); buildDuelBowl(areaGroups.duel_bowl); // Duel Bowl (2026-11-27)
+ buildStoryStones(); // The Shattered Crown (2026-11-27): one stone per chapter area
  applyAreaVisibility();
+}
+/* The Shattered Crown (2026-11-27): a 📖 Story Stone stands in
+   every chapter area (sub-areas carry their chapter's stone too:
+   the castle's upper floor and Rat Cave, the Barrows crypt and
+   tunnels, Pure Wild). Built like the other sign props — a stone
+   pillar with a gold cap and a floating label; its faces are tap
+   targets (storyInteractives[area], act {type:'story'}), routed
+   in handleTap to the read sheet the server answers canonically
+   (story_read). Spots are SERVER coords, by each area's spawn. */
+const STORY_STONE_SPOTS={plaza:[880,690],duel_bowl:[720,690],goblins:[280,450],training:[880,690],training_grounds:[720,650],gathering:[880,450],cove:[260,450],mine:[880,730],magic:[720,690],range:[880,690],castle:[720,690],castleup:[880,690],ratcave:[330,200],barrows:[880,770],barrows_crypt:[880,570],barrows_tunnels:[880,770],fightcaves:[720,770],wilderness:[880,815],purewild:[720,815],winter:[720,690]};
+let storyInteractives={}; // area -> [meshes]
+function buildStoryStones(){
+ for(const [area,[sx,sy]] of Object.entries(STORY_STONE_SPOTS)){
+   const S=areaGroups[area]; if(!S) continue;
+   const g=new THREE.Group(); g.position.set(sx2w(sx),0,sy2w(sy)); S.add(g);
+   const act={type:'story'};
+   const pillar=box(0.85,1.7,0.85,0x8a867e,0,0.85,0,g); pillar.userData.act=act;
+   const cap=box(1.05,0.18,1.05,0xd4af37,0,1.79,0,g); cap.userData.act=act;
+   if(!storyInteractives[area]) storyInteractives[area]=[];
+   storyInteractives[area].push(pillar,cap);
+   const sp=textSprite('📖 STORY STONE','#ffe9bb','rgba(23,19,12,0.9)'); sp.position.set(0,2.75,0); g.add(sp);
+   shadowify(g);
+ }
 }
 function applyAreaVisibility(){
  if(!areaGroups.plaza) return;
@@ -8239,6 +8314,15 @@ function handleTap(cx,cy){
    const ih=raycaster.intersectObjects(castleUpBankMeshes,false)[0];
    if(ih){ openPanel('bank'); return; }
  }
+ // The Shattered Crown (2026-11-27): the 📖 Story Stone standing
+ // in this area — the read comes from the server, from where I
+ // stand (story_read → 'story_chapter').
+ { const sList=storyInteractives[curArea];
+   if(sList&&sList.length){
+     const ih=raycaster.intersectObjects(sList,false)[0];
+     if(ih){ const wp=new THREE.Vector3(); ih.object.getWorldPosition(wp); spawnTapSplat(wx2s(wp.x),wz2s(wp.z),true); openStoryStone(); return; }
+   }
+ }
  // Barrows Training Grounds (2026-11-27): the readiness board at
  // the entrance — its read comes from the server, from MY levels.
  if(curArea==='duel_bowl'){
@@ -9439,7 +9523,7 @@ initThree();
 
 /* ================= dock panels (Interface Overhaul) ================= */
 let dockPanel=null, shopTab='Potion', shopMode='buy', bankQty='1', selStack=null, selIdx=-1, packSorted=false; // Stage 29: selIdx = the backpack slot selStack was tapped in (exact-spot equip swaps)
-const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',spellbook:'📖 Spellbook',players:'👥 Players online',friends:'💚 Friends',admin:'👑 Admin',tools:'🛠️ Admin Tools',skills:'📊 Skills',goals:'📋 Goals & Log',smithy:'🔥 Emberfall Smithy',teleport:'🌀 Teleport',settings:'🎛️ Settings',help:'❓ Help'};
+const PANEL_TITLES={backpack:'🎒 Backpack',worn:'🗡️ Worn Items',shop:'🏪 Shops',bank:'🏦 Bank of Gielinor',exchange:'💱 Gold Exchange',prayers:'🙏 Prayers',spellbook:'📖 Spellbook',players:'👥 Players online',friends:'💚 Friends',admin:'👑 Admin',tools:'🛠️ Admin Tools',skills:'📊 Skills',goals:'📋 Goals & Log',smithy:'🔥 Emberfall Smithy',teleport:'🌀 Teleport',settings:'🎛️ Settings',help:'❓ Help',story:'📖 The Shattered Crown'};
 function togglePanel(name){ dockPanel===(name)? closeDock() : openPanel(name); }
 function openPanel(name){ dockPanel=name; selStack=null; selIdx=-1; if(name!=='shop') shopNotice=''; if(name==='backpack') packSorted=false; $('dockpanel').classList.add('open'); $('paneldock').classList.add('panelopen'); renderDock();
  document.querySelectorAll('.rbtn').forEach(b=>b.classList.toggle('on',b.dataset.panel===name));
@@ -9479,6 +9563,7 @@ function renderDock(){
  if(dockPanel==='tools') b.innerHTML=pTools();
  if(dockPanel==='skills') b.innerHTML=pSkills();
  if(dockPanel==='goals') b.innerHTML=pGoals();
+ if(dockPanel==='story') b.innerHTML=pStory();
  if(dockPanel==='smithy') b.innerHTML=pSmithy();
  if(dockPanel==='teleport') b.innerHTML=pTeleport();
  if(dockPanel==='settings') b.innerHTML=pSettings();
@@ -10398,6 +10483,7 @@ window.helpTask=function(id){ helpOpenId=(helpOpenId===id)? null : id; renderDoc
 window.helpGo=function(to){ doTravel(to); }; // doTravel closes the dock itself
 function pHelp(){
  let h=`<p class="note" style="margin-bottom:8px">New here? Pick a task and I'll walk you through it, step by step. For a tour in person, read the big sign by the plaza spawn — reading it tells Muse, and he'll come and show you around.</p>`;
+ h+=`<div class="rowline" onclick="openPanel('story')"><span class="ic">📖</span><span class="grow"><b>The Shattered Crown</b><br><span class="sub">One story across every area — fifteen shards to retrace</span></span><span class="sub">▸</span></div>`;
  for(const t of HELP_TASKS){
    const open=helpOpenId===t.id;
    h+=`<div class="rowline helptask ${open?'sel':''}" onclick="helpTask('${t.id}')"><span class="ic">${t.ic}</span><span class="grow"><b>${t.name}</b><br><span class="sub">${t.sub}</span></span><span class="sub">${open?'▾':'▸'}</span></div>`;
