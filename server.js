@@ -1838,6 +1838,10 @@ function publicProfile(p) {
     // view (like modLadder above); the live online/area state for
     // each friend rides the dedicated 'friends' push.
     friends: [...(p.friends || [])],
+    // Facebook Login (2026-11-27): whether this account is linked —
+    // the Settings panel shows "Facebook linked ✓" or the Link
+    // button off this flag. The id itself never leaves the server.
+    facebookLinked: !!p.facebookId,
   };
 }
 // Week 2 (D15): retired throwaway test accounts from the November
@@ -2132,6 +2136,184 @@ function readBody(req) {
     req.on('end', () => { try { resolve(JSON.parse(d || '{}')); } catch { resolve({}); } });
   });
 }
+// ---------- Facebook Login (2026-11-27, Derek) ----------
+// OAuth 2.0 authorization-code flow, no extra deps — the pattern
+// proven live on duelgame-online, adapted to this game's REST
+// sessions: Facebook confirms the player to the callback, the
+// callback mints a short-lived one-time code, and the client
+// exchanges that code at POST /api/fb-exchange for a completely
+// normal session token (the same token /api/login returns).
+// Config comes ONLY from env vars — the app secret must never be
+// committed. With FB_APP_ID / FB_APP_SECRET unset the game boots
+// and plays identically; the login button just lands on a friendly
+// "isn't set up yet" page. Register this redirect URI in the
+// Facebook app: <the game's origin>/auth/facebook/callback.
+// FB_DIALOG_BASE / FB_GRAPH_BASE exist so tests can point the flow
+// at a local stub of Facebook's endpoints; production leaves them
+// unset and gets the real facebook.com / graph.facebook.com.
+const FB_APP_ID = process.env.FB_APP_ID || '';
+const FB_APP_SECRET = process.env.FB_APP_SECRET || '';
+const FB_REDIRECT_URI = process.env.FB_REDIRECT_URI || 'https://nallystake-online.onrender.com/auth/facebook/callback';
+const FB_DIALOG_BASE = (process.env.FB_DIALOG_BASE || 'https://www.facebook.com').replace(/\/+$/, '');
+const FB_GRAPH_BASE = (process.env.FB_GRAPH_BASE || 'https://graph.facebook.com').replace(/\/+$/, '');
+const fbConfigured = () => !!(FB_APP_ID && FB_APP_SECRET);
+const fbStates = new Map(); // oauth state -> { expiresAt, mode: 'login'|'link', linkKey } (single-use, 10 min)
+const fbLoginTokens = new Map(); // one-time code -> { key, expiresAt } (reusable until expiry, 5 min — duplicate callback hits must not strand the player)
+const fbConsumedStates = new Map(); // state -> { token, expiresAt } for states already turned into a login, so a repeated callback hit redirects to that same login instead of an error page
+const fbRandomToken = (bytes = 32) => crypto.randomBytes(bytes).toString('base64url');
+function pruneFbMaps() {
+  const now = Date.now();
+  for (const [k, rec] of fbStates) if (rec.expiresAt <= now) fbStates.delete(k);
+  for (const [k, rec] of fbLoginTokens) if (rec.expiresAt <= now) fbLoginTokens.delete(k);
+  for (const [k, rec] of fbConsumedStates) if (rec.expiresAt <= now) fbConsumedStates.delete(k);
+}
+function findKeyByFacebookId(fbId) {
+  for (const [key, u] of Object.entries(db.users)) if (u && u.profile && u.profile.facebookId != null && String(u.profile.facebookId) === String(fbId)) return key;
+  return null;
+}
+// A Facebook display name becomes a game username: anything that
+// isn't a letter/number/underscore folds to '_', edges trimmed,
+// max 16 chars (the register rule); collisions append digits
+// until the (case-insensitive) name is free.
+function fbUsernameFromName(fbName) {
+  let base = String(fbName || '').replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 16);
+  if (!base) base = 'fbplayer';
+  if (base.length < 3) base = (base + '_fb').slice(0, 16);
+  let candidate = base, n = 2;
+  while (db.users[candidate.toLowerCase()]) {
+    const suffix = String(n++);
+    candidate = base.slice(0, 16 - suffix.length) + suffix;
+  }
+  return candidate;
+}
+// Find the account a Facebook id belongs to, or create it: a brand
+// new profile through the SAME creation path as /api/register (the
+// standard new-player kit — 100 gold + Nooby sword), with a random
+// password nobody knows (the bot-account pattern), so password
+// login for that username fails cleanly and Facebook is the way in.
+function getOrCreateFbKey(fbId, fbName) {
+  const existing = findKeyByFacebookId(fbId);
+  if (existing) return existing;
+  const username = fbUsernameFromName(fbName);
+  const key = username.toLowerCase();
+  const salt = crypto.randomBytes(16).toString('hex');
+  const profile = newProfile(username);
+  profile.facebookId = String(fbId);
+  if (fbName) profile.facebookName = String(fbName).slice(0, 80);
+  db.users[key] = { salt, passHash: hashPass(crypto.randomBytes(24).toString('hex'), salt), profile };
+  save(key);
+  return key;
+}
+function mintFbToken(key) {
+  pruneFbMaps();
+  const token = fbRandomToken();
+  fbLoginTokens.set(token, { key, expiresAt: Date.now() + 5 * 60 * 1000 });
+  return token;
+}
+function consumeFbToken(token) {
+  pruneFbMaps();
+  const rec = fbLoginTokens.get(String(token || ''));
+  if (!rec) return null;
+  if (rec.expiresAt <= Date.now()) { fbLoginTokens.delete(String(token)); return null; }
+  return rec; // reusable until expiry on purpose (see fbLoginTokens note above)
+}
+function mintSessionToken(key) {
+  const token = crypto.randomBytes(24).toString('hex');
+  tokens.set(token, key);
+  return token;
+}
+function fbDialogUrl(state) {
+  return FB_DIALOG_BASE + '/v21.0/dialog/oauth?' + new URLSearchParams({
+    client_id: FB_APP_ID, redirect_uri: FB_REDIRECT_URI, scope: 'public_profile', state, response_type: 'code',
+  });
+}
+// The only part that talks to Facebook: code -> access token -> /me
+// profile (id + name, nothing else is ever requested).
+async function fbFetchProfile(code) {
+  const tokenUrl = FB_GRAPH_BASE + '/v21.0/oauth/access_token?' + new URLSearchParams({
+    client_id: FB_APP_ID, client_secret: FB_APP_SECRET, redirect_uri: FB_REDIRECT_URI, code: String(code),
+  });
+  const tokenRes = await fetch(tokenUrl, { signal: AbortSignal.timeout(10000) });
+  const tokenJson = await tokenRes.json().catch(() => null);
+  if (!tokenRes.ok || !tokenJson || !tokenJson.access_token) throw new Error('facebook code exchange failed: ' + ((tokenJson && tokenJson.error && tokenJson.error.message) || ('HTTP ' + tokenRes.status)));
+  const meRes = await fetch(FB_GRAPH_BASE + '/v21.0/me?fields=id,name&access_token=' + encodeURIComponent(tokenJson.access_token), { signal: AbortSignal.timeout(10000) });
+  const me = await meRes.json().catch(() => null);
+  if (!meRes.ok || !me || !me.id) throw new Error('facebook profile fetch failed: ' + ((me && me.error && me.error.message) || ('HTTP ' + meRes.status)));
+  return { id: String(me.id), name: String(me.name || '') };
+}
+function fbPage(res, status, inner) {
+  const body = '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nallystake Online</title>' +
+    '<style>body{margin:0;font-family:Georgia,serif;background:#171310;color:#e8d9b0;padding:24px 16px}main{max-width:640px;margin:0 auto}h1{color:#c9a227}h2{color:#c9a227}a{color:#7db4ff}section{margin:18px 0;line-height:1.55}</style></head><body><main>' + inner + '</main></body></html>';
+  res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(body);
+}
+function fbNotSetUp(res) {
+  fbPage(res, 200, '<h1>⚔️ Nallystake Online</h1><section><p>Facebook login isn\'t set up yet on this server. You can still play — go back and register or log in with a username and password.</p><p><a href="/">← Back to the game</a></p></section>');
+}
+function fbFailPage(res, status, msg) {
+  fbPage(res, status, '<h1>⚔️ Nallystake Online</h1><section><p>' + msg + '</p><p><a href="/">← Back to the game</a></p></section>');
+}
+function fbPrivacyPage(res) {
+  fbPage(res, 200, `<h1>⚔️ Nallystake Online — Privacy Policy</h1>
+<section><p><i>Effective date: November 27, 2026.</i></p>
+<p>Nallystake Online is a free online duelling game. This page explains, plainly, what information the game stores and what happens to it.</p></section>
+<section><h2>What we store</h2>
+<p><b>Username/password accounts:</b> your chosen username and a hashed password (we never store the password itself), plus your game data — gold, items, skills and levels, duel record and rating, friends list, and where you were standing in the world.</p>
+<p><b>If you use Facebook Login:</b> Facebook sends us your Facebook account id and your display name. We store that id (so we can find your game account next time) and the display name, alongside the same game data described above. We do not ask Facebook for your email, friend list, photos, posts, or anything else — the login request only asks for your public profile (id and name).</p>
+<p><b>Gameplay:</b> chat messages and in-game activity are shown to other players while you play; chat is not kept as a permanent record by the game.</p></section>
+<section><h2>How it is used</h2>
+<p>Only to run the game: signing you in, saving your gold, items, skills and record, and showing your username to other players in the game. Facebook Login is used for sign-in only.</p></section>
+<section><h2>Sharing and selling</h2>
+<p>We do not sell your information, and we do not share it with anyone for advertising or marketing. Facebook only receives what is part of the login flow itself, handled under Facebook's own policies.</p></section>
+<section><h2>Deleting your data</h2>
+<p>You can ask for your account and its game data to be deleted at any time. Message the Nallystake Facebook Page, tell us your in-game username (and say if you signed in with Facebook), and we will delete the account and its stored data.</p></section>
+<section><h2>Changes</h2>
+<p>If this policy changes, the updated version will be posted on this page with a new effective date.</p>
+<p><a href="/">← Back to the game</a></p></section>`);
+}
+async function handleFbCallback(res, url) {
+  if (!fbConfigured()) return fbNotSetUp(res);
+  if (url.searchParams.get('error')) return fbFailPage(res, 400, 'Facebook login was cancelled or denied. No problem — you can still register or log in with a username and password.');
+  const state = url.searchParams.get('state') || '';
+  const code = url.searchParams.get('code') || '';
+  pruneFbMaps();
+  // Facebook's return sometimes reaches this callback more than once
+  // for one login (retries / redirect chains — seen live on
+  // duelgame-online 2026-11-25). If this state already produced a
+  // login, send the player to that same login instead of an error.
+  const consumedState = state ? fbConsumedStates.get(state) : null;
+  if (consumedState && consumedState.expiresAt > Date.now()) {
+    res.writeHead(302, { Location: '/?fbtoken=' + encodeURIComponent(consumedState.token) });
+    return res.end();
+  }
+  const rec = state ? fbStates.get(state) : null;
+  if (state) fbStates.delete(state); // single-use, whatever happens next
+  if (!rec || rec.expiresAt <= Date.now() || !code) return fbFailPage(res, 400, 'That Facebook login link was invalid or expired. Please go back and tap “Log in with Facebook” again.');
+  let fbProfile;
+  try { fbProfile = await fbFetchProfile(code); }
+  catch (e) { console.error('facebook exchange/profile failed:', e && e.message); return fbFailPage(res, 502, 'Facebook login failed while talking to Facebook. Please try again in a moment.'); }
+  let key;
+  if (rec.mode === 'link' && rec.linkKey && db.users[rec.linkKey]) {
+    // Linking: bind this Facebook id to the account whose own live
+    // session started the flow (POST /api/fb-link-start). The
+    // account itself — gold, levels, everything — is untouched.
+    const target = db.users[rec.linkKey];
+    const holder = findKeyByFacebookId(fbProfile.id);
+    if (holder && holder !== rec.linkKey) return fbFailPage(res, 400, 'That Facebook account is already linked to a different game account. Sign in with that Facebook account instead, or link a different Facebook account here.');
+    if (target.profile.facebookId && String(target.profile.facebookId) !== String(fbProfile.id)) return fbFailPage(res, 400, 'This game account is already linked to a different Facebook account.');
+    target.profile.facebookId = String(fbProfile.id);
+    if (fbProfile.name) target.profile.facebookName = String(fbProfile.name).slice(0, 80);
+    save(rec.linkKey);
+    key = rec.linkKey;
+  } else {
+    key = getOrCreateFbKey(fbProfile.id, fbProfile.name);
+  }
+  const token = mintFbToken(key);
+  if (state) fbConsumedStates.set(state, { token, expiresAt: Date.now() + 10 * 60 * 1000 });
+  res.writeHead(302, { Location: '/?fbtoken=' + encodeURIComponent(token) });
+  res.end();
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   if (req.method === 'POST' && url.pathname === '/api/register') {
@@ -2200,6 +2382,41 @@ const server = http.createServer(async (req, res) => {
       .map(([k, u]) => ({ username: u.profile.username, at: u.profile.signReadAt, online: online.has(k) }))
       .sort((a, b) => b.at - a.at);
     return json(res, 200, { requests });
+  }
+  // Facebook Login (2026-11-27): the privacy page Facebook requires,
+  // the OAuth start + callback, the one-time-code exchange, and the
+  // authenticated link-start. All defined in the Facebook block above.
+  if (req.method === 'GET' && url.pathname === '/privacy') return fbPrivacyPage(res);
+  if (req.method === 'GET' && url.pathname === '/auth/facebook') {
+    if (!fbConfigured()) return fbNotSetUp(res);
+    pruneFbMaps();
+    const state = fbRandomToken(24);
+    fbStates.set(state, { expiresAt: Date.now() + 10 * 60 * 1000, mode: 'login', linkKey: null });
+    res.writeHead(302, { Location: fbDialogUrl(state) });
+    return res.end();
+  }
+  if (req.method === 'GET' && url.pathname === '/auth/facebook/callback') {
+    try { await handleFbCallback(res, url); }
+    catch { try { fbFailPage(res, 500, 'Facebook login failed unexpectedly. Please try again.'); } catch {} }
+    return;
+  }
+  if (req.method === 'POST' && url.pathname === '/api/fb-exchange') {
+    const { fbtoken } = await readBody(req);
+    const rec = consumeFbToken(fbtoken);
+    if (!rec || !db.users[rec.key]) return json(res, 401, { error: 'Facebook login link expired — try again.' });
+    const token = mintSessionToken(rec.key);
+    return json(res, 200, { token, profile: publicProfile(db.users[rec.key].profile) });
+  }
+  if (req.method === 'POST' && url.pathname === '/api/fb-link-start') {
+    const { token } = await readBody(req);
+    const key = tokens.get(String(token || ''));
+    if (!key || !db.users[key]) return json(res, 401, { error: 'That login expired — log in again first.' });
+    if (!fbConfigured()) return json(res, 400, { error: "Facebook login isn't set up yet on this server." });
+    if (db.users[key].profile.facebookId) return json(res, 200, { linked: true });
+    pruneFbMaps();
+    const state = fbRandomToken(24);
+    fbStates.set(state, { expiresAt: Date.now() + 10 * 60 * 1000, mode: 'link', linkKey: key });
+    return json(res, 200, { url: fbDialogUrl(state) });
   }
   // static files
   const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
