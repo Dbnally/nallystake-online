@@ -1727,6 +1727,11 @@ function ensureV2(p) {
   // been offered the castle start at login? Missing = never
   // offered. Only ever set by the castleOffer answer — never reset.
   if (typeof p.castleOfferSeen !== 'boolean') { p.castleOfferSeen = false; changed = true; }
+  // "Log in where you left off" (2026-11-26): the last returnable
+  // spot, written by persistLastSpot and validated by lastSpotOf on
+  // the way back in. Missing = never recorded; null = none recorded
+  // (never saved, or the last session ended somewhere unreturnable).
+  if (!('lastSpot' in p)) { p.lastSpot = null; changed = true; }
   // Starter build migration: existing accounts receive exactly ONE
   // Nooby sword, once. The noobyV flag is the whole rule: new
   // profiles are born with it set (their sword rides in the starter
@@ -7254,21 +7259,76 @@ setInterval(() => {
 // — just the player's place in the area.
 const RESTORE_TTL_MS = 10 * 60 * 1000;
 const savedSpots = new Map(); // account key -> { area, x, y, barrowsCrypt, barrowsHp, barrowsDoorRolled, accDrain, strDrain, runDrainedUntil, at }
-function rememberSpot(key, me) {
-  savedSpots.delete(key);
-  if (!me || !AREAS[me.area]) return;
-  if (me.duelId || me.modDuelId) return; // forfeited by the disconnect
-  if (me.fcRunId) return; // the run ended with the disconnect
-  if (isWildArea(me.area)) return; // wild state is session-only
-  if (me.area === 'arena' || me.area === 'waiting') return; // duel / stake-match ground
-  savedSpots.set(key, {
+// The one eligibility test for a returnable spot, shared by the
+// in-memory reconnect spot and its persistent twin below: mid-duel
+// or mod-duel (forfeited by the disconnect), mid-Fight-Caves-run
+// (the run ended with it), the Wilderness / Pure Wild (session-only
+// skull / teleblock / HP pool) and the duel arena / Waiting Area
+// (stake-match ground) are never returnable.
+function spotReturnable(me) {
+  if (!me || !AREAS[me.area]) return false;
+  if (me.duelId || me.modDuelId) return false; // forfeited by the disconnect
+  if (me.fcRunId) return false; // the run ended with the disconnect
+  if (isWildArea(me.area)) return false; // wild state is session-only
+  if (me.area === 'arena' || me.area === 'waiting') return false; // duel / stake-match ground
+  return true;
+}
+function spotOf(me) {
+  return {
     area: me.area, x: me.x, y: me.y,
     barrowsCrypt: me.barrowsCrypt || null,
     barrowsHp: (typeof me.barrowsHp === 'number') ? me.barrowsHp : null,
     barrowsDoorRolled: !!me.barrowsDoorRolled,
     accDrain: me.accDrain || 0, strDrain: me.strDrain || 0, runDrainedUntil: me.runDrainedUntil || 0,
     at: Date.now(),
-  });
+  };
+}
+function rememberSpot(key, me) {
+  savedSpots.delete(key);
+  if (!spotReturnable(me)) return;
+  savedSpots.set(key, spotOf(me));
+}
+// "Log in where you left off" (2026-11-26): the persistent twin of
+// rememberSpot. The record lives on the profile (profile.lastSpot),
+// so it survives server restarts and long absences — unlike the
+// in-memory spot there is NO TTL: logging in tomorrow puts you back
+// where you logged off. A session ending somewhere unreturnable
+// ERASES the old record: a Wilderness logout must land in the plaza
+// next login, not at some older spot from before the trip. Called
+// from cleanupDisconnect (beside rememberSpot), from the travel
+// handler (an area change is a cheap crash-safe checkpoint) and
+// from the castle-offer answer (a one-time start placement).
+function persistLastSpot(key, me) {
+  const user = db.users[key];
+  if (!user) return;
+  user.profile.lastSpot = spotReturnable(me) ? spotOf(me) : null;
+  save(key);
+}
+// Read + validate a profile's recorded spot for a login. Anything
+// stale, corrupt or unreturnable falls back safely: a bad or
+// forbidden area is no spot at all (the plaza, exactly as today);
+// bad coordinates fall back to the area's own spawn; good
+// coordinates are clamped to the world the same way the Stage 31
+// restore clamps them. Barrows crypt/tunnel spots validate like
+// the reconnect path treats them — the run state lives on the
+// profile, so the place is honest to restore.
+function lastSpotOf(profile) {
+  const s = profile && profile.lastSpot;
+  if (!s || typeof s !== 'object' || typeof s.area !== 'string' || !AREAS[s.area]) return null;
+  if (isWildArea(s.area) || s.area === 'arena' || s.area === 'waiting') return null;
+  const num = (v) => typeof v === 'number' && isFinite(v);
+  return {
+    area: s.area,
+    x: num(s.x) ? Math.max(0, Math.min(WORLD_W, s.x)) : AREAS[s.area].spawn.x,
+    y: num(s.y) ? Math.max(0, Math.min(WORLD_H, s.y)) : AREAS[s.area].spawn.y,
+    barrowsCrypt: s.barrowsCrypt || null,
+    barrowsHp: num(s.barrowsHp) ? s.barrowsHp : null,
+    barrowsDoorRolled: !!s.barrowsDoorRolled,
+    accDrain: num(s.accDrain) ? s.accDrain : 0,
+    strDrain: num(s.strDrain) ? s.strDrain : 0,
+    runDrainedUntil: num(s.runDrainedUntil) ? s.runDrainedUntil : 0,
+    at: num(s.at) ? s.at : 0,
+  };
 }
 
 // Full disconnect cleanup for one account: settles any duel/fight
@@ -7283,6 +7343,7 @@ function cleanupDisconnect(key) {
   const profile = user.profile;
   const me = online.get(key);
   if (me) rememberSpot(key, me); // Stage 31: capture the spot BEFORE any settlement moves the player
+  if (me) persistLastSpot(key, me); // "Log in where you left off": the same capture, persisted on the profile
   // Stage 30: disconnecting (or being replaced by a fresher
   // session) while in a wild fight is a DEATH in the wild, drops
   // and all — the online reading of the app's combat-logout
@@ -7409,8 +7470,17 @@ wss.on('connection', (ws, req) => {
   // login is unchanged: a first login, a stale spot, and every
   // excluded state still land in the plaza scatter.
   const spot = savedSpots.get(key); savedSpots.delete(key);
-  const restore = (spot && Date.now() - spot.at <= RESTORE_TTL_MS) ? spot : null;
-  // Everyone logs into the plaza (area is session-only, never saved).
+  let restore = (spot && Date.now() - spot.at <= RESTORE_TTL_MS) ? spot : null;
+  // "Log in where you left off" (2026-11-26): no fresh in-memory
+  // spot (a first login after a server restart, or hours later) —
+  // fall back to the spot recorded on the profile. The in-memory
+  // restore fires first and the two never stack: same place, one
+  // arrival, one line (the 📍 line below for the persistent path).
+  const savedLastSpot = lastSpotOf(profile);
+  let fromLastSpot = false;
+  if (!restore && savedLastSpot) { restore = savedLastSpot; fromLastSpot = true; }
+  // Without either spot, everyone logs into the plaza (the session
+  // area itself is never saved — only the recorded spot is).
   // Stage 13: the login scatter is the old 100..600 x 100..350 box x2.
   online.set(key, { ws, profile, x: restore ? Math.max(0, Math.min(WORLD_W, restore.x)) : 200 + Math.random() * 1000, y: restore ? Math.max(0, Math.min(WORLD_H, restore.y)) : 200 + Math.random() * 500, area: restore ? restore.area : 'plaza', duelId: null, modDuelId: null, npcFightId: null, fcRunId: null, lastActionAt: 0, smithing: null, lastSmithHitAt: 0, lastReheatAt: 0, barrowsFightId: null, barrowsPuzzle: null, barrowsPuzzleShown: false, barrowsCrypt: restore ? restore.barrowsCrypt : null, barrowsHp: restore ? restore.barrowsHp : null, barrowsDoorRolled: restore ? restore.barrowsDoorRolled : false, accDrain: restore ? restore.accDrain : 0, strDrain: restore ? restore.strDrain : 0, runDrainedUntil: restore ? restore.runDrainedUntil : 0, actSkill: null, actAt: 0, castReadyAt: 0, frozenUntil: 0, wildPairs: null, wildTarget: null, skulled: false, teleblockUntil: 0, wildHp: null, wildMaxHp: 0 }); // Stage 30: wild* = Wilderness session state (skull, teleblock, wild HP pool) — session-only, never saved // Stage 24: castReadyAt = placed-button cast cooldown; frozenUntil = Freeze root expiry. Stage 28: barrowsCrypt = which brother's crypt the player is in; barrowsHp = the tunnel HP pool; accDrain/strDrain/runDrainedUntil = the app's brother drains
   const sess = online.get(key);
@@ -7423,7 +7493,7 @@ wss.on('connection', (ws, req) => {
   // session waits on the answer, so test suites and bot logins
   // (which never read it) are completely unaffected.
   const castleOffer = !profile.castleOfferSeen && guideMeleeAvg(profile) < 8;
-  send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot(sess.area), area: sess.area, castleOffer });
+  send(ws, { type: 'welcome', profile: publicProfile(profile), players: playersSnapshot(sess.area), area: sess.area, castleOffer, lastSpot: savedLastSpot ? { area: savedLastSpot.area, name: AREAS[savedLastSpot.area].name } : null });
   if (sess.area === 'plaza') {
     send(ws, modNpcsMsg()); // Stage 22: the three plaza moderators + their busy flags
     send(ws, modLadderMsg(profile)); // Stage 22: stake-ladder progress
@@ -7439,7 +7509,7 @@ wss.on('connection', (ws, req) => {
     send(ws, seaweedMsg(sess.area)); // Stage 29: cove clumps
     send(ws, sandMsg(sess.area)); // Tree Guardian chain: cove sand piles
     if (sess.area === 'barrows' || sess.area === 'barrows_tunnels' || sess.area === 'barrows_crypt') send(ws, barrowsStateMsg(sess));
-    send(ws, { type: 'chat', from: 'Game', text: `🔄 Reconnected — you're back where you left off: ${AREAS[sess.area].name}.` });
+    send(ws, { type: 'chat', from: 'Game', text: fromLastSpot ? `📍 Welcome back — you're where you left off: ${AREAS[sess.area].name}.` : `🔄 Reconnected — you're back where you left off: ${AREAS[sess.area].name}.` });
   }
   // Stage 34: a pending duel challenge that survived this player's
   // drop (see cleanupDisconnect) is re-pushed, so their answer /
@@ -7771,6 +7841,7 @@ wss.on('connection', (ws, req) => {
         broadcastState();
         moved = true;
       }
+      persistLastSpot(key, me); // "Log in where you left off": the castle start (or the spot the login restored) is the recorded spot now
       return send(ws, { type: 'castleOfferDone', accepted: accept, area: me.area, moved });
     }
 
@@ -7889,6 +7960,7 @@ wss.on('connection', (ws, req) => {
         send(ws, { type: 'smith_state', item: me.smithing.item, progress: me.smithing.progress, heat: smithHeatNow(me.smithing) });
       }
       broadcastState();
+      persistLastSpot(key, me); // "Log in where you left off": an area change checkpoints the recorded spot (an unreturnable destination clears it)
       return;
     }
 
