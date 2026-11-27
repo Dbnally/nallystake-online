@@ -1705,6 +1705,7 @@ function onMsg(m){
  if(m.type==='welcome'){ welcomed=true; quickAttempt=false; wasInGame=true; const wasReconnect=reconnecting; stopReconnect(); reconnectMs=1000; clearLocalFightState(); if(wasReconnect){ toast('✅ Reconnected.'); logLine('✅ Reconnected.'); } if(railFirstRun&&!navHintDone){ navHintDone=true; railFirstRun=false; try{ localStorage.setItem('nallystake_rail_open','1'); }catch(e){} logLine('👋 New here? Everything lives in the dock, top right — the 🎛️ Menu button shows or hides the panel tabs (🎒 Backpack, 🌀 Teleport, 📊 Skills and more).'); } flushChatOutbox(); pushGuidedSetting(); me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); myLastSpot=m.lastSpot||null; if(!maybeShowCastleOffer(m.castleOffer)) maybeShowActivityPicker(); }
  if(m.type==='castle_sign'){ renderCastleDir(m.title,m.lines); }
  if(m.type==='training_board'){ renderTrainingBoard(m.title,m.lines); }
+ if(m.type==='bowl_sign'){ renderBowlSign(m.title,m.lines); }
  if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(Array.isArray(m.spells)) spellList=m.spells; if(dockPanel==='shop') renderDock(); renderQuickButtons(); renderSpellBtns(); for(const av of Object.values(avatars)) av.gearSig=null; }
  if(m.type==='exchange_prices'){ goods={}; for(const g of (m.goods||[])) goods[g.id]=g; if(dockPanel==='exchange') renderDock(); drawMinimap(); }
  if(m.type==='state'){ onStateMsg(m); }
@@ -3044,6 +3045,8 @@ function buildPlaza(root){
  buildGateway(scene,-48,45,0,'❄️ FROSTFALL',{banner:'#7ec8ff',color:'#dff2ff'}); // Stage 44: the Winter World's gate, south wall west stretch
  buildGateway(scene,45,45,0,'🏰 BEGINNER CASTLE',{banner:'#8e2f32'}); // Beginner Castle (2026-11-24): south wall, east stretch — matches the checkGates trigger (x 1100-1480)
  buildGateway(scene,25,45,0,'⚔️ TRAINING GROUNDS',{banner:'#4a5548',color:'#b9d9a8'}); // Barrows Training Grounds (2026-11-27): south wall, between the Barrows gate and the castle gate — matches the checkGates trigger (x 1010-1090)
+ buildGateway(scene,-24,45,0,'🏆 DUEL BOWL',{banner:'#8e2f32'}); // Duel Bowl (2026-11-27): south wall, between the Frostfall gate and the Barrows gate — matches the checkGates trigger (x 530-590)
+ pathStrip(scene,-24,14,-24,44,2.6); // Duel Bowl: the worn path south to its gate
  pathStrip(scene,31,26,45,44,3); // a worn path from the plaza's heart toward the castle gate
  buildGateway(scene,78,40.5,Math.PI/4,'🏋️ TRAINING CAVE',{banner:'#55565e'});
  buildGateway(scene,-78,40.5,-Math.PI/4,'🌲 GATHERING CAVE',{banner:'#3a5230'});
@@ -4440,6 +4443,7 @@ function buildWinterWorld(root){
    flow; the trap door is a tap interactive (castleInteractives). */
 let castleInteractives=[]; // trap door meshes (castle area tap targets)
 let trainingInteractives=[]; // Barrows Training Grounds: the readiness board meshes (tap targets)
+let bowlInteractives=[]; // Duel Bowl: the entrance sign meshes (tap targets)
 let castleUpBankMeshes=[]; // bank booth meshes (castleup tap targets)
 let trapLidPivot=null, trapLadderGrp=null, trapOpen=false, pendingTrapdoor=false;
 function cwall(root,x1,z1,x2,z2,h){
@@ -4732,6 +4736,156 @@ function buildTrainingGrounds(root){
  }
  bonePile(S,-70,30); bonePile(S,70,30); bonePile(S,-70,-38);
 }
+/* Duel Bowl (Derek, 2026-11-27): the skatepark photos turned
+   medieval — a large SUNKEN bowl arena. The fighting floor is
+   the area's ordinary ground plane (y=0, like every area: no
+   collision function, the rim is low dressing with gaps at the
+   steps, exactly as the Training Grounds' fences are dressing);
+   the bowl reads sunken because the RIM stands around it — a
+   segmented stone wall ring (the curve approximated in 40
+   segments, following the other scenery builders) with a flat
+   coping deck on top, so spectators on the rim look DOWN into
+   the floor. Steps down at south (the entrance), east and west.
+   Around it: two smaller side bowls, skate ramps gone medieval
+   (stone wedges), the pavilion from the photos, autumn trees,
+   crossed-sword banners and painted crests where the photos
+   had graffiti. Spawn (server 800,720) is on the south rim. */
+function buildDuelBowl(root){
+ const S=root;
+ const grass=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:noiseTexture('#66682f',['#757033','#8a5a26','#585c2a'],16,10)}));
+ grass.rotation.x=-Math.PI/2; grass.receiveShadow=true; S.add(grass);
+ // perimeter fence, gap at the SOUTH gate (walk out to the plaza)
+ const fenceMat=0x6b4e26;
+ function fenceRun(x1,z1,x2,z2){
+   const len=Math.hypot(x2-x1,z2-z1), n=Math.max(2,Math.round(len/1.6));
+   for(let i=0;i<=n;i++){ const t=i/n; box(0.15,1.05,0.15,fenceMat,x1+(x2-x1)*t,0.52,z1+(z2-z1)*t,S); }
+   const midx=(x1+x2)/2, midz=(z1+z2)/2, ang=Math.atan2(x2-x1,z2-z1);
+   const rail=box(0.07,0.11,len,fenceMat,midx,0.82,midz,S); rail.rotation.y=ang;
+   const rail2=box(0.07,0.11,len,fenceMat,midx,0.42,midz,S); rail2.rotation.y=ang;
+ }
+ fenceRun(-80,-45,80,-45); fenceRun(-80,45,-5.5,45); fenceRun(5.5,45,80,45);
+ fenceRun(-80,-45,-80,45); fenceRun(80,-45,80,45);
+ gatePosts(S,0,45);
+ buildGateway(S,0,45,0,'🏆 DUEL BOWL',{banner:'#8e2f32'});
+ pathStrip(S,0,44,0,28,3.4); // gate -> the south rim (the spawn)
+ // ---- the bowl itself (centre 0,0; ellipse rx 46, rz 30) ----
+ const RX=46, RZ=30, WALL_H=1.15;
+ const apron=new THREE.Mesh(new THREE.CircleGeometry(56,40),new THREE.MeshLambertMaterial({map:stoneTexture(12,12),color:0x98948a}));
+ apron.rotation.x=-Math.PI/2; apron.scale.set(1,0.72,1); apron.position.y=0.015; apron.receiveShadow=true; S.add(apron);
+ const floor=new THREE.Mesh(new THREE.CircleGeometry(43,40),new THREE.MeshLambertMaterial({map:stoneTexture(11,7),color:0xb8b3a6}));
+ floor.rotation.x=-Math.PI/2; floor.scale.set(1,0.70,1); floor.position.y=0.03; floor.receiveShadow=true; S.add(floor);
+ // the centre crest: a red disc with crossed swords (the photos'
+ // painted bowl art, turned heraldic)
+ const crest=new THREE.Mesh(new THREE.CircleGeometry(5.2,24),new THREE.MeshLambertMaterial({color:0x8e2f32}));
+ crest.rotation.x=-Math.PI/2; crest.position.y=0.05; S.add(crest);
+ for(const r of [-0.6,0.6]){ const sw=box(0.35,0.06,8.6,0xd9dee6,0,0.07,0,S); sw.rotation.y=r; }
+ // segmented curved wall + coping rim; gaps at the three step
+ // entries (south = toward +z, east = +x, west = -x)
+ const gapAt=(a)=>{ const d=(x,y)=>Math.abs(Math.atan2(Math.sin(x-y),Math.cos(x-y))); return d(a,Math.PI/2)<0.16||d(a,0)<0.16||d(a,Math.PI)<0.16; };
+ const wallMat=new THREE.MeshLambertMaterial({map:stoneTexture(2,1),color:0xa9a499});
+ const copeMat=new THREE.MeshLambertMaterial({map:stoneTexture(1,1),color:0x7e7a70});
+ for(let i=0;i<40;i++){
+   const a=(i/40)*Math.PI*2, cx=Math.cos(a), sz=Math.sin(a);
+   if(gapAt(a)) continue;
+   const wx=cx*(RX-2.2), wz=sz*(RZ-1.5), tang=Math.atan2(cx,sz)+Math.PI/2;
+   const seg=boxM(7.4,WALL_H,0.9,wallMat,wx,WALL_H/2,wz,S); seg.rotation.y=tang;
+   const cope=boxM(7.6,0.22,1.7,copeMat,cx*RX, WALL_H+0.11, sz*RZ, S); cope.rotation.y=tang;
+ }
+ // the rim deck behind the coping (where spectators stand)
+ const deck=new THREE.Mesh(new THREE.RingGeometry(45,55,40),new THREE.MeshLambertMaterial({map:stoneTexture(10,10),color:0x8f8b81,side:THREE.DoubleSide}));
+ deck.rotation.x=-Math.PI/2; deck.scale.set(1,0.70,1); deck.position.y=WALL_H+0.02; S.add(deck);
+ // steps down at the three gaps: three shallow stone slabs each,
+ // stepping from the rim line down to the fighting floor
+ for(const a of [Math.PI/2,0,Math.PI]){
+   const cx=Math.cos(a), sz=Math.sin(a);
+   for(let k=0;k<3;k++){
+     const rr=1-(k*0.055), h=0.62-k*0.2;
+     const st=box(4.6,h,2.6,0x9d998f,cx*(RX-1)*rr,h/2,sz*(RZ-1)*rr,S); st.rotation.y=Math.atan2(cx,sz)+Math.PI/2;
+   }
+   buildLitTorch(S,cx*(RX+4.5),sz*(RZ+4.5));
+ }
+ // crossed-sword banners on poles around the rim (the graffiti
+ // colour of the photos, as heraldry) + painted crest discs on
+ // the wall's outer face
+ const bTex=bannerTexture();
+ for(const a of [Math.PI/4,3*Math.PI/4,5*Math.PI/4,7*Math.PI/4]){
+   const px=Math.cos(a)*(RX+6), pz=Math.sin(a)*(RZ+6);
+   box(0.14,3.4,0.14,0x3a2a18,px,1.7,pz,S);
+   const ban=new THREE.Mesh(new THREE.PlaneGeometry(1.5,2.2),new THREE.MeshLambertMaterial({map:bTex,side:THREE.DoubleSide}));
+   ban.position.set(px,2.2,pz); ban.rotation.y=Math.atan2(px,pz); S.add(ban);
+ }
+ for(const a of [Math.PI/3,2*Math.PI/3,4*Math.PI/3,5*Math.PI/3]){
+   const px=Math.cos(a)*(RX+0.6), pz=Math.sin(a)*(RZ+0.6);
+   const disc=new THREE.Mesh(new THREE.CircleGeometry(1.05,18),new THREE.MeshLambertMaterial({map:gateBannerTexture(['#8e2f32','#2e5f8a','#3f7d2c','#c9a227'][Math.round(a)%4]),side:THREE.DoubleSide}));
+   disc.position.set(px,0.62,pz); disc.rotation.y=Math.atan2(px,pz); S.add(disc);
+ }
+ buildTorch(S,-30,-24); buildTorch(S,30,-24); buildTorch(S,-30,24); buildTorch(S,30,24);
+ // the entrance sign by the spawn + the canonical sign board
+ // (server (890,690) = world (9,24), east of the south steps):
+ // built like the Training Grounds board; its post and face are
+ // tap targets (bowlInteractives, act {type:'bowlsign'}), routed
+ // in handleTap to the read panel whose words the server
+ // answers canonically (bowl_sign_read).
+ signPost(S,-8,29,['🏆 DUEL BOWL','Challenge a player — watch from the rim']);
+ {
+   const bg=new THREE.Group(); bg.position.set(9,0,24); S.add(bg);
+   const signAct={type:'bowlsign'};
+   const post=box(0.22,2.9,0.22,0x5a4020,0,1.45,0,bg); post.userData.act=signAct; bowlInteractives.push(post);
+   const board=boxM(3.6,2.0,0.12,new THREE.MeshLambertMaterial({map:woodTexture('#74552a')}),0,2.3,0,bg); board.userData.act=signAct; bowlInteractives.push(board);
+   box(3.8,0.14,0.14,0xd4af37,0,3.36,0,bg); box(3.8,0.14,0.14,0xd4af37,0,1.24,0,bg); // gold trim
+   const bsp=textSprite('🏆 DUEL BOWL — READ ME','#ffe9bb','rgba(23,19,12,0.9)'); bsp.position.set(0,4.05,0); bg.add(bsp);
+   shadowify(bg);
+ }
+ // the notice board by the south steps: who is fighting next
+ {
+   const nb=new THREE.Group(); nb.position.set(-9,0,24); S.add(nb);
+   box(0.18,2.4,0.18,0x5a4020,-1.2,1.2,0,nb); box(0.18,2.4,0.18,0x5a4020,1.2,1.2,0,nb);
+   boxM(3.2,1.7,0.1,new THREE.MeshLambertMaterial({map:woodTexture('#6e4a1f')}),0,2.0,0,nb);
+   const nsp=textSprite('📋 NEXT FIGHTS','#ffe9bb','rgba(23,19,12,0.9)'); nsp.position.set(0,3.35,0); nb.add(nsp);
+   shadowify(nb);
+ }
+ // two smaller side bowls (west + east), same construction, lower
+ for(const bx of [-64,64]){
+   const sf=new THREE.Mesh(new THREE.CircleGeometry(12.5,24),new THREE.MeshLambertMaterial({map:stoneTexture(4,3),color:0xb0aba0}));
+   sf.rotation.x=-Math.PI/2; sf.scale.set(1,0.70,1); sf.position.set(bx,0.03,18); sf.receiveShadow=true; S.add(sf);
+   for(let i=0;i<16;i++){
+     const a=(i/16)*Math.PI*2; if(Math.abs(Math.atan2(Math.sin(a-Math.PI/2),Math.cos(a-Math.PI/2)))<0.3) continue; // gap facing the main bowl's steps side (south)
+     const seg=boxM(4.6,0.8,0.7,wallMat,bx+Math.cos(a)*13.4,0.4,18+Math.sin(a)*9.4,S); seg.rotation.y=Math.atan2(Math.cos(a),Math.sin(a))+Math.PI/2;
+   }
+   signPost(S,bx,32,['🌀 SIDE BOWL','Warm up here']);
+ }
+ // stone ramps (the photos' skate ramps, medieval): two wedges
+ for(const [rx,rz,ry] of [[-38,-32,0.5],[38,-32,-0.5]]){
+   const wedge=box(7,0.5,5,0x9d998f,rx,0.25,rz,S); wedge.rotation.y=ry; wedge.rotation.x=-0.16;
+   box(7,1.1,0.5,0x8a867e,rx,0.55,rz+(ry>0?2.4:-2.4),S).rotation.y=ry;
+ }
+ // the pavilion (the shelter in the photos), north-east: posts,
+ // a pitched roof, a bench table under it
+ {
+   const pv=new THREE.Group(); pv.position.set(52,0,-30); S.add(pv);
+   for(const [px,pz] of [[-3.4,-2.2],[3.4,-2.2],[-3.4,2.2],[3.4,2.2]]) box(0.22,2.9,0.22,0x5a4020,px,1.45,pz,pv);
+   const roof=new THREE.Mesh(new THREE.ConeGeometry(5.6,2.0,4),new THREE.MeshLambertMaterial({color:0x3f6b4a})); roof.position.y=3.9; roof.rotation.y=Math.PI/4; roof.scale.set(1.15,1,0.8); pv.add(roof);
+   box(3.6,0.14,1.1,0x74552a,0,0.95,0,pv); // table top
+   box(0.9,0.12,0.35,0x74552a,-1.1,0.55,0,pv); box(0.9,0.12,0.35,0x74552a,1.1,0.55,0,pv); // seats
+   signPost(S,47,-24,['🍂 PAVILION','Rest between fights']);
+   shadowify(pv);
+ }
+ // autumn trees around the edge (the photos' fall colours)
+ const autumn=[['#b35c1e',['#a34f16','#c46c28','#8e4210']],['#c9862a',['#b87720','#dda53c','#9e6416']],['#8e2f32',['#7c282c','#a03a3e','#6d1f22']],['#a8722a',['#96631f','#ba8134','#7f5416']]];
+ [[-70,-36],[70,-36],[-72,8],[72,8],[-44,-40],[24,-41],[-18,40],[58,38],[-58,38],[36,41]].forEach(([tx,tz],i)=>{
+   const [base,fleck]=autumn[i%autumn.length];
+   const g=new THREE.Group(); g.position.set(tx,0,tz); S.add(g);
+   const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.24,1.5,8),new THREE.MeshLambertMaterial({map:woodTexture('#4c3420')})); trunk.position.y=0.75; g.add(trunk);
+   const c1=new THREE.Mesh(new THREE.ConeGeometry(1.9,3.6,7),foliageMat(base,fleck)); c1.position.y=3.1; g.add(c1);
+   const c2=new THREE.Mesh(new THREE.ConeGeometry(1.25,2.4,7),foliageMat(base,fleck)); c2.position.y=4.6; g.add(c2);
+   shadowify(g);
+ });
+ // a static area label over the bowl, like the trainer's
+ const blabel=document.createElement('div'); blabel.className='plabel';
+ blabel.innerHTML=`<div class="nname">🏆 Duel Bowl</div>`;
+ $('labels').appendChild(blabel);
+ worldLabels.push({el:blabel,x:0,y:5.2,z:-30,area:'duel_bowl',kind:'static'});
+}
 function buildAreas(){
  areaGroups.plaza=new THREE.Group(); scene.add(areaGroups.plaza); buildPlaza(areaGroups.plaza);
  areaGroups.goblins=new THREE.Group(); scene.add(areaGroups.goblins); buildGoblinCamp(areaGroups.goblins);
@@ -4754,6 +4908,7 @@ function buildAreas(){
  areaGroups.castleup=new THREE.Group(); scene.add(areaGroups.castleup); buildCastleUp(areaGroups.castleup); // its upper floor (the bank)
  areaGroups.ratcave=new THREE.Group(); scene.add(areaGroups.ratcave); buildRatCave(areaGroups.ratcave); // the Rat Cave under the trap door
  areaGroups.training_grounds=new THREE.Group(); scene.add(areaGroups.training_grounds); buildTrainingGrounds(areaGroups.training_grounds); // Barrows Training Grounds (2026-11-27)
+ areaGroups.duel_bowl=new THREE.Group(); scene.add(areaGroups.duel_bowl); buildDuelBowl(areaGroups.duel_bowl); // Duel Bowl (2026-11-27)
  applyAreaVisibility();
 }
 function applyAreaVisibility(){
@@ -4811,7 +4966,7 @@ function setArea(a){
  if(changed) syncHudPicture(); // Feel pass fix (2026-11-27): the area card (#pcarea / #pcstatus) is written ONLY by syncHudPicture, which otherwise rides renderOrbs (profile / fight pushes). A travel 'area' push changed curArea + the scene but never the card, so after a teleport it kept the old area's name + line until an unrelated push (walking, wielding) refreshed it. Refresh the card on every area change.
  drawMinimap();
 }
-const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_crypt:1,barrows_tunnels:1,arena:1,waiting:1,magic:1,range:1,wilderness:1,purewild:1,winter:1,castle:1,castleup:1,ratcave:1,training_grounds:1}; // Stage 30 adds the two wild variants; Stage 44 adds Frostfall (winter); Beginner Castle adds castle/castleup/ratcave (2026-11-24); Barrows Training Grounds adds training_grounds (2026-11-27)
+const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_crypt:1,barrows_tunnels:1,arena:1,waiting:1,magic:1,range:1,wilderness:1,purewild:1,winter:1,castle:1,castleup:1,ratcave:1,training_grounds:1,duel_bowl:1}; // Stage 30 adds the two wild variants; Stage 44 adds Frostfall (winter); Beginner Castle adds castle/castleup/ratcave (2026-11-24); Barrows Training Grounds adds training_grounds (2026-11-27); Duel Bowl adds duel_bowl (2026-11-27)
 // Stage 19: the areas with a live shared-NPC roster (npc_state).
 // Feel-fixes: the two Wilderness variants join the roster — the
 // shallow-wild skeleton pocket rides the same npc_state flow.
@@ -8086,6 +8241,13 @@ function handleTap(cx,cy){
  }
  // Barrows Training Grounds (2026-11-27): the readiness board at
  // the entrance — its read comes from the server, from MY levels.
+ if(curArea==='duel_bowl'){
+   const ih=raycaster.intersectObjects(bowlInteractives,false)[0];
+   if(ih && ih.object.userData.act && ih.object.userData.act.type==='bowlsign'){
+     const wp=new THREE.Vector3(); ih.object.getWorldPosition(wp); spawnTapSplat(wx2s(wp.x),wz2s(wp.z),true);
+     openBowlSign(); return;
+   }
+ }
  if(curArea==='training_grounds'){
    const ih=raycaster.intersectObjects(trainingInteractives,false)[0];
    if(ih && ih.object.userData.act && ih.object.userData.act.type==='trainingboard'){
@@ -8432,6 +8594,10 @@ function checkGates(){
    // between the Barrows gate (600-1000) and the castle gate
    // (1100-1480) — the guided path sits right in front of Barrows.
    if(myPos.y>=890&&myPos.x>=1010&&myPos.x<=1090){ go('training_grounds','⚔️ South gate → Barrows Training Grounds…'); return; }
+   // Duel Bowl (2026-11-27): the south wall's remaining free
+   // stretch — between the Frostfall strip (120-520) and the
+   // Barrows strip (600-1000). No existing trigger touches it.
+   if(myPos.y>=890&&myPos.x>=530&&myPos.x<=590){ go('duel_bowl','🏆 South gate → Duel Bowl…'); return; }
  }
  else if(curArea==='castle'){
    if(myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); return; }
@@ -8458,6 +8624,7 @@ function checkGates(){
  else if(curArea==='range'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
  else if(curArea==='winter'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
  else if(curArea==='training_grounds'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
+ else if(curArea==='duel_bowl'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
 }
 function checkPendingAttack(){
  if(!pendingAttack||!myPos) return;
@@ -8630,7 +8797,7 @@ function drawMinimap(){
    : curArea==='waiting'? '#33302a'
    : curArea==='arena'? ARENA_VARIANTS[arenaVariant].css
    : isWildClient()? '#2a1a14'
-   : caveBg? (curArea==='fightcaves'? '#241a12' : '#2b2b30') : (curArea==='goblins')? '#55702f' : (curArea==='winter')? '#dfe9f2' : (curArea==='castle')? '#4a6b35' : (curArea==='castleup')? '#3d3d44' : (curArea==='training_grounds')? '#4d5f36' : '#241d15'; g.fillRect(0,0,1600,900);
+   : caveBg? (curArea==='fightcaves'? '#241a12' : '#2b2b30') : (curArea==='goblins')? '#55702f' : (curArea==='winter')? '#dfe9f2' : (curArea==='castle')? '#4a6b35' : (curArea==='castleup')? '#3d3d44' : (curArea==='training_grounds')? '#4d5f36' : (curArea==='duel_bowl')? '#5d6146' : '#241d15'; g.fillRect(0,0,1600,900);
  if(curArea==='plaza'){
    g.fillStyle='#8a7a5f'; g.fillRect(800-420,450-270,840,540); // cobblestone centre
    g.fillStyle='#6e4a1f'; g.fillRect(800-140,140-50,280,100); // tournament dais (wood)
@@ -8643,6 +8810,11 @@ function drawMinimap(){
    for(const n of modNpcList){ g.fillStyle='#ffd75e'; g.beginPath(); g.arc(n.x,n.y,11,0,7); g.fill(); g.fillStyle='#3a2c1c'; g.beginPath(); g.arc(n.x,n.y,5,0,7); g.fill(); } // Stage 22: the three moderators
    g.fillStyle='#120c08'; g.fillRect(1020,0,540,14); // Stage 30: the ditch crossing (north edge, east stretch)
    g.fillStyle='#e8e2d0'; g.beginPath(); g.arc(1150,120,9,0,7); g.fill(); // Stage 30: PK Noob
+ } else if(curArea==='duel_bowl'){
+   g.fillStyle='#8f8a7c'; g.beginPath(); g.ellipse(800,450,500,330,0,0,7); g.fill(); // the rim apron (server coords)
+   g.fillStyle='#b5b0a2'; g.beginPath(); g.ellipse(800,450,385,255,0,0,7); g.fill(); // the fighting floor
+   g.fillStyle='#8e2f32'; g.beginPath(); g.arc(800,450,26,0,7); g.fill(); // the centre crest
+   g.fillStyle='#6e4a1f'; g.fillRect(1320-16,180-16,32,32); // the pavilion, north-east
  } else if(curArea==='waiting'){
    g.fillStyle='#ffd75e'; g.beginPath(); g.arc(700,450,16,0,7); g.fill(); // spawn pads
    g.fillStyle='#d9dee6'; g.beginPath(); g.arc(900,450,16,0,7); g.fill();
@@ -10140,7 +10312,7 @@ window.doTravel=function(to){
 };
 function pTeleport(){
  const here=(a)=>a===curArea;
- let h=`<p class="note" style="margin-bottom:8px">Teleporting is the shortcut — every place stays walkable too: Goblin Camp (plaza east gate), Fishing Cove (west gate), Training Cave (south-east corner), Gathering Cave (south-west corner), Emberfall Mine &amp; Smithy (north-east corner), Fight Caves (north gate), Barrows (south gate), Wizard Grounds (north-west corner), Ranger Camp (north gate, west stretch), Frostfall — the Winter World (south gate, west stretch).</p>`;
+ let h=`<p class="note" style="margin-bottom:8px">Teleporting is the shortcut — every place stays walkable too: Goblin Camp (plaza east gate), Fishing Cove (west gate), Training Cave (south-east corner), Gathering Cave (south-west corner), Emberfall Mine &amp; Smithy (north-east corner), Fight Caves (north gate), Barrows (south gate), Wizard Grounds (north-west corner), Ranger Camp (north gate, west stretch), Frostfall — the Winter World (south gate, west stretch), Duel Bowl (south gate, between the Frostfall and Barrows gates).</p>`;
  h+=`<div class="rowline"><span class="ic">🏰</span><span class="grow"><b>Plaza</b><br><span class="sub">Shops, bank, duels</span></span>${here('plaza')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('plaza')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">👺</span><span class="grow"><b>Goblin Camp</b><br><span class="sub">East gate · fight goblins for drops &amp; XP</span></span>${here('goblins')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('goblins')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">🏋️</span><span class="grow"><b>Training Cave</b><br><span class="sub">South-east corner · safe skill training</span></span>${here('training')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('training')">Teleport</button>`}</div>`;
@@ -10150,6 +10322,7 @@ function pTeleport(){
  h+=`<div class="rowline"><span class="ic">🌋</span><span class="grow"><b>Fight Caves</b><br><span class="sub">North gate · 63 waves, TzTok-Jad, fire cape</span></span>${here('fightcaves')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('fightcaves')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">💀</span><span class="grow"><b>Barrows</b><br><span class="sub">South gate · 6 brothers, tunnels, chest</span></span>${here('barrows')||here('barrows_tunnels')||here('barrows_crypt')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('barrows')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">⚔️</span><span class="grow"><b>Barrows Training Grounds</b><br><span class="sub">South gate (beside the Barrows gate) · five practice steps, a prayer altar and the Barrows-ready board — nobody dies here</span></span>${here('training_grounds')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('training_grounds')">Teleport</button>`}</div>`;
+ h+=`<div class="rowline"><span class="ic">🏆</span><span class="grow"><b>Duel Bowl</b><br><span class="sub">South gate (between the Frostfall and Barrows gates) · the skate bowl turned arena — challenge a player here, spectators watch from the rim</span></span>${here('duel_bowl')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('duel_bowl')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">🧙</span><span class="grow"><b>Wizard Grounds</b><br><span class="sub">North-west corner · wizards drop the runes for your spells</span></span>${here('magic')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('magic')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">🏹</span><span class="grow"><b>Ranger Camp</b><br><span class="sub">North gate (west stretch) · rangers drop arrows &amp; arrowheads</span></span>${here('range')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('range')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">💀</span><span class="grow"><b>The Wilderness</b><br><span class="sub">North ditch crossing (east stretch) or this obelisk teleport · PvP, skulls, death drops loot · NO teleporting out above level 20</span></span>${here('wilderness')||here('purewild')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('wilderness')">Teleport</button>`}</div>`;
@@ -10616,7 +10789,7 @@ window.openTalk=function(name){
  setTimeout(()=>{ try{ inp.focus(); }catch(e){} },50);
 };
 /* ---- Examine sheet ---- */
-const AREA_LABELS={plaza:'🏰 Plaza',goblins:'👺 Goblin Camp',training:'🏋️ Training Cave',gathering:'⛏️ Gathering Cave',cove:'🎣 Fishing Cove',mine:'⛏️🔥 Emberfall Mine & Smithy',fightcaves:'🌋 Fight Caves',barrows:'💀 Barrows',barrows_crypt:'💀 Barrows Crypt',barrows_tunnels:'💀 Barrows Tunnels',arena:'⚔️ Tournament Dais',waiting:'⏳ Waiting Area',magic:'🧙 Wizard Grounds',range:'🏹 Ranger Camp',wilderness:'💀 The Wilderness',purewild:'💀 Pure Wild',training_grounds:'⚔️ Barrows Training Grounds'};
+const AREA_LABELS={plaza:'🏰 Plaza',goblins:'👺 Goblin Camp',training:'🏋️ Training Cave',gathering:'⛏️ Gathering Cave',cove:'🎣 Fishing Cove',mine:'⛏️🔥 Emberfall Mine & Smithy',fightcaves:'🌋 Fight Caves',barrows:'💀 Barrows',barrows_crypt:'💀 Barrows Crypt',barrows_tunnels:'💀 Barrows Tunnels',arena:'⚔️ Tournament Dais',waiting:'⏳ Waiting Area',magic:'🧙 Wizard Grounds',range:'🏹 Ranger Camp',wilderness:'💀 The Wilderness',purewild:'💀 Pure Wild',training_grounds:'⚔️ Barrows Training Grounds',duel_bowl:'🏆 Duel Bowl'};
 function openExamine(m){
  const p=m.player; if(!p) return;
  const wornRows=SLOT_DEFS.filter(([slot])=>p.worn&&p.worn[slot]).map(([slot,label])=>`<div class="rowline"><span class="ic">${itemIconHTML(p.worn[slot],24)}</span><span class="grow"><b>${label}</b><br><span class="sub">${esc(nameOf(p.worn[slot]))}</span></span></div>`).join('');
@@ -11041,6 +11214,29 @@ function renderTrainingBoard(title,lines){
 function openTrainingBoard(){
  renderTrainingBoard('⚔️ Barrows-ready check',null);
  send({type:'training_board_read'});
+}
+/* Duel Bowl entrance sign (2026-11-27): the castle directory
+   sign's pattern — the panel opens instantly with the local
+   copy and the server's canonical read (bowl_sign_read →
+   'bowl_sign', from BOWL_SIGN) re-renders the same words. */
+const BOWL_SIGN_TITLE='🏆 Duel Bowl';
+const BOWL_SIGN_LINES=[
+ '⚔️ This is the Duel Bowl — the old skate bowl turned arena. Challenge any player standing here: tap them, choose Challenge, agree the rules and the stake.',
+ '🏆 An agreed duel fights on the Tournament Dais, as duels do everywhere — the Bowl is where fighters gather, call each other out, and settle who is next.',
+ '👀 Spectators watch from the rim: up the steps and around the top, where the whole fighting floor is in view.',
+ '🚪 The south gate behind you walks back to the Plaza — and the Teleport panel is the shortcut, as always.',
+];
+function renderBowlSign(title,lines){
+ const s=$('signsheet');
+ s.innerHTML=`<h3>${esc(title||BOWL_SIGN_TITLE)}</h3>
+ <p class="note" style="margin-bottom:8px">The board by the south steps of the bowl:</p>
+ ${(lines&&lines.length?lines:BOWL_SIGN_LINES).map(l=>`<div class="kv"><span>•</span><b>${esc(l)}</b></div>`).join('')}
+ <div class="btns" style="margin-top:10px"><button class="ghost" onclick="closeModal('signmodal')">Close</button></div>`;
+ $('signmodal').classList.add('open');
+}
+function openBowlSign(){
+ renderBowlSign(BOWL_SIGN_TITLE,BOWL_SIGN_LINES);
+ send({type:'bowl_sign_read'});
 }
 function openSignPanel(){
  send({type:'sign_read'});
@@ -11914,7 +12110,7 @@ $('jadwarn').onclick=()=>{ if(jadWarnStyle){ send({type:'prayer',prayer:jadWarnS
    fight quick chips use, the {type:'special'} send the special
    orb uses, the strips' own Attack chips, togglePanel for the
    backpack and teleport panels. No new state, no new messages. */
-const HUD_AREA_NAMES={plaza:'Plaza',goblins:'Goblin Camp',training:'Training Cave',gathering:'Gathering Cave',cove:'Fishing Cove',mine:'Emberfall Mine & Smithy',fightcaves:'Fight Caves',barrows:'Barrows',barrows_crypt:'Barrows Crypt',barrows_tunnels:'Barrows Tunnels',arena:'Tournament Dais',waiting:'Waiting Area',magic:'Wizard Grounds',range:'Ranger Camp',wilderness:'The Wilderness',purewild:'Pure Wild',winter:'Frostfall',castle:'Beginner Castle',castleup:'Castle — Upstairs',ratcave:'Rat Cave',training_grounds:'Barrows Training Grounds'};
+const HUD_AREA_NAMES={plaza:'Plaza',goblins:'Goblin Camp',training:'Training Cave',gathering:'Gathering Cave',cove:'Fishing Cove',mine:'Emberfall Mine & Smithy',fightcaves:'Fight Caves',barrows:'Barrows',barrows_crypt:'Barrows Crypt',barrows_tunnels:'Barrows Tunnels',arena:'Tournament Dais',waiting:'Waiting Area',magic:'Wizard Grounds',range:'Ranger Camp',wilderness:'The Wilderness',purewild:'Pure Wild',winter:'Frostfall',castle:'Beginner Castle',castleup:'Castle — Upstairs',ratcave:'Rat Cave',training_grounds:'Barrows Training Grounds',duel_bowl:'Duel Bowl'};
 const HUD_ROLE_WORD={owner:'Owner',admin:'Administrator',mod:'Moderator',player:'Player'};
 function fmtGoldShort(n){ if(n>=1000000) return (Math.round(n/100000)/10)+'M'; if(n>=10000) return (Math.round(n/100)/10)+'k'; return ''+n; }
 function hudAreaStatus(){
@@ -11939,6 +12135,7 @@ function hudAreaStatus(){
   case 'fightcaves': return 'Enter the Fight Caves';
   case 'winter': return 'Explore Frostfall';
   case 'training_grounds': return 'Five steps to Barrows-ready';
+  case 'duel_bowl': return 'Challenge a player — or watch from the rim';
  }
  return AREA_LABELS[curArea]||'';
 }
