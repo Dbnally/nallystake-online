@@ -2730,6 +2730,14 @@ const AREAS = {
   plaza: { name: 'Plaza', spawn: { x: 800, y: 450 } },
   goblins: { name: 'Goblin Camp', spawn: { x: 200, y: 450 } },
   training: { name: 'Training Cave', spawn: { x: 800, y: 720 } },
+  // Beginner Barrows Training Grounds (Derek, 2026-11-22 spec;
+  // built 2026-11-27): the guided path in front of Barrows — a
+  // safe fenced yard off the plaza's south wall (gate strip
+  // between the Barrows and Beginner Castle gates, teleport as
+  // the shortcut), five practice steps, a prayer altar and the
+  // readiness board at the entrance. Spawn sits by the south
+  // return gate, mirroring the Wizard Grounds / Ranger Camp.
+  training_grounds: { name: 'Barrows Training Grounds', spawn: { x: 800, y: 720 } },
   gathering: { name: 'Gathering Cave', spawn: { x: 800, y: 450 } },
   cove: { name: 'Fishing Cove', spawn: { x: 180, y: 450 } },
   mine: { name: 'Emberfall Mine & Smithy', spawn: { x: 800, y: 760 } },
@@ -3025,8 +3033,86 @@ function bossDefenderProfile(fight) {
   const eff = Math.max(1, BIG_ZOMBIE_DEF.defLevel - ((fight && fight.defDrain) || 0));
   return { style: 'accurate', worn: { weapon: null, shield: null, head: null, body: null, legs: null }, xp: { defence: XP_TABLE[eff] || 0 } };
 }
+// Beginner Barrows Training Grounds (Derek's spec, 2026-11-22;
+// built 2026-11-27): the five-step practice ladder. Same shared-
+// NPC framework as the camps — fought through attack_npc /
+// npcTick, drops in rollNpcDrops, NEVER any Barrows loot. Tuning
+// mirrors the camp monsters at the spec's rough combat targets:
+// the goblin sits between GOBLIN_DEF (5) and HOBGOBLIN_DEF (12);
+// the knight between the hobgoblin and the cave zombie (16); the
+// wizard / ranger scale WIZARD_DEF (13) / RANGER_DEF (11) up to
+// ~30 with their cadence unchanged (ranged kinds hold their
+// ground on the 3-tick swing); the Practice Brother is Dharok
+// scaled down (100 HP -> 45, base max hit 8 -> 4) with the SAME
+// rage curve — maxHit x (1 + 1.5 x missing-health fraction), so
+// 4 at full health up to 10 near death, rage warnings included
+// (see npcTick). The yard is SAFE: in this area a trainer stops
+// any fight the player would lose and heals them (see npcTick) —
+// nobody dies in the Training Grounds. Steps run west to east
+// across the yard's north half, each in its own fenced pen.
+const TRAINING_GOBLIN_DEF = { kind: 'training_goblin', name: 'Training Goblin', combatLevel: 10, maxHp: 16, maxHit: 3, acc: 0.55, attackType: 'melee', respawnMs: 10000 };
+const TRAINING_GOBLIN_SPAWNS = [[200, 330], [280, 400], [240, 290]];
+const TRAINING_KNIGHT_DEF = { kind: 'training_knight', name: 'Training Knight', combatLevel: 20, maxHp: 30, maxHit: 5, acc: 0.56, attackType: 'melee', respawnMs: 12000 };
+const TRAINING_KNIGHT_SPAWNS = [[480, 330], [560, 400]];
+const TRAINING_WIZARD_DEF = { kind: 'training_wizard', name: 'Training Wizard', combatLevel: 30, maxHp: 32, maxHit: 6, acc: 0.56, attackType: 'magic', respawnMs: 12000 };
+const TRAINING_WIZARD_SPAWNS = [[760, 330], [840, 400]];
+const TRAINING_RANGER_DEF = { kind: 'training_ranger', name: 'Training Ranger', combatLevel: 30, maxHp: 30, maxHit: 6, acc: 0.57, attackType: 'missiles', respawnMs: 12000 };
+const TRAINING_RANGER_SPAWNS = [[1040, 330], [1120, 400]];
+const PRACTICE_BROTHER_DEF = { kind: 'practice_brother', name: 'Practice Brother', combatLevel: 40, maxHp: 45, maxHit: 4, acc: 0.58, attackType: 'melee', respawnMs: 20000, rage: true };
+const PRACTICE_BROTHER_SPAWNS = [[1360, 360]];
+for (const [def, spawns, prefix] of [
+  [TRAINING_GOBLIN_DEF, TRAINING_GOBLIN_SPAWNS, 'traininggoblin'],
+  [TRAINING_KNIGHT_DEF, TRAINING_KNIGHT_SPAWNS, 'trainingknight'],
+  [TRAINING_WIZARD_DEF, TRAINING_WIZARD_SPAWNS, 'trainingwizard'],
+  [TRAINING_RANGER_DEF, TRAINING_RANGER_SPAWNS, 'trainingranger'],
+  [PRACTICE_BROTHER_DEF, PRACTICE_BROTHER_SPAWNS, 'practicebrother'],
+]) {
+  spawns.forEach(([x, y], i) => {
+    const id = prefix + (i + 1);
+    npcs.set(id, { id, ...def, area: 'training_grounds', x, y, spawnX: x, spawnY: y, hp: def.maxHp, alive: true, respawnAt: 0, fightId: null });
+  });
+}
+// The readiness board at the grounds' entrance (server (890,650),
+// just east of the entrance path): a player standing there taps it
+// and the server answers with the board read from THEIR profile
+// (training_board_read), like the castle directory sign's
+// canonical read — so the words are identical for the client
+// panel and for tests. TRAINING_TARGET is the board's bar: 40 in
+// Attack / Strength / Defence / Hitpoints (the spec's target for
+// all four, matching guideBarrowsReady); the skills line also
+// reports the player's Barrows HP pool (= their Hitpoints level).
+const TRAINING_BOARD = { id: 'training_board', area: 'training_grounds', x: 890, y: 650 };
+const TRAINING_TARGET = 40;
+const TRAINING_HP_TARGET = 40;
+function trainingBoardLines(profile) {
+  const lvl = (skill) => levelForXp((profile.xp && profile.xp[skill]) || 0);
+  const atk = lvl('attack'), str = lvl('strength'), def = lvl('defence'), hp = lvl('hitpoints');
+  const mark = (v, target) => (v >= target ? ' ✓' : ` (${target - v} to go)`);
+  const skillsLine = `Attack ${atk}${mark(atk, TRAINING_TARGET)} · Strength ${str}${mark(str, TRAINING_TARGET)} · Defence ${def}${mark(def, TRAINING_TARGET)} · Hitpoints ${hp}${mark(hp, TRAINING_HP_TARGET)} — your Barrows HP pool will be ${hp}`;
+  const ready = atk >= TRAINING_TARGET && str >= TRAINING_TARGET && def >= TRAINING_TARGET && hp >= TRAINING_HP_TARGET;
+  let verdict;
+  if (ready) verdict = "You're ready — the brothers are at the south gate";
+  else {
+    // Point at the sensible next step for where the player is:
+    // single-digit melee skills start at Step 1 (the goblin); a
+    // melee gap trains on the knight (Step 2 — the melee step);
+    // only Hitpoints short means the pool grows in the full loop
+    // at Step 5 (the Practice Brother).
+    const meleeMin = Math.min(atk, str, def);
+    let step;
+    if (meleeMin < 10) step = 1;
+    else if (meleeMin < TRAINING_TARGET) step = 2;
+    else step = 5;
+    verdict = `Not ready yet — train at Step ${step}`;
+  }
+  return [
+    skillsLine,
+    'Prayer: keep Deflect up · Food: bring cooked food that heals 15+',
+    verdict,
+  ];
+}
 // The areas whose live NPC roster rides on npc_state messages.
-const NPC_AREAS = ['goblins', 'magic', 'range', 'wilderness', 'purewild', 'plaza', 'ratcave'];
+const NPC_AREAS = ['goblins', 'magic', 'range', 'wilderness', 'purewild', 'plaza', 'ratcave', 'training_grounds'];
 const npcFights = new Map(); // id -> { id, playerKey, npcId, hpYou, maxHpYou, specialQueued, done, timer, tickCount, nextSwingYou, nextSwingNpc }
 // Pseudo-profile so goblins can be the defender in the duel rollHit():
 // no style block, no worn gear, no armour reduction.
@@ -4877,6 +4963,65 @@ function rollNpcDrops(profile, npc) {
     else if (r < 0.55) give('snapdragon', 1);
     return { gold, items };
   }
+  if (kind === 'training_goblin' || kind === 'training_knight' || kind === 'training_wizard' || kind === 'training_ranger' || kind === 'practice_brother') {
+    // Barrows Training Grounds (Derek's spec table, 2026-11-22):
+    // every practice kill stocks a beginner FOR Barrows — bones
+    // to bury for Prayer XP, gold, and the step's supply rolls.
+    // The wizard / ranger rows reuse the camp tables' shapes
+    // (one element of runes; a tiered arrow / arrowhead roll).
+    // Supplies and gold ONLY — never Barrows loot; that stays in
+    // the real chest. Backpack first, bank on overflow, like
+    // every other drop table here.
+    const items = [];
+    const give = (item, qty) => {
+      const leftover = addStacks(profile.backpack, item, qty, BACKPACK_MAX_STACKS);
+      if (leftover > 0) addStacks(profile.bank, item, leftover);
+      items.push({ item, qty });
+    };
+    let gold;
+    if (kind === 'training_goblin') {
+      gold = 2 + Math.floor(Math.random() * 7); // 2-8
+      addGold(profile, gold);
+      give('animal_bones', 1);
+      if (Math.random() < 0.25) give('cooked_shrimps', 1);
+    } else if (kind === 'training_knight') {
+      gold = 5 + Math.floor(Math.random() * 11); // 5-15
+      addGold(profile, gold);
+      give('animal_bones', 1);
+      if (Math.random() < 0.15) give('prayer_potion', 1);
+      if (Math.random() < 0.25) give('herbs', 1);
+      if (Math.random() < 0.35) give('cooked_beef', 1);
+    } else if (kind === 'training_wizard') {
+      gold = 3 + Math.floor(Math.random() * 6); // 3-8
+      addGold(profile, gold);
+      const roll = Math.random() * 100;
+      const el = roll < 45 ? 'air' : roll < 70 ? 'water' : roll < 88 ? 'earth' : 'fire';
+      give(`${el}_rune`, 3 + Math.floor(Math.random() * 8)); // 3-10 of the one element (the wizard table)
+      if (Math.random() < 0.5) give('animal_bones', 1);
+    } else if (kind === 'training_ranger') {
+      gold = 3 + Math.floor(Math.random() * 6); // 3-8
+      addGold(profile, gold);
+      const tr = Math.random() * 100;
+      const tier = tr < 30 ? 'bronze' : tr < 55 ? 'iron' : tr < 75 ? 'steel' : tr < 87 ? 'mithril' : tr < 95 ? 'adamant' : 'rune';
+      const what = Math.random();
+      if (what < 0.55 || what >= 0.85) give(`${tier}_arrow`, 5 + Math.floor(Math.random() * 11)); // 5-15 arrows (the ranger table)
+      if (what >= 0.55) give(`${tier}_arrowhead`, 1 + Math.floor(Math.random() * 3)); // 1-3 arrowheads
+      if (Math.random() < 0.5) give('animal_bones', 1);
+    } else { // practice_brother
+      gold = 25 + Math.floor(Math.random() * 36); // 25-60
+      addGold(profile, gold);
+      give('animal_bones', 1);
+      if (Math.random() < 0.5) give('prayer_potion', 1);
+      if (Math.random() < 0.5) give('cooked_trout', 1); // the good food: heals 15, the board's Barrows standard
+      const roll = Math.random() * 100;
+      const el = roll < 45 ? 'air' : roll < 70 ? 'water' : roll < 88 ? 'earth' : 'fire';
+      give(`${el}_rune`, 3 + Math.floor(Math.random() * 4)); // small rune bundle: 3-6 of one element
+      const tr = Math.random() * 100;
+      const tier = tr < 30 ? 'bronze' : tr < 55 ? 'iron' : tr < 75 ? 'steel' : tr < 87 ? 'mithril' : tr < 95 ? 'adamant' : 'rune';
+      give(`${tier}_arrow`, 5 + Math.floor(Math.random() * 6)); // small arrow bundle: 5-10 of one tier
+    }
+    return { gold, items };
+  }
   const gold = 2 + Math.floor(Math.random() * 7);
   addGold(profile, gold); // Stage 16: the coins land on the coin stack
   const items = [];
@@ -4934,7 +5079,7 @@ function startNpcFight(key, npc) {
   const id = crypto.randomBytes(6).toString('hex');
   // Fight HP pool = the player's Hitpoints level (duels keep their 99 pool).
   const maxHpYou = Math.max(1, levelForXp(profile.xp.hitpoints));
-  const fight = { id, playerKey: key, npcId: npc.id, hpYou: maxHpYou, maxHpYou, specialQueued: false, done: false, timer: null, tickCount: 0, nextSwingYou: weaponSwingTicks(profile), nextSwingNpc: MELEE_SPEED, npcUnlocked: false, lastRefuseTick: -99 }; // Stage 19: first swing one weapon-speed after engagement (the wielded style's speed); lastRefuseTick throttles out-of-arrows/runes notes
+  const fight = { id, playerKey: key, npcId: npc.id, hpYou: maxHpYou, maxHpYou, specialQueued: false, done: false, timer: null, tickCount: 0, nextSwingYou: weaponSwingTicks(profile), nextSwingNpc: MELEE_SPEED, npcUnlocked: false, lastRefuseTick: -99, rageFlags: {} }; // Stage 19: first swing one weapon-speed after engagement (the wielded style's speed); lastRefuseTick throttles out-of-arrows/runes notes; rageFlags: the Practice Brother's once-per-threshold rage warnings (Training Grounds)
   // Rat Cave zombies (Derek, 2026-11-24): every fresh zombie fight
   // starts the prayer-switch dance from the top — the zombie is
   // SHOOTING (missiles), whatever the last fight left it doing.
@@ -5103,7 +5248,13 @@ function npcTick(fight) {
     npcHit = 0;
     if (Math.random() > npc.acc) npcOutcome = 'miss';
     else {
-      const raw = 1 + Math.floor(Math.random() * npc.maxHit);
+      // Training Grounds: the Practice Brother's rage — Dharok's
+      // own curve (maxHit x (1 + 1.5 x missing-health fraction)),
+      // scaled to his weakened base: 4 at full health, 10 near
+      // death. Keys off his health as the swing begins.
+      let effMaxHit = npc.maxHit;
+      if (npc.rage && npc.hp > 0) effMaxHit = Math.round(npc.maxHit * (1 + 1.5 * (1 - Math.max(0, npc.hp) / npc.maxHp)));
+      const raw = 1 + Math.floor(Math.random() * effMaxHit);
       npcDeflected = monsterDeflect(profile, npc.attackType, raw);
       if (npcDeflected > 0) npcOutcome = 'blocked'; // Deflect: nothing gets through, the creature takes the bounce
       else if (Math.random() < styleBlockChance(profile)) {
@@ -5134,6 +5285,19 @@ function npcTick(fight) {
     const allyDmg = allyDamage(ally);
     npc.hp -= allyDmg;
     tickNotes.push(`🌳 ${ally.name} hits for ${allyDmg}!`);
+  }
+  // Training Grounds: the Practice Brother's rage warnings — the
+  // same once-per-threshold notes Dharok gives in his crypt
+  // (75% / 50% / 25% health), so a beginner learns to watch a
+  // brother's health bar before the real one teaches it harder.
+  if (npc.rage && npc.hp > 0) {
+    const frac = npc.hp / npc.maxHp;
+    for (const t of [0.75, 0.5, 0.25]) {
+      if (frac <= t && !fight.rageFlags[t]) {
+        fight.rageFlags[t] = true;
+        tickNotes.push(`⚠️ The Practice Brother is enraged (${Math.round(t * 100)}% health) — he hits harder as his health falls!`);
+      }
+    }
   }
   fight.hpYou -= npcHit || 0;
   if ((youHit || 0) + youBonus > 0) profile.specialEnergy = Math.min(100, profile.specialEnergy + SPECIAL_CHARGE_PER_HIT);
@@ -5185,11 +5349,27 @@ function npcTick(fight) {
     // skulled drop rules), never the free camp respawn.
     if (playerDead) {
       if (isWildArea(npc.area)) wildDeath(fight.playerKey, npc.name);
+      // Training Grounds: the kill still counts, and the trainer
+      // catches the player — healed on the spot, no plaza wake-up.
+      else if (npc.area === 'training_grounds') send(sess.ws, { type: 'chat', from: 'Game', text: `🛡️ The trainer steps in as you drop — "Enough! You got your kill — now breathe." You are healed where you stand. Nothing lost: this is a training yard.` });
       else respawnPlayer(fight.playerKey, `☠️ You were killed by the ${npc.name.toLowerCase()} — you took it down with you. Dropped: nothing. Kept: everything you carry and wear. You wake up in the plaza at full health.`);
     }
     return;
   }
   if (fight.hpYou <= 0) {
+    // Training Grounds (Derek's spec): NO death penalty here — at
+    // the blow that would kill, the trainer stops the fight and
+    // heals the player where they stand (fight HP is per-fight,
+    // so the next fight starts whole). The practice monster
+    // resets, exactly as when it wins anywhere else; the player
+    // stays in the yard and loses nothing.
+    if (npc.area === 'training_grounds') {
+      npc.hp = npc.maxHp;
+      finishNpcFight(fight, 'trainer', null);
+      broadcastNpcState(npc.area);
+      send(sess.ws, { type: 'chat', from: 'Game', text: `🛡️ The trainer steps in — "Enough! Breathe." — and heals you where you stand. Nothing lost: this is a training yard. Eat, pray at the altar, and try the step again.` });
+      return;
+    }
     npc.hp = npc.maxHp; // the creature resets when it wins
     finishNpcFight(fight, 'death', null);
     broadcastNpcState(npc.area);
@@ -6347,6 +6527,11 @@ defNode('defence_dummy', 'training', 'station', 'Defence dummy', 'defence', 1, n
 defNode('ranged_target', 'training', 'station', 'Ranged target', 'ranged', 1, null, 12, Infinity, 0, 880, 450);
 defNode('magic_dummy', 'training', 'station', 'Magic dummy', 'magic', 1, null, 12, Infinity, 0, 1080, 450);
 defNode('prayer_altar', 'training', 'station', 'Prayer altar', 'prayer', 1, null, 6, Infinity, 0, 1280, 450);
+// Barrows Training Grounds (2026-11-27): the grounds' own prayer
+// altar by the entrance path — the Training Cave altar mirrored
+// (a station: Prayer XP per use, infinite charges), so beginners
+// bury their practice bones and work Prayer between steps.
+defNode('training_altar', 'training_grounds', 'station', 'Prayer altar', 'prayer', 1, null, 6, Infinity, 0, 710, 650);
 // Emberfall Mine (Stage 3) — nine rocks across the west/north half;
 // the south-east quadrant stays clear for the furnace + anvil (actions,
 // not nodes). Iron is Mining 10 here per Derek's mine spec (the
@@ -8085,6 +8270,17 @@ wss.on('connection', (ws, req) => {
       // is identical for every reader (and testable headlessly).
       if (me.area !== 'castle') return send(ws, { type: 'error', message: 'That sign stands at the Beginner Castle.' });
       return send(ws, { type: 'castle_sign', id: CASTLE_DIR_SIGN.id, title: CASTLE_DIR_SIGN.title, lines: CASTLE_DIR_SIGN.lines });
+    }
+
+    if (m.type === 'training_board_read') {
+      // Barrows Training Grounds readiness board (Derek's spec,
+      // 2026-11-22): a player in the grounds tapped the board at
+      // the entrance. The answer is read from THEIR OWN profile
+      // at tap time (trainingBoardLines), so it updates live as
+      // their training XP lands — the castle directory sign's
+      // canonical-read pattern, per-player.
+      if (me.area !== 'training_grounds') return send(ws, { type: 'error', message: 'That board stands at the Barrows Training Grounds.' });
+      return send(ws, { type: 'training_board', id: TRAINING_BOARD.id, title: '⚔️ Barrows-ready check', lines: trainingBoardLines(profile) });
     }
 
     if (m.type === 'sign_read') {
