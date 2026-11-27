@@ -523,6 +523,9 @@
  .authfield input{margin:0;padding-left:36px;background:#100d0a;border:2px solid #57462e;color:#f0dfae}
  #authgo{width:100%;padding:13px;margin-top:8px;background:linear-gradient(180deg,#a03438,#6d1f23);border:2px solid #c9a227;border-radius:10px;color:#ffe9a8;font-family:Georgia,'Times New Roman',serif;font-size:16px;font-weight:700;letter-spacing:2px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.6)}
  #quicklogin{width:100%;padding:12px;margin-top:4px;background:linear-gradient(180deg,#e8c96a,#b8933a);border:2px solid #ffe9a8;border-radius:10px;color:#2b1d05;font-size:14.5px;font-weight:800;cursor:pointer;box-shadow:0 0 16px rgba(232,201,106,.65);display:none}
+ /* Facebook Login (2026-11-27): Facebook blue, white f badge — the duelgame-proven styling */
+ #fblogin{width:100%;padding:12px;margin-top:4px;background:#1877F2;border:2px solid #1877F2;border-radius:10px;color:#fff;font-size:14.5px;font-weight:800;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.6)}
+ #fblogin .fbf{display:inline-block;background:#fff;color:#1877F2;font-weight:900;border-radius:4px;width:20px;height:20px;line-height:20px;text-align:center;margin-right:8px;font-size:16px;vertical-align:-3px}
  .ordiv{display:flex;align-items:center;gap:10px;color:#b39b6d;font-size:11px;letter-spacing:2px;margin:14px 0 4px}
  .ordiv::before,.ordiv::after{content:'';flex:1;height:1px;background:#57462e}
  #rememberrow{display:flex;align-items:center;gap:8px;justify-content:center;color:#d8c49a;font-size:13px;margin-top:12px;cursor:pointer}
@@ -987,6 +990,8 @@
  <button id="authgo">LOGIN</button>
  <div class="ordiv" id="ordiv">— OR —</div>
  <button id="quicklogin">⚡ QUICK LOGIN — Tap to Login Instantly</button>
+ <div class="ordiv">— OR —</div>
+ <button id="fblogin" type="button"><span class="fbf">f</span>Log in with Facebook</button>
  <div id="authmsg"></div>
  <label id="rememberrow"><input type="checkbox" id="rememberme" checked> Remember Me</label>
  <div style="text-align:center"><span id="authtoggle">New Player? Create Account</span></div>
@@ -1229,6 +1234,20 @@ window.setCamPov=function(v){ settings.camPov=(v==='first'||v==='shoulder')? v :
    advice; asking a character or the ❓ Help button still answers. */
 window.setGuidedPath=function(v){ settings.guided=!!v; saveSettings(); pushGuidedSetting(); if(dockPanel==='settings') renderDock(); };
 function pushGuidedSetting(){ send({type:'set_guided',on:settings.guided!==false}); }
+/* Facebook Login (2026-11-27): the Settings "Link Facebook" button.
+   Asks the server (with our own live session token) for a link-mode
+   Facebook dialog URL, then hands the browser to Facebook; the
+   callback binds the Facebook id to THIS account and returns us
+   through the same /?fbtoken= handoff as a fresh Facebook login. */
+window.linkFacebook=async function(){
+ try{
+  const r=await fetch('/api/fb-link-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});
+  const d=await r.json();
+  if(d.linked){ toast('Facebook is already linked to this account ✓'); if(dockPanel==='settings') renderDock(); return; }
+  if(!r.ok||!d.url){ toast(d.error||'Facebook linking is not available right now.'); return; }
+  window.location.assign(d.url);
+ }catch(e){ toast('Facebook linking failed — check your connection and try again.'); }
+};
 /* Stage 37b: fight-feel toggles, same setter shape as the camera
    ones — persisted in the settings store, panel re-renders in sync. */
 window.setSoundOn=function(v){ settings.soundOn=!!v; saveSettings(); if(settings.soundOn) sfxClick(); if(dockPanel==='settings') renderDock(); };
@@ -1366,6 +1385,32 @@ $('quicklogin').onclick=()=>{
  connect();
 };
 refreshQuickLogin();
+$('fblogin').onclick=()=>{ window.location.assign('/auth/facebook'); };
+/* Facebook Login return (2026-11-27): /?fbtoken=<one-time code>. Strip
+   it from the address bar, exchange it for a normal session, and enter
+   exactly like a password login did. The session is remembered on
+   this device (a Facebook account has no game password to retype), so
+   Quick Login works for it afterwards too. A dead code (expired, or
+   the server restarted) just leaves the player on the login form
+   with a clear message. */
+(async function(){
+ const q=new URLSearchParams(window.location.search);
+ const t=q.get('fbtoken');
+ if(!t) return;
+ try{ history.replaceState(null,'',window.location.pathname); }catch(e){}
+ try{
+  const r=await fetch('/api/fb-exchange',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fbtoken:t})});
+  const d=await r.json();
+  if(!r.ok){ $('authmsg').textContent=d.error||'Facebook login failed — try again.'; return; }
+  token=d.token; me=d.profile;
+  try{ localStorage.setItem('nallystake_session',JSON.stringify({token,username:me.username})); }catch(e){}
+  refreshQuickLogin();
+  $('auth').style.display='none';
+  renderAll();
+  connect();
+  maybeOpenAppearance();
+ }catch(e){ $('authmsg').textContent='Facebook login failed — try again.'; }
+})();
 
 /* Auto-reconnect: a phone socket dies silently all the time (screen
    lock, network hop, browser tab throttling). The old client just
@@ -9871,7 +9916,10 @@ function pHelp(){
 /* ---- Settings ---- */
 const PANEL_LIST=[['backpack','🎒 Backpack'],['worn','🗡️ Worn items'],['shop','🏪 Shops'],['bank','🏦 Bank'],['exchange','💱 Gold Exchange'],['prayers','🙏 Prayers'],['spellbook','📖 Spellbook'],['players','👥 Players'],['admin','👑 Admin'],['tools','🛠️ Admin Tools'],['skills','📊 Skills'],['smithy','🔥 Smithy'],['teleport','🌀 Teleport'],['settings','🎛️ Settings']];
 function pSettings(){
- let h=`<div class="setrow"><span class="grow">🎨 Appearance<br><span class="note">Change how your knight looks</span></span><button class="act" onclick="closeDock();openAppearance()">🎨 Appearance</button></div>`;
+ let h='';
+ if(me&&me.facebookLinked) h+=`<div class="setrow"><span class="grow">📘 Facebook<br><span class="note">Facebook linked ✓ — you can sign in with Facebook any time.</span></span></div>`;
+ else h+=`<div class="setrow"><span class="grow">📘 Facebook<br><span class="note">Link your Facebook account to sign in with one tap — no password to remember.</span></span><button class="act" onclick="linkFacebook()">📘 Link Facebook</button></div>`;
+ h+=`<div class="setrow"><span class="grow">🎨 Appearance<br><span class="note">Change how your knight looks</span></span><button class="act" onclick="closeDock();openAppearance()">🎨 Appearance</button></div>`;
  h+=`<div class="setrow"><span class="grow">🧭 Guided path<br><span class="note">When on, the world's characters may volunteer your next step as you play. Turn it off and nobody pushes advice at you — asking anyone what to do, or the ❓ Help button, still answers any time.</span></span></div><div class="seg" style="margin-top:-2px"><button class="${settings.guided!==false?'on':''}" onclick="setGuidedPath(true)">On</button><button class="${settings.guided===false?'on':''}" onclick="setGuidedPath(false)">Off</button></div>`;
  h+=`<div class="setrow"><span class="grow">📷 Camera drag speed<br><span class="note">Screen-drag rotation &amp; tilt, camera stick</span></span><input type="range" min="0.25" max="3" step="0.25" value="${settings.camSpeed}" oninput="setCamSpeed(this.value)"><b id="camspeedval" style="color:#e3c766;min-width:34px;text-align:right">${settings.camSpeed}×</b></div>`;
  h+=`<div class="setrow"><span class="grow">👆 Ground tap mode</span></div><div class="seg" style="margin-top:-2px"><button class="${settings.groundTap==='walk'?'on':''}" onclick="setGroundTap('walk')">🚶 Walk</button><button class="${settings.groundTap==='face'?'on':''}" onclick="setGroundTap('face')">🧭 Face</button></div>`;
