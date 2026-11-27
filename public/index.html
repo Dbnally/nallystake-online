@@ -165,7 +165,7 @@
  .bwrap{display:contents}
  /* Group order inside the strips (flex order) */
  #duelstyles,#fcstyles,#bbstyles{order:11}
- #duelprayers,#fcprayers,#bbprayers{order:21}
+ #duelprayers,#fcprayers{order:21}
  #atkchip,#fcatkchip{order:41}
  #duelflee{order:43}
  .blab[data-grp="fight"]{order:10}
@@ -419,7 +419,7 @@
  #bottombar.open{display:flex}
  #bottombar::-webkit-scrollbar{display:none}
  #bottombar>*{flex:none}
- #bbstyles,#bbprayers,#duelstyles,#fcstyles{display:contents}
+ #bbstyles,#duelstyles,#fcstyles{display:contents}
  .fchip.sty.on{border-color:#c9a227;background:#3a2c1c;box-shadow:0 0 10px #c9a22766;color:#ffd75e}
  .fchip.pack.on{border-color:#c9a227;background:#3a2c1c;box-shadow:0 0 10px #c9a22766;color:#ffd75e}
  /* Interface simplification (Derek, 2026-11-23): the context
@@ -649,6 +649,75 @@
       here), clear of the orbs row that spills left under it */
    #dockhead{right:124px;top:calc(50px + env(safe-area-inset-top,0px))}
  }
+ /* ============ Picture look (2026-11-26, Derek's reference HUD) ============
+    Presentation only — the picture's chrome over the same game:
+    dark translucent cards (rgba(18,16,22,.85)) with gold trim
+    (#c9a227), 14–18px corners, soft shadows, compact numbers.
+    Player + area cards top-left with the chat row under them; the
+    minimap ROUND with an orb column under it; a Prayers card
+    bottom-left (the Deflects' home out of fights — the fight
+    strips keep their own); a round action cluster bottom-right.
+    Panel interiors and the fight strips keep their own themes. */
+ .hudcard{background:rgba(18,16,22,.85);border:1px solid #c9a227;border-radius:16px;box-shadow:0 4px 16px rgba(0,0,0,.5);color:#f3e6c8}
+ /* --- top-left stack: player card, area card, chat row --- */
+ #playercard{position:fixed;top:calc(40px + env(safe-area-inset-top,0px));left:8px;z-index:25;width:212px;padding:8px 10px;display:none}
+ #playercard.open{display:block}
+ #playercard .pcrow{display:flex;align-items:center;gap:6px}
+ #pcrole{font-size:16px;line-height:1}
+ #pcname{font-weight:900;font-size:14px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ #pchpwrap{position:relative;height:15px;margin-top:5px;background:#3d0a06;border:1px solid rgba(0,0,0,.65);border-radius:8px;overflow:hidden}
+ #pchpfill{position:absolute;inset:0;width:100%;background:#2fae4e;transition:width .25s}
+ #pchpnum{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:900;color:#fff;text-shadow:0 1px 2px #000}
+ #pcsub{margin-top:4px;font-size:11px;font-weight:700;color:#d8c9a3}
+ #areacard{position:fixed;top:calc(116px + env(safe-area-inset-top,0px));left:8px;z-index:25;width:212px;padding:7px 10px;display:none}
+ #areacard.open{display:block}
+ #pcarea{font-weight:900;font-size:13.5px;color:#ffd75e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ #pcstatus{font-size:11.5px;font-weight:600;color:#e8d9b0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+ /* the chat row moves under the cards, restyled to the theme;
+    the side panel slides below it while it is open (the old
+    bottom-lift rule's geometry no longer applies) */
+ #chatbox{left:8px;right:auto;top:calc(168px + env(safe-area-inset-top,0px));bottom:auto;width:min(320px,60vw);background:rgba(18,16,22,.85);border:1px solid #c9a227;border-radius:14px;box-shadow:0 4px 16px rgba(0,0,0,.5)}
+ #chatbox:not(.closed){bottom:auto}
+ body:has(#chatbox:not(.closed)) #paneldock{top:calc(352px + env(safe-area-inset-top,0px));bottom:calc(100px + env(safe-area-inset-bottom,0px))}
+ /* the Barrows bar, which owned the top-left, steps below the stack */
+ #barrowsbar{top:calc(204px + env(safe-area-inset-top,0px))}
+ /* --- top-right: round minimap + orb column --- */
+ #minimap{width:128px;height:128px;border-radius:50%;border:3px solid #c9a227;box-shadow:0 4px 14px rgba(0,0,0,.55)}
+ #orbs{flex-direction:column;align-items:center;gap:5px;margin-top:6px}
+ .orb{width:46px;height:46px}
+ .orb.gold{background:#40340a}
+ .orb.cb{background:#2b2118}
+ /* --- bottom-left: the Prayers card --- */
+ #praypanel{position:fixed;left:8px;bottom:calc(220px + env(safe-area-inset-bottom,0px));z-index:35;width:138px;padding:8px;display:none;flex-direction:column;gap:5px}
+ #praypanel.open{display:flex}
+ #praypanel .pphead{display:flex;align-items:center;justify-content:space-between;font-weight:900;font-size:12.5px;color:#ffd75e}
+ #pppoints{font-size:11.5px;color:#e8d9b0}
+ .ppbtn{display:flex;align-items:center;gap:6px;background:#221d2b;border:1px solid #4a3a28;border-radius:10px;color:#e8d9b0;padding:0 9px;min-height:38px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit;text-align:left}
+ .ppbtn.on{border-color:#c9a227;background:#3a2c1c;box-shadow:0 0 10px #c9a22766;color:#ffd75e}
+ .ppbtn.promptpulse{animation:atkPulse 1s ease-in-out infinite}
+ #ppactive{font-size:10.5px;color:#b8a888;text-align:center}
+ /* --- bottom-right: the round action cluster --- */
+ #hudcluster{position:fixed;right:10px;bottom:calc(94px + env(safe-area-inset-bottom,0px));z-index:35;display:none;grid-template-columns:repeat(3,48px);gap:6px}
+ #hudcluster.open{display:grid}
+ .cbtn{position:relative;width:48px;height:48px;border-radius:50%;background:rgba(18,16,22,.88);border:2px solid #c9a227;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:21px;box-shadow:0 3px 10px rgba(0,0,0,.55);font-family:inherit;padding:0}
+ .cbtn .cbadge{position:absolute;top:-4px;right:-4px;min-width:17px;height:17px;border-radius:9px;background:#8e2f32;border:1px solid #e8c96a;color:#fff;font-size:10px;font-weight:900;display:flex;align-items:center;justify-content:center;padding:0 4px;box-sizing:border-box}
+ .cbtn .cval{position:absolute;left:0;right:0;bottom:3px;font-size:8.5px;font-weight:900;color:#ffd75e;text-shadow:0 1px 2px #000;text-align:center;pointer-events:none}
+ .cbtn.on{box-shadow:0 0 12px 3px rgba(201,162,39,.6)}
+ .cbtn.dim{opacity:.45}
+ /* the styles-only bottom bar takes the theme's dark glass */
+ #bottombar{background:rgba(18,16,22,.85)}
+ @media (max-width:700px){
+   #usechip{top:calc(208px + env(safe-area-inset-top,0px))}
+   #toast{top:calc(252px + env(safe-area-inset-top,0px))}
+   #dueltop{top:calc(208px + env(safe-area-inset-top,0px))}
+   #stakewaitbar{top:calc(204px + env(safe-area-inset-top,0px))}
+ }
+ @media (max-width:640px){
+   #minimap{width:104px;height:104px}
+   .orb{width:40px;height:40px}
+   #playercard,#areacard{width:184px}
+   #chatbox{width:min(320px,54vw)}
+ }
 </style></head><body>
 <div id="scene"></div>
 <div id="labels"></div>
@@ -656,13 +725,26 @@
 
 <div id="topbar"><b>⚔️ nallystake 🏰</b><span id="hudname">—</span><span>⭐ Rating <b id="hudrating">1000</b></span><span id="hudwl">0W/0L</span><span id="hudcombat">⚔️ Combat lvl 3</span><span class="grow"></span><span class="note">gold only · no real money</span></div>
 
+<!-- Picture look (2026-11-26): player card + area card, top-left -->
+<div id="playercard" class="hudcard">
+ <div class="pcrow"><span id="pcrole">⚔️</span><span id="pcname">—</span></div>
+ <div id="pchpwrap"><div id="pchpfill"></div><div id="pchpnum">99 / 99</div></div>
+ <div id="pcsub">⚔️ Combat lvl 3</div>
+</div>
+<div id="areacard" class="hudcard">
+ <div id="pcarea">⚔️ Plaza</div>
+ <div id="pcstatus">Find an opponent</div>
+</div>
+
 <div id="mapwrap">
- <canvas id="minimap" width="128" height="72"></canvas>
+ <canvas id="minimap" width="128" height="128"></canvas>
  <div id="orbs">
-  <div class="orb hp" id="orbhp"><div class="fill"></div><div class="txt"><span>HP</span><span id="orbhpv">99</span></div></div>
+  <div class="orb hp" id="orbhp"><div class="fill"></div><div class="txt"><span>❤️</span><span id="orbhpv">99</span></div></div>
   <div class="orb pr" id="orbpr" title="Prayers"><div class="fill"></div><div class="txt"><span>🙏</span><span id="orbprv">25</span></div></div>
+  <div class="orb gold" id="orbgold" title="Gold — the coin stack in your backpack"><div class="fill"></div><div class="txt"><span>🪙</span><span id="orbgoldv">0</span></div></div>
   <div class="orb sp" id="orbsp" title="Special attack"><div class="fill"></div><div class="txt"><span>⚡</span><span id="orbspv">0%</span></div></div>
   <div class="orb run" id="orbrun" title="Run toggle"><div class="txt"><span>🏃</span><span id="orbrunv">RUN</span></div></div>
+  <div class="orb cb" id="orbcb" title="Combat level"><div class="fill"></div><div class="txt"><span>⚔️</span><span id="orbcbv">3</span></div></div>
  </div>
  <div id="xpdrops"></div>
 </div>
@@ -788,7 +870,6 @@
 <div id="promptchip"></div>
 <div id="promptline"></div>
 <div id="bottombar">
- <button class="fchip pack" id="bbpack" title="Backpack">🎒 Backpack</button>
  <span class="blab" data-grp="fight">Fight</span>
  <div id="bbstyles">
   <button class="fchip sty" data-style="accurate">🎯 Accurate</button>
@@ -796,12 +877,29 @@
   <button class="fchip sty" data-style="defensive">🛡️ Defensive</button>
   <button class="fchip sty" data-style="controlled">⚖️ Controlled</button>
  </div>
- <span class="blab" data-grp="protect">Protect</span>
- <div id="bbprayers">
-  <button class="fchip pray" id="bbpray-melee">🛡️ Deflect Melee</button>
-  <button class="fchip pray" id="bbpray-missiles">🏹 Deflect Missiles</button>
-  <button class="fchip pray" id="bbpray-magic">🔮 Deflect Magic</button>
- </div>
+</div>
+
+<!-- Picture look (2026-11-26): the Prayers card, bottom-left — the
+     Deflects' home out of fights. Same {type:'prayer'} sends the
+     bottom bar's chips used to make; the fight strips keep theirs. -->
+<div id="praypanel" class="hudcard">
+ <div class="pphead"><span>🙏 Prayers</span><span id="pppoints">25 / 25</span></div>
+ <button class="ppbtn" id="ppray-melee">🛡️ Melee</button>
+ <button class="ppbtn" id="ppray-missiles">🏹 Missiles</button>
+ <button class="ppbtn" id="ppray-magic">🔮 Magic</button>
+ <div id="ppactive">No prayer active</div>
+</div>
+
+<!-- Picture look (2026-11-26): the round action cluster, bottom-right.
+     Every button rides an existing action path (see the wiring in
+     the Picture look script block). -->
+<div id="hudcluster">
+ <button class="cbtn" id="clfood" title="Eat your best food"><span class="cic">🍞</span><span class="cbadge" id="clfoodn">0</span></button>
+ <button class="cbtn" id="clpotion" title="Drink a potion"><span class="cic">🧪</span><span class="cbadge" id="clpotionn">0</span></button>
+ <button class="cbtn" id="clspec" title="Special attack"><span class="cic">✨</span><span class="cval" id="clspecv">0%</span></button>
+ <button class="cbtn" id="clatk" title="Attack"><span class="cic">🗡️</span></button>
+ <button class="cbtn" id="clpack" title="Backpack"><span class="cic">🎒</span></button>
+ <button class="cbtn" id="cltele" title="Teleport"><span class="cic">🌀</span></button>
 </div>
 
 <div id="barrowsbar">
@@ -1712,6 +1810,7 @@ function renderOrbs(){
  $('orbsp').querySelector('.fill').style.height=clamp(en,0,100)+'%';
  $('orbsp').classList.toggle('ready', en>=50);
  const ro=$('orbrun'); if(ro){ ro.classList.toggle('on',!!settings.run); $('orbrunv').textContent=settings.run?'RUN':'WALK'; }
+ syncHudPicture(); // Picture look (2026-11-26): cards, orb column extras, action cluster
 }
 $('orbpr').onclick=()=>togglePanel('prayers');
 $('orbsp').onclick=()=>{ if(duel||npcFight||fcRun||wildFight) send({type:'special'}); else toast('Special attack is for fights — it charges as you land hits.'); };
@@ -11278,10 +11377,15 @@ function syncBottomBar(){
 }
 function syncCombatControls(){
  document.querySelectorAll('.fchip.sty').forEach(b=>b.classList.toggle('on',!!me&&me.style===b.dataset.style));
- for(const pr of ['melee','missiles','magic']){ const b=$('bbpray-'+pr); if(b) b.classList.toggle('on',!!me&&me.activePrayer===pr); }
+ /* Picture look (2026-11-26): out of fights the Deflects live in
+    the bottom-left Prayers card now, not the bottom bar — light
+    its buttons and keep its points / active line current here. */
+ for(const pr of ['melee','missiles','magic']){ const b=$('ppray-'+pr); if(b) b.classList.toggle('on',!!me&&me.activePrayer===pr); }
+ const pp=$('pppoints'); if(pp) pp.textContent=`${Math.floor(me?me.prayerPoints:0)} / ${me?me.prayerMax:25}`;
+ const pa=$('ppactive'); if(pa) pa.textContent=me&&me.activePrayer? `Deflect ${{melee:'Melee',missiles:'Missiles',magic:'Magic'}[me.activePrayer]} active` : 'No prayer active';
  document.querySelectorAll('.fchip.pack').forEach(b=>b.classList.toggle('on',dockPanel==='backpack'));
 }
-for(const pr of ['melee','missiles','magic']){ const b=$('bbpray-'+pr); if(b) b.onclick=()=>send({type:'prayer',prayer:pr}); }
+for(const pr of ['melee','missiles','magic']){ const b=$('ppray-'+pr); if(b) b.onclick=()=>send({type:'prayer',prayer:pr}); }
 document.querySelectorAll('.fchip.sty').forEach(b=>b.onclick=()=>{ if(me&&me.style!==b.dataset.style) send({type:'style',style:b.dataset.style}); });
 document.querySelectorAll('.fchip.pack').forEach(b=>b.onclick=()=>togglePanel('backpack'));
 /* The fight strips open/close from many fight handlers; watching
@@ -11363,15 +11467,16 @@ function bestFoodChip(){
  for(const b of quickChips()){ const m=/item:'([^']+)'/.exec(b.getAttribute('onclick')||''); if(!m) continue; const d=catalog[m[1]]; if(d&&d.kind==='food'&&(d.heal||0)>bestHeal){ bestHeal=d.heal||0; best=b; } }
  return best;
 }
-/* Mobile layout (2026-11-24): the side cluster is gone, so a
-   Deflect prompt pulses the Deflect button on the strip the
-   player is actually looking at — the Fight Caves strip during
-   a run, the duel strip during a duel / mod duel, otherwise the
-   bottom bar's own Deflect chip. Same buttons the player taps. */
+/* Picture look (2026-11-26): a Deflect prompt pulses the Deflect
+   button the player is actually looking at — the Fight Caves
+   strip during a run, the duel strip during any other fight
+   (duel, mod duel, NPC fight, Wilderness — all ride #duelbar),
+   otherwise the bottom-left Prayers card's button, which is the
+   Deflects' home out of fights now. Same buttons the player taps. */
 function deflectBtnEl(style){
  if(fcRun){ const b=$('fcpray-'+style); if(b) return b; }
- if(duel||modDuel){ const b=$('duelpray-'+style); if(b) return b; }
- return $('bbpray-'+style);
+ if(duel||modDuel||npcFight||wildFight){ const b=$('duelpray-'+style); if(b) return b; }
+ return $('ppray-'+style);
 }
 function smartPromptCandidate(){
  if(fcRun&&jadWarnStyle){ const k='jad:'+jadWarnStyle+':'+(fcRun.wave||0); const b=deflectBtnEl(jadWarnStyle); if(b&&!promptSeen.has(k)&&!promptBanned('prayer')) return {key:k,els:[b],line:jadWarnStyle==='magic'?'🧙 Jad casts — Deflect Magic!':jadWarnStyle==='missiles'?'🏹 Jad shoots — Deflect Missiles!':'⚔️ Jad swings — Deflect Melee!'}; }
@@ -11409,6 +11514,100 @@ function updateSmartPrompt(){
 document.addEventListener('pointerdown',()=>{ if(promptCur) dismissSmartPrompt(); },true);
 $('fcleavebtn').onclick=()=>send({type:'fc_leave'});
 $('jadwarn').onclick=()=>{ if(jadWarnStyle){ send({type:'prayer',prayer:jadWarnStyle}); } $('jadwarn').style.display='none'; };
+
+/* ================= Picture look (2026-11-26) =================
+   The reference picture's HUD, presentation only: every readout
+   below mirrors state the client already tracks (the same values
+   renderOrbs / renderHUD read), and every cluster button rides
+   an action path that already exists — the {type:'use'} send the
+   fight quick chips use, the {type:'special'} send the special
+   orb uses, the strips' own Attack chips, togglePanel for the
+   backpack and teleport panels. No new state, no new messages. */
+const HUD_AREA_NAMES={plaza:'Plaza',goblins:'Goblin Camp',training:'Training Cave',gathering:'Gathering Cave',cove:'Fishing Cove',mine:'Emberfall Mine & Smithy',fightcaves:'Fight Caves',barrows:'Barrows',barrows_crypt:'Barrows Crypt',barrows_tunnels:'Barrows Tunnels',arena:'Tournament Dais',waiting:'Waiting Area',magic:'Wizard Grounds',range:'Ranger Camp',wilderness:'The Wilderness',purewild:'Pure Wild',winter:'Frostfall',castle:'Beginner Castle',castleup:'Castle — Upstairs',ratcave:'Rat Cave'};
+const HUD_ROLE_WORD={owner:'Owner',admin:'Administrator',mod:'Moderator',player:'Player'};
+function fmtGoldShort(n){ if(n>=1000000) return (Math.round(n/100000)/10)+'M'; if(n>=10000) return (Math.round(n/100)/10)+'k'; return ''+n; }
+function hudAreaStatus(){
+ if(duel) return 'Dueling '+(duel.opponent||'');
+ if(modDuel) return 'Mod duel — '+(modDuel.name||modDuel.npcId||'');
+ if(npcFight) return 'Fighting '+(npcFight.name||'');
+ if(fcRun) return 'Fight Caves — wave '+(fcRun.wave||1);
+ if(wildFight) return 'Fighting '+(wildFight.oppName||'a PKer');
+ if(isWildClient()&&wildInfo) return (curArea==='purewild'?'Pure Wild':'Wilderness')+' level: '+wildInfo.level+(wildInfo.skulled?' · 💀 SKULLED':'');
+ switch(curArea){
+  case 'plaza': return 'Find an opponent';
+  case 'castle': return 'Train in the Rat Cave below';
+  case 'castleup': return 'The bank is here';
+  case 'ratcave': return 'Mind the zombies east';
+  case 'cove': return 'Fish the spots by the piers';
+  case 'mine': return 'Mine, smelt & smith';
+  case 'training': return 'Train on the stations';
+  case 'gathering': return 'Gather & chop';
+  case 'goblins': return 'Fight the goblins';
+  case 'barrows': case 'barrows_crypt': case 'barrows_tunnels': return 'Barrows run';
+  case 'waiting': return 'Waiting for your match';
+  case 'fightcaves': return 'Enter the Fight Caves';
+  case 'winter': return 'Explore Frostfall';
+ }
+ return AREA_LABELS[curArea]||'';
+}
+function bestFoodStack(){
+ if(!me||!me.backpack) return null;
+ let best=null,bestHeal=-1;
+ for(const s of me.backpack){ const d=catalog[s.item]; if(d&&d.kind==='food'&&(d.heal||0)>bestHeal){ bestHeal=d.heal||0; best=s; } }
+ return best;
+}
+function bestPotionStack(){
+ if(!me) return null;
+ for(const id of ['prayer_potion','restore_potion']){ const q=myQty(id); if(q>0) return {item:id,qty:q}; }
+ if(me.backpack){ for(const s of me.backpack){ const d=catalog[s.item]; if(d&&d.kind==='potion') return s; } }
+ return null;
+}
+function syncHudPicture(){
+ const on=!!me;
+ for(const id of ['playercard','areacard','praypanel','hudcluster']){ const el=$(id); if(el) el.classList.toggle('open',on); }
+ if(!on) return;
+ /* player card — the same HP computation renderOrbs uses */
+ let hp=99, hpMax=99;
+ if(duel){ hp=duel.hpYou; hpMax=99; }
+ else if(npcFight){ hp=npcFight.hpYou; hpMax=npcFight.maxHpYou||99; }
+ else if(wildFight){ hp=wildFight.hpYou; hpMax=wildFight.maxHpYou||99; }
+ else if(fcRun){ hp=fcRun.hpYou; hpMax=fcRun.maxHpYou||99; }
+ $('pcrole').textContent=roleBadge(myRole())||'⚔️';
+ $('pcname').textContent=me.username;
+ $('pchpfill').style.width=clamp(hp/Math.max(1,hpMax)*100,0,100)+'%';
+ $('pchpfill').style.background=(hp/Math.max(1,hpMax))<=0.25?'#d83a26':'#2fae4e';
+ $('pchpnum').textContent=`${hp} / ${hpMax}`;
+ $('pcsub').textContent=`⚔️ Combat lvl ${Math.floor(me.combatLevel||3)} · ${HUD_ROLE_WORD[myRole()]||'Player'}`;
+ /* area card */
+ $('pcarea').textContent='⚔️ '+(HUD_AREA_NAMES[curArea]||curArea);
+ $('pcstatus').textContent=hudAreaStatus();
+ /* orb column extras: gold + combat */
+ $('orbgoldv').textContent=fmtGoldShort(myQty('gold'));
+ $('orbcbv').textContent=Math.floor(me.combatLevel||3);
+ /* action cluster */
+ const en = duel? duel.energyYou : npcFight? npcFight.energyYou : wildFight? wildFight.energyYou : fcRun? Math.floor(fcRun.energyYou||0) : Math.floor(me.specialEnergy||0);
+ $('clspecv').textContent=en+'%';
+ $('clspec').classList.toggle('on',en>=50);
+ $('clpack').classList.toggle('on',dockPanel==='backpack');
+ const f=bestFoodStack(), p=bestPotionStack();
+ const cf=$('clfood'); cf.querySelector('.cic').textContent=f? iconOf(f.item) : '🍞';
+ $('clfoodn').textContent=f? (f.qty>99?'99+':f.qty) : 0;
+ cf.classList.toggle('dim',!f||promptBanned('food'));
+ cf.title=f? `Eat ${nameOf(f.item)} (heals ${catalog[f.item].heal||0})` : 'Eat your best food';
+ const cp=$('clpotion'); cp.querySelector('.cic').textContent=p? iconOf(p.item) : '🧪';
+ $('clpotionn').textContent=p? (p.qty>99?'99+':p.qty) : 0;
+ cp.classList.toggle('dim',!p||promptBanned('potion'));
+ cp.title=p? `Drink ${nameOf(p.item)}` : 'Drink a potion';
+ $('clatk').classList.toggle('dim',!(duel||modDuel||npcFight||wildFight||fcRun));
+}
+$('clpack').onclick=()=>togglePanel('backpack');
+$('cltele').onclick=()=>togglePanel('teleport');
+$('orbgold').onclick=()=>togglePanel('backpack');
+$('orbcb').onclick=()=>togglePanel('skills');
+$('clspec').onclick=()=>{ if(duel||npcFight||fcRun||wildFight) send({type:'special'}); else toast('Special attack is for fights — it charges as you land hits.'); };
+$('clatk').onclick=()=>{ const a=$('atkchip'); if((duel||modDuel||npcFight||wildFight)&&a&&a.getClientRects().length){ a.click(); return; } const f=$('fcatkchip'); if(fcRun&&f&&f.getClientRects().length){ f.click(); return; } toast('Tap a monster or player to attack'); };
+$('clfood').onclick=()=>{ const f=bestFoodStack(); if(f) send({type:'use',item:f.item}); else toast('No food in your backpack'); };
+$('clpotion').onclick=()=>{ const p=bestPotionStack(); if(p) send({type:'use',item:p.item}); else toast('No potions in your backpack'); };
 
 /* ================= chat ================= */
 $('sendchat').onclick=()=>{ const v=$('chat').value.trim(); if(!v) return; if(send({type:'chat',text:v})){ $('chat').value=''; const el=$('log'); if(el) el.scrollTop=1e6; } else { queueChat({type:'chat',text:v}); $('chat').value=''; } };
