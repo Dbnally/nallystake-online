@@ -1704,6 +1704,7 @@ function onMsg(m){
  // clearLocalFightState) and is dropped before anything renders.
  if(m.type==='welcome'){ welcomed=true; quickAttempt=false; wasInGame=true; const wasReconnect=reconnecting; stopReconnect(); reconnectMs=1000; clearLocalFightState(); if(wasReconnect){ toast('✅ Reconnected.'); logLine('✅ Reconnected.'); } if(railFirstRun&&!navHintDone){ navHintDone=true; railFirstRun=false; try{ localStorage.setItem('nallystake_rail_open','1'); }catch(e){} logLine('👋 New here? Everything lives in the dock, top right — the 🎛️ Menu button shows or hides the panel tabs (🎒 Backpack, 🌀 Teleport, 📊 Skills and more).'); } flushChatOutbox(); pushGuidedSetting(); me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); myLastSpot=m.lastSpot||null; if(!maybeShowCastleOffer(m.castleOffer)) maybeShowActivityPicker(); }
  if(m.type==='castle_sign'){ renderCastleDir(m.title,m.lines); }
+ if(m.type==='training_board'){ renderTrainingBoard(m.title,m.lines); }
  if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(Array.isArray(m.spells)) spellList=m.spells; if(dockPanel==='shop') renderDock(); renderQuickButtons(); renderSpellBtns(); for(const av of Object.values(avatars)) av.gearSig=null; }
  if(m.type==='exchange_prices'){ goods={}; for(const g of (m.goods||[])) goods[g.id]=g; if(dockPanel==='exchange') renderDock(); drawMinimap(); }
  if(m.type==='state'){ onStateMsg(m); }
@@ -2985,6 +2986,7 @@ function buildPlaza(root){
  buildGateway(scene,0,45,0,'⚰️ BARROWS',{banner:'#4a5548',color:'#b9d9a8'});
  buildGateway(scene,-48,45,0,'❄️ FROSTFALL',{banner:'#7ec8ff',color:'#dff2ff'}); // Stage 44: the Winter World's gate, south wall west stretch
  buildGateway(scene,45,45,0,'🏰 BEGINNER CASTLE',{banner:'#8e2f32'}); // Beginner Castle (2026-11-24): south wall, east stretch — matches the checkGates trigger (x 1100-1480)
+ buildGateway(scene,25,45,0,'⚔️ TRAINING GROUNDS',{banner:'#4a5548',color:'#b9d9a8'}); // Barrows Training Grounds (2026-11-27): south wall, between the Barrows gate and the castle gate — matches the checkGates trigger (x 1010-1090)
  pathStrip(scene,31,26,45,44,3); // a worn path from the plaza's heart toward the castle gate
  buildGateway(scene,78,40.5,Math.PI/4,'🏋️ TRAINING CAVE',{banner:'#55565e'});
  buildGateway(scene,-78,40.5,-Math.PI/4,'🌲 GATHERING CAVE',{banner:'#3a5230'});
@@ -4378,6 +4380,7 @@ function buildWinterWorld(root){
    then the rats. All links are the game's ordinary gate/travel
    flow; the trap door is a tap interactive (castleInteractives). */
 let castleInteractives=[]; // trap door meshes (castle area tap targets)
+let trainingInteractives=[]; // Barrows Training Grounds: the readiness board meshes (tap targets)
 let castleUpBankMeshes=[]; // bank booth meshes (castleup tap targets)
 let trapLidPivot=null, trapLadderGrp=null, trapOpen=false, pendingTrapdoor=false;
 function cwall(root,x1,z1,x2,z2,h){
@@ -4590,6 +4593,86 @@ function buildRatCave(root){
  bigRock.position.set(70,1.1,-27); bigRock.scale.y=0.75; bigRock.castShadow=true; S.add(bigRock);
  signPost(S,70,-23.5,['🪨 SAFE ROCK','Stand behind it to rest']);
 }
+/* Barrows Training Grounds (Derek's spec, 2026-11-22; built
+   2026-11-27): a fenced practice yard — five pens in a row across
+   the north half (Step 1 west → Step 5 east), each with its sign;
+   the entrance, readiness board, prayer altar (a server node —
+   it renders from node data like the Training Cave's) and the
+   trainer at the south end by the return gate. The board's post
+   and face are tap targets (trainingInteractives, act
+   {type:'trainingboard'}), routed in handleTap to the read panel
+   whose words the server reads from YOUR profile. */
+function buildTrainingGrounds(root){
+ const S=root;
+ const grass=new THREE.Mesh(new THREE.PlaneGeometry(160,90),new THREE.MeshLambertMaterial({map:noiseTexture('#4a7038',['#42652f','#527a42','#3c5c2a'],16,10)}));
+ grass.rotation.x=-Math.PI/2; grass.receiveShadow=true; S.add(grass);
+ // the worn dirt yard the steps stand on
+ const yard=new THREE.Mesh(new THREE.PlaneGeometry(150,34),new THREE.MeshLambertMaterial({map:noiseTexture('#6e5a3a',['#635031','#7a6544','#59482c'],16,4)}));
+ yard.rotation.x=-Math.PI/2; yard.position.set(0,0.02,-9); yard.receiveShadow=true; S.add(yard);
+ // perimeter fence, gap at the SOUTH gate (walk out to the plaza)
+ const fenceMat=0x6b4e26;
+ function fenceRun(x1,z1,x2,z2){
+   const len=Math.hypot(x2-x1,z2-z1), n=Math.max(2,Math.round(len/1.6));
+   for(let i=0;i<=n;i++){ const t=i/n; box(0.15,1.05,0.15,fenceMat,x1+(x2-x1)*t,0.52,z1+(z2-z1)*t,S); }
+   const midx=(x1+x2)/2, midz=(z1+z2)/2, ang=Math.atan2(x2-x1,z2-z1);
+   const rail=box(0.07,0.11,len,fenceMat,midx,0.82,midz,S); rail.rotation.y=ang;
+   const rail2=box(0.07,0.11,len,fenceMat,midx,0.42,midz,S); rail2.rotation.y=ang;
+ }
+ fenceRun(-80,-45,80,-45); // north
+ fenceRun(-80,45,-5.5,45); fenceRun(5.5,45,80,45); // south, gap at gate
+ fenceRun(-80,-45,-80,45); // west
+ fenceRun(80,-45,80,45); // east
+ gatePosts(S,0,45);
+ buildGateway(S,0,45,0,'⚔️ BARROWS TRAINING GROUNDS',{banner:'#4a5548',color:'#b9d9a8'});
+ pathStrip(S,0,44,0,8,3.4); // the entrance path
+ buildTorch(S,-28,40); buildTorch(S,28,40);
+ // entrance sign by the spawn
+ signPost(S,-8,29,['⚔️ BARROWS TRAINING GROUNDS','Five steps — then the real brothers']);
+ // the READINESS BOARD (server (890,650) = world (9,20)), east of
+ // the entrance path — built like the castle directory sign; its
+ // words come from the server, read from the tapper's own levels.
+ {
+   const bg=new THREE.Group(); bg.position.set(9,0,20); S.add(bg);
+   const boardAct={type:'trainingboard'};
+   const post=box(0.22,2.9,0.22,0x5a4020,0,1.45,0,bg); post.userData.act=boardAct; trainingInteractives.push(post);
+   const board=boxM(3.6,2.0,0.12,new THREE.MeshLambertMaterial({map:woodTexture('#74552a')}),0,2.3,0,bg); board.userData.act=boardAct; trainingInteractives.push(board);
+   box(3.8,0.14,0.14,0xd4af37,0,3.36,0,bg); box(3.8,0.14,0.14,0xd4af37,0,1.24,0,bg); // gold trim
+   const bsp=textSprite('⚔️ BARROWS-READY CHECK','#ffe9bb','rgba(23,19,12,0.9)'); bsp.position.set(0,4.05,0); bg.add(bsp);
+   shadowify(bg);
+ }
+ // the trainer — a steady figure by the board who (on the server)
+ // stops any practice fight the player would lose and heals them
+ {
+   const tr=new THREE.Group(); tr.position.set(13.5,0,23); S.add(tr);
+   box(0.24,0.7,0.24,0x4a3520,-0.16,0.35,0,tr); box(0.24,0.7,0.24,0x4a3520,0.16,0.35,0,tr); // legs
+   box(0.7,0.8,0.4,0x7a2e2e,0,1.1,0,tr); // red tabard body
+   box(0.44,0.44,0.44,0xd9a066,0,1.75,0,tr); // head
+   box(0.5,0.18,0.5,0x8d99a8,0,2.02,0,tr); // steel cap
+   const tlabel=document.createElement('div'); tlabel.className='plabel';
+   tlabel.innerHTML=`<div class="nname">🛡️ Trainer</div>`;
+   $('labels').appendChild(tlabel);
+   worldLabels.push({el:tlabel,x:13.5,y:3.0,z:23,area:'training_grounds',kind:'static'});
+   shadowify(tr);
+ }
+ // the five step pens, west to east, each fenced with a south gap
+ // and its sign at the gap (pen centres = the server step centres)
+ const STEPS=[
+   {x:-56,lines:['STEP 1 · TRAINING GOBLIN','Tap to attack — styles & food']},
+   {x:-28,lines:['STEP 2 · TRAINING KNIGHT','Deflect Melee — and eat early']},
+   {x:0,lines:['STEP 3 · TRAINING WIZARD','Deflect Magic — switch or get hit']},
+   {x:28,lines:['STEP 4 · TRAINING RANGER','Deflect Missiles — the third prayer']},
+   {x:56,lines:['STEP 5 · PRACTICE BROTHER','A Dharok shade — watch his health!']},
+ ];
+ for(const st of STEPS){
+   const cz=-9, h=9;
+   fenceRun(st.x-h,cz-h,st.x+h,cz-h); // north
+   fenceRun(st.x-h,cz-h,st.x-h,cz+h); // west
+   fenceRun(st.x+h,cz-h,st.x+h,cz+h); // east
+   fenceRun(st.x-h,cz+h,st.x-1.8,cz+h); fenceRun(st.x+1.8,cz+h,st.x+h,cz+h); // south, gap in the middle
+   signPost(S,st.x,cz+h+1.6,st.lines);
+ }
+ bonePile(S,-70,30); bonePile(S,70,30); bonePile(S,-70,-38);
+}
 function buildAreas(){
  areaGroups.plaza=new THREE.Group(); scene.add(areaGroups.plaza); buildPlaza(areaGroups.plaza);
  areaGroups.goblins=new THREE.Group(); scene.add(areaGroups.goblins); buildGoblinCamp(areaGroups.goblins);
@@ -4611,6 +4694,7 @@ function buildAreas(){
  areaGroups.castle=new THREE.Group(); scene.add(areaGroups.castle); buildCastle(areaGroups.castle); // Beginner Castle (2026-11-24)
  areaGroups.castleup=new THREE.Group(); scene.add(areaGroups.castleup); buildCastleUp(areaGroups.castleup); // its upper floor (the bank)
  areaGroups.ratcave=new THREE.Group(); scene.add(areaGroups.ratcave); buildRatCave(areaGroups.ratcave); // the Rat Cave under the trap door
+ areaGroups.training_grounds=new THREE.Group(); scene.add(areaGroups.training_grounds); buildTrainingGrounds(areaGroups.training_grounds); // Barrows Training Grounds (2026-11-27)
  applyAreaVisibility();
 }
 function applyAreaVisibility(){
@@ -4667,13 +4751,13 @@ function setArea(a){
  }
  drawMinimap();
 }
-const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_crypt:1,barrows_tunnels:1,arena:1,waiting:1,magic:1,range:1,wilderness:1,purewild:1,winter:1,castle:1,castleup:1,ratcave:1}; // Stage 30 adds the two wild variants; Stage 44 adds Frostfall (winter); Beginner Castle adds castle/castleup/ratcave (2026-11-24)
+const AREAS_CLIENT={plaza:1,goblins:1,training:1,gathering:1,cove:1,mine:1,fightcaves:1,barrows:1,barrows_crypt:1,barrows_tunnels:1,arena:1,waiting:1,magic:1,range:1,wilderness:1,purewild:1,winter:1,castle:1,castleup:1,ratcave:1,training_grounds:1}; // Stage 30 adds the two wild variants; Stage 44 adds Frostfall (winter); Beginner Castle adds castle/castleup/ratcave (2026-11-24); Barrows Training Grounds adds training_grounds (2026-11-27)
 // Stage 19: the areas with a live shared-NPC roster (npc_state).
 // Feel-fixes: the two Wilderness variants join the roster — the
 // shallow-wild skeleton pocket rides the same npc_state flow.
 // Farm life: the plaza joins — the farm's sheep and cows are
 // shared NPCs standing in the plaza pasture.
-const NPC_AREAS_CLIENT=['goblins','magic','range','wilderness','purewild','plaza','ratcave']; // Beginner Castle: the Rat Cave's giant rats ride npc_state too
+const NPC_AREAS_CLIENT=['goblins','magic','range','wilderness','purewild','plaza','ratcave','training_grounds']; // Beginner Castle: the Rat Cave's giant rats ride npc_state too; Training Grounds: the five practice monsters ride it too (2026-11-27)
 /* Knight armour (Stage 8 medieval theme): rounded bodies — sphere
    head under a steel helmet cap, tapered-cylinder torso, cylinder
    limbs on shoulder/hip pivots (the right shoulder pivot is the weapon
@@ -5757,9 +5841,70 @@ function makeZombie(n,boss){
  return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),zcue:label.querySelector('.zcue'),zstyle:'missiles',
    x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:boss?2.9:1.95,hp:n.hp,maxHp:n.maxHp};
 }
+/* Barrows Training Grounds (2026-11-27): the Training Knight — a
+   steel-armoured figure on the brother rig's proportions (the
+   right-arm pivot is the swing arm), bright plate and a red
+   plume, so Step 2 reads as a proper armoured opponent. */
+function makeTrainingKnight(n){
+ const g=new THREE.Group();
+ const steel=new THREE.MeshLambertMaterial({color:0x9aa2ad});
+ const darkM=new THREE.MeshLambertMaterial({color:0x565d66});
+ box(0.24,0.55,0.24,0x565d66,-0.17,0.28,0,g); box(0.24,0.55,0.24,0x565d66,0.17,0.28,0,g); // legs
+ const body=new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.42,0.8,10),steel); body.position.y=1.0; g.add(body); // plate body
+ box(0.3,0.2,0.36,0xb9c1cc,0,1.32,0,g); // pauldrons
+ box(0.2,0.6,0.2,0x9aa2ad,-0.52,1.05,0,g); // left arm
+ const armR=new THREE.Group(); armR.position.set(0.52,1.3,0); g.add(armR);
+ const armMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.1,0.6,8),steel); armMesh.position.y=-0.3; armR.add(armMesh);
+ box(0.07,0.95,0.14,0xd7dde6,0,-0.85,0.03,armR); // longsword
+ const head=new THREE.Mesh(new THREE.SphereGeometry(0.27,12,10),steel); head.position.y=1.72; g.add(head); // helm
+ box(0.3,0.08,0.06,0x2a2a30,0,1.72,0.24,g); // visor slit
+ const plume=new THREE.Mesh(new THREE.ConeGeometry(0.09,0.5,6),new THREE.MeshLambertMaterial({color:0xb03a2e})); plume.position.set(0,2.05,-0.05); plume.rotation.x=0.5; g.add(plume); // red plume
+ shadowify(g);
+ const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.18}));
+ sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
+ const label=document.createElement('div'); label.className='plabel';
+ label.innerHTML=`<div class="gname">${esc(n.name||'Training Knight')} · lvl ${n.combatLevel||20}</div><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
+ $('labels').appendChild(label);
+ return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
+   x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:2.3,hp:n.hp,maxHp:n.maxHp};
+}
+/* Barrows Training Grounds (2026-11-27): the Practice Brother —
+   Dharok's shape (the makeBrother rig) rendered as a SHADE:
+   pale ghost-grey, half-see-through, with a greataxe, so Step 5
+   reads as the real brother's ghost at half size of threat. */
+function makePracticeBrother(n){
+ const g=new THREE.Group();
+ const ghost=new THREE.MeshLambertMaterial({color:0x8fa3b8,transparent:true,opacity:0.55});
+ const ghostDark=new THREE.MeshLambertMaterial({color:0x4a5560,transparent:true,opacity:0.6});
+ box(0.26,0.7,0.26,0x4a5560,-0.17,0.35,0,g); box(0.26,0.7,0.26,0x4a5560,0.17,0.35,0,g); // legs
+ const bbody=new THREE.Mesh(new THREE.CylinderGeometry(0.36,0.44,0.95,10),ghost); bbody.position.y=1.15; g.add(bbody); // rounded armoured body
+ box(0.24,0.75,0.24,0x8fa3b8,-0.54,1.2,0,g); // left arm
+ const armR=new THREE.Group(); armR.position.set(0.54,1.55,0); g.add(armR);
+ box(0.24,0.75,0.24,0x8fa3b8,0,-0.35,0,armR);
+ const axe=box(0.09,1.25,0.1,0x6a7683,0,-1.0,0.05,armR); axe.rotation.z=-0.4; // greataxe haft
+ box(0.5,0.3,0.06,0xb9c1cc,0.18,-1.5,0.05,armR); // axe head
+ const bhead=new THREE.Mesh(new THREE.SphereGeometry(0.26,12,10),new THREE.MeshLambertMaterial({color:0xa8bccb,transparent:true,opacity:0.6})); bhead.position.y=1.92; g.add(bhead); // pale head
+ const bhelm=new THREE.Mesh(new THREE.SphereGeometry(0.30,12,8,0,Math.PI*2,0,Math.PI/2),ghostDark); bhelm.position.y=1.97; g.add(bhelm); // helm cap
+ const eyeG=new THREE.SphereGeometry(0.04,8,8), eyeM=new THREE.MeshBasicMaterial({color:0xdff2ff});
+ const eyeL=new THREE.Mesh(eyeG,eyeM); eyeL.position.set(-0.09,1.95,0.23); g.add(eyeL);
+ const eyeR=new THREE.Mesh(eyeG,eyeM); eyeR.position.set(0.09,1.95,0.23); g.add(eyeR); // ghost-light eyes
+ shadowify(g);
+ const sh=new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.14}));
+ sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
+ const label=document.createElement('div'); label.className='plabel';
+ label.innerHTML=`<div class="gname">👻 ${esc(n.name||'Practice Brother')} · lvl ${n.combatLevel||40}</div><div class="hpwrap"><div class="hpfill"></div><span class="hpnum"></span></div>`;
+ $('labels').appendChild(label);
+ return {group:g,armR,label,hpWrap:label.querySelector('.hpwrap'),hpFill:label.querySelector('.hpfill'),hpNum:label.querySelector('.hpnum'),
+   x:sx2w(n.x),z:sy2w(n.y),tx:sx2w(n.x),tz:sy2w(n.y),rot:0,swingStart:0,splatY:2.9,hp:n.hp,maxHp:n.maxHp};
+}
 function makeNpcAvatar(n){
  if(n.kind==='wizard') return makeWizard(n);
  if(n.kind==='ranger') return makeRanger(n);
+ if(n.kind==='training_goblin') return makeGoblin(n); // Training Grounds: the camp rigs carry the practice kinds
+ if(n.kind==='training_wizard') return makeWizard(n);
+ if(n.kind==='training_ranger') return makeRanger(n);
+ if(n.kind==='training_knight') return makeTrainingKnight(n);
+ if(n.kind==='practice_brother') return makePracticeBrother(n);
  if(n.kind==='skeleton') return makeSkeleton(n);
  if(n.kind==='cave_skeleton') return makeSkeleton(n); // Rat Cave branch skeletons ride the skeleton rig
  if(n.kind==='rat') return makeRat(n); // Beginner Castle Rat Cave (2026-11-24)
@@ -6433,7 +6578,7 @@ function makeNodeProp(n){
      const board=new THREE.Mesh(new THREE.CircleGeometry(0.85,20),new THREE.MeshBasicMaterial({color:0xf3ead2})); board.position.set(0,1.9,0.06); g.add(board);
      const bull=new THREE.Mesh(new THREE.CircleGeometry(0.38,16),new THREE.MeshBasicMaterial({color:0xb03a2e})); bull.position.set(0,1.9,0.08); g.add(bull);
      labelY=3.4;
-   } else if(n.id==='prayer_altar'){
+   } else if(n.id==='prayer_altar'||n.id==='training_altar'){
      box(1.7,0.9,1.0,0x8a8578,0,0.45,0,g);
      box(0.16,0.4,0.16,0xd4af37,-0.5,1.1,0,g); box(0.16,0.4,0.16,0xd4af37,0.5,1.1,0,g);
      const fl=new THREE.Mesh(new THREE.ConeGeometry(0.09,0.3,6),new THREE.MeshBasicMaterial({color:0xffd75e})); fl.position.set(-0.5,1.45,0); g.add(fl);
@@ -7803,6 +7948,15 @@ function handleTap(cx,cy){
    const ih=raycaster.intersectObjects(castleUpBankMeshes,false)[0];
    if(ih){ openPanel('bank'); return; }
  }
+ // Barrows Training Grounds (2026-11-27): the readiness board at
+ // the entrance — its read comes from the server, from MY levels.
+ if(curArea==='training_grounds'){
+   const ih=raycaster.intersectObjects(trainingInteractives,false)[0];
+   if(ih && ih.object.userData.act && ih.object.userData.act.type==='trainingboard'){
+     const wp=new THREE.Vector3(); ih.object.getWorldPosition(wp); spawnTapSplat(wx2s(wp.x),wz2s(wp.z),true);
+     openTrainingBoard(); return;
+   }
+ }
  // Stage 18: Menu tap mode — a quick tap on a player, NPC/monster,
  // gathering node or drop pile opens the same context menu a
  // long-press opens, instead of the primary action. Anything else
@@ -8138,6 +8292,10 @@ function checkGates(){
    // Beginner Castle (2026-11-24): the south wall's EAST stretch —
    // clear of the Barrows strip (600-1000) and the Training corner.
    if(myPos.y>=890&&myPos.x>=1100&&myPos.x<=1480){ go('castle','🏰 South gate → Beginner Castle…'); return; }
+   // Barrows Training Grounds (2026-11-27): the south wall strip
+   // between the Barrows gate (600-1000) and the castle gate
+   // (1100-1480) — the guided path sits right in front of Barrows.
+   if(myPos.y>=890&&myPos.x>=1010&&myPos.x<=1090){ go('training_grounds','⚔️ South gate → Barrows Training Grounds…'); return; }
  }
  else if(curArea==='castle'){
    if(myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); return; }
@@ -8163,6 +8321,7 @@ function checkGates(){
  else if(curArea==='magic'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
  else if(curArea==='range'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
  else if(curArea==='winter'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
+ else if(curArea==='training_grounds'&&myPos.y>=890){ go('plaza','🚪 South gate → Plaza…'); }
 }
 function checkPendingAttack(){
  if(!pendingAttack||!myPos) return;
@@ -8316,7 +8475,7 @@ function drawMinimap(){
    : curArea==='waiting'? '#33302a'
    : curArea==='arena'? ARENA_VARIANTS[arenaVariant].css
    : isWildClient()? '#2a1a14'
-   : caveBg? (curArea==='fightcaves'? '#241a12' : '#2b2b30') : (curArea==='goblins')? '#55702f' : (curArea==='winter')? '#dfe9f2' : (curArea==='castle')? '#4a6b35' : (curArea==='castleup')? '#3d3d44' : '#241d15'; g.fillRect(0,0,1600,900);
+   : caveBg? (curArea==='fightcaves'? '#241a12' : '#2b2b30') : (curArea==='goblins')? '#55702f' : (curArea==='winter')? '#dfe9f2' : (curArea==='castle')? '#4a6b35' : (curArea==='castleup')? '#3d3d44' : (curArea==='training_grounds')? '#4d5f36' : '#241d15'; g.fillRect(0,0,1600,900);
  if(curArea==='plaza'){
    g.fillStyle='#8a7a5f'; g.fillRect(800-420,450-270,840,540); // cobblestone centre
    g.fillStyle='#6e4a1f'; g.fillRect(800-140,140-50,280,100); // tournament dais (wood)
@@ -9827,6 +9986,7 @@ function pTeleport(){
  h+=`<div class="rowline"><span class="ic">⛏️🔥</span><span class="grow"><b>Emberfall Mine &amp; Smithy</b><br><span class="sub">North-east corner · mine 9 ores, smelt &amp; smith</span></span>${here('mine')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('mine')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">🌋</span><span class="grow"><b>Fight Caves</b><br><span class="sub">North gate · 63 waves, TzTok-Jad, fire cape</span></span>${here('fightcaves')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('fightcaves')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">💀</span><span class="grow"><b>Barrows</b><br><span class="sub">South gate · 6 brothers, tunnels, chest</span></span>${here('barrows')||here('barrows_tunnels')||here('barrows_crypt')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('barrows')">Teleport</button>`}</div>`;
+ h+=`<div class="rowline"><span class="ic">⚔️</span><span class="grow"><b>Barrows Training Grounds</b><br><span class="sub">South gate (beside the Barrows gate) · five practice steps, a prayer altar and the Barrows-ready board — nobody dies here</span></span>${here('training_grounds')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('training_grounds')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">🧙</span><span class="grow"><b>Wizard Grounds</b><br><span class="sub">North-west corner · wizards drop the runes for your spells</span></span>${here('magic')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('magic')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">🏹</span><span class="grow"><b>Ranger Camp</b><br><span class="sub">North gate (west stretch) · rangers drop arrows &amp; arrowheads</span></span>${here('range')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('range')">Teleport</button>`}</div>`;
  h+=`<div class="rowline"><span class="ic">💀</span><span class="grow"><b>The Wilderness</b><br><span class="sub">North ditch crossing (east stretch) or this obelisk teleport · PvP, skulls, death drops loot · NO teleporting out above level 20</span></span>${here('wilderness')||here('purewild')?'<span class="sub">You are here</span>':`<button class="act" onclick="doTravel('wilderness')">Teleport</button>`}</div>`;
@@ -9880,6 +10040,7 @@ const HELP_TASKS=[
    {t:'Survive the waves: 63 of them, harder every one. Bring food and prayer potions, and watch which Deflect prayer each monster needs.'},
    {t:'TzTok-Jad waits on wave 63. Beat him and the fire cape is yours — plus 500 gold.'}]},
  {id:'barrows', ic:'⚰️', name:'Run Barrows', sub:'Six brothers · tunnels · the chest', steps:[
+   {t:'New to fighting? Start at the Barrows Training Grounds (south gate, beside the Barrows gate): five practice steps teach the Deflect prayers and stock you with food, potions and runes — and nobody dies there. Tap the board at its entrance to see your own Barrows-ready check.', go:'training_grounds'},
    {t:'Go to the Barrows through the plaza\u2019s south gate.', go:'barrows'},
    {t:'Tap a burial mound to enter its crypt, then search the sarcophagus to wake the brother inside. Kill all six if you can.'},
    {t:'One crypt per run is the tunnel entrance instead — its sarcophagus takes you DOWN. In the tunnels, solve the puzzle door to reach the chest room.'},
@@ -10292,7 +10453,7 @@ window.openTalk=function(name){
  setTimeout(()=>{ try{ inp.focus(); }catch(e){} },50);
 };
 /* ---- Examine sheet ---- */
-const AREA_LABELS={plaza:'🏰 Plaza',goblins:'👺 Goblin Camp',training:'🏋️ Training Cave',gathering:'⛏️ Gathering Cave',cove:'🎣 Fishing Cove',mine:'⛏️🔥 Emberfall Mine & Smithy',fightcaves:'🌋 Fight Caves',barrows:'💀 Barrows',barrows_crypt:'💀 Barrows Crypt',barrows_tunnels:'💀 Barrows Tunnels',arena:'⚔️ Tournament Dais',waiting:'⏳ Waiting Area',magic:'🧙 Wizard Grounds',range:'🏹 Ranger Camp',wilderness:'💀 The Wilderness',purewild:'💀 Pure Wild'};
+const AREA_LABELS={plaza:'🏰 Plaza',goblins:'👺 Goblin Camp',training:'🏋️ Training Cave',gathering:'⛏️ Gathering Cave',cove:'🎣 Fishing Cove',mine:'⛏️🔥 Emberfall Mine & Smithy',fightcaves:'🌋 Fight Caves',barrows:'💀 Barrows',barrows_crypt:'💀 Barrows Crypt',barrows_tunnels:'💀 Barrows Tunnels',arena:'⚔️ Tournament Dais',waiting:'⏳ Waiting Area',magic:'🧙 Wizard Grounds',range:'🏹 Ranger Camp',wilderness:'💀 The Wilderness',purewild:'💀 Pure Wild',training_grounds:'⚔️ Barrows Training Grounds'};
 function openExamine(m){
  const p=m.player; if(!p) return;
  const wornRows=SLOT_DEFS.filter(([slot])=>p.worn&&p.worn[slot]).map(([slot,label])=>`<div class="rowline"><span class="ic">${itemIconHTML(p.worn[slot],24)}</span><span class="grow"><b>${label}</b><br><span class="sub">${esc(nameOf(p.worn[slot]))}</span></span></div>`).join('');
@@ -10700,6 +10861,24 @@ function openCastleDir(){
  renderCastleDir(CASTLE_DIR_TITLE,CASTLE_DIR_LINES);
  send({type:'castle_sign_read'});
 }
+/* Barrows Training Grounds readiness board (2026-11-27): unlike
+   the castle directory, the board's words are PER-PLAYER — the
+   server reads them from the tapper's own levels
+   (training_board_read → 'training_board'), so the panel opens
+   with a placeholder and the server's answer fills it in. The
+   sheet is the shared sign modal, like the other signs. */
+function renderTrainingBoard(title,lines){
+ const s=$('signsheet');
+ s.innerHTML=`<h3>${esc(title||'⚔️ Barrows-ready check')}</h3>
+ <p class="note" style="margin-bottom:8px">Your levels, read against what the brothers ask of you:</p>
+ ${(lines&&lines.length?lines:['Reading the board…']).map(l=>`<div class="kv"><span>•</span><b>${esc(l)}</b></div>`).join('')}
+ <div class="btns" style="margin-top:10px"><button class="ghost" onclick="closeModal('signmodal')">Close</button></div>`;
+ $('signmodal').classList.add('open');
+}
+function openTrainingBoard(){
+ renderTrainingBoard('⚔️ Barrows-ready check',null);
+ send({type:'training_board_read'});
+}
 function openSignPanel(){
  send({type:'sign_read'});
  const s=$('signsheet');
@@ -10971,7 +11150,7 @@ function renderNpcBar(){
  $('hpyou').style.width=clamp(npcFight.hpYou/Math.max(1,npcFight.maxHpYou)*100,0,100)+'%'; $('hpyouv').textContent=npcFight.hpYou;
  setLowHp($('hpyou'),npcFight.hpYou/Math.max(1,npcFight.maxHpYou)); // Stage 37b
  $('hpopp').style.width=clamp(npcFight.hpNpc/Math.max(1,npcFight.maxHpNpc)*100,0,100)+'%'; $('hpoppv').textContent=npcFight.hpNpc;
- const kindIcon=npcFight.kind==='barrows'?'💀':npcFight.kind==='wizard'?'🧙':npcFight.kind==='ranger'?'🏹':'🥊';
+ const kindIcon=npcFight.kind==='barrows'?'💀':(npcFight.kind==='wizard'||npcFight.kind==='training_wizard')?'🧙':(npcFight.kind==='ranger'||npcFight.kind==='training_ranger')?'🏹':npcFight.kind==='practice_brother'?'👻':'🥊';
  $('duelctx').textContent=`${kindIcon} ${npcFight.name}`+(npcFight.kind==='zombie_boss'?` · 🛡️ Defence ${npcFight.bossDef!=null?npcFight.bossDef:25}${npcFight.guardianSpellUsed?' · 🌳 spell spent':' · 🌳 tap your Tree Guardian!'}`:'');
  syncBarPrayers(false);
  const consum=(me?me.backpack:[]).filter(s=>catalog[s.item]&&(catalog[s.item].kind==='food'||catalog[s.item].kind==='potion'));
@@ -11008,7 +11187,7 @@ function npcFightUI(m){
    } else {
      // Stage 19: the shared-NPC fights (goblin / wizard / ranger)
      // all speak this UI — title and header carry the creature.
-     const kindIcon=m.kind==='wizard'?'🧙':m.kind==='ranger'?'🏹':'🥊';
+     const kindIcon=(m.kind==='wizard'||m.kind==='training_wizard')?'🧙':(m.kind==='ranger'||m.kind==='training_ranger')?'🏹':m.kind==='practice_brother'?'👻':'🥊';
      $('dueloppname').textContent=m.name||'Goblin';
      $('dueltitle').textContent=`${kindIcon} ${m.name||'Goblin'} · lvl ${npcFight.combatLevel}`;
      $('duellast').textContent='Fight! Land hits to charge your Dragon Slash (50%). Run with 🏃 Flee if it goes bad.';
@@ -11091,6 +11270,7 @@ function npcFightUI(m){
      } else toast(`💀 ${endName} down!`);
    }
    else if(m.reason==='death'){ sfxDie(); toast(`💀 The ${endName.toLowerCase()} got you! You wake up in the plaza at full health — nothing lost.`); }
+   else if(m.reason==='trainer'){ toast('🛡️ The trainer steps in — fight stopped, and you are healed where you stand. Nothing lost.'); }
    else if(m.reason==='fled'){ toast('🏃 You fled the fight.'); }
    else if(m.reason==='range'){ toast(`The fight broke off — you moved too far from the ${endName.toLowerCase()}.`); }
    else if(m.reason==='travel'){ toast('You left the fight behind.'); }
@@ -11528,14 +11708,14 @@ function deflectBtnEl(style){
 }
 function smartPromptCandidate(){
  if(fcRun&&jadWarnStyle){ const k='jad:'+jadWarnStyle+':'+(fcRun.wave||0); const b=deflectBtnEl(jadWarnStyle); if(b&&!promptSeen.has(k)&&!promptBanned('prayer')) return {key:k,els:[b],line:jadWarnStyle==='magic'?'🧙 Jad casts — Deflect Magic!':jadWarnStyle==='missiles'?'🏹 Jad shoots — Deflect Missiles!':'⚔️ Jad swings — Deflect Melee!'}; }
- if(npcFight&&/dharok/i.test(npcFight.name||'')&&npcFight.hpNpc/Math.max(1,npcFight.maxHpNpc)<0.25&&!promptSeen.has('dharok')){
+ if(npcFight&&(/dharok/i.test(npcFight.name||'')||/practice brother/i.test(npcFight.name||''))&&npcFight.hpNpc/Math.max(1,npcFight.maxHpNpc)<0.25&&!promptSeen.has('dharok')){ // Training Grounds: the Practice Brother rages on Dharok's curve, so his shade gets the same eat-early prompt
    const els=[]; const d=deflectBtnEl('melee'); if(d&&!promptBanned('prayer')) els.push(d); const f=bestFoodChip(); if(f&&!promptBanned('food')) els.push(f);
    if(els.length) return {key:'dharok',els,line:"He's enraged and hitting harder — prayer up, eat early"};
  }
  if(myHpFrac()<0.30&&!promptSeen.has('food')){ const f=bestFoodChip(); if(f&&!promptBanned('food')&&!f.classList.contains('ruledis')) return {key:'food',els:[f],line:"You're badly hurt — eat now"}; }
  if(me&&me.prayerPoints<=0&&!promptSeen.has('prayerpot')){ const p=chipForItem('prayer_potion'); if(p&&!promptBanned('potion')&&!promptBanned('prayer')&&!p.classList.contains('ruledis')) return {key:'prayerpot',els:[p],line:'Prayer is empty — drink a prayer potion'}; }
  if(npcFight&&performance.now()-promptFightStart<6000&&!promptSeen.has('start')){
-   const st=npcFight.kind==='wizard'?'magic':npcFight.kind==='ranger'?'missiles':/ahrim/i.test(npcFight.name||'')?'magic':/karil/i.test(npcFight.name||'')?'missiles':'melee';
+   const st=(npcFight.kind==='wizard'||npcFight.kind==='training_wizard')?'magic':(npcFight.kind==='ranger'||npcFight.kind==='training_ranger')?'missiles':/ahrim/i.test(npcFight.name||'')?'magic':/karil/i.test(npcFight.name||'')?'missiles':'melee'; // Training Grounds: Steps 3/4 teach Deflect Magic / Missiles with the same fight-start prompt
    const b=deflectBtnEl(st);
    if(b&&!promptBanned('prayer')) return {key:'start',els:[b],line:st==='magic'?'He casts magic — Deflect Magic!':st==='missiles'?'He shoots — Deflect Missiles!':'Melee fighter — Deflect Melee stops him cold'};
  }
@@ -11571,7 +11751,7 @@ $('jadwarn').onclick=()=>{ if(jadWarnStyle){ send({type:'prayer',prayer:jadWarnS
    fight quick chips use, the {type:'special'} send the special
    orb uses, the strips' own Attack chips, togglePanel for the
    backpack and teleport panels. No new state, no new messages. */
-const HUD_AREA_NAMES={plaza:'Plaza',goblins:'Goblin Camp',training:'Training Cave',gathering:'Gathering Cave',cove:'Fishing Cove',mine:'Emberfall Mine & Smithy',fightcaves:'Fight Caves',barrows:'Barrows',barrows_crypt:'Barrows Crypt',barrows_tunnels:'Barrows Tunnels',arena:'Tournament Dais',waiting:'Waiting Area',magic:'Wizard Grounds',range:'Ranger Camp',wilderness:'The Wilderness',purewild:'Pure Wild',winter:'Frostfall',castle:'Beginner Castle',castleup:'Castle — Upstairs',ratcave:'Rat Cave'};
+const HUD_AREA_NAMES={plaza:'Plaza',goblins:'Goblin Camp',training:'Training Cave',gathering:'Gathering Cave',cove:'Fishing Cove',mine:'Emberfall Mine & Smithy',fightcaves:'Fight Caves',barrows:'Barrows',barrows_crypt:'Barrows Crypt',barrows_tunnels:'Barrows Tunnels',arena:'Tournament Dais',waiting:'Waiting Area',magic:'Wizard Grounds',range:'Ranger Camp',wilderness:'The Wilderness',purewild:'Pure Wild',winter:'Frostfall',castle:'Beginner Castle',castleup:'Castle — Upstairs',ratcave:'Rat Cave',training_grounds:'Barrows Training Grounds'};
 const HUD_ROLE_WORD={owner:'Owner',admin:'Administrator',mod:'Moderator',player:'Player'};
 function fmtGoldShort(n){ if(n>=1000000) return (Math.round(n/100000)/10)+'M'; if(n>=10000) return (Math.round(n/100)/10)+'k'; return ''+n; }
 function hudAreaStatus(){
@@ -11595,6 +11775,7 @@ function hudAreaStatus(){
   case 'waiting': return 'Waiting for your match';
   case 'fightcaves': return 'Enter the Fight Caves';
   case 'winter': return 'Explore Frostfall';
+  case 'training_grounds': return 'Five steps to Barrows-ready';
  }
  return AREA_LABELS[curArea]||'';
 }
@@ -12188,7 +12369,7 @@ function handleLongPress(cx,cy){
    const nm=n? (n.name||'Goblin'):'Goblin';
    openCtxSheet(`🥊 ${esc(nm)}`,[
      {label:'⚔️ Attack',fn:()=>attackNpc(hit.id)},
-     {label:'🔍 Examine',fn:()=>ctxExamine(`🥊 ${esc(nm)}`,`Combat level ${n? (n.combatLevel||5):5}. ${n&&n.kind==='wizard'?'It casts magic at you from range — Deflect from Magic turns its spells back on it. It drops runes for your spells.':n&&n.kind==='ranger'?'It shoots arrows at you from range — Deflect from Missiles turns its arrows back on it. It drops arrows and arrowheads.':'It drops coins and goblin gear when beaten.'}`)}
+     {label:'🔍 Examine',fn:()=>ctxExamine(`🥊 ${esc(nm)}`,`Combat level ${n? (n.combatLevel||5):5}. ${n&&(n.kind==='wizard'||n.kind==='training_wizard')?'It casts magic at you from range — Deflect from Magic turns its spells back on it. It drops runes for your spells.':n&&(n.kind==='ranger'||n.kind==='training_ranger')?'It shoots arrows at you from range — Deflect from Missiles turns its arrows back on it. It drops arrows and arrowheads.':n&&n.kind==='practice_brother'?'A weakened shade of Dharok the Wretched, kept for practice. Like the real brother, he hits harder as his health falls — watch for the rage warnings. He drops supplies and gold, never Barrows loot.':n&&n.kind==='training_knight'?'A practice knight in full plate. Deflect Melee stops him cold — and eat before you drop, not after.':n&&n.kind==='training_goblin'?'A practice goblin for first fights: styles, food and your first bones to bury.':'It drops coins and goblin gear when beaten.'}`)}
    ]);
    return;
  }
