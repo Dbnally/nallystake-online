@@ -1351,9 +1351,17 @@ function connect(){
    `activityShown` is a page-session flag, so a reconnect that
    replays the welcome never re-shows the picker. */
 let activityShown=false;
+/* "Log in where you left off" (2026-11-26): the welcome carries
+   the saved spot's summary ({area, name} | null). The server has
+   already spawned the player there — Explore just keeps them
+   where they are, so its label names the place. */
+let myLastSpot=null;
 function maybeShowActivityPicker(){
  if(activityShown||!me) return;
  activityShown=true;
+ const exploreBtn=myLastSpot
+  ? `<button class="act" onclick="pickActivity('plaza')">📍 Explore — back where you left off (${myLastSpot.name})<span class="sub">You logged off here — stay, or pick a start above</span></button>`
+  : `<button class="act" onclick="pickActivity('plaza')">🏰 Explore the Plaza<span class="sub">Shops, bank and everyone else — start where you are</span></button>`;
  $('activitysheet').innerHTML=`<h3 style="text-align:center;color:#5d4028;margin-top:0">🎯 What do you want to do?</h3>
  <p class="note" style="text-align:center;color:#4a3826">Pick where this session starts. You can always walk through the gates or use 🌀 Teleport later — nothing is locked in.</p>
  <div class="actpick">
@@ -1361,7 +1369,7 @@ function maybeShowActivityPicker(){
   <button class="act" onclick="pickActivity('fightcaves')">🌋 Fight Caves<span class="sub">63 waves, TzTok-Jad and the fire cape</span></button>
   <button class="act" onclick="pickActivity('barrows')">⚰️ Barrows<span class="sub">Six brothers, the tunnels and the reward chest</span></button>
   <button class="act" onclick="pickActivity('gathering')">⛏️ Skilling &amp; Gathering<span class="sub">Gathering Cave — mine, fish, chop and cook</span></button>
-  <button class="act" onclick="pickActivity('plaza')">🏰 Explore the Plaza<span class="sub">Shops, bank and everyone else — start where you are</span></button>
+  ${exploreBtn}
  </div>`;
  $('activitymodal').classList.add('open');
 }
@@ -1404,7 +1412,7 @@ window.pickActivity=function(act){
  } else if(act==='fightcaves'){ send({type:'travel',to:'fightcaves'}); toast('🌋 Fight Caves — good luck in there.'); }
  else if(act==='barrows'){ send({type:'travel',to:'barrows'}); toast('⚰️ Barrows — the brothers are waiting.'); }
  else if(act==='gathering'){ send({type:'travel',to:'gathering'}); toast('⛏️ Gathering Cave — mine, fish, chop and cook.'); }
- else toast('🏰 Explore the plaza — every gate leads somewhere.');
+ else toast(myLastSpot?`📍 You're back where you left off — ${myLastSpot.name}.`:'🏰 Explore the plaza — every gate leads somewhere.');
 };
 /* Stage 32: the respawn hold. Death used to whisk the victim (and,
    after a duel, the winner too) to the plaza in the same instant —
@@ -1551,7 +1559,7 @@ function onMsg(m){
  // Week 2 (D11): a welcome is a fresh server session — it never has
  // a live fight, so any local fight state is stale (see
  // clearLocalFightState) and is dropped before anything renders.
- if(m.type==='welcome'){ welcomed=true; quickAttempt=false; wasInGame=true; const wasReconnect=reconnecting; stopReconnect(); reconnectMs=1000; clearLocalFightState(); if(wasReconnect){ toast('✅ Reconnected.'); logLine('✅ Reconnected.'); } if(railFirstRun&&!navHintDone){ navHintDone=true; railFirstRun=false; try{ localStorage.setItem('nallystake_rail_open','1'); }catch(e){} logLine('👋 New here? Everything lives in the dock, top right — the 🎛️ Menu button shows or hides the panel tabs (🎒 Backpack, 🌀 Teleport, 📊 Skills and more).'); } flushChatOutbox(); pushGuidedSetting(); me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); if(!maybeShowCastleOffer(m.castleOffer)) maybeShowActivityPicker(); }
+ if(m.type==='welcome'){ welcomed=true; quickAttempt=false; wasInGame=true; const wasReconnect=reconnecting; stopReconnect(); reconnectMs=1000; clearLocalFightState(); if(wasReconnect){ toast('✅ Reconnected.'); logLine('✅ Reconnected.'); } if(railFirstRun&&!navHintDone){ navHintDone=true; railFirstRun=false; try{ localStorage.setItem('nallystake_rail_open','1'); }catch(e){} logLine('👋 New here? Everything lives in the dock, top right — the 🎛️ Menu button shows or hides the panel tabs (🎒 Backpack, 🌀 Teleport, 📊 Skills and more).'); } flushChatOutbox(); pushGuidedSetting(); me=m.profile; players=m.players||[]; lastXp=me.xp?{...me.xp}:{}; setArea(m.area||'plaza'); initMyPos(); renderAll(); syncAvatars(); maybeOpenAppearance(); myLastSpot=m.lastSpot||null; if(!maybeShowCastleOffer(m.castleOffer)) maybeShowActivityPicker(); }
  if(m.type==='castle_sign'){ renderCastleDir(m.title,m.lines); }
  if(m.type==='catalog'){ catalogArr=m.items||[]; catalog={}; for(const it of catalogArr) catalog[it.id]=it; shopNames=m.shops||[]; if(Array.isArray(m.spells)) spellList=m.spells; if(dockPanel==='shop') renderDock(); renderQuickButtons(); renderSpellBtns(); for(const av of Object.values(avatars)) av.gearSig=null; }
  if(m.type==='exchange_prices'){ goods={}; for(const g of (m.goods||[])) goods[g.id]=g; if(dockPanel==='exchange') renderDock(); drawMinimap(); }
