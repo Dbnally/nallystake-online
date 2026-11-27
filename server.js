@@ -2738,6 +2738,22 @@ const AREAS = {
   // readiness board at the entrance. Spawn sits by the south
   // return gate, mirroring the Wizard Grounds / Ranger Camp.
   training_grounds: { name: 'Barrows Training Grounds', spawn: { x: 800, y: 720 } },
+  // Duel Bowl (Derek, 2026-11-27): the skatepark-bowl map from
+  // his photos, built as its own area (every area owns a whole
+  // 0..1600 x 0..900 space, so nothing existing moves or is
+  // overlapped). Reached ON FOOT through the plaza's south gate
+  // strip x 530-590 — the free stretch between the Frostfall
+  // gate (120-520) and the Barrows gate (600-1000) — with the
+  // Travel panel as the shortcut, like every other area. Spawn
+  // sits on the bowl's south rim, by the steps down and the
+  // return gate, mirroring the Training Grounds. Duels are NOT
+  // area-restricted in this game (only the Wilderness refuses
+  // them): a challenge issued here runs through the ordinary
+  // challenge flow and startDuel moves both fighters to the
+  // Tournament Dais, exactly as a challenge issued in the plaza
+  // does — the Bowl is the gathering / call-out / spectating
+  // ground, and no combat rule changes for it.
+  duel_bowl: { name: 'Duel Bowl', spawn: { x: 800, y: 720 } },
   gathering: { name: 'Gathering Cave', spawn: { x: 800, y: 450 } },
   cove: { name: 'Fishing Cove', spawn: { x: 180, y: 450 } },
   mine: { name: 'Emberfall Mine & Smithy', spawn: { x: 800, y: 760 } },
@@ -3111,6 +3127,22 @@ function trainingBoardLines(profile) {
     verdict,
   ];
 }
+// Duel Bowl entrance sign (Derek, 2026-11-27): the board at the
+// bowl's south rim (server (890,690) = client world (9,24), just
+// east of the south steps down and the spawn). The client builds
+// the 3D board and its read panel from the same words; this
+// server copy is the canonical read (bowl_sign_read answers with
+// it), exactly like the castle directory sign / training board.
+const BOWL_SIGN = {
+  id: 'duel_bowl_sign', area: 'duel_bowl', x: 890, y: 690,
+  title: '🏆 Duel Bowl',
+  lines: [
+    '⚔️ This is the Duel Bowl — the old skate bowl turned arena. Challenge any player standing here: tap them, choose Challenge, agree the rules and the stake.',
+    '🏆 An agreed duel fights on the Tournament Dais, as duels do everywhere — the Bowl is where fighters gather, call each other out, and settle who is next.',
+    '👀 Spectators watch from the rim: up the steps and around the top, where the whole fighting floor is in view.',
+    '🚪 The south gate behind you walks back to the Plaza — and the Teleport panel is the shortcut, as always.',
+  ],
+};
 // The areas whose live NPC roster rides on npc_state messages.
 const NPC_AREAS = ['goblins', 'magic', 'range', 'wilderness', 'purewild', 'plaza', 'ratcave', 'training_grounds'];
 const npcFights = new Map(); // id -> { id, playerKey, npcId, hpYou, maxHpYou, specialQueued, done, timer, tickCount, nextSwingYou, nextSwingNpc }
@@ -8281,6 +8313,15 @@ wss.on('connection', (ws, req) => {
       // canonical-read pattern, per-player.
       if (me.area !== 'training_grounds') return send(ws, { type: 'error', message: 'That board stands at the Barrows Training Grounds.' });
       return send(ws, { type: 'training_board', id: TRAINING_BOARD.id, title: '⚔️ Barrows-ready check', lines: trainingBoardLines(profile) });
+    }
+
+    if (m.type === 'bowl_sign_read') {
+      // Duel Bowl entrance sign (2026-11-27): a player on the
+      // bowl's rim tapped the board by the south steps. The
+      // answer is the sign itself, from the server's canonical
+      // BOWL_SIGN — the castle directory sign's pattern.
+      if (me.area !== 'duel_bowl') return send(ws, { type: 'error', message: 'That sign stands at the Duel Bowl.' });
+      return send(ws, { type: 'bowl_sign', id: BOWL_SIGN.id, title: BOWL_SIGN.title, lines: BOWL_SIGN.lines });
     }
 
     if (m.type === 'sign_read') {
