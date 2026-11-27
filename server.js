@@ -2271,6 +2271,20 @@ function fbPrivacyPage(res) {
 <p>If this policy changes, the updated version will be posted on this page with a new effective date.</p>
 <p><a href="/">← Back to the game</a></p></section>`);
 }
+function fbDataDeletionPage(res) {
+  fbPage(res, 200, `<h1>⚔️ Nallystake Online — Deleting Your Data</h1>
+<section><p><i>Effective date: November 27, 2026.</i></p>
+<p>This page explains exactly how to have your Nallystake Online account and its stored data deleted.</p></section>
+<section><h2>What data the game stores about you</h2>
+<p>Your username and a hashed password (never the password itself), your game data — gold, items, skills and levels, duel record and rating, friends list, and where you were standing in the world — and, if you signed in with Facebook, your Facebook account id and display name.</p></section>
+<section><h2>How to ask for deletion</h2>
+<p>1. Go to the <b>Nallystake Facebook Page</b> and send it a message.<br>
+2. In the message, give your <b>in-game username</b> and say if you signed in with Facebook.<br>
+3. We will delete the account and all of its stored data, including the stored Facebook id, and reply to your message to confirm it is done. Deletion is completed within 30 days of your message, and usually much sooner.</p></section>
+<section><h2>What deletion means</h2>
+<p>Deletion is permanent and cannot be undone: the account, its gold, items, skills and record are removed. If you play again afterwards, you would start a new account from the beginning.</p>
+<p><a href="/">← Back to the game</a></p></section>`);
+}
 async function handleFbCallback(res, url) {
   if (!fbConfigured()) return fbNotSetUp(res);
   if (url.searchParams.get('error')) return fbFailPage(res, 400, 'Facebook login was cancelled or denied. No problem — you can still register or log in with a username and password.');
@@ -2387,6 +2401,7 @@ const server = http.createServer(async (req, res) => {
   // the OAuth start + callback, the one-time-code exchange, and the
   // authenticated link-start. All defined in the Facebook block above.
   if (req.method === 'GET' && url.pathname === '/privacy') return fbPrivacyPage(res);
+  if (req.method === 'GET' && url.pathname === '/data-deletion') return fbDataDeletionPage(res);
   if (req.method === 'GET' && url.pathname === '/auth/facebook') {
     if (!fbConfigured()) return fbNotSetUp(res);
     pruneFbMaps();
